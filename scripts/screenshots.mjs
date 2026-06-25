@@ -38,6 +38,7 @@ await wait(800);
 await shot(win, '01-models');                 // free default landing
 await nav(win, 'Chat'); await shot(win, '02-chat');
 await nav(win, 'Projects'); await shot(win, '03-projects');
+try { await win.getByRole('button', { name: 'Artifacts', exact: true }).first().click({ timeout: 4000 }); await wait(1500); await shot(win, '09-artifacts'); } catch (e) { console.error('artifacts tab', e.message); }
 await nav(win, 'Integrations'); await shot(win, '05-integrations');
 await nav(win, 'Gateway'); await shot(win, '06-gateway');
 await nav(win, 'Day'); await shot(win, '07-pro-upgrade');   // locked Pro tab → upgrade

@@ -383,7 +383,7 @@ function SetupNudge({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
-      className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-xl border border-green-500/30 bg-neutral-900/95 px-4 py-3 shadow-xl backdrop-blur-xl"
+      className="fixed bottom-14 right-4 z-50 flex items-center gap-3 rounded-xl border border-green-500/30 bg-neutral-900/95 px-4 py-3 shadow-xl backdrop-blur-xl"
     >
       <Cpu className="h-4 w-4 shrink-0 text-green-500" />
       <div className="text-xs leading-tight">
