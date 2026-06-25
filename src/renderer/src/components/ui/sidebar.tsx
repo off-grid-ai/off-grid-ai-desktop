@@ -1,8 +1,7 @@
 "use client";
 import { cn } from "@renderer/lib/utils";
 import React, { useState, createContext, useContext } from "react";
-import { AnimatePresence, motion } from "motion/react";
-import { IconMenu2, IconX } from "@tabler/icons-react";
+import { motion } from "motion/react";
 
 interface Links {
   label: string;
@@ -88,7 +87,10 @@ export const DesktopSidebar = ({
     <>
       <motion.div
         className={cn(
-          "h-full px-4 py-4 hidden  md:flex md:flex-col bg-neutral-100 dark:bg-neutral-800 w-[300px] shrink-0",
+          // Desktop-first app: the sidebar is ALWAYS present (no responsive hide).
+          // The previous `hidden md:flex` vanished the nav on any window < 768px,
+          // leaving users stuck with no way to navigate.
+          "h-full px-4 py-4 flex flex-col bg-neutral-100 dark:bg-neutral-800 shrink-0",
           className
         )}
         // Constant — width is driven by an explicit open/close toggle, NOT hover.
@@ -103,55 +105,9 @@ export const DesktopSidebar = ({
   );
 };
 
-export const MobileSidebar = ({
-  className,
-  children,
-  ...props
-}: React.ComponentProps<"div">) => {
-  const { open, setOpen } = useSidebar();
-  return (
-    <>
-      <div
-        className={cn(
-          "h-10 px-4 py-4 flex flex-row md:hidden  items-center justify-between bg-neutral-100 dark:bg-neutral-800 w-full"
-        )}
-        {...props}
-      >
-        <div className="flex justify-end z-20 w-full">
-          <IconMenu2
-            className="text-neutral-800 dark:text-neutral-200"
-            onClick={() => setOpen(!open)}
-          />
-        </div>
-        <AnimatePresence>
-          {open && (
-            <motion.div
-              initial={{ x: "-100%", opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: "-100%", opacity: 0 }}
-              transition={{
-                duration: 0.3,
-                ease: "easeInOut",
-              }}
-              className={cn(
-                "fixed h-full w-full inset-0 bg-white dark:bg-neutral-900 p-10 z-[100] flex flex-col justify-between",
-                className
-              )}
-            >
-              <div
-                className="absolute right-10 top-10 z-50 text-neutral-800 dark:text-neutral-200"
-                onClick={() => setOpen(!open)}
-              >
-                <IconX />
-              </div>
-              {children}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </>
-  );
-};
+// Desktop-first app — no separate mobile nav. The desktop sidebar always shows,
+// so a narrow window never strands the user without navigation.
+export const MobileSidebar = (_props: React.ComponentProps<"div">): null => null;
 
 export const SidebarLink = ({
   link,
