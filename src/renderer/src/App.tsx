@@ -135,6 +135,8 @@ function AppContent() {
   // Proactive: a Zoom/Meet/Teams call detected → AUTO-record (visible indicator
   // in-app + menu bar keeps it transparent).
   useEffect(() => {
+    // Escape hatch for demo/screenshot captures: skip live meeting auto-record.
+    if (localStorage.getItem('offgrid:disable-capture') === '1') return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const api = (window as any).api;
     const offDetected = api.onMeetingDetected?.((platform: string) => {
