@@ -78,7 +78,7 @@ export function GatewayScreen(): React.ReactElement {
 
   return (
     <div className="relative h-full overflow-y-auto font-mono">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6 p-1 pb-16">
+      <div className="flex w-full flex-col gap-6 px-8 py-1 pb-16">
         {/* Header */}
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-700 bg-neutral-800">
