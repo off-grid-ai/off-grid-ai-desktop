@@ -1,8 +1,49 @@
-import Database from 'better-sqlite3';
-import { app } from 'electron';
+// better-sqlite3-multiple-ciphers is a drop-in superset of better-sqlite3 that
+// adds SQLCipher-style `PRAGMA key` encryption. Same API surface + types.
+import Database from 'better-sqlite3-multiple-ciphers';
+import { app, safeStorage } from 'electron';
 import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
 
 let db: Database.Database | null = null;
+
+// --- Encryption at rest (new DBs only) -------------------------------------
+// The DB key can't live inside the DB (it gates opening it), so it's stored as a
+// safeStorage-encrypted file alongside it. Policy:
+//   • .dbkey present            → encrypted DB (created by us) → open with the key
+//   • no .dbkey, DB file exists → legacy plaintext DB → open as-is (NO migration)
+//   • neither                   → fresh install → generate a key + create encrypted
+// If the OS can't provide real encryption (no Keychain), we fall back to plaintext
+// so the app still works rather than refusing to open.
+function loadOrCreateKey(dbPath: string): string | null {
+  const keyFile = path.join(path.dirname(dbPath), '.dbkey');
+  try {
+    if (fs.existsSync(keyFile)) {
+      const blob = fs.readFileSync(keyFile);
+      return safeStorage.decryptString(blob);
+    }
+  } catch (e) {
+    console.error('[db] failed to read DB key — opening without encryption', e);
+    return null;
+  }
+  // No key yet. Only create one (→ encrypted DB) if there's no existing DB to
+  // migrate and the OS gives us real encryption.
+  if (fs.existsSync(dbPath)) return null; // legacy plaintext DB — leave it
+  try {
+    if (!safeStorage.isEncryptionAvailable()) {
+      console.warn('[db] OS encryption unavailable — creating plaintext DB');
+      return null;
+    }
+    const key = crypto.randomBytes(32).toString('hex');
+    fs.writeFileSync(keyFile, safeStorage.encryptString(key), { mode: 0o600 });
+    console.log('[db] created encrypted database key');
+    return key;
+  } catch (e) {
+    console.error('[db] failed to create DB key — creating plaintext DB', e);
+    return null;
+  }
+}
 
 // Cosine similarity function for vector search
 // Returns similarity between 0 and 1 (1 = identical)
@@ -30,17 +71,23 @@ function cosineSimilarity(v1Str: string, v2Str: string): number {
   }
 }
 
-export function getDB() {
+export function getDB(): Database.Database {
   if (db) return db;
 
   const dbPath = path.join(app.getPath('userData'), 'memories.db');
   console.log("Opening database at:", dbPath);
-  
+
+  const key = loadOrCreateKey(dbPath);
   db = new Database(dbPath);
+  // PRAGMA key MUST run before any other access (it unlocks the file).
+  if (key) {
+    db.pragma(`key = '${key}'`);
+    console.log('[db] opened with encryption at rest');
+  }
   db.pragma('journal_mode = WAL');
 
   // Register custom function for vector search
-  db.function('cosine_similarity', cosineSimilarity);
+  db.function('cosine_similarity', (...args: unknown[]) => cosineSimilarity(args[0] as string, args[1] as string));
 
     // Initialize Schema
   db.exec(`
@@ -310,7 +357,21 @@ export function getDB() {
     // Column already exists, ignore
   }
 
+  // Migration: Add project_id to rag_conversations (chats can be scoped to a project)
+  try {
+    db.exec(`ALTER TABLE rag_conversations ADD COLUMN project_id TEXT`);
+  } catch (e) {
+    // Column already exists, ignore
+  }
+
   return db;
+}
+
+/** Run an idempotent schema migration (CREATE TABLE IF NOT EXISTS …) on the
+ *  shared DB. Exposed so the pro package can create its own tables (observations,
+ *  entities, approvals, …) without core knowing about them. */
+export function runMigration(sql: string): void {
+  getDB().exec(sql);
 }
 
 // === NEW API ACCESSORS ===
@@ -406,6 +467,61 @@ export function updateMasterMemory(content: string) {
             updated_at = excluded.updated_at
     `);
     stmt.run(content);
+}
+
+// One-shot, idempotent purge of the legacy "My Memories" data: the AI-chat
+// conversations the old watcher scraped (Claude / ChatGPT / Gemini, web +
+// desktop) and everything derived from them — messages, vector memories,
+// summaries, entity facts, and entities left orphaned afterwards. The shared
+// `entities` table is ALSO fed by the current screen-capture/observation
+// pipeline, so we only drop entities with no remaining link in entity_sessions,
+// entity_facts, OR observation_entities. Once the legacy conversations are gone
+// this finds nothing and is a no-op, so it's safe to call on every startup.
+export function purgeLegacyChatImports(): Record<string, number> | null {
+    const db = getDB();
+    const legacy = db.prepare(`
+        SELECT id FROM conversations
+        WHERE app_name IN ('Claude.ai','ChatGPT','Gemini')
+           OR LOWER(app_name) LIKE '%claude%'
+           OR LOWER(app_name) LIKE '%chatgpt%'
+           OR LOWER(app_name) LIKE '%gemini%'
+    `).all() as { id: string }[];
+    const ids = legacy.map((r) => r.id);
+    if (ids.length === 0) return null;
+
+    const ph = ids.map(() => '?').join(',');
+    const hasObsEntities = !!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='observation_entities'`).get();
+
+    const run = db.transaction(() => {
+        const counts: Record<string, number> = {};
+        const messages = db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE conversation_id IN (${ph})`).get(...ids) as { c: number };
+        counts.messages = messages.c;
+        counts.memories = db.prepare(`DELETE FROM memories WHERE session_id IN (${ph})`).run(...ids).changes;
+        counts.summaries = db.prepare(`DELETE FROM chat_summaries WHERE session_id IN (${ph})`).run(...ids).changes;
+        counts.entityFacts = db.prepare(`DELETE FROM entity_facts WHERE source_session_id IN (${ph})`).run(...ids).changes;
+        // Cascades messages + entity_sessions (both FK conversations ON DELETE CASCADE).
+        counts.conversations = db.prepare(`DELETE FROM conversations WHERE id IN (${ph})`).run(...ids).changes;
+        // Drop entities now orphaned across every link table (keeps current-capture entities).
+        const orphanGuard = hasObsEntities
+            ? `id NOT IN (SELECT entity_id FROM entity_sessions)
+               AND id NOT IN (SELECT entity_id FROM entity_facts)
+               AND id NOT IN (SELECT entity_id FROM observation_entities)`
+            : `id NOT IN (SELECT entity_id FROM entity_sessions)
+               AND id NOT IN (SELECT entity_id FROM entity_facts)`;
+        counts.entitiesDeleted = hasObsEntities
+            ? db.prepare(`DELETE FROM entities WHERE ${orphanGuard}`).run().changes
+            : 0; // without obs links we can't tell current from legacy — leave them
+        // The stale consolidated profile is gone for good.
+        counts.masterMemory = db.prepare(`DELETE FROM master_memory`).run().changes;
+        // Rebuild external-content FTS indexes so they don't point at deleted rows.
+        for (const t of ['memory_fts', 'message_fts', 'summary_fts', 'entity_fts', 'entity_fact_fts']) {
+            try { db.prepare(`INSERT INTO ${t}(${t}) VALUES('rebuild')`).run(); } catch { /* table may be absent */ }
+        }
+        return counts;
+    });
+    const result = run();
+    console.log('[DB] Purged legacy My Memories chat imports:', result);
+    return result;
 }
 
 export function getAllChatSummaries(): { session_id: string; summary: string }[] {
@@ -1013,6 +1129,7 @@ export function saveUserProfile(profile: UserProfile): void {
 export interface RagConversation {
     id: string;
     title: string | null;
+    project_id?: string | null;
     created_at: string;
     updated_at: string;
     message_count?: number;
@@ -1027,36 +1144,76 @@ export interface RagMessage {
     created_at: string;
 }
 
-export function createRagConversation(id: string, title?: string): string {
+export function createRagConversation(id: string, title?: string, projectId?: string | null): string {
     const db = getDB();
     db.prepare(`
-        INSERT INTO rag_conversations (id, title, created_at, updated_at)
-        VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `).run(id, title || null);
+        INSERT INTO rag_conversations (id, title, project_id, created_at, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(id, title || null, projectId || null);
     return id;
 }
 
-export function getRagConversations(): RagConversation[] {
+export function getRagConversations(projectId?: string | null): RagConversation[] {
     const db = getDB();
-    return db.prepare(`
-        SELECT 
+    const where = projectId === undefined ? '' : projectId === null ? 'WHERE rc.project_id IS NULL' : 'WHERE rc.project_id = ?';
+    const stmt = db.prepare(`
+        SELECT
             rc.id,
             rc.title,
+            rc.project_id,
             rc.created_at,
             rc.updated_at,
             (SELECT COUNT(*) FROM rag_messages rm WHERE rm.conversation_id = rc.id) as message_count
         FROM rag_conversations rc
+        ${where}
         ORDER BY rc.updated_at DESC
-    `).all() as RagConversation[];
+    `);
+    return (projectId ? stmt.all(projectId) : stmt.all()) as RagConversation[];
 }
 
 export function getRagConversation(id: string): RagConversation | null {
     const db = getDB();
     return db.prepare(`
-        SELECT id, title, created_at, updated_at
+        SELECT id, title, project_id, created_at, updated_at
         FROM rag_conversations
         WHERE id = ?
     `).get(id) as RagConversation | null;
+}
+
+export function setRagConversationProject(id: string, projectId: string | null): void {
+    const db = getDB();
+    db.prepare(`UPDATE rag_conversations SET project_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(projectId, id);
+}
+
+/**
+ * Recent messages from OTHER chats in the same project — lets a project chat
+ * reference what was discussed in sibling conversations. Returns chronological.
+ */
+export function getProjectChatHistory(
+    projectId: string,
+    excludeConversationId: string,
+    limit = 12
+): { role: string; content: string; title: string | null }[] {
+    const db = getDB();
+    // Project memory spans EVERY sibling chat in the project, regardless of which
+    // path stored it — rag_messages (main chat) and project_messages (project
+    // threads). UNION both so context isn't lost across chats in the project.
+    const rows = db.prepare(`
+        SELECT role, content, title, created_at FROM (
+            SELECT rm.role AS role, rm.content AS content, rc.title AS title, rm.created_at AS created_at
+            FROM rag_messages rm
+            JOIN rag_conversations rc ON rc.id = rm.conversation_id
+            WHERE rc.project_id = ? AND rm.conversation_id != ?
+            UNION ALL
+            SELECT pm.role AS role, pm.content AS content, pt.title AS title, pm.created_at AS created_at
+            FROM project_messages pm
+            JOIN project_threads pt ON pt.id = pm.thread_id
+            WHERE pt.project_id = ? AND pm.thread_id != ?
+        )
+        ORDER BY created_at DESC
+        LIMIT ?
+    `).all(projectId, excludeConversationId, projectId, excludeConversationId, limit) as { role: string; content: string; title: string | null; created_at: string }[];
+    return rows.map(({ role, content, title }) => ({ role, content, title })).reverse();
 }
 
 export function updateRagConversationTitle(id: string, title: string): void {
@@ -1094,6 +1251,17 @@ export function addRagMessage(
     `).run(conversationId);
     
     return Number(info.lastInsertRowid);
+}
+
+// Keep the first `keepCount` messages of a conversation (chronological) and
+// delete the rest — used by regenerate/edit so old answers don't pile up.
+export function truncateRagMessages(conversationId: string, keepCount: number): number {
+    const db = getDB();
+    const rows = db.prepare(`SELECT id FROM rag_messages WHERE conversation_id = ? ORDER BY id ASC`).all(conversationId) as { id: number }[];
+    const toDelete = rows.slice(Math.max(0, keepCount)).map((r) => r.id);
+    if (!toDelete.length) return 0;
+    const ph = toDelete.map(() => '?').join(',');
+    return db.prepare(`DELETE FROM rag_messages WHERE id IN (${ph})`).run(...toDelete).changes;
 }
 
 export function getRagMessages(conversationId: string): RagMessage[] {
