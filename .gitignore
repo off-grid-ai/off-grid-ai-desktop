@@ -22,8 +22,10 @@ electron/coreml-sd/.build/
 electron/coreml-sd/.swiftpm/
 electron/accessibility/ocr
 
-# Large bundled runtime binaries (273MB — distribute via release/LFS, not git)
-resources/bin/
+# Bundled runtime binaries live in Git LFS (see .gitattributes) so CI can bundle
+# them. Only the heavy optional runtimes we don't ship are excluded.
+resources/bin/coreml-sd/
+resources/bin/mflux/
 # Gateway probe scratch output
 .gateway-probe/
 # TS build cache
