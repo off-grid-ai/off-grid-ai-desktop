@@ -46,7 +46,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        # windows-2022 = VS 2022 toolchain; windows-latest ships VS 18 (2026)
+        # which node-gyp 11 can't parse, breaking native-module compiles.
+        os: [macos-latest, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
