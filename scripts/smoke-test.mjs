@@ -9,17 +9,19 @@ import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
+// APP_BIN = a packaged app executable; unset = launch the local build (`electron .`).
 const APP_BIN = process.env.APP_BIN;
-if (!APP_BIN) { console.error('Set APP_BIN to the packaged app executable'); process.exit(2); }
 
 const profile = mkdtempSync(join(tmpdir(), 'ogsmoke-'));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log(`  ✓ ${name}`); } else { fail++; console.error(`  ✗ ${name}`); } };
 
+const launchOpts = APP_BIN
+  ? { executablePath: APP_BIN, args: [] }
+  : { args: ['.'] };
 const app = await electron.launch({
-  executablePath: APP_BIN,
-  args: [],
+  ...launchOpts,
   env: { ...process.env, OFFGRID_USER_DATA: profile, OFFGRID_PRO: '0' },
 });
 const win = await app.firstWindow();
@@ -30,11 +32,17 @@ await wait(3500);
 const text = async () => (await win.locator('body').innerText().catch(() => '')) || '';
 
 try {
-  // 1) Onboarding shows on a fresh profile
-  const onboardingText = await text();
-  ok('onboarding screen appears', /Continue|Every model|Private AI|Off Grid/i.test(onboardingText));
+  // 1) Onboarding shows on a fresh profile (step 1)
+  ok('onboarding screen appears', /Continue|Every model|Private AI|Off Grid/i.test(await text()));
 
-  // 2) Onboarding orbit isn't collapsed — the modality cards are spread out
+  // 2) Advance to the orbit step + assert the modality cards aren't collapsed.
+  //    The orbit lives on step 2, so navigate there before measuring.
+  const clickContinue = async () => {
+    const btn = win.getByRole('button', { name: /Continue|Start using Off Grid/i }).first();
+    if (await btn.isVisible().catch(() => false)) { await btn.click().catch(() => {}); await wait(1400); return true; }
+    return false;
+  };
+  await clickContinue(); // step 1 -> step 2 (orbit)
   const labels = ['Image', 'Vision', 'Chat', 'Projects', 'Speech', 'Voice'];
   const boxes = [];
   for (const l of labels) {
@@ -43,16 +51,12 @@ try {
   }
   let minDist = Infinity;
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
-    const d = Math.hypot(boxes[i].x - boxes[j].x, boxes[i].y - boxes[j].y);
-    if (d < minDist) minDist = d;
+    minDist = Math.min(minDist, Math.hypot(boxes[i].x - boxes[j].x, boxes[i].y - boxes[j].y));
   }
   ok(`onboarding orbit cards spaced (${boxes.length} cards, min gap ${Math.round(minDist)}px > 40)`, boxes.length >= 4 && minDist > 40);
 
-  // 3) Click through onboarding into the app
-  for (let i = 0; i < 4; i++) {
-    const btn = win.getByRole('button', { name: /Continue|Start using Off Grid/i }).first();
-    if (await btn.isVisible().catch(() => false)) { await btn.click().catch(() => {}); await wait(1200); } else break;
-  }
+  // 3) Finish onboarding into the app
+  for (let i = 0; i < 4; i++) { if (!(await clickContinue())) break; }
   await wait(1500);
   const appText = await text();
 
