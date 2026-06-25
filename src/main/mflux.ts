@@ -4,19 +4,11 @@
 // (the merge needs f16); mflux runs full/MLX-quantized models and supports LoRA
 // natively. Python/MLX is bundled (fully offline) at resources/bin/mflux/ — see
 // scripts/build-mflux-env.sh. Apple Silicon only.
-import { app } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-
-// Mirror imagegen.ts binRoots(): packaged → process.resourcesPath/bin, dev →
-// app source + cwd.
-function binRoots(): string[] {
-  return app.isPackaged
-    ? [path.join(process.resourcesPath, 'bin')]
-    : [path.join(app.getAppPath(), 'resources', 'bin'), path.join(process.cwd(), 'resources', 'bin')];
-}
+import { binRoots, dataDir } from './runtime-env';
 
 /** The bundled standalone python3 inside the mflux env, or null if not present. */
 export function findMfluxPython(): string | null {
@@ -34,7 +26,7 @@ export function mfluxAvailable(): boolean {
 
 /** Where mflux downloads/caches model weights (its HF_HOME). */
 export function mfluxCacheDir(): string {
-  return path.join(app.getPath('userData'), 'mflux-cache');
+  return path.join(dataDir(), 'mflux-cache');
 }
 
 // Entry point that handles every base model via --base-model. Invoked with -m

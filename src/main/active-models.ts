@@ -3,14 +3,14 @@
 // speech (TTS), transcription (STT) — are stateless per-call runtimes, so we just
 // record the chosen model id here and each runtime reads it (falling back to its
 // own heuristic when nothing is chosen). One file: active-modalities.json.
-import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import { modelsDir } from './runtime-env';
 
 export type Modality = 'image' | 'speech' | 'transcription';
 
 function storeFile(): string {
-  return path.join(app.getPath('userData'), 'models', 'active-modalities.json');
+  return path.join(modelsDir(), 'active-modalities.json');
 }
 
 function readAll(): Record<string, string | null> {

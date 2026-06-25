@@ -13,10 +13,10 @@ import { promisify } from 'util';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { app } from 'electron';
 import type { ExtractionBridges } from '@offgrid/rag';
 import { llm } from '../llm';
 import { getActiveModal } from '../active-models';
+import { binRoots, modelsDir } from '../runtime-env';
 
 const execFileAsync = promisify(execFile);
 
@@ -33,18 +33,13 @@ function existing(paths: string[]): string | null {
 
 /** Resolve the bundled whisper-cli across dev / packaged layouts. */
 export function whisperBin(): string | null {
-  return existing([
-    path.join(process.resourcesPath ?? '', 'bin', 'whisper', 'whisper-cli'),
-    path.join(app.getAppPath(), 'resources', 'bin', 'whisper', 'whisper-cli'),
-    path.join(process.cwd(), 'resources', 'bin', 'whisper', 'whisper-cli'),
-  ]);
+  return existing(binRoots().map((r) => path.join(r, 'whisper', 'whisper-cli')));
 }
 
 /** Resolve ffmpeg: bundled first, then common system locations. */
 function ffmpegBin(): string | null {
   return existing([
-    path.join(process.resourcesPath ?? '', 'bin', 'ffmpeg'),
-    path.join(app.getAppPath(), 'resources', 'bin', 'ffmpeg'),
+    ...binRoots().map((r) => path.join(r, 'ffmpeg')),
     '/opt/homebrew/bin/ffmpeg',
     '/usr/local/bin/ffmpeg',
     '/usr/bin/ffmpeg',
@@ -55,7 +50,7 @@ function ffmpegBin(): string | null {
  *  MULTILINGUAL model (the `.en` models can only do English) and a more capable
  *  size for accuracy, since meetings may be in any language. */
 export function whisperModel(): string | null {
-  const dir = path.join(app.getPath('userData'), 'models');
+  const dir = modelsDir();
   try {
     // User-chosen transcription model wins, when it's actually present on disk.
     const chosen = getActiveModal('transcription');

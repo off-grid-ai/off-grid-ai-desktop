@@ -9,22 +9,16 @@
 // swap-in / swap-out rather than a permanent ~330MB resident session.
 
 import { spawn } from 'child_process';
-import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { getActiveModal } from './active-models';
+import { resourceFile, appRoot } from './runtime-env';
 
 const DEFAULT_VOICE = 'af_heart';
 
 function workerPath(): string {
-  const candidates = app.isPackaged
-    ? [path.join(process.resourcesPath, 'tts-worker.mjs')]
-    : [
-        path.join(app.getAppPath(), 'resources', 'tts-worker.mjs'),
-        path.join(process.cwd(), 'resources', 'tts-worker.mjs'),
-      ];
-  const found = candidates.find((p) => fs.existsSync(p));
+  const found = resourceFile('tts-worker.mjs');
   if (!found) throw new Error('tts-worker.mjs not found in resources.');
   return found;
 }
@@ -37,7 +31,7 @@ function workerPath(): string {
 function runWorker(args: string[], stdin?: string): Promise<{ out: string; err: string; code: number }> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [workerPath(), ...args], {
-      cwd: app.getAppPath(),
+      cwd: appRoot(),
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     });
     let out = '';

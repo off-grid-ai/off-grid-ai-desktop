@@ -2,15 +2,9 @@ import { spawn, execSync, ChildProcess } from "child_process";
 import { Mutex } from "async-mutex";
 import { callHook } from "./bootstrap/hookRegistry";
 import path from "path";
-import { app } from "electron";
 import * as fs from "fs";
 import * as http from "http";
-
-// Models live under the unified userData dir (pinned in main/index.ts), so this
-// stays consistent with the DB + embeddings paths instead of a hardcoded name.
-function getModelsDir(): string {
-    return path.join(app.getPath('userData'), 'models');
-}
+import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit } from "./runtime-env";
 
 export interface LlmSettings {
   temperature?: number;
@@ -177,9 +171,7 @@ export class LLMService {
 
     // Prefer the updated, self-contained llama.cpp build in bin/llama (supports
     // newer architectures like gemma4); fall back to the legacy bin/llama-server.
-    const roots = app.isPackaged
-        ? [path.join(process.resourcesPath, "bin")]
-        : [path.join(app.getAppPath(), "resources", "bin"), path.join(process.cwd(), "resources", "bin")];
+    const roots = binRoots();
     const candidates = roots.flatMap((r) => [
         path.join(r, "llama", "llama-server"),
         path.join(r, "llama-server"),
@@ -194,7 +186,7 @@ export class LLMService {
     console.log(`[LLMService] Model: ${this.modelPath}`);
 
     // Strip macOS quarantine attributes on production builds (downloaded DMGs get quarantined)
-    if (app.isPackaged && process.platform === 'darwin') {
+    if (isPackaged() && process.platform === 'darwin') {
         try {
             const binDir = path.dirname(serverPath);
             execSync(`xattr -cr "${binDir}"`, { stdio: 'ignore' });
@@ -554,6 +546,6 @@ export class LLMService {
 
 export const llm = new LLMService();
 
-app.on("before-quit", () => {
+onHostQuit(() => {
     llm.stop();
 });

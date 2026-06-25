@@ -1,9 +1,8 @@
 import { pipeline, env } from '@xenova/transformers';
-import path from 'path';
-import { app } from 'electron';
+import { modelsDir } from './runtime-env';
 
 // Configure transformers to look for models locally or cache them properly
-env.localModelPath = path.join(app.getPath('userData'), 'models');
+env.localModelPath = modelsDir();
 env.allowRemoteModels = true; // Allow download on first run
 
 class EmbeddingService {

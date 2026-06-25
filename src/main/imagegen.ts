@@ -4,19 +4,13 @@
 // img2img, persist the PNG under userData/generated-images, return a data URL.
 
 import { spawn, type ChildProcess } from 'child_process';
-import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { llm } from './llm';
 import { isMfluxModelId, mfluxAvailable, getMfluxModel, runMflux, cancelMflux, MFLUX_MODELS } from './mflux';
 import { getActiveModal } from './active-models';
-
-function binRoots(): string[] {
-  return app.isPackaged
-    ? [path.join(process.resourcesPath, 'bin')]
-    : [path.join(app.getAppPath(), 'resources', 'bin'), path.join(process.cwd(), 'resources', 'bin')];
-}
+import { binRoots, dataDir, modelsDir } from './runtime-env';
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {
@@ -46,10 +40,6 @@ function isCoreMLModelDir(p: string): boolean {
   } catch {
     return false;
   }
-}
-
-function modelsDir(): string {
-  return path.join(app.getPath('userData'), 'models');
 }
 
 /** All image models on disk: GGUFs, custom .safetensors checkpoints, Core ML dirs. */
@@ -85,7 +75,7 @@ export function listImageModels(): string[] {
 
 /** All generated images on disk, newest first (excludes step-preview files). */
 export function listGeneratedImages(scope?: { conversationId?: string; projectId?: string | null }): { path: string; name: string; mtime: number; conversationId?: string; projectId?: string | null }[] {
-  const dir = path.join(app.getPath('userData'), 'generated-images');
+  const dir = path.join(dataDir(), 'generated-images');
   try {
     let all = fs
       .readdirSync(dir)
@@ -110,7 +100,7 @@ export function listGeneratedImages(scope?: { conversationId?: string; projectId
 export function deleteGeneratedImage(p: string): boolean {
   try {
     // Only allow deleting inside the generated-images dir (safety).
-    const dir = path.join(app.getPath('userData'), 'generated-images');
+    const dir = path.join(dataDir(), 'generated-images');
     if (!path.resolve(p).startsWith(path.resolve(dir))) return false;
     fs.unlinkSync(p);
     return true;
@@ -121,7 +111,7 @@ export function deleteGeneratedImage(p: string): boolean {
 
 // --- Style-preset thumbnails (generated on-device, cached; never hotlinked) --
 function styleThumbDir(): string {
-  return path.join(app.getPath('userData'), 'style-thumbs');
+  return path.join(dataDir(), 'style-thumbs');
 }
 
 /** Map of style key -> cached thumbnail path (on-device generated). */
@@ -379,7 +369,7 @@ export async function generateImage(
   // delegates the spawn to the mflux module. Returns before the sd-cli path.
   if (isMfluxModelId(params.model)) {
     const def = getMfluxModel(params.model)!;
-    const outDir = path.join(app.getPath('userData'), 'generated-images');
+    const outDir = path.join(dataDir(), 'generated-images');
     fs.mkdirSync(outDir, { recursive: true });
     const outPath = path.join(outDir, `img-${String(Date.now())}.png`);
     running = true;
@@ -491,7 +481,7 @@ export async function generateImage(
     params.prompt = `${params.prompt} ${tags}`;
   }
 
-  const outDir = path.join(app.getPath('userData'), 'generated-images');
+  const outDir = path.join(dataDir(), 'generated-images');
   fs.mkdirSync(outDir, { recursive: true });
   const seed = params.seed ?? -1;
   const stamp = String(Date.now());
