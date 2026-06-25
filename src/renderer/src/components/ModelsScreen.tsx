@@ -7,6 +7,7 @@ import {
   IconChevronDown,
   IconCheck,
   IconX,
+  IconTrash,
 } from '@tabler/icons-react';
 import {
   filterAndSort,
@@ -190,6 +191,19 @@ export function ModelsScreen() {
   const download = (id: string): void => {
     setProgress((p) => ({ ...p, [id]: { percent: 0, status: 'downloading' } }));
     api.downloadModel?.(id);
+  };
+
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const removeModel = async (id: string, label: string): Promise<void> => {
+    if (!window.confirm(`Delete "${label}"? This removes its files from disk.`)) return;
+    setDeleting(id);
+    try {
+      await api.deleteModel?.(id);
+      setInstalled(await api.getInstalledModels?.());
+      setActiveModel(await api.getActiveModel?.());
+    } finally {
+      setDeleting(null);
+    }
   };
 
   const useModel = async (id: string): Promise<void> => {
@@ -500,25 +514,35 @@ export function ModelsScreen() {
                   )}
                 </div>
                 {isInstalled ? (
-                  m.kind === 'text' || m.kind === 'vision' ? (
-                    activeModel === m.id ? (
-                      <span className="flex items-center gap-1 whitespace-nowrap text-xs text-green-500">
-                        <IconCircleCheck className="h-4 w-4" /> Active
-                      </span>
+                  <div className="flex items-center gap-2">
+                    {m.kind === 'text' || m.kind === 'vision' ? (
+                      activeModel === m.id ? (
+                        <span className="flex items-center gap-1 whitespace-nowrap text-xs text-green-500">
+                          <IconCircleCheck className="h-4 w-4" /> Active
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => useModel(m.id)}
+                          disabled={!!switching}
+                          className="flex items-center gap-1 whitespace-nowrap rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-white transition-colors hover:border-green-500 hover:text-green-500 disabled:opacity-50"
+                        >
+                          {switching === m.id ? <><IconLoader2 className="h-3.5 w-3.5 animate-spin" /> Switching…</> : 'Use'}
+                        </button>
+                      )
                     ) : (
-                      <button
-                        onClick={() => useModel(m.id)}
-                        disabled={!!switching}
-                        className="flex items-center gap-1 whitespace-nowrap rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-white transition-colors hover:border-green-500 hover:text-green-500 disabled:opacity-50"
-                      >
-                        {switching === m.id ? <><IconLoader2 className="h-3.5 w-3.5 animate-spin" /> Switching…</> : 'Use'}
-                      </button>
-                    )
-                  ) : (
-                    <span className="flex items-center gap-1 whitespace-nowrap text-xs text-green-500">
-                      <IconCircleCheck className="h-4 w-4" /> Installed
-                    </span>
-                  )
+                      <span className="flex items-center gap-1 whitespace-nowrap text-xs text-green-500">
+                        <IconCircleCheck className="h-4 w-4" /> Installed
+                      </span>
+                    )}
+                    <button
+                      onClick={() => removeModel(m.id, m.name)}
+                      disabled={deleting === m.id}
+                      title="Delete model from disk"
+                      className="rounded-md border border-neutral-800 p-1.5 text-neutral-500 transition-colors hover:border-red-500 hover:text-red-400 disabled:opacity-50"
+                    >
+                      {deleting === m.id ? <IconLoader2 className="h-4 w-4 animate-spin" /> : <IconTrash className="h-4 w-4" />}
+                    </button>
+                  </div>
                 ) : downloading ? (
                   <button
                     onClick={() => cancelDownload(m.id)}

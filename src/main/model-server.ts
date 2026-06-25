@@ -983,6 +983,56 @@ export function startModelServer(port = 7878): void {
     if (url === '/v1/images/generations' && method === 'POST') return void handleImageGeneration(req, res, rid);
     if (url === '/v1/images/edits' && method === 'POST') return void handleImageEdit(req, res, rid);
 
+    // --- Model management (pull / delete / activate / list) — the full headless
+    // repertoire, so the gateway is self-sufficient without the desktop UI. ---
+    if (url.startsWith('/v1/models/') || (url === '/v1/models' && method !== 'GET')) {
+      void (async () => {
+        try {
+          const mm = await import('./models-manager');
+          if (url === '/v1/models/catalog' && method === 'GET') return json(res, 200, await mm.getCatalog());
+          if (url === '/v1/models/installed' && method === 'GET') return json(res, 200, { installed: await mm.listInstalled() });
+          if (url === '/v1/models/active' && method === 'GET') return json(res, 200, mm.getActiveModalities());
+          if (url === '/v1/models/pull/status' && method === 'GET') {
+            const id = (req.url || '').split('?')[1]?.match(/(?:^|&)id=([^&]+)/)?.[1];
+            return json(res, 200, mm.downloadStatus(decodeURIComponent(id || '')) ?? { status: 'idle' });
+          }
+          if (url === '/v1/models/pull' && method === 'POST') {
+            const { id } = await readJson(req);
+            if (!id) return json(res, 400, { error: 'id required' });
+            // Kick off async; clients poll /v1/models/pull/status?id=.
+            void mm.downloadModel(String(id));
+            return json(res, 202, { status: 'started', id, poll: `/v1/models/pull/status?id=${encodeURIComponent(String(id))}` });
+          }
+          if (url === '/v1/models/cancel' && method === 'POST') {
+            const { id } = await readJson(req);
+            return json(res, 200, { cancelled: mm.cancelDownload(String(id)) });
+          }
+          if (url === '/v1/models/activate' && method === 'POST') {
+            const { id, kind } = await readJson(req);
+            if (!id) return json(res, 400, { error: 'id required' });
+            const r = kind && kind !== 'text' && kind !== 'vision'
+              ? mm.setActiveModalChoice(String(kind), String(id))
+              : await mm.setActiveModel(String(id));
+            return json(res, r.success ? 200 : 400, r);
+          }
+          // DELETE /v1/models/{id}  (or POST /v1/models/delete {id})
+          if (method === 'DELETE' && url.startsWith('/v1/models/') && url !== '/v1/models/') {
+            const id = decodeURIComponent(url.slice('/v1/models/'.length));
+            return json(res, 200, await mm.deleteModel(id));
+          }
+          if (url === '/v1/models/delete' && method === 'POST') {
+            const { id } = await readJson(req);
+            if (!id) return json(res, 400, { error: 'id required' });
+            return json(res, 200, await mm.deleteModel(String(id)));
+          }
+          return json(res, 404, { error: 'unknown model endpoint' });
+        } catch (e) {
+          json(res, 500, { error: (e as Error).message });
+        }
+      })();
+      return;
+    }
+
     // Chat (text + image-to-text): buffer so we can inline remote image URLs,
     // which llama-server can't fetch itself, then forward (response still streams).
     if (url === '/v1/chat/completions' && method === 'POST') return void handleChat(req, res, rid);

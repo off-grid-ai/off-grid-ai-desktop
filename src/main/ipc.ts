@@ -172,9 +172,6 @@ function tokenizeQuery(query: string, maxTokens: number = 6): string[] {
 // an in-flight generation and keep whatever was produced so far.
 const streamControllers = new Map<string, AbortController>();
 
-// In-flight model downloads, keyed by modelId, so 'models:cancel-download' can
-// abort the fetch and clean up the partial file.
-const downloadControllers = new Map<string, AbortController>();
 
 async function streamAnswer(
     event: { sender?: { send: (channel: string, payload: unknown) => void } } | undefined,
@@ -1345,180 +1342,29 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
 
   // === OFF GRID MODEL CATALOG (text, vision, image, voice, transcription) ===
 
-  ipcMain.handle('models:catalog', async () => {
-      const { CATALOG, MODEL_KINDS } = await import('@offgrid/models');
-      return { kinds: MODEL_KINDS, models: CATALOG };
-  });
+  // Model management lives in ./models-manager (one source of truth, shared with
+  // the headless gateway HTTP admin endpoints). These IPC handlers are thin
+  // wrappers; the download one adds a renderer progress broadcast.
+  ipcMain.handle('models:catalog', () => import('./models-manager').then((m) => m.getCatalog()));
+  ipcMain.handle('models:installed', () => import('./models-manager').then((m) => m.listInstalled()));
+  ipcMain.handle('models:search', (_, query: string, kind?: string) => import('./models-manager').then((m) => m.searchModels(query, kind)));
 
-  ipcMain.handle('models:installed', async () => {
-      const { CATALOG } = await import('@offgrid/models');
-      const { llm } = await import('./llm');
-      const { isMfluxModelCached } = await import('./mflux');
-      const fs = await import('fs');
-      const path = await import('path');
-      const dir = llm.getModelsDir();
-      return CATALOG.filter((m) => {
-          // MLX/mflux models have no files[] (mflux fetches its own weights) —
-          // check the HF cache. Otherwise an empty files[] would always pass .every().
-          if (m.runtime === 'mflux') return isMfluxModelCached(m.id);
-          return m.files.length > 0 && m.files.every((f) => {
-              try { return fs.statSync(path.join(dir, f.name)).size > 0; } catch { return false; }
-          });
-      }).map((m) => m.id);
-  });
-
-  // Search Hugging Face for GGUF models.
-  ipcMain.handle('models:search', async (_, query: string, kind?: string) => {
-      try {
-          const { searchHuggingFace } = await import('@offgrid/models');
-          const k = kind as undefined | 'text' | 'vision' | 'image' | 'voice' | 'transcription';
-          return await searchHuggingFace(query, { limit: 30, kind: k });
-      } catch (err: any) {
-          console.error('[Models] HF search failed:', err);
-          return [];
-      }
-  });
-
-  // Download a model by id: a curated catalog entry, or any Hugging Face repo.
   ipcMain.handle('models:download', async (_, modelId: string) => {
-      const { CATALOG, resolveHuggingFaceModel } = await import('@offgrid/models');
-      const { llm } = await import('./llm');
-      const fs = await import('fs');
-      const path = await import('path');
-      const entry = CATALOG.find((m) => m.id === modelId) ?? (await resolveHuggingFaceModel(modelId));
-      if (!entry) return { success: false, error: 'unknown model' };
-
-      const dir = llm.getModelsDir();
-      fs.mkdirSync(dir, { recursive: true });
-      const send = (data: Record<string, unknown>) =>
-          BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('model:download-progress', { modelId, ...data }));
-
-      // Allow the renderer to cancel an in-flight download (models:cancel-download).
-      const controller = new AbortController();
-      downloadControllers.set(modelId, controller);
-
-      // MLX/mflux models: fetch weights into the HF cache via the bundled python.
-      if (entry.runtime === 'mflux') {
-          try {
-              const { downloadMfluxModel } = await import('./mflux');
-              await downloadMfluxModel(modelId, (pct) => send({ percent: pct, status: 'downloading' }));
-              send({ percent: 100, status: 'completed' });
-              return { success: true };
-          } catch (err: any) {
-              send({ status: 'failed', error: err.message });
-              return { success: false, error: err.message };
-          }
-      }
-
-      try {
-          for (const file of entry.files) {
-              const dest = path.join(dir, file.name);
-              if (fs.existsSync(dest) && fs.statSync(dest).size > 0) continue;
-              const res = await fetch(file.url, { signal: controller.signal }); // fetch follows HF redirects
-              if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${file.name}`);
-              const total = Number(res.headers.get('content-length') ?? 0);
-              const partPath = `${dest}.part`;
-              const out = fs.createWriteStream(partPath);
-              let written = 0;
-              const reader = res.body.getReader();
-              try {
-                  for (;;) {
-                      const { done, value } = await reader.read();
-                      if (done) break;
-                      out.write(Buffer.from(value));
-                      written += value.length;
-                      send({
-                          currentFile: file.name,
-                          percent: total ? Math.round((written / total) * 100) : 0,
-                          downloadedMB: (written / 1048576).toFixed(1),
-                          totalMB: total ? (total / 1048576).toFixed(1) : '?',
-                      });
-                  }
-              } finally {
-                  out.end();
-                  await new Promise<void>((r) => out.on('finish', () => r()));
-              }
-              // Cancelled mid-file: drop the partial and stop, leaving nothing behind.
-              if (controller.signal.aborted) { fs.rmSync(partPath, { force: true }); break; }
-              fs.renameSync(partPath, dest);
-          }
-          if (controller.signal.aborted) { send({ status: 'cancelled' }); return { success: false, error: 'cancelled' }; }
-          send({ percent: 100, status: 'completed' });
-          return { success: true };
-      } catch (err: any) {
-          // An abort surfaces as an AbortError — report it as cancelled, not failed.
-          if (controller.signal.aborted || err?.name === 'AbortError') {
-              send({ status: 'cancelled' });
-              return { success: false, error: 'cancelled' };
-          }
-          send({ status: 'failed', error: err.message });
-          return { success: false, error: err.message };
-      } finally {
-          downloadControllers.delete(modelId);
-      }
+      const { downloadModel } = await import('./models-manager');
+      return downloadModel(modelId, (p) =>
+          BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('model:download-progress', p)));
   });
+  ipcMain.handle('models:cancel-download', (_evt, modelId: string) =>
+      import('./models-manager').then((m) => m.cancelDownload(modelId)));
+  ipcMain.handle('models:delete', (_, modelId: string) =>
+      import('./models-manager').then((m) => m.deleteModel(modelId)));
 
-  // Cancel an in-flight model download.
-  ipcMain.handle('models:cancel-download', (_evt, modelId: string) => {
-      const c = downloadControllers.get(modelId);
-      if (c) { c.abort(); return true; }
-      return false;
-  });
-
-  // Set the active LLM (text/vision) model: resolve the catalog entry's files
-  // and write active-model.json, then reload the llama-server.
-  ipcMain.handle('models:set-active', async (_, modelId: string) => {
-      const { CATALOG, resolveHuggingFaceModel } = await import('@offgrid/models');
-      const { llm } = await import('./llm');
-      const fs = await import('fs');
-      const path = await import('path');
-      const entry = CATALOG.find((m) => m.id === modelId) ?? (await resolveHuggingFaceModel(modelId));
-      if (!entry) return { success: false, error: 'unknown model' };
-      if (entry.kind !== 'text' && entry.kind !== 'vision') {
-          return { success: false, error: `${entry.kind} models are not loadable as the chat LLM` };
-      }
-      const primary = (entry.files.find((f) => f.role === 'primary') ?? entry.files[0])?.name;
-      const mmproj = entry.files.find((f) => f.role === 'mmproj')?.name ?? null;
-      fs.writeFileSync(
-          path.join(llm.getModelsDir(), 'active-model.json'),
-          JSON.stringify({ id: modelId, primary, mmproj }, null, 2)
-      );
-      llm.reloadModel();
-      return { success: true };
-  });
-
-  ipcMain.handle('models:get-active', async () => {
-      const { llm } = await import('./llm');
-      const fs = await import('fs');
-      const path = await import('path');
-      try {
-          const cfg = JSON.parse(fs.readFileSync(path.join(llm.getModelsDir(), 'active-model.json'), 'utf-8'));
-          return cfg.id ?? null;
-      } catch {
-          return null;
-      }
-  });
-
-  // Per-modality active model for the stateless runtimes (image / speech / STT).
-  // The text/vision chat LLM keeps models:set-active (it reloads llama-server);
-  // these just record the chosen id for the runtime to read on its next call.
-  ipcMain.handle('models:set-active-modal', async (_, kind: string, modelId: string | null) => {
-      const { setActiveModal } = await import('./active-models');
-      if (kind === 'image' || kind === 'speech' || kind === 'transcription') {
-          setActiveModal(kind as 'image' | 'speech' | 'transcription', modelId);
-          return { success: true };
-      }
-      return { success: false, error: 'use models:set-active for the chat LLM (text/vision)' };
-  });
-  ipcMain.handle('models:active-modalities', async () => {
-      const { getAllActiveModals } = await import('./active-models');
-      const { llm } = await import('./llm');
-      const fs = await import('fs');
-      const path = await import('path');
-      let text: string | null = null;
-      try { text = JSON.parse(fs.readFileSync(path.join(llm.getModelsDir(), 'active-model.json'), 'utf-8')).id ?? null; } catch { /* none */ }
-      return { text, ...getAllActiveModals() };
-  });
+  ipcMain.handle('models:set-active', (_, modelId: string) =>
+      import('./models-manager').then((m) => m.setActiveModel(modelId)));
+  ipcMain.handle('models:get-active', () => import('./models-manager').then((m) => m.getActiveModel()));
+  ipcMain.handle('models:set-active-modal', (_, kind: string, modelId: string | null) =>
+      import('./models-manager').then((m) => m.setActiveModalChoice(kind, modelId)));
+  ipcMain.handle('models:active-modalities', () => import('./models-manager').then((m) => m.getActiveModalities()));
 
   // --- Image generation (stable-diffusion.cpp) ----------------------------
   ipcMain.handle('imagegen:status', async () => {
