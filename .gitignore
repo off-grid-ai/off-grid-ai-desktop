@@ -32,3 +32,7 @@ resources/bin/
 # Private pro features — separate repo, added as a git submodule once the remote
 # exists. Ignored for now so the open repo never tracks pro source.
 /pro/
+
+# Vendored @offgrid packages ship their built dist
+!packages/*/dist/
+!packages/*/dist/**

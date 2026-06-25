@@ -58,6 +58,12 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      # node-gyp (better-sqlite3-multiple-ciphers) fails on Python 3.13+; pin 3.12.
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Windows'
+        with:
+          python-version: '3.12'
+
       - name: Install dependencies
         run: npm ci
 
