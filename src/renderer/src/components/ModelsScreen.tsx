@@ -156,6 +156,8 @@ export function ModelsScreen() {
   const [activeKind, setActiveKind] = useState<string>('text');
   const [progress, setProgress] = useState<Record<string, { percent: number; status?: string }>>({});
   const [activeModel, setActiveModel] = useState<string | null>(null);
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [switchError, setSwitchError] = useState<string | null>(null);
 
   useEffect(() => {
     api.getModelCatalog?.().then((c: { kinds: string[]; models: ModelEntry[] }) => {
@@ -191,8 +193,18 @@ export function ModelsScreen() {
   };
 
   const useModel = async (id: string): Promise<void> => {
-    const res = await api.setActiveModel?.(id);
-    if (res?.success) setActiveModel(id);
+    if (switching) return;
+    setSwitchError(null);
+    setSwitching(id);
+    try {
+      const res = await api.setActiveModel?.(id);
+      if (res?.success) setActiveModel(id);
+      else setSwitchError(res?.error ? `Couldn't switch: ${res.error}` : "Couldn't switch model");
+    } catch (e) {
+      setSwitchError(e instanceof Error ? e.message : "Couldn't switch model");
+    } finally {
+      setSwitching(null);
+    }
   };
 
   // Hugging Face search (debounced).
@@ -314,6 +326,12 @@ export function ModelsScreen() {
         <p className="mt-4 text-xs text-neutral-600">
           Curated {(KIND_LABELS[activeKind] ?? activeKind).toLowerCase()} models — verified to run on-device.
         </p>
+      )}
+
+      {switchError && (
+        <div className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {switchError}
+        </div>
       )}
 
       {/* Size buckets — the headline filter: top models that fit your machine. */}
@@ -490,9 +508,10 @@ export function ModelsScreen() {
                     ) : (
                       <button
                         onClick={() => useModel(m.id)}
-                        className="flex items-center gap-1 whitespace-nowrap rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-white transition-colors hover:border-green-500 hover:text-green-500"
+                        disabled={!!switching}
+                        className="flex items-center gap-1 whitespace-nowrap rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-white transition-colors hover:border-green-500 hover:text-green-500 disabled:opacity-50"
                       >
-                        Use
+                        {switching === m.id ? <><IconLoader2 className="h-3.5 w-3.5 animate-spin" /> Switching…</> : 'Use'}
                       </button>
                     )
                   ) : (
