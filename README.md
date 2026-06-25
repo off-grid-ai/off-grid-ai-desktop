@@ -49,11 +49,20 @@ Three things in one app:
 
 ## A look inside
 
-|  |  |
-|---|---|
-| **Chat** — text, vision, reasoning, artifacts, on-device<br><img src="docs/screenshots/02-chat.png" alt="Chat" /> | **Models** — curated catalog + Hugging Face search<br><img src="docs/screenshots/01-models.png" alt="Models catalog" /> |
-| **The Gateway** — one local OpenAI-compatible API<br><img src="docs/screenshots/06-gateway.png" alt="Gateway" /> | **Projects** — group chats, RAG over your docs<br><img src="docs/screenshots/03-projects.png" alt="Projects" /> |
-| **Connectors (MCP)** — add servers, use them in chat<br><img src="docs/screenshots/05-integrations.png" alt="Connectors" /> | **Off Grid Pro** — the sees/remembers/reflects/acts layer<br><img src="docs/screenshots/07-pro-upgrade.png" alt="Pro" /> |
+<table>
+<tr>
+<td width="50%"><strong>Chat</strong> — text, vision, reasoning, artifacts, on-device<br><img src="docs/screenshots/02-chat.png" width="100%" alt="Chat" /></td>
+<td width="50%"><strong>Models</strong> — curated catalog + Hugging Face search<br><img src="docs/screenshots/01-models.png" width="100%" alt="Models catalog" /></td>
+</tr>
+<tr>
+<td width="50%"><strong>The Gateway</strong> — one local OpenAI-compatible API<br><img src="docs/screenshots/06-gateway.png" width="100%" alt="Gateway" /></td>
+<td width="50%"><strong>Projects</strong> — group chats, RAG over your docs<br><img src="docs/screenshots/03-projects.png" width="100%" alt="Projects" /></td>
+</tr>
+<tr>
+<td width="50%"><strong>Connectors (MCP)</strong> — add servers, use them in chat<br><img src="docs/screenshots/05-integrations.png" width="100%" alt="Connectors" /></td>
+<td width="50%"><strong>Off Grid Pro</strong> — the sees/remembers/reflects/acts layer<br><img src="docs/screenshots/07-pro-upgrade.png" width="100%" alt="Pro" /></td>
+</tr>
+</table>
 
 ## Features (free & open source)
 
