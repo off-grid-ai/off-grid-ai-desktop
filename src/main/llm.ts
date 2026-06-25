@@ -33,7 +33,10 @@ export class LLMService {
   // server — capture keeps running but its LLM distillation is deferred until
   // generation finishes (and the LLM warms back up).
   private paused = false;
-  private activeModelFile = path.join(getModelsDir(), "active-model.json");
+  // Resolve lazily: the data dir can be set AFTER this class is constructed
+  // (e.g. an OFFGRID_USER_DATA / standalone-gateway override), so computing the
+  // path at construction would pin it to the wrong location and miss active-model.json.
+  private get activeModelFile(): string { return path.join(getModelsDir(), "active-model.json"); }
   // User-tunable inference settings (persisted). Context window needs a server
   // respawn to take effect (it's a launch arg); temperature is per-request.
   private temperature = 0.7;
@@ -50,7 +53,7 @@ export class LLMService {
   private repeatPenalty: number | undefined;
   private maxTokens = 2048;
   private systemPrompt = '';
-  private settingsFile = path.join(getModelsDir(), "llm-settings.json");
+  private get settingsFile(): string { return path.join(getModelsDir(), "llm-settings.json"); }
 
   constructor() {
     this.resolveModel();
