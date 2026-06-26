@@ -7,6 +7,7 @@ import { getDB, runMigration } from '../database';
 import { llm } from '../llm';
 import { registerHook } from './hookRegistry';
 import { registerToolExtension } from '../tools';
+import { isProEntitled } from '../licensing/license-service';
 
 // What the pro main entry receives. Pro registers IPC handlers + intervals +
 // tool extensions itself, using these core helpers (no core→pro imports).
@@ -19,11 +20,15 @@ export interface ProMainApi {
 }
 
 /** Whether pro features should activate. The pro submodule must be present AND
- *  the user entitled. Licensing is deferred; for now a local override drives it:
- *  set OFFGRID_PRO=0 to simulate a free user even with the pro code bundled.
- *  (Unset / any other value = pro on when the submodule is present.) */
+ *  the user entitled by a valid Keygen license. Local env override (dev/contributor):
+ *    OFFGRID_PRO=0 → force free even with pro code bundled,
+ *    OFFGRID_PRO=1 → force pro on without a license (working on pro features),
+ *    unset/other   → license-gated (the real paid path; see license-service). */
 export function proEnabled(): boolean {
-  return __OFFGRID_PRO__ && process.env.OFFGRID_PRO !== '0';
+  if (!__OFFGRID_PRO__) return false; // free / core build — no pro code bundled
+  if (process.env.OFFGRID_PRO === '0') return false;
+  if (process.env.OFFGRID_PRO === '1') return true;
+  return isProEntitled();
 }
 
 export async function loadProFeaturesMain(): Promise<void> {

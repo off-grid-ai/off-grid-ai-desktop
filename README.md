@@ -18,7 +18,7 @@
   <a href="https://github.com/off-grid-ai/desktop/releases/latest">Download (macOS · Windows)</a> ·
   <a href="docs/FEATURES.md">Features</a> ·
   <a href="https://getoffgridai.co">getoffgridai.co</a> ·
-  <a href="https://getoffgridai.co/early-access/">Pro early access</a>
+  <a href="https://getoffgridai.co/pay">Get Pro</a>
 </p>
 
 <p align="center">
@@ -156,7 +156,7 @@ curl -X POST http://127.0.0.1:7878/v1/models/activate \
   -H 'Content-Type: application/json' -d '{"id":"unsloth/gemma-4-E4B-it-GGUF"}'
 ```
 
-## Off Grid Pro — coming July 2026
+## Off Grid Pro — available now
 
 The free app **runs** models. **Pro** adds the always-on layer that turns your own work
 into private, on-device memory — and an assistant that helps you act on it. Everything is
@@ -175,9 +175,11 @@ explicit opt-in, with a visible recording indicator, and nothing leaves the devi
   as authoritative sources, and a skills framework (trigger → action) — on the roadmap
   toward a proactive secretary and a prospective "Ahead" view of your day.
 
-Pro launches **July 2026** — already paid? You're first in line when it ships. Pro features
-live in a separate **private** package (a `pro/` submodule); the open core never imports it —
-see [Architecture](#architecture--open-core).
+**Pro is live.** Buy a license at **[getoffgridai.co/pay](https://getoffgridai.co/pay)** — you're
+emailed a license key, you install the Pro build, and you activate the key in-app (one license
+covers multiple devices). Pro features live in a separate **private** package; the open core
+never imports it — see [Architecture](#architecture--open-core). The Pro build is license-gated
+at runtime, so it stays locked until a valid key is activated.
 
 <table>
 <tr>
@@ -196,8 +198,7 @@ see [Architecture](#architecture--open-core).
 
 <sub>Pro screens shown with synthetic demo data.</sub>
 
-→ **[Join early access](https://getoffgridai.co/early-access/)** (free) — or
-**[pay now](https://getoffgridai.co/pay)** for lifetime free + first access.
+→ **[Get Pro](https://getoffgridai.co/pay)** — buy a license, install the Pro build, activate your key.
 
 ## Install
 

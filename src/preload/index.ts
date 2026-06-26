@@ -4,11 +4,28 @@ console.log("PRELOAD SCRIPT LOADED");
 
 try {
   contextBridge.exposeInMainWorld('api', {
-    // Open-core: is the pro tier active in this build/session? True only when the
-    // pro submodule was bundled at build time (__OFFGRID_PRO__) AND not disabled
-    // via OFFGRID_PRO=0 (local override). The free build bundles no pro code, so
-    // this is always false there. The renderer uses it to lock/unlock pro tabs.
-    isPro: __OFFGRID_PRO__ && process.env.OFFGRID_PRO !== '0',
+    // Open-core: is the pro tier active in this build/session? The main process
+    // owns the decision (pro code bundled AND a valid Keygen license / env override)
+    // and we read it synchronously at preload time so the renderer can lock/unlock
+    // pro tabs without an async round-trip. See main/license-ipc.ts (`pro:is-enabled`).
+    // Falls back to false if the handler isn't registered (should never happen).
+    isPro: ipcRenderer.sendSync('pro:is-enabled') === true,
+    // License (Keygen) activation + status for the upgrade/settings UI.
+    license: {
+      status: () => ipcRenderer.invoke('license:status'),
+      activate: (key: string) => ipcRenderer.invoke('license:activate', key),
+      listDevices: () => ipcRenderer.invoke('license:list-devices'),
+      deactivate: (machineId: string) => ipcRenderer.invoke('license:deactivate', machineId),
+      clear: () => ipcRenderer.invoke('license:clear'),
+      payUrl: () => ipcRenderer.invoke('license:pay-url'),
+      openPay: () => ipcRenderer.invoke('license:open-pay'),
+      relaunch: () => ipcRenderer.invoke('license:relaunch'),
+      onChanged: (cb: (info: unknown) => void) => {
+        const sub = (_e: unknown, info: unknown): void => cb(info);
+        ipcRenderer.on('license:changed', sub);
+        return () => ipcRenderer.removeListener('license:changed', sub);
+      },
+    },
     // Generic passthrough so pro renderer code can reach pro IPC channels without
     // the core preload bundle enumerating them.
     proInvoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),

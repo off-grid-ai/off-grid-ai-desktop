@@ -12,8 +12,13 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# macOS-only for now: core (free) + pro, both Developer-ID signed + notarized.
+# Pro source lives in the separate private repo off-grid-ai/desktop-pro (gitignored
+# here), cloned into pro/ at build time via the PRO_REPO_TOKEN secret. Windows is
+# parked (bundled llama-server fix owned elsewhere) — re-add a windows-2022 job when
+# it lands.
 jobs:
-  # Bump the version once (on Ubuntu) and push it, so every matrix job builds the
+  # Bump the version once (on Ubuntu) and push it, so every build job builds the
   # same version. [skip ci] keeps it from re-triggering.
   version:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
@@ -45,16 +50,12 @@ jobs:
           # mismatched/duplicate release (the version race that tangled v0.0.20/.21).
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-  # Build + publish per-OS natively (native modules + platform binaries differ).
-  build:
+  # CORE (free) build: OFFGRID_FORCE_CORE=1 makes the build ignore any pro/ that might
+  # be present → __OFFGRID_PRO__ false (in CI pro/ isn't there anyway; belt-and-braces).
+  # Publishes to the default update channel (latest-mac.yml).
+  build-mac-core:
     needs: version
-    strategy:
-      fail-fast: false
-      matrix:
-        # windows-2022 = VS 2022 toolchain; windows-latest ships VS 18 (2026)
-        # which node-gyp 11 can't parse, breaking native-module compiles.
-        os: [macos-latest, windows-2022]
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,34 +70,13 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-
-      # node-gyp (better-sqlite3-multiple-ciphers) fails on Python 3.13+; pin 3.12.
-      - uses: actions/setup-python@v5
-        if: runner.os == 'Windows'
-        with:
-          python-version: '3.12'
-
       - name: Install dependencies
         run: npm ci
-
-      # Windows needs win64 native runner binaries (the repo ships macOS ones).
-      - name: Fetch Windows binaries
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./scripts/fetch-win-binaries.ps1
-
-      # macOS signing identity (no-op if the secret is absent → unsigned build).
-      - name: Import Apple signing certificate
-        if: runner.os == 'macOS' && env.CSC_LINK != ''
+      - name: Build (typecheck + bundle) — CORE
         env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-        run: echo "Signing cert provided via CSC_LINK"
-
-      - name: Build (typecheck + bundle)
+          OFFGRID_FORCE_CORE: '1'
         run: npm run build
-
-      - name: Package & publish (macOS)
-        if: runner.os == 'macOS'
+      - name: Package & publish CORE (signed + notarized)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -109,23 +89,58 @@ jobs:
           # notarytool needs the API key as a file; write it from the secret.
           printf '%s' "$APPLE_API_KEY_CONTENT" > "$RUNNER_TEMP/AuthKey.p8"
           export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
-          npx electron-builder --mac --publish always
+          npx electron-builder --mac \
+            -c.productName="Off Grid AI" \
+            -c.appId="co.getoffgridai.desktop" \
+            -c.dmg.artifactName='OffGrid-core-${version}.${ext}' \
+            --publish always
 
-      - name: Package & publish (Windows)
-        if: runner.os == 'Windows'
+  # PRO build: clone the private pro source into pro/ → __OFFGRID_PRO__ true. Pro is
+  # license-gated at runtime (a leaked DMG is inert without a valid Keygen key), so
+  # publishing it publicly is safe. Publishes to a SEPARATE update channel (pro-mac.yml)
+  # so core and pro auto-updates never feed each other the wrong binary.
+  build-mac-pro:
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          fetch-depth: 0
+          lfs: true
+      - name: Pull LFS binaries
+        run: git lfs pull
+      - name: Clone private pro source into pro/
+        env:
+          PRO_REPO_TOKEN: ${{ secrets.PRO_REPO_TOKEN }}
+        run: |
+          rm -rf pro
+          git clone --depth 1 \
+            "https://x-access-token:${PRO_REPO_TOKEN}@github.com/off-grid-ai/desktop-pro.git" pro
+          rm -rf pro/.git # don't nest a repo inside the build tree
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Build (typecheck + bundle) — PRO
+        run: npm run build
+      - name: Package & publish PRO (signed + notarized, pro channel)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional Windows code signing (no-op if absent → unsigned, SmartScreen warns)
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-        run: npx electron-builder --win --publish always
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-${{ matrix.os }}
-          path: |
-            dist/*.dmg
-            dist/*.exe
-            dist/*.zip
-          if-no-files-found: ignore
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          printf '%s' "$APPLE_API_KEY_CONTENT" > "$RUNNER_TEMP/AuthKey.p8"
+          export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
+          npx electron-builder --mac \
+            -c.productName="Off Grid AI Pro" \
+            -c.appId="co.getoffgridai.desktop.pro" \
+            -c.dmg.artifactName='OffGrid-pro-${version}.${ext}' \
+            -c.publish.channel=pro \
+            --publish always

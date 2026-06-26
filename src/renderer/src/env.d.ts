@@ -13,6 +13,13 @@ interface UserProfile {
   completedAt?: string;
 }
 
+interface ProLicenseInfo {
+  isPro: boolean;
+  tier: 'lifetime' | 'monthly' | null;
+  expiry: string | null;
+  verifiedAt: number;
+}
+
 interface PermissionStatus {
   accessibility: boolean;
   screenRecording: boolean;
@@ -101,6 +108,19 @@ interface IElectronAPI {
   proInvoke?: (channel: string, ...args: unknown[]) => Promise<unknown>
   proOn?: (channel: string, cb: (...a: unknown[]) => void) => () => void
   proOff?: (channel: string) => void
+
+  // Keygen licensing (activation + status for the upgrade/settings UI)
+  license?: {
+    status: () => Promise<ProLicenseInfo>
+    activate: (key: string) => Promise<{ ok: true } | { ok: false; reason: 'invalid' | 'limit' | 'network' }>
+    listDevices: () => Promise<Array<{ id: string; fingerprint: string; platform: string | null; name: string | null; lastSeen: string | null }>>
+    deactivate: (machineId: string) => Promise<boolean>
+    clear: () => Promise<void>
+    payUrl: () => Promise<string>
+    openPay: () => Promise<void>
+    relaunch: () => Promise<void>
+    onChanged: (cb: (info: ProLicenseInfo) => void) => () => void
+  }
   onMasterMemoryProgress?: (callback: (data: { current: number; total: number }) => void) => (() => void)
   getMemories: (limit: number, appName?: string) => Promise<any[]>
   addMemory: (content: string, source?: string) => Promise<{ id: number }>

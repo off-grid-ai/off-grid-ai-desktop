@@ -15,6 +15,8 @@ import { setupRagIPC } from './rag-ipc'
 import { setupMcpIpc } from './mcp-ipc'
 import { startModelServer } from './model-server'
 import { loadProFeaturesMain } from './bootstrap/loadProFeaturesMain'
+import { initLicensing } from './licensing/license-service'
+import { setupLicenseIpc } from './license-ipc'
 import { nativeImage } from 'electron'
 import { purgeLegacyChatImports } from './database'
 
@@ -239,6 +241,11 @@ app.whenReady().then(() => {
 
   // 2. Setup IPC Handlers (core) + the local model gateway
   try {
+     // Licensing first: load the cached Keygen entitlement into memory and register
+     // the SYNC `pro:is-enabled` handler BEFORE createWindow() (line below) so the
+     // preload's sendSync resolves and window.api.isPro reflects the real license.
+     initLicensing();
+     setupLicenseIpc();
      setupIPC();
      setupRagIPC();
      setupMcpIpc(); // basic MCP connectors (management + chat tool extension)

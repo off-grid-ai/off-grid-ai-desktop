@@ -8,7 +8,11 @@ import tailwindcss from '@tailwindcss/vite'
 // builds. When it's missing (free / contributor build) we alias the pro entry
 // points to a null stub so the app builds and runs with core features only.
 // Mirrors mobile/metro.config.js (proExists + extraNodeModules).
-const proExists = existsSync(resolve('pro/package.json'))
+// OFFGRID_FORCE_CORE=1 builds the free/core artifact even when the pro/ submodule
+// is checked out — lets CI (and local) produce BOTH core and pro DMGs from one
+// checkout without removing the submodule.
+const forceCore = process.env.OFFGRID_FORCE_CORE === '1'
+const proExists = !forceCore && existsSync(resolve('pro/package.json'))
 const stub = resolve('src/bootstrap/proStub.ts')
 const proMain = proExists ? resolve('pro/main/index.ts') : stub
 const proRenderer = proExists ? resolve('pro/renderer/index.tsx') : stub
