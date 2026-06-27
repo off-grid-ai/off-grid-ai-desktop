@@ -169,6 +169,10 @@ try {
     getActiveModel: () => ipcRenderer.invoke('models:get-active'),
     setActiveModalModel: (kind: string, modelId: string | null) => ipcRenderer.invoke('models:set-active-modal', kind, modelId),
     getActiveModalities: () => ipcRenderer.invoke('models:active-modalities'),
+    // Local model server control (dev/recovery from the Models page).
+    getServerStatus: () => ipcRenderer.invoke('llm:status'),
+    stopServer: () => ipcRenderer.invoke('llm:stop'),
+    restartServer: () => ipcRenderer.invoke('llm:restart'),
     onModelProgress: (callback: (data: any) => void) => {
       const subscription = (_: any, data: any) => callback(data)
       ipcRenderer.on('model:download-progress', subscription)

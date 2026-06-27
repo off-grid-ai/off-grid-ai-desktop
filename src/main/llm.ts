@@ -599,6 +599,17 @@ export class LLMService {
     }
   }
 
+  /** Dev/recovery: fully stop the server and bring it back up with the active
+   *  model freshly (re)loaded. Clears `paused` so a manual restart always
+   *  recovers, kills any orphan on the port (via init), and resolves only once
+   *  the model is actually loaded (waitForReady). Throws if it fails to come up. */
+  async restart(): Promise<void> {
+    this.paused = false;
+    this.reloadModel();   // kill server, re-read active-model.json, clear initialized
+    await this.init();    // respawn + wait until the model is loaded
+    if (!this.initialized) throw new Error("Server did not come back up — check the model is downloaded");
+  }
+
   /** Pause for image generation: free the server and block respawns until resumed. */
   pause() {
     this.paused = true;
