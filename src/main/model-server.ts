@@ -1011,7 +1011,7 @@ export function startModelServer(port = 7878): void {
             const { id, kind } = await readJson(req);
             if (!id) return json(res, 400, { error: 'id required' });
             const r = kind && kind !== 'text' && kind !== 'vision'
-              ? mm.setActiveModalChoice(String(kind), String(id))
+              ? await mm.setActiveModalChoice(String(kind), String(id))
               : await mm.setActiveModel(String(id));
             return json(res, r.success ? 200 : 400, r);
           }
@@ -1052,8 +1052,10 @@ export function startModelServer(port = 7878): void {
   server.keepAliveTimeout = 60_000;
 
   server.on('error', (e) => console.error('[model-server]', e));
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`[model-server] multimodal gateway at http://127.0.0.1:${port}/v1`);
+  // Bind 0.0.0.0 (all interfaces) so other devices on the LAN — e.g. the Off Grid
+  // mobile app — can reach the gateway, not just localhost.
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`[model-server] multimodal gateway at http://0.0.0.0:${port}/v1 (reachable on your LAN)`);
   });
 }
 
