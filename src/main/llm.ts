@@ -4,7 +4,7 @@ import { callHook } from "./bootstrap/hookRegistry";
 import path from "path";
 import * as fs from "fs";
 import * as http from "http";
-import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit } from "./runtime-env";
+import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit, exe } from "./runtime-env";
 
 export interface LlmSettings {
   temperature?: number;
@@ -176,8 +176,8 @@ export class LLMService {
     // newer architectures like gemma4); fall back to the legacy bin/llama-server.
     const roots = binRoots();
     const candidates = roots.flatMap((r) => [
-        path.join(r, "llama", "llama-server"),
-        path.join(r, "llama-server"),
+        path.join(r, "llama", exe("llama-server")),
+        path.join(r, exe("llama-server")),
     ]);
     const serverPath = candidates.find((p) => fs.existsSync(p)) ?? "";
     if (!serverPath) {
@@ -241,7 +241,13 @@ export class LLMService {
     this.server = spawn(serverPath, args, {
       env: {
         ...process.env,
+        // macOS: rpath for the co-located dylibs. Windows: the loader already
+        // searches the exe's own dir for DLLs, but prepend binDir to PATH so the
+        // ggml/llama DLLs resolve even if that behaviour is restricted.
         DYLD_LIBRARY_PATH: binDir,
+        ...(process.platform === 'win32'
+          ? { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` }
+          : {}),
       },
     });
 

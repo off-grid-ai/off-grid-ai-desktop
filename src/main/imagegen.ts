@@ -10,11 +10,11 @@ import os from 'os';
 import { llm } from './llm';
 import { isMfluxModelId, mfluxAvailable, getMfluxModel, runMflux, cancelMflux, MFLUX_MODELS } from './mflux';
 import { getActiveModal } from './active-models';
-import { binRoots, dataDir, modelsDir } from './runtime-env';
+import { binRoots, dataDir, modelsDir, exe } from './runtime-env';
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {
-    const p = path.join(r, 'sd', 'sd-cli');
+    const p = path.join(r, 'sd', exe('sd-cli'));
     if (fs.existsSync(p)) return p;
   }
   return null;

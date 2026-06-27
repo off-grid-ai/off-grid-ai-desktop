@@ -16,7 +16,7 @@ import path from 'path';
 import type { ExtractionBridges } from '@offgrid/rag';
 import { llm } from '../llm';
 import { getActiveModal } from '../active-models';
-import { binRoots, modelsDir } from '../runtime-env';
+import { binRoots, modelsDir, exe } from '../runtime-env';
 
 const execFileAsync = promisify(execFile);
 
@@ -33,13 +33,13 @@ function existing(paths: string[]): string | null {
 
 /** Resolve the bundled whisper-cli across dev / packaged layouts. */
 export function whisperBin(): string | null {
-  return existing(binRoots().map((r) => path.join(r, 'whisper', 'whisper-cli')));
+  return existing(binRoots().map((r) => path.join(r, 'whisper', exe('whisper-cli'))));
 }
 
 /** Resolve ffmpeg: bundled first, then common system locations. */
 function ffmpegBin(): string | null {
   return existing([
-    ...binRoots().map((r) => path.join(r, 'ffmpeg')),
+    ...binRoots().map((r) => path.join(r, exe('ffmpeg'))),
     '/opt/homebrew/bin/ffmpeg',
     '/usr/local/bin/ffmpeg',
     '/usr/bin/ffmpeg',
