@@ -8,8 +8,66 @@ import {
   FileText,
   File as FileIcon,
   ClipboardText,
+  Gear,
 } from '@phosphor-icons/react';
 import { clip, timeAgo, typeLabel, type ClipItem, type ContentType } from './clipboard/clipboardUtil';
+
+interface ClipSettings { captureEnabled: boolean; maxItems: number; retentionDays: number; captureImages: boolean }
+
+// Self-contained clipboard settings panel: capture on/off, item cap, retention,
+// and whether to keep images. Persists via the clipboard IPC (applied immediately).
+function ClipboardSettingsPanel({ onClose }: { onClose: () => void }): React.JSX.Element {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api = (window as any).api?.clipboard;
+  const [s, setS] = useState<ClipSettings | null>(null);
+  useEffect(() => { api?.getSettings?.().then(setS).catch(() => {}); }, [api]);
+  const set = (patch: Partial<ClipSettings>): void => {
+    setS((prev) => (prev ? { ...prev, ...patch } : prev));
+    api?.setSettings?.(patch);
+  };
+  if (!s) return <div className="p-6 text-sm text-neutral-600">Loading…</div>;
+  const RETENTION = [{ label: 'Forever', days: 0 }, { label: '7 days', days: 7 }, { label: '30 days', days: 30 }, { label: '90 days', days: 90 }];
+  const CAPS = [100, 500, 1000, 5000];
+  const Toggle = ({ on, onClick }: { on: boolean; onClick: () => void }): React.JSX.Element => (
+    <button onClick={onClick} aria-pressed={on} className={`h-6 w-11 rounded-full border transition-colors ${on ? 'border-green-500 bg-green-500/20' : 'border-neutral-700 bg-neutral-900'}`}>
+      <span className={`block h-4 w-4 rounded-full bg-neutral-300 transition-transform ${on ? 'translate-x-5' : 'translate-x-1'}`} />
+    </button>
+  );
+  return (
+    <div className="flex h-full flex-col bg-neutral-950 font-mono text-neutral-200">
+      <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
+        <h1 className="text-sm font-semibold tracking-wide text-white">Clipboard settings</h1>
+        <button onClick={onClose} className="rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300 transition-colors hover:text-white">Done</button>
+      </div>
+      <div className="flex-1 space-y-6 overflow-y-auto p-5">
+        <div className="flex items-center justify-between">
+          <div><div className="text-sm text-white">Capture clipboard</div><div className="text-[11px] text-neutral-500">Save what you copy to local history.</div></div>
+          <Toggle on={s.captureEnabled} onClick={() => set({ captureEnabled: !s.captureEnabled })} />
+        </div>
+        <div className="flex items-center justify-between">
+          <div><div className="text-sm text-white">Capture images</div><div className="text-[11px] text-neutral-500">Keep copied images (uses more disk).</div></div>
+          <Toggle on={s.captureImages} onClick={() => set({ captureImages: !s.captureImages })} />
+        </div>
+        <div>
+          <div className="mb-2 text-sm text-white">Keep history for</div>
+          <div className="flex flex-wrap gap-1.5">
+            {RETENTION.map((r) => (
+              <button key={r.days} onClick={() => set({ retentionDays: r.days })} className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${s.retentionDays === r.days ? 'border-green-500 text-green-500' : 'border-neutral-800 text-neutral-400 hover:border-neutral-700'}`}>{r.label}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-sm text-white">Maximum items <span className="text-neutral-500">({s.maxItems})</span></div>
+          <div className="flex flex-wrap gap-1.5">
+            {CAPS.map((c) => (
+              <button key={c} onClick={() => set({ maxItems: c })} className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${s.maxItems === c ? 'border-green-500 text-green-500' : 'border-neutral-800 text-neutral-400 hover:border-neutral-700'}`}>{c.toLocaleString()}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function TypeIcon({ type, className }: { type: ContentType; className?: string }): React.JSX.Element {
   if (type === 'image') return <ImageIcon className={className} />;
@@ -25,6 +83,7 @@ export function ClipboardScreen(): React.JSX.Element {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   const load = useCallback(async () => {
     const api = clip();
@@ -117,6 +176,8 @@ export function ClipboardScreen(): React.JSX.Element {
     el?.scrollIntoView({ block: 'nearest' });
   }, [selectedId]);
 
+  if (showSettings) return <ClipboardSettingsPanel onClose={() => setShowSettings(false)} />;
+
   return (
     <div className="flex h-full flex-col bg-neutral-950 text-neutral-200" onKeyDown={onKeyDown} tabIndex={-1}>
       {/* Header */}
@@ -130,13 +191,22 @@ export function ClipboardScreen(): React.JSX.Element {
             <kbd className="rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 font-mono text-[10px] text-neutral-300">⌘⇧C</kbd>
           </span>
         </div>
-        <button
-          onClick={clearAll}
-          disabled={items.length === 0}
-          className="flex items-center gap-1.5 rounded border border-neutral-800 px-2.5 py-1 text-xs text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200 disabled:opacity-40"
-        >
-          <Trash className="h-3.5 w-3.5" /> Clear all
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSettings(true)}
+            aria-label="Clipboard settings"
+            className="flex items-center gap-1.5 rounded border border-neutral-800 px-2.5 py-1 text-xs text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200"
+          >
+            <Gear className="h-3.5 w-3.5" /> Settings
+          </button>
+          <button
+            onClick={clearAll}
+            disabled={items.length === 0}
+            className="flex items-center gap-1.5 rounded border border-neutral-800 px-2.5 py-1 text-xs text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-200 disabled:opacity-40"
+          >
+            <Trash className="h-3.5 w-3.5" /> Clear all
+          </button>
+        </div>
       </div>
 
       {/* Search */}

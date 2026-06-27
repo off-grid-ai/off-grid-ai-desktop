@@ -46,6 +46,8 @@ try {
       clear: () => ipcRenderer.invoke('clipboard:clear'),
       count: () => ipcRenderer.invoke('clipboard:count'),
       hidePopup: () => ipcRenderer.invoke('clipboard:hide-popup'),
+      getSettings: () => ipcRenderer.invoke('clipboard:get-settings'),
+      setSettings: (s: Record<string, unknown>) => ipcRenderer.invoke('clipboard:set-settings', s),
       onChanged: (cb: () => void) => {
         const sub = (): void => cb();
         ipcRenderer.on('clipboard:changed', sub);
@@ -415,6 +417,7 @@ try {
     meetingGetState: () => ipcRenderer.invoke('meeting:get-state'),
     meetingList: () => ipcRenderer.invoke('meeting:list'),
     meetingDelete: (id: number) => ipcRenderer.invoke('meeting:delete', id),
+    meetingPlayablePath: (p: string) => ipcRenderer.invoke('meeting:playable-path', p),
     onMeetingDetected: (cb: (platform: string) => void) => {
       const sub = (_e: unknown, platform: string): void => cb(platform);
       ipcRenderer.on('meeting:detected', sub);
