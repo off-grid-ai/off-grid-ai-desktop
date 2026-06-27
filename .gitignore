@@ -42,3 +42,4 @@ resources/bin/mflux/
 # Local env (telemetry/keys) — never commit
 .env
 .env.local
+test-results/
