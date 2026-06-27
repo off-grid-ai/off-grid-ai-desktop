@@ -148,6 +148,22 @@ export class LLMService {
     return getModelsDir();
   }
 
+  /** The active chat/vision model's id (catalog id if known, else the weight
+   *  filename) and whether it has a vision projector — so the gateway's
+   *  /v1/models can list the text model from disk even when the server hasn't
+   *  loaded it yet (otherwise an idle/headless gateway reports no chat model).
+   *  Returns null when no model is downloaded. */
+  activeModelInfo(): { id: string; vision: boolean } | null {
+    this.resolveModel();
+    if (!fs.existsSync(this.modelPath)) return null;
+    let id = path.basename(this.modelPath);
+    try {
+      const cfg = JSON.parse(fs.readFileSync(this.activeModelFile, "utf-8"));
+      if (cfg?.id) id = cfg.id;
+    } catch { /* fall back to the filename */ }
+    return { id, vision: !!this.mmProjPath && fs.existsSync(this.mmProjPath) };
+  }
+
   async init(): Promise<void> {
     if (this.paused) return; // don't respawn while paused for image generation
     if (this.initialized) return;
@@ -218,25 +234,13 @@ export class LLMService {
     }
     // ALSO kill an ORPHANED server from a previous app process — when the app
     // restarts, the old llama-server keeps holding the port, so a new spawn can't
-    // bind and config changes (ctx size, model) silently never take effect. Find
-    // whatever owns the port and kill it.
-    try {
-      const pids = execSync(`lsof -ti tcp:${this.port}`, { encoding: "utf-8" }).trim().split("\n").filter(Boolean);
-      let killed = 0;
-      for (const pid of pids) {
-        // ONLY kill a process we recognize as our own llama-server. The port is
-        // ours by convention, not by reservation — blindly SIGKILLing whatever
-        // holds it would take down an unrelated app that happened to bind it.
-        let cmd = "";
-        try { cmd = execSync(`ps -p ${pid} -o command=`, { encoding: "utf-8" }).trim(); } catch { continue; /* already gone */ }
-        if (!/llama-server/i.test(cmd)) {
-          console.warn(`[LLMService] port ${this.port} held by non-llama process ${pid} (${cmd.slice(0, 80)}) — leaving it alone`);
-          continue;
-        }
-        try { process.kill(Number(pid), "SIGKILL"); killed++; console.log(`[LLMService] killed orphaned llama-server ${pid} on port ${this.port}`); } catch { /* gone */ }
-      }
-      if (killed) await new Promise((r) => setTimeout(r, 400)); // let the port free
-    } catch { /* nothing on the port */ }
+    // bind and config changes (ctx size, model) silently never take effect. Worse,
+    // waitForReady would then talk to the ORPHAN (which may serve no/stale model),
+    // marking us "ready" with an empty /v1/models. Find whatever owns the port
+    // and kill it first.
+    if (this.killOrphansOnPort(this.port) > 0) {
+      await new Promise((r) => setTimeout(r, 400)); // let the port free
+    }
 
     this.server = spawn(serverPath, args, {
       env: {
@@ -271,16 +275,75 @@ export class LLMService {
     }
   }
 
+  // Kill an orphaned llama-server still holding our port (from a crashed/previous
+  // app process). ONLY kills a process we recognize as our own llama-server — the
+  // port is ours by convention, not reservation, so we never SIGKILL an unrelated
+  // app that happened to bind it. Cross-platform: lsof/ps on macOS+Linux,
+  // netstat/tasklist/taskkill on Windows. Returns how many we killed.
+  private killOrphansOnPort(port: number): number {
+    let killed = 0;
+    try {
+      if (process.platform === "win32") {
+        // "  TCP    127.0.0.1:8439   0.0.0.0:0   LISTENING   12345"
+        const out = execSync("netstat -ano -p tcp", { encoding: "utf-8" });
+        const pids = new Set<string>();
+        for (const line of out.split(/\r?\n/)) {
+          const m = line.match(/:(\d+)\s+\S+\s+LISTENING\s+(\d+)/i);
+          if (m && m[1] === String(port)) pids.add(m[2]);
+        }
+        for (const pid of pids) {
+          let img = "";
+          try { img = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: "utf-8" }); } catch { continue; /* gone */ }
+          if (!/llama-server/i.test(img)) {
+            console.warn(`[LLMService] port ${port} held by non-llama PID ${pid} — leaving it alone`);
+            continue;
+          }
+          try { execSync(`taskkill /PID ${pid} /F /T`, { stdio: "ignore" }); killed++; console.log(`[LLMService] killed orphaned llama-server.exe ${pid} on port ${port}`); } catch { /* gone */ }
+        }
+      } else {
+        const pids = execSync(`lsof -ti tcp:${port}`, { encoding: "utf-8" }).trim().split("\n").filter(Boolean);
+        for (const pid of pids) {
+          let cmd = "";
+          try { cmd = execSync(`ps -p ${pid} -o command=`, { encoding: "utf-8" }).trim(); } catch { continue; /* already gone */ }
+          if (!/llama-server/i.test(cmd)) {
+            console.warn(`[LLMService] port ${port} held by non-llama process ${pid} (${cmd.slice(0, 80)}) — leaving it alone`);
+            continue;
+          }
+          try { process.kill(Number(pid), "SIGKILL"); killed++; console.log(`[LLMService] killed orphaned llama-server ${pid} on port ${port}`); } catch { /* gone */ }
+        }
+      }
+    } catch { /* nothing on the port */ }
+    return killed;
+  }
+
+  // Ready = the model is actually LOADED, not merely that the server answers.
+  // /health can report OK before the weights finish loading, and an orphan server
+  // on this port would answer /health while serving NO model — which surfaced as
+  // a 200 server with an empty /v1/models. So we additionally require /v1/models
+  // to list a model before declaring ready, and we bail immediately if the server
+  // process exits (a model that fails to load takes the process down with it).
   private async waitForReady(timeout = 60000): Promise<void> {
     const start = Date.now();
+    let healthOk = false;
     while (Date.now() - start < timeout) {
+      // The server died during startup (e.g. model load failure) — stop waiting.
+      if (!this.server) throw new Error("llama-server exited during startup — model failed to load");
       try {
-        const res = await fetch(`http://127.0.0.1:${this.port}/health`);
-        if (res.ok) return;
-      } catch {}
+        if (!healthOk) {
+          const res = await fetch(`http://127.0.0.1:${this.port}/health`);
+          healthOk = res.ok;
+        }
+        if (healthOk) {
+          const res = await fetch(`http://127.0.0.1:${this.port}/v1/models`);
+          if (res.ok) {
+            const body = await res.json().catch(() => null);
+            if (Array.isArray(body?.data) && body.data.length > 0) return;
+          }
+        }
+      } catch { /* not up yet */ }
       await new Promise((r) => setTimeout(r, 500));
     }
-    throw new Error("Server failed to start");
+    throw new Error("Server started but no model was loaded within the timeout");
   }
 
   // Use Node http module instead of fetch to avoid undici's headersTimeout (300s)

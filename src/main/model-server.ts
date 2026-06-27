@@ -28,6 +28,7 @@ import { randomUUID } from 'crypto';
 import { desktopExtraction } from './rag/extractors';
 import * as tts from './tts';
 import { generateImage, imageGenStatus, activeImageModel, type ImageGenParams } from './imagegen';
+import { llm } from './llm';
 import { whisperModel } from './rag/extractors';
 import { getActiveModal } from './active-models';
 import { embeddings } from './embeddings';
@@ -554,10 +555,20 @@ async function handleModelsList(res: http.ServerResponse): Promise<void> {
   const upstream = await fetchUpstreamModels();
   const upData = Array.isArray(upstream.data) ? (upstream.data as Record<string, unknown>[]) : [];
   // Tag the LLM entries chat vs vision from their advertised capabilities.
-  const text: Record<string, unknown>[] = upData.map((m) => {
+  let text: Record<string, unknown>[] = upData.map((m) => {
     const caps = Array.isArray(m.capabilities) ? (m.capabilities as string[]) : [];
     return { ...m, kind: caps.includes('multimodal') || caps.includes('vision') ? 'vision' : 'chat' };
   });
+  // Fall back to the on-disk active model when the upstream llama-server hasn't
+  // loaded one yet (idle app, headless gateway, or a server that came up without
+  // a model). Without this, /v1/models reports an empty chat model even though one
+  // is installed and would load on the next request.
+  if (text.length === 0) {
+    const info = llm.activeModelInfo();
+    if (info) {
+      text = [{ id: info.id, object: 'model', created: now, owned_by: 'off-grid', kind: info.vision ? 'vision' : 'chat' }];
+    }
+  }
 
   const tag = (id: string, kind: string, extra: Record<string, unknown> = {}): Record<string, unknown> =>
     ({ id, object: 'model', created: now, owned_by: 'off-grid', kind, ...extra });
