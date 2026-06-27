@@ -95,9 +95,14 @@ function serveFile(req: http.IncomingMessage, res: http.ServerResponse, filePath
 export function startMediaServer(): void {
   if (server) return;
   token = randomUUID().replace(/-/g, '');
-  // Canonicalize the root once at startup so symlink-resolved request paths can be
-  // compared against it (fall back to a plain resolve if realpath fails).
-  allowedRoots = [canonical(app.getPath('userData')) ?? path.resolve(app.getPath('userData'))];
+  // Allowlist ONLY the media sub-dirs, not the whole userData — otherwise the
+  // loopback server could serve sensitive app state (memories.db, secrets, license
+  // cache, models). Canonicalize each once at startup so symlink-resolved request
+  // paths compare correctly (fall back to a plain resolve if the dir doesn't exist).
+  const ud = app.getPath('userData');
+  allowedRoots = ['meetings', 'uploads', 'captures']
+    .map((d) => path.join(ud, d))
+    .map((d) => canonical(d) ?? path.resolve(d));
 
   server = http.createServer((req, res) => {
     const url = req.url || '/';
