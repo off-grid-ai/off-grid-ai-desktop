@@ -61,3 +61,27 @@ export async function vectorCount(): Promise<number> {
   const tbl = await table();
   return tbl ? tbl.countRows() : 0;
 }
+
+/** Delete only the rows of the given kinds (screen | meeting | memory | entity |
+ *  fact). Used by data-privacy "clear category" so wiping one category doesn't
+ *  nuke the shared dataset — and operates through the live table handle so the
+ *  cached connection stays valid (no stale/dangling handle). */
+export async function deleteByKinds(kinds: string[]): Promise<void> {
+  if (!kinds.length) return;
+  const tbl = await table();
+  if (!tbl) return;
+  const list = kinds.map((k) => `'${String(k).replace(/'/g, "''")}'`).join(', ');
+  try {
+    await tbl.delete(`kind IN (${list})`);
+  } catch (e) {
+    console.error('[vectors] deleteByKinds failed', e);
+  }
+}
+
+/** Drop the cached connection + table handles. Call after the lancedb dir is
+ *  removed out-of-band (e.g. delete-all), so the next access reopens cleanly
+ *  instead of using a dangling handle. */
+export function resetVectors(): void {
+  connPromise = null;
+  tablePromise = null;
+}

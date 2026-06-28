@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
 import { getDB } from './database';
+import { deleteByKinds, resetVectors } from './vectors';
 
 export interface DataCategory {
   id: 'chats' | 'memories' | 'captures' | 'meetings' | 'images';
@@ -103,7 +104,7 @@ export function getDataSummary(): DataCategory[] {
 
 /** Delete one category of data (SQL rows + its directories). For captures/meetings,
  *  pass olderThanDays to delete only entries older than N days (retention cleanup). */
-export function clearCategory(id: DataCategory['id'], olderThanDays?: number): { success: boolean } {
+export async function clearCategory(id: DataCategory['id'], olderThanDays?: number): Promise<{ success: boolean }> {
   switch (id) {
     case 'chats':
       clearTables(...CHAT_TABLES);
@@ -111,15 +112,26 @@ export function clearCategory(id: DataCategory['id'], olderThanDays?: number): {
       break;
     case 'memories':
       clearTables(...MEMORY_TABLES);
-      clearDirs(ud('lancedb'), ud('entity-photos'));
+      clearDirs(ud('entity-photos'));
+      // Delete ONLY the memory-side vectors (not the shared lancedb dir — that
+      // would wipe capture/meeting/chat vectors and dangle the live handle).
+      await deleteByKinds(['memory', 'entity', 'fact']);
       break;
     case 'captures':
-      if (olderThanDays && olderThanDays > 0) clearDirsOlderThan(olderThanDays, ud('captures'));
-      else clearDirs(ud('captures'));
+      if (olderThanDays && olderThanDays > 0) {
+        clearDirsOlderThan(olderThanDays, ud('captures'));
+      } else {
+        clearDirs(ud('captures'));
+        await deleteByKinds(['screen']); // full clear → drop capture vectors too
+      }
       break;
     case 'meetings':
-      if (olderThanDays && olderThanDays > 0) clearDirsOlderThan(olderThanDays, ud('meetings'));
-      else clearDirs(ud('meetings'));
+      if (olderThanDays && olderThanDays > 0) {
+        clearDirsOlderThan(olderThanDays, ud('meetings'));
+      } else {
+        clearDirs(ud('meetings'));
+        await deleteByKinds(['meeting']); // full clear → drop meeting vectors too
+      }
       pruneDanglingMeetings(); // drop rows whose media we just deleted (no ghosts)
       break;
     case 'images':
@@ -138,6 +150,7 @@ export function deleteAllData(): { success: boolean } {
     ud('generated-images'), ud('artifacts-library'), ud('style-thumbs'),
     ud('lancedb'), ud('entity-photos'),
   );
+  resetVectors(); // the lancedb dir is gone — drop cached handles so it reopens clean
   pruneDanglingMeetings(); // media is gone now → drop all meeting rows (no ghosts)
   return { success: true };
 }
