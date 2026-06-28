@@ -23,6 +23,7 @@ import { NotificationProvider, useNotifications } from './hooks/useNotifications
 import { ReprocessingProvider, useReprocessing } from './hooks/useReprocessing';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { GridBackdrop } from './components/ui/grid-backdrop';
+import { StarfieldBackdrop } from './components/ui/starfield-backdrop';
 import { Sidebar, SidebarBody } from './components/ui/sidebar';
 import { NavThemeToggle } from './components/ThemeToggle';
 import { motion, AnimatePresence } from 'motion/react';
@@ -562,8 +563,10 @@ function AppContent() {
           )}
         </button>
       )}
-      {/* Background — flat Off Grid terminal grid (theme-aware) */}
+      {/* Background — flat Off Grid terminal grid (theme-aware), with a dark-mode
+          starfield + periodic shooting star layered on top. */}
       <GridBackdrop className="z-0" />
+      <StarfieldBackdrop className="z-0" />
 
       <div className="flex h-full relative z-10">
         {/* Aceternity Sidebar */}

@@ -328,3 +328,50 @@ code {
     display: none;
   }
 }
+/* Starry-night backdrop (dark mode only): a periodic emerald shooting star that
+   streaks across the upper area, layered over the terminal grid. Static star dots
+   live on StarfieldBackdrop; this is just the animation. Pure CSS, no deps. */
+@keyframes og-shooting-star {
+  0%   { transform: translate3d(0, 0, 0) rotate(32deg); opacity: 0; }
+  4%   { opacity: 1; }
+  16%  { opacity: 1; }
+  20%  { transform: translate3d(900px, 560px, 0) rotate(32deg); opacity: 0; }
+  100% { transform: translate3d(900px, 560px, 0) rotate(32deg); opacity: 0; }
+}
+.og-shooting-star {
+  position: absolute;
+  top: 7%;
+  left: 10%;
+  width: 88px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(52, 211, 153, 0.9), rgba(52, 211, 153, 0));
+  filter: drop-shadow(0 0 6px rgba(52, 211, 153, 0.45));
+  opacity: 0;
+  animation: og-shooting-star 12s ease-in 4s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .og-shooting-star { animation: none; display: none; }
+}
+
+/* Static star field — themeable so it reads in BOTH modes: dark dots on light,
+   bright dots on dark. Tiled radial-gradients, repeated across the viewport. */
+.og-starfield {
+  background-image:
+    radial-gradient(1.5px 1.5px at 30px 40px, rgba(0,0,0,0.34), transparent),
+    radial-gradient(1px 1px at 110px 90px, rgba(0,0,0,0.24), transparent),
+    radial-gradient(1px 1px at 170px 28px, rgba(0,0,0,0.30), transparent),
+    radial-gradient(2px 2px at 70px 158px, rgba(0,0,0,0.30), transparent),
+    radial-gradient(1px 1px at 150px 192px, rgba(0,0,0,0.22), transparent),
+    radial-gradient(1px 1px at 205px 120px, rgba(0,0,0,0.26), transparent);
+  background-size: 220px 220px;
+  background-repeat: repeat;
+}
+[data-theme="dark"] .og-starfield {
+  background-image:
+    radial-gradient(1.5px 1.5px at 30px 40px, rgba(255,255,255,0.95), transparent),
+    radial-gradient(1px 1px at 110px 90px, rgba(255,255,255,0.70), transparent),
+    radial-gradient(1px 1px at 170px 28px, rgba(255,255,255,0.85), transparent),
+    radial-gradient(2px 2px at 70px 158px, rgba(255,255,255,0.90), transparent),
+    radial-gradient(1px 1px at 150px 192px, rgba(255,255,255,0.60), transparent),
+    radial-gradient(1px 1px at 205px 120px, rgba(255,255,255,0.78), transparent);
+}
