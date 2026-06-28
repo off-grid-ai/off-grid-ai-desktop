@@ -63,7 +63,7 @@ for (const [label, file] of [
     try {
       const box = win.getByPlaceholder(/Search everything/i);
       await box.click({ timeout: 4000 });
-      await box.fill('Gateway');
+      await box.fill('release notes');
       await wait(2500); // let FTS + semantic results land
     } catch (e) { console.error('search type', e.message); }
   }
