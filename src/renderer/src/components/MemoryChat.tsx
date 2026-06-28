@@ -795,7 +795,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       // plus (when Connectors is on) MCP connector tools — reads run inline, writes
       // are routed to the approval queue.
       if ((toolsOn || connectorsOn) && !activeProjectId) {
-        const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn, conversationId: convId });
+        const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn, conversationId: convId, images: imagePaths });
         // Persist the citation sources (and tool calls) so they survive a reload.
         const toolCtx = (tr?.unified?.length || tr?.toolCalls?.length)
           ? { unified: tr?.unified ?? [], toolCalls: (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result })) }

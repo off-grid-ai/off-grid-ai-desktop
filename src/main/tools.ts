@@ -6,8 +6,10 @@
 // and loop until it answers. Built-in tools only (no network) for now — web
 // search + MCP connectors plug in here later.
 
+import fs from 'fs';
 import { llm } from './llm';
 import { getSetting, saveSetting } from './database';
+import { buildUserContent } from './tool-content';
 
 const PORT = 8439;
 
@@ -250,7 +252,7 @@ export type UnifiedSource = { key: string; kind: string; refId: number; title: s
 export async function toolChat(
   query: string,
   history: { role: string; content: string }[] = [],
-  opts: { connectors?: boolean; conversationId?: string } = {},
+  opts: { connectors?: boolean; conversationId?: string; images?: string[] } = {},
 ): Promise<{ answer: string; toolCalls: ToolCall[]; unified: UnifiedSource[] }> {
   await llm.init(); // respects pause; ensures the server is up
 
@@ -274,11 +276,21 @@ export async function toolChat(
   const sys = 'You are Off Grid, a private on-device assistant. Use the provided tools when they help answer precisely. Keep answers concise.'
     + (hints.length ? ' ' + hints.join(' ') : '');
 
+  // Attached images ride on the current user turn so the vision model can read
+  // them even in tools/connectors mode (otherwise they were silently dropped).
+  const imageDataUrls: string[] = [];
+  for (const p of opts.images ?? []) {
+    try {
+      const base64 = fs.readFileSync(p).toString('base64');
+      const mime = p.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+      imageDataUrls.push(`data:${mime};base64,${base64}`);
+    } catch (e) { console.error('[tools] failed to read image', p, e); }
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const messages: any[] = [
     { role: 'system', content: sys },
     ...history.slice(-10).map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user', content: query },
+    { role: 'user', content: buildUserContent(query, imageDataUrls) },
   ];
   const toolCalls: ToolCall[] = [];
   const unified: UnifiedSource[] = [];
