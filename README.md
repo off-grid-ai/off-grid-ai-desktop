@@ -176,6 +176,8 @@ explicit opt-in, with a visible recording indicator, and nothing leaves the devi
 - **Reflects** — mind-share, balance, context-switching, and Day/Week trends.
 - **Meetings** — records **Google Meet + Zoom** (screen + system audio + mic), transcribes
   locally with whisper, and folds an LLM title/summary/attendees into your timeline.
+- **Clipboard** — a private clipboard manager: searchable history of everything you copy,
+  with image, PDF, and file previews, a quick-paste popup, all stored on-device.
 - **Acts (with approval)** — action items detected from your communication, an
   approval queue + audit log (nothing executes without a logged approval), MCP connectors
   as authoritative sources, and a skills framework (trigger → action) — on the roadmap
