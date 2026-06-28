@@ -207,6 +207,7 @@ interface IElectronAPI {
   onNewAction: (callback: (data: { actionId: number; text: string; due: string | null; entityName: string | null; sourceApp: string }) => void) => () => void
   onReprocessProgress: (callback: (data: ReprocessProgress) => void) => () => void
   onUpdateDownloaded: (callback: (data: { version: string }) => void) => () => void
+  getStagedUpdateVersion: () => Promise<string | null>
   installUpdate: () => Promise<void>
 
   // Permission APIs

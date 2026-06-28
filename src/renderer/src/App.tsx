@@ -379,7 +379,11 @@ function AppContent() {
     }
 
     // A new version finished downloading and is staged — show the restart banner.
+    // Seed from main too: on macOS the app can keep running with no windows, so a
+    // download that finished before this window existed would otherwise be missed
+    // (the event only reaches windows open at download time).
     if (window.api?.onUpdateDownloaded) {
+      window.api.getStagedUpdateVersion?.().then((v) => { if (v) setUpdateReady(v); }).catch(() => {});
       const unsubscribe = window.api.onUpdateDownloaded((data) => {
         setUpdateReady(data.version);
       });
@@ -582,9 +586,20 @@ function AppContent() {
       {updateReady && (
         <div className="absolute right-4 top-4 z-50 flex items-center gap-3 rounded-md border border-green-500/40 bg-neutral-900/95 px-3.5 py-2 font-mono text-xs text-neutral-200 shadow-xl backdrop-blur">
           <IconDownload className="h-4 w-4 text-green-500" />
-          <span>Off Grid AI {updateReady} is ready</span>
+          <span>Update {updateReady} is ready</span>
           <button
-            onClick={() => { setInstalling(true); window.api?.installUpdate?.(); }}
+            onClick={async () => {
+              if (!window.api?.installUpdate) return;
+              setInstalling(true);
+              try {
+                await window.api.installUpdate();
+              } catch {
+                // quitAndInstall normally never returns (the app exits). If it
+                // rejects, unlock the button so the user can retry.
+                setInstalling(false);
+                addNotification({ type: 'info', title: 'Update restart failed', message: 'Try again from the update banner.' });
+              }
+            }}
             disabled={installing}
             className="flex items-center gap-1.5 rounded-sm border border-green-500/50 bg-green-500/10 px-2.5 py-1 text-green-400 hover:bg-green-500/20 disabled:opacity-60"
           >

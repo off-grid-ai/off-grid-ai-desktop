@@ -33,6 +33,14 @@ describe('auto-update: explicit install path', () => {
     expect(updaterSrc).toMatch(/send\(\s*['"]update:downloaded['"]/);
   });
 
+  it('persists the staged version + exposes a getter (macOS zero-window case)', () => {
+    // The event only reaches windows open at download time; a window created
+    // later must still be able to ask whether an update is already staged.
+    expect(updaterSrc).toMatch(/stagedVersion\s*=\s*i\.version/);
+    expect(updaterSrc).toMatch(/ipcMain\.handle\(\s*['"]update:staged-version['"]/);
+    expect(preloadSrc).toMatch(/getStagedUpdateVersion:\s*\(\)\s*=>\s*ipcRenderer\.invoke\(\s*['"]update:staged-version['"]/);
+  });
+
   it('preload bridges installUpdate() to the update:install channel', () => {
     expect(preloadSrc).toMatch(/installUpdate:\s*\(\)\s*=>\s*ipcRenderer\.invoke\(\s*['"]update:install['"]/);
   });
