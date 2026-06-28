@@ -103,3 +103,15 @@ jobs:
           npx electron-builder --mac \
             -c.dmg.artifactName='OffGrid-${version}.${ext}' \
             --publish always
+      - name: Migrate legacy Pro update channel (publish pro-mac.yml)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          # Older Pro builds poll a SEPARATE channel (pro-mac.yml); the single build
+          # now publishes only the default latest-mac.yml. Upload a copy as
+          # pro-mac.yml (identical - same signed zip + version) so those installs see
+          # this release, auto-update, and land on the default channel. After that
+          # they follow latest-mac.yml. One-time bridge so no Pro user is orphaned.
+          cp dist/latest-mac.yml dist/pro-mac.yml
+          gh release upload "v$VERSION" dist/pro-mac.yml --clobber
