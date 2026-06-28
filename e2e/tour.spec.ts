@@ -52,20 +52,30 @@ test('Models: merged tab + use-cases + import', async () => {
 
 test('Settings: setup, resource modes, storage, data & privacy all render', async () => {
   await nav('Settings');
+  // Sections are collapsed accordions — the titles (headings) are always visible;
+  // expand a card to reveal its body before asserting the body content.
   await expect(page.getByRole('heading', { name: 'Setup & health' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Data & privacy' })).toBeVisible();
+
+  await page.getByRole('button', { name: /Setup & health/ }).click(); // expand
   await expect(page.getByText('Configure it for me')).toBeVisible();
   // The resource-mode selector now lives inside the Configure card.
   for (const m of ['Conservative', 'Balanced', 'Extreme']) {
     // The mode button's accessible name includes its description, so match by substring.
     await expect(page.getByRole('button', { name: m }).first()).toBeVisible();
   }
-  await expect(page.getByRole('heading', { name: 'Data & privacy' })).toBeVisible();
+
+  await page.getByRole('button', { name: /Data & privacy/ }).click(); // expand
   await expect(page.getByText('Screen captures')).toBeVisible();
   await expect(page.getByText('Your data on this device')).toBeVisible();
 });
 
 test('Resource mode is selectable (Conservative)', async () => {
+  // Ensure the Setup & health accordion is expanded (the modes live in its body).
   const cons = page.getByRole('button', { name: 'Conservative' }).first();
+  if (!(await cons.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: /Setup & health/ }).click();
+  }
   await cons.click();
   await expect(cons).toHaveAttribute('aria-pressed', 'true');
 });
