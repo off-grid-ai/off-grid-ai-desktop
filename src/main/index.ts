@@ -82,7 +82,8 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false, // REQUIRED for IPC
       contextIsolation: true,
-      plugins: true // Chromium's built-in PDF viewer (chat attachment viewer) needs this
+      plugins: true, // Chromium's built-in PDF viewer (chat attachment viewer) needs this
+      devTools: is.dev // no inspector in the packaged/production build (tamper-proofing)
     }
   })
 
