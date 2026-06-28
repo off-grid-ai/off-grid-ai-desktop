@@ -15,16 +15,22 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/off-grid-ai/desktop/releases/latest">Download (macOS · Windows)</a> ·
+  <a href="https://github.com/off-grid-ai/desktop/releases/latest">Download (macOS)</a> ·
   <a href="docs/FEATURES.md">Features</a> ·
   <a href="https://getoffgridai.co">getoffgridai.co</a> ·
   <a href="https://getoffgridai.co/pay">Get Pro</a>
 </p>
 
 <p align="center">
-  <img alt="platform" src="https://img.shields.io/badge/macOS%20%C2%B7%20Windows-black" />
+  <img alt="platform" src="https://img.shields.io/badge/macOS-Apple%20Silicon-black" />
   <img alt="license" src="https://img.shields.io/badge/license-AGPL--3.0-blue" />
   <img alt="local" src="https://img.shields.io/badge/100%25-on--device-34D399" />
+</p>
+
+<p align="center">
+  <strong><a href="https://github.com/off-grid-ai/mobile">Off Grid AI Mobile</a></strong> — the same on-device AI, on your phone &nbsp;·&nbsp;
+  <a href="https://github.com/off-grid-ai/mobile"><img alt="Off Grid AI Mobile GitHub stars" src="https://img.shields.io/github/stars/off-grid-ai/mobile?style=social" /></a>
+  &nbsp;·&nbsp; 100k+ downloads
 </p>
 
 ---
@@ -176,10 +182,11 @@ explicit opt-in, with a visible recording indicator, and nothing leaves the devi
   toward a proactive secretary and a prospective "Ahead" view of your day.
 
 **Pro is live.** Buy a license at **[getoffgridai.co/pay](https://getoffgridai.co/pay)** — you're
-emailed a license key, you install the Pro build, and you activate the key in-app (one license
-covers multiple devices). Pro features live in a separate **private** package; the open core
-never imports it — see [Architecture](#architecture--open-core). The Pro build is license-gated
-at runtime, so it stays locked until a valid key is activated.
+emailed a license key, you install the Pro build, and you activate the key in-app. Licensing runs
+on **[Keygen](https://keygen.sh)**, and one Pro license covers up to **5 devices**. Pro features
+live in a separate **private** package; the open core never imports it — see
+[Architecture](#architecture--open-core). The Pro build is license-gated at runtime, so it stays
+locked until a valid key is activated.
 
 <table>
 <tr>
@@ -205,9 +212,8 @@ at runtime, so it stays locked until a valid key is activated.
 Grab the latest build from [Releases](https://github.com/off-grid-ai/desktop/releases/latest):
 
 - **macOS** (Apple Silicon) — signed + notarized `.dmg`
-- **Windows** (x64) — `.exe` installer
 
-Linux (AppImage/deb) is in progress.
+macOS only for now.
 
 ## Build from source
 
