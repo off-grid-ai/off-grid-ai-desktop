@@ -87,10 +87,12 @@ function SecretaryPrefs(): React.ReactElement {
 
   // The doc is distilled by the assistant (auto-refreshes ~hourly). The user's
   // only manual control is REMOVING individual lines they disagree with — there's
-  // no free-form editing. Persist the trimmed doc back on each removal.
+  // no free-form editing. Always persist as normalized "- " bullet lines.
   const lines = doc.split('\n').map((l) => l.trim()).filter(Boolean);
+  const toBullets = (ls: string[]): string =>
+    ls.map((l) => l.replace(/^[-•*]\s*/, '').trim()).filter(Boolean).map((t) => `- ${t}`).join('\n');
   const removeLine = async (idx: number): Promise<void> => {
-    const next = lines.filter((_, i) => i !== idx).join('\n');
+    const next = toBullets(lines.filter((_, i) => i !== idx));
     setDoc(next);
     await api.secretaryPrefsSet?.(next);
   };
