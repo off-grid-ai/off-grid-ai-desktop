@@ -35,6 +35,9 @@ try {
       return () => ipcRenderer.removeListener(channel, sub);
     },
     proOff: (channel: string) => ipcRenderer.removeAllListeners(channel),
+    // Loopback HTTP URL for seekable local media (meeting recordings) — <video>
+    // can't reliably stream large files over the custom protocol, so use real HTTP.
+    getMediaUrl: (absPath: string) => ipcRenderer.invoke('media:url', absPath),
     // Clipboard manager is a Pro feature: its renderer reaches IPC through the
     // generic proInvoke / proOn passthrough above (no dedicated namespace here).
     getMemories: (limit: number, appName?: string) => ipcRenderer.invoke('db:get-memories', limit, appName),
