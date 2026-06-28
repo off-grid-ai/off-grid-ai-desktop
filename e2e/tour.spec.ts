@@ -73,7 +73,9 @@ test('Resource mode is selectable (Conservative)', async () => {
 test('Clipboard is a Pro tab in the core build (shows upgrade)', async () => {
   // Clipboard moved to Pro: in the core/free tour (OFFGRID_PRO=0) the tab is
   // locked and renders the upgrade screen, not the clipboard manager/settings.
-  await nav('Clipboard');
+  // (Locked items carry a "Pro" lock label, so match by prefix, not exact.)
+  await page.getByRole('button', { name: /Clipboard/ }).first().click();
+  await page.waitForTimeout(500);
   await expect(page.getByText('Off Grid Pro · Available now')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Clipboard' })).toBeVisible();
 });
