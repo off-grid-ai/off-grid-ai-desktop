@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { LockKey } from '@phosphor-icons/react';
+import { LockKey, X } from '@phosphor-icons/react';
 import { ProgressiveBlur } from './ui/progressive-blur';
 import { SetupPanel } from './setup/SetupPanel';
 import { StoragePanel } from './setup/StoragePanel';
@@ -80,26 +80,21 @@ function SecretaryPrefs(): React.ReactElement {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api = (window as any).api;
   const [doc, setDoc] = useState('');
-  const [pending, setPending] = useState(0);
-  const [busy, setBusy] = useState(false);
   const load = (): void => {
-    api.secretaryPrefsGet?.().then((p: { doc?: string; pendingFeedback?: number }) => {
-      setDoc(p?.doc ?? '');
-      setPending(p?.pendingFeedback ?? 0);
-    });
+    api.secretaryPrefsGet?.().then((p: { doc?: string }) => setDoc(p?.doc ?? ''));
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-  const refresh = async (): Promise<void> => {
-    setBusy(true);
-    try {
-      const r = await api.secretaryPrefsDistill?.();
-      if (r && typeof r.doc === 'string') setDoc(r.doc);
-      load();
-    } finally {
-      setBusy(false);
-    }
+
+  // The doc is distilled by the assistant (auto-refreshes ~hourly). The user's
+  // only manual control is REMOVING individual lines they disagree with — there's
+  // no free-form editing. Persist the trimmed doc back on each removal.
+  const lines = doc.split('\n').map((l) => l.trim()).filter(Boolean);
+  const removeLine = async (idx: number): Promise<void> => {
+    const next = lines.filter((_, i) => i !== idx).join('\n');
+    setDoc(next);
+    await api.secretaryPrefsSet?.(next);
   };
-  const clear = async (): Promise<void> => { await api.secretaryPrefsSet?.(''); setDoc(''); };
+  const clear = async (): Promise<void> => { setDoc(''); await api.secretaryPrefsSet?.(''); };
 
   return (
     <motion.div
@@ -110,23 +105,34 @@ function SecretaryPrefs(): React.ReactElement {
     >
       <h3 className="text-white font-medium text-base mb-1">What Off Grid has learned</h3>
       <p className="text-neutral-500 text-sm mb-4">
-        Preferences distilled from the reasons you give when you dismiss a suggestion. This is the only learned text fed back to the assistant — it refreshes about once an hour, and raw notes are never used directly.
+        Preferences distilled from the reasons you give when you dismiss a suggestion. This is the only learned text fed back to the assistant — it refreshes about once an hour, and raw notes are never used directly. You can remove any line you disagree with.
       </p>
-      {doc ? (
-        <pre className="whitespace-pre-wrap rounded-xl border border-neutral-700/50 bg-neutral-800/40 p-3 font-mono text-sm leading-relaxed text-neutral-300">{doc}</pre>
+      {lines.length ? (
+        <ul className="divide-y divide-neutral-800/60 overflow-hidden rounded-xl border border-neutral-700/50 bg-neutral-800/40">
+          {lines.map((line, i) => (
+            <li key={i} className="group flex items-start gap-2 px-3 py-2">
+              <span className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-neutral-300">{line}</span>
+              <button
+                onClick={() => removeLine(i)}
+                aria-label="Remove this line"
+                title="Remove"
+                className="mt-0.5 shrink-0 rounded p-0.5 text-neutral-600 transition-colors hover:bg-red-500/10 hover:text-red-400"
+              >
+                <X className="h-3.5 w-3.5" weight="bold" />
+              </button>
+            </li>
+          ))}
+        </ul>
       ) : (
         <p className="rounded-xl border border-neutral-700/50 bg-neutral-800/40 p-3 text-sm text-neutral-600">
           Nothing learned yet. When you dismiss a suggestion, tell Off Grid why — it generalizes the useful ones here.
         </p>
       )}
-      <div className="mt-3 flex items-center gap-2">
-        <button onClick={refresh} disabled={busy} className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:border-neutral-500 disabled:opacity-50">
-          {busy ? 'Updating…' : `Update now${pending ? ` (${pending} new)` : ''}`}
-        </button>
-        {doc && (
-          <button onClick={clear} className="rounded-lg px-3 py-1.5 text-xs text-neutral-500 hover:text-white">Clear</button>
-        )}
-      </div>
+      {lines.length > 0 && (
+        <div className="mt-3">
+          <button onClick={clear} className="rounded-lg px-3 py-1.5 text-xs text-neutral-500 hover:text-white">Clear all</button>
+        </div>
+      )}
     </motion.div>
   );
 }
