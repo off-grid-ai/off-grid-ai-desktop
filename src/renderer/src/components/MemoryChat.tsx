@@ -745,7 +745,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           model: imgModel || undefined,
           initImage: imgInit || undefined,
           strength: imgInit ? imgStrength : undefined,
-          conversationId: activeConversationId || undefined,
+          conversationId: convId, // the turn's own conversation (activeConversationId can lag for a fresh/queued chat)
           projectId: activeProjectId,
         });
         const assistantMessage: ChatMessage = {
