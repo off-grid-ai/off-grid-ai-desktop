@@ -195,9 +195,11 @@ export function PermissionGate({ children }: PermissionGateProps) {
             <div className="mt-3 text-center">
               <button
                 onClick={() => {
-                  // Drop into the real in-app Models screen (with the left nav), not a
-                  // bare overlay. Point the URL at /models, then dismiss the gate so the
-                  // app shell mounts and reads the path → Models, sidebar and all.
+                  // Drop into the real in-app Models screen (with the left nav). The
+                  // app shell (already mounted behind this gate) listens for og:navigate
+                  // and switches view — replaceState alone wouldn't re-derive it. Keep
+                  // the URL in sync, then dismiss the gate.
+                  window.dispatchEvent(new CustomEvent('og:navigate', { detail: 'models' }));
                   window.history.replaceState(null, '', '/models');
                   setSetupDismissed(true);
                   setShowSetup(false);

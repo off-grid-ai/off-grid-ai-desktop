@@ -38,7 +38,8 @@ import {
   IconLayoutSidebarLeftExpand,
   IconLoader2,
   IconArrowLeft,
-  IconArrowRight
+  IconArrowRight,
+  IconActivityHeartbeat
 } from '@tabler/icons-react';
 import { cn } from './lib/utils';
 
@@ -93,6 +94,50 @@ function ReprocessingBanner() {
         <span className="text-xs text-neutral-600 shrink-0">{pct}%</span>
       )}
     </motion.div>
+  );
+}
+
+// Model-server health dot for the sidebar. Uses the SAME live probe as the System
+// Health panel (system:health → real /health check), not llm.isReady() (an internal
+// flag that lags). Green = running, amber = starting, red = stopped (e.g. a SIGKILL
+// we can't auto-recover) → click goes to Settings to restart.
+type ChatHealth = 'ready' | 'starting' | 'down' | null;
+function ModelStatusDot({ open, onClick }: { open: boolean; onClick: () => void }): React.ReactElement {
+  const [status, setStatus] = useState<ChatHealth>(null);
+  useEffect(() => {
+    let live = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const api = (window as any).api;
+    const poll = async (): Promise<void> => {
+      try {
+        const h = await api?.systemHealth?.();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const chat = h?.components?.find((c: any) => c.id === 'chat');
+        const s: ChatHealth = chat?.status === 'ready' ? 'ready' : chat?.status === 'starting' ? 'starting' : 'down';
+        if (live) setStatus(s);
+      } catch { if (live) setStatus('down'); }
+    };
+    void poll();
+    const id = setInterval(poll, 5000);
+    return () => { live = false; clearInterval(id); };
+  }, []);
+  const color = status == null ? 'text-neutral-500' : status === 'ready' ? 'text-green-500' : status === 'starting' ? 'text-amber-500' : 'text-red-500';
+  const text = status == null ? 'Checking…' : status === 'ready' ? 'Model running' : status === 'starting' ? 'Model starting' : 'Model stopped';
+  // Collapsed: clicking opens the sidebar (the label/restart action lives there).
+  // Expanded: clicking goes to Settings to restart.
+  const label = open
+    ? (status === 'down' ? 'Model server stopped — open Settings to restart' : `Model server: ${text.toLowerCase()}`)
+    : `${text} — expand for details`;
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={cn('flex items-center gap-3 rounded-lg py-2 text-sm text-neutral-500 transition-colors hover:bg-neutral-500/10 hover:text-neutral-300', open ? 'px-3' : 'justify-center px-0')}
+    >
+      <IconActivityHeartbeat className={cn('h-5 w-5 shrink-0', color)} />
+      {open && <span className="flex-1 text-left text-xs">{text}</span>}
+    </button>
   );
 }
 
@@ -219,6 +264,17 @@ function AppContent() {
     if (viewMap[path]) {
       setViewMode(viewMap[path]);
     }
+  }, []);
+
+  // Programmatic navigation from outside the shell (e.g. the first-run gate's
+  // "pick a model yourself" CTA) — switch the active view without a remount.
+  useEffect(() => {
+    const onNav = (e: Event): void => {
+      const v = (e as CustomEvent).detail as ViewMode | undefined;
+      if (v) setViewMode(v);
+    };
+    window.addEventListener('og:navigate', onNav);
+    return () => window.removeEventListener('og:navigate', onNav);
   }, []);
 
   // Update browser URL when view mode changes
@@ -533,10 +589,10 @@ function AppContent() {
                   onClick={() => setSidebarOpen(true)}
                   aria-label="Expand sidebar"
                   title="Expand"
-                  className="group/exp flex w-full flex-col items-center gap-1 py-2"
+                  className="group/exp flex w-full flex-col items-center gap-1.5 py-2"
                 >
                   <img src={logo} alt="Off Grid" className="h-8 w-8 shrink-0 rounded-lg" />
-                  <IconLayoutSidebarLeftExpand className="h-4 w-4 text-neutral-500 transition-colors group-hover/exp:text-white" />
+                  <IconLayoutSidebarLeftExpand className="h-5 w-5 text-neutral-500 transition-colors group-hover/exp:text-white" />
                 </button>
               )}
 
@@ -576,6 +632,7 @@ function AppContent() {
 
             {/* Pinned bottom */}
             <div className="flex flex-col gap-1 border-t border-neutral-200 pt-2 dark:border-neutral-800">
+              <ModelStatusDot open={sidebarOpen} onClick={() => (sidebarOpen ? setViewMode('settings') : setSidebarOpen(true))} />
               <NavThemeToggle expanded={sidebarOpen} />
               {bottomNav.map(renderNavItem)}
             </div>
