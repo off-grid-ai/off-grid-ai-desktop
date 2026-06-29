@@ -5,7 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import { llm } from './llm';
-import { getAllActiveModals, setActiveModal as setModal, type Modality } from './active-models';
+import { getAllActiveModals, setActiveModal as setModal, modalityForKind, type Modality } from './active-models';
 
 export interface DownloadProgress {
   modelId: string;
@@ -252,6 +252,35 @@ export function getActiveModel(): string | null {
   }
 }
 
+/**
+ * The active model id for EVERY modality (chat LLM + image/voice/transcription),
+ * as catalog/local ids. The single "what's active" truth the UI consults so it
+ * can mark any model active without re-deriving per-kind rules. Reuses the
+ * per-entry active computation in getStorageInfo (one definition of "active").
+ */
+export async function getActiveModelIds(): Promise<string[]> {
+  const info = await getStorageInfo();
+  return info.models.filter((m) => m.active).map((m) => m.id);
+}
+
+/**
+ * Make ANY installed model the active one for its type — the single seam the UI
+ * calls. Routes by kind internally: text/vision load the chat LLM; image/voice/
+ * transcription set that modality's default pick. Callers pass only the id and
+ * never branch on kind. Adding a new modality needs zero caller changes.
+ */
+export async function activateModel(modelId: string): Promise<{ success: boolean; error?: string }> {
+  let kind: string | undefined;
+  if (modelId.startsWith('local:')) {
+    kind = getLocalModels().find((m) => m.id === modelId)?.kind;
+  } else {
+    const { CATALOG, resolveHuggingFaceModel } = await import('@offgrid/models');
+    kind = (CATALOG.find((m) => m.id === modelId) ?? (await resolveHuggingFaceModel(modelId)))?.kind;
+  }
+  const modal = modalityForKind(kind);
+  return modal ? setActiveModalChoice(modal, modelId) : setActiveModel(modelId);
+}
+
 export async function setActiveModalChoice(kind: string, modelId: string | null): Promise<{ success: boolean; error?: string }> {
   if (kind === 'image' || kind === 'speech' || kind === 'transcription') {
     let stored = modelId;
@@ -387,6 +416,11 @@ export async function getStorageInfo(): Promise<StorageInfo> {
   } catch { /* none */ }
 
   const active = getActiveModel();
+  // Per-modality active picks (image/speech/transcription) are stored as the
+  // chosen FILENAME, not the catalog id — so an image/voice/STT model is "active"
+  // when its primary file matches. Without this, only the chat LLM ever shows
+  // active and image models can't be activated from the UI.
+  const modals = getAllActiveModals();
   const locals = getLocalModels();
   const installed = await listInstalled();
   const sizeOf = (name: string): number => { try { return fs.statSync(path.join(dir, name)).size; } catch { return 0; } };
@@ -398,7 +432,18 @@ export async function getStorageInfo(): Promise<StorageInfo> {
     }
     const e = CATALOG.find((m) => m.id === id);
     const bytes = (e?.files ?? []).reduce((s, f) => s + sizeOf(f.name), 0);
-    return { id, name: e?.name ?? id, kind: e?.kind, bytes, active: id === active };
+    const modal = modalityForKind(e?.kind);
+    let isActive: boolean;
+    if (e?.kind === 'text' || e?.kind === 'vision') {
+      isActive = id === active;
+    } else if (modal) {
+      const chosen = modals[modal];
+      const primary = (e?.files?.find((f) => f.role === 'primary') ?? e?.files?.[0])?.name;
+      isActive = chosen != null && (chosen === id || chosen === primary);
+    } else {
+      isActive = false;
+    }
+    return { id, name: e?.name ?? id, kind: e?.kind, bytes, active: isActive };
   });
 
   let totalBytes = 0;

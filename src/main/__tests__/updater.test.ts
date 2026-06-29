@@ -50,3 +50,35 @@ describe('auto-update: explicit install path', () => {
     expect(preloadSrc).toMatch(/ipcRenderer\.on\(\s*['"]update:downloaded['"]/);
   });
 });
+
+describe('software-update settings flow: manual check + auto toggle', () => {
+  it('registers a manual update:check handler', () => {
+    expect(updaterSrc).toMatch(/ipcMain\.handle\(\s*['"]update:check['"]/);
+  });
+
+  it('exposes + persists the automatic-update preference (default ON)', () => {
+    expect(updaterSrc).toMatch(/getSetting<boolean>\(\s*['"]updates:auto['"]\s*,\s*true\s*\)/);
+    expect(updaterSrc).toMatch(/ipcMain\.handle\(\s*['"]update:set-auto['"]/);
+    expect(updaterSrc).toMatch(/saveSetting\(\s*['"]updates:auto['"]/);
+    expect(updaterSrc).toMatch(/ipcMain\.handle\(\s*['"]update:get-prefs['"]/);
+  });
+
+  it('only auto-downloads/installs + periodic-checks when the preference is on', () => {
+    expect(updaterSrc).toMatch(/autoUpdater\.autoDownload\s*=\s*on/);
+    expect(updaterSrc).toMatch(/autoUpdater\.autoInstallOnAppQuit\s*=\s*on/);
+    expect(updaterSrc).toMatch(/if\s*\(\s*!autoEnabled\(\)\s*\)\s*return/);
+  });
+
+  it('returns a clear reason in a dev/unpackaged build instead of hanging', () => {
+    // electron-updater can only check in a packaged, signed app; guard on
+    // app.isPackaged so the manual check surfaces the real reason (not a timeout).
+    expect(updaterSrc).toMatch(/if\s*\(\s*!app\.isPackaged\s*\)/);
+    expect(updaterSrc).toMatch(/Updates only work in the installed app/);
+  });
+
+  it('preload bridges the check + prefs controls', () => {
+    expect(preloadSrc).toMatch(/checkForUpdates:\s*\(\)\s*=>\s*ipcRenderer\.invoke\(\s*['"]update:check['"]/);
+    expect(preloadSrc).toMatch(/updateSetAuto:\s*\(on:\s*boolean\)\s*=>\s*ipcRenderer\.invoke\(\s*['"]update:set-auto['"]/);
+    expect(preloadSrc).toMatch(/updateGetPrefs:\s*\(\)\s*=>\s*ipcRenderer\.invoke\(\s*['"]update:get-prefs['"]/);
+  });
+});

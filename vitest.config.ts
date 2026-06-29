@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 // e2e/ and runs via `npm run test:e2e`, NOT here.
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'pro/**/*.test.ts'],
     exclude: ['e2e/**', 'node_modules/**', 'out/**'],
   },
 });

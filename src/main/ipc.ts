@@ -1366,7 +1366,12 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
 
   ipcMain.handle('models:set-active', (_, modelId: string) =>
       import('./models-manager').then((m) => m.setActiveModel(modelId)));
+  // Single activation seam: route any model to the right backend by its kind.
+  ipcMain.handle('models:activate', (_, modelId: string) =>
+      import('./models-manager').then((m) => m.activateModel(modelId)));
   ipcMain.handle('models:get-active', () => import('./models-manager').then((m) => m.getActiveModel()));
+  // Active model ids across ALL modalities — the UI's single "what's active" source.
+  ipcMain.handle('models:active-ids', () => import('./models-manager').then((m) => m.getActiveModelIds()));
   ipcMain.handle('models:set-active-modal', (_, kind: string, modelId: string | null) =>
       import('./models-manager').then((m) => m.setActiveModalChoice(kind, modelId)));
   ipcMain.handle('models:active-modalities', () => import('./models-manager').then((m) => m.getActiveModalities()));

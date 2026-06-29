@@ -10,9 +10,13 @@ import type { SearchHit } from '../types';
 export interface ProViewContext {
   setView: (view: string) => void;
   replayTarget: number | null;
+  setReplayTarget: (ms: number | null) => void;
   meetingTarget: number | null;
   actionsMode: 'todo' | 'approvals' | null;
   setActionsMode: (m: 'todo' | 'approvals' | null) => void;
+  // When set, the Actions to-do list opens filtered to this entity ("all to-dos for Ali").
+  actionsEntity: { id: number; name: string } | null;
+  setActionsEntity: (e: { id: number; name: string } | null) => void;
   searchQuery: string;
   onSearchQueryChange: (q: string) => void;
   searchSources: string[];
@@ -21,6 +25,7 @@ export interface ProViewContext {
   onSearchSortChange: (s: 'relevance' | 'recency' | 'match') => void;
   selectedMemoryId: number | null;
   setSelectedMemoryId: (id: number | null) => void;
+  selectedEntityId: number | null;
   // The meeting-recorder handle (typed loosely so core needn't know its shape).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rec: any;

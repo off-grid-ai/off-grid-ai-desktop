@@ -132,6 +132,11 @@ try {
     },
     getStagedUpdateVersion: () => ipcRenderer.invoke('update:staged-version'),
     installUpdate: () => ipcRenderer.invoke('update:install'),
+    // Software-update controls for Settings: current version + auto-update toggle,
+    // and a manual "check for updates" that resolves with a definite status.
+    updateGetPrefs: () => ipcRenderer.invoke('update:get-prefs'),
+    updateSetAuto: (on: boolean) => ipcRenderer.invoke('update:set-auto', on),
+    checkForUpdates: () => ipcRenderer.invoke('update:check'),
 
     // Watcher Events
     onWatcherData: (callback: (data: any) => void) => {
@@ -184,7 +189,10 @@ try {
     cancelModelDownload: (modelId: string) => ipcRenderer.invoke('models:cancel-download', modelId),
     deleteModel: (modelId: string) => ipcRenderer.invoke('models:delete', modelId),
     setActiveModel: (modelId: string) => ipcRenderer.invoke('models:set-active', modelId),
+    // Activate any model for its type — UI calls this and never branches on kind.
+    activateModel: (modelId: string) => ipcRenderer.invoke('models:activate', modelId),
     getActiveModel: () => ipcRenderer.invoke('models:get-active'),
+    getActiveModelIds: () => ipcRenderer.invoke('models:active-ids'),
     setActiveModalModel: (kind: string, modelId: string | null) => ipcRenderer.invoke('models:set-active-modal', kind, modelId),
     getActiveModalities: () => ipcRenderer.invoke('models:active-modalities'),
     onModelProgress: (callback: (data: any) => void) => {
@@ -364,11 +372,14 @@ try {
     crmDayJournal: (startSec: number, endSec: number) => ipcRenderer.invoke('crm:day-journal', startSec, endSec),
     crmDayJournalCached: (startSec: number) => ipcRenderer.invoke('crm:day-journal-cached', startSec),
     crmReplayFrames: (startSec: number, endSec: number) => ipcRenderer.invoke('crm:replay-frames', startSec, endSec),
+    crmReplayThreads: (startSec: number, endSec: number) => ipcRenderer.invoke('crm:replay-threads', startSec, endSec),
+    crmReplayEntityDay: (entityId: number, startSec: number, endSec: number) => ipcRenderer.invoke('crm:replay-entity-day', entityId, startSec, endSec),
     crmReplayDefaultDay: () => ipcRenderer.invoke('crm:replay-default-day'),
     crmDayReflection: (startSec: number, endSec: number) => ipcRenderer.invoke('crm:day-reflection', startSec, endSec),
     crmWeekReflection: (anchorDayStartSec: number) => ipcRenderer.invoke('crm:week-reflection', anchorDayStartSec),
     crmListActions: () => ipcRenderer.invoke('crm:list-actions'),
     crmSetActionStatus: (id: number, status: 'open' | 'done' | 'dismissed') => ipcRenderer.invoke('crm:set-action-status', id, status),
+    crmAddTodo: (text: string) => ipcRenderer.invoke('crm:add-todo', text),
 
     // Identity
     idGet: () => ipcRenderer.invoke('id:get'),

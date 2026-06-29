@@ -25,6 +25,12 @@ function gb(bytes: number): string {
   return `${(bytes / 1e9).toFixed(1)} GB`;
 }
 
+// Group order + display labels for the by-type storage layout.
+const KIND_ORDER = ['text', 'vision', 'image', 'voice', 'transcription', 'other'];
+const KIND_LABELS: Record<string, string> = {
+  text: 'Text', vision: 'Vision', image: 'Image', voice: 'Voice', transcription: 'Transcription', other: 'Other',
+};
+
 /** Disk usage for downloaded models, orphan cleanup, and a download manager
  *  (active / failed / interrupted downloads with retry + cancel). */
 export function StoragePanel(): React.ReactElement {
@@ -52,6 +58,12 @@ export function StoragePanel(): React.ReactElement {
     if (!window.confirm(`Delete "${name}"? This removes its files from disk.`)) return;
     setBusy(id);
     try { await api?.deleteModel?.(id); await refresh(); } finally { setBusy(null); }
+  };
+  // Activate a downloaded model straight from Storage. One call — the main process
+  // routes by kind (chat LLM vs image/voice/STT default). The UI never branches.
+  const use = async (id: string): Promise<void> => {
+    setBusy(id);
+    try { await api?.activateModel?.(id); await refresh(); } finally { setBusy(null); }
   };
   const cleanOrphans = async (): Promise<void> => {
     setBusy('orphans');
@@ -93,12 +105,12 @@ export function StoragePanel(): React.ReactElement {
       </div>
 
       {/* Usage summary */}
-      <div className="px-4 py-3">
-        <div className="mb-1.5 flex items-center justify-between text-xs">
-          <span className="text-neutral-400">{info ? `${gb(info.totalBytes)} used by models` : 'Reading…'}</span>
-          {info && <span className="text-neutral-600">{gb(info.freeBytes)} free</span>}
+      <div className="px-4 py-2">
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-[11px] text-neutral-400">{info ? `${gb(info.totalBytes)} used by models` : 'Reading…'}</span>
+          {info && <span className="text-[10px] text-neutral-600">{gb(info.freeBytes)} free</span>}
         </div>
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-800">
+        <div className="h-1 w-full overflow-hidden rounded-full bg-neutral-800">
           <div className="h-full rounded-full bg-green-500" style={{ width: `${Math.min(100, Math.round(usedFrac * 100))}%` }} />
         </div>
       </div>
@@ -159,30 +171,65 @@ export function StoragePanel(): React.ReactElement {
         </div>
       )}
 
-      {/* Installed models */}
-      <div className="divide-y divide-neutral-800/40 border-t border-neutral-800/40">
-        {(info?.models ?? []).map((m) => (
-          <div key={m.id} className="flex items-center gap-3 px-4 py-2">
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-mono text-xs text-neutral-200">
-                {m.name}{m.active && <span className="ml-2 text-[10px] text-green-500">active</span>}
-              </div>
-              {m.kind && <div className="text-[10px] text-neutral-600">{m.kind}</div>}
-            </div>
-            <span className="font-mono text-[11px] text-neutral-500">{gb(m.bytes)}</span>
-            <button
-              onClick={() => del(m.id, m.name)}
-              disabled={busy === m.id || m.active}
-              aria-label={`Delete ${m.name}`}
-              title={m.active ? 'Deactivate before deleting the active model' : 'Delete'}
-              className="rounded-md p-1 text-neutral-500 transition-colors hover:text-red-400 disabled:opacity-30"
-            >
-              <Trash className="h-3.5 w-3.5" />
-            </button>
+      {/* Installed models — grouped by type, each group a width-filling grid so
+          the type and the active model per type are easy to spot. */}
+      <div className="border-t border-neutral-800/40 p-3">
+        {info && info.models.length === 0 ? (
+          <div className="px-1 py-3 text-center text-xs text-neutral-600">No models installed yet.</div>
+        ) : (
+          <div className="space-y-3">
+            {KIND_ORDER.filter((k) => (info?.models ?? []).some((m) => (m.kind || 'other') === k)).map((kind) => {
+              const group = (info?.models ?? []).filter((m) => (m.kind || 'other') === kind);
+              const active = group.find((m) => m.active);
+              return (
+                <div key={kind}>
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span className="text-[9px] font-medium uppercase tracking-widest text-neutral-500">{KIND_LABELS[kind] ?? kind}</span>
+                    <span className="text-[9px] text-neutral-700">{group.length}</span>
+                    {active && (
+                      <span className="flex items-center gap-1 text-[9px] text-green-500">
+                        <span className="h-1 w-1 rounded-full bg-green-500" /> {active.name} active
+                      </span>
+                    )}
+                    <div className="h-px flex-1 bg-neutral-800/50" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                    {group.map((m) => {
+                      // Every model type has an "active" pick — activate any non-active one.
+                      const activatable = !m.active;
+                      return (
+                        <div key={m.id}
+                          className={`group flex h-7 items-center gap-2 rounded border px-2.5 transition-colors duration-150 hover:border-neutral-700 ${m.active ? 'border-green-500/50 bg-green-500/5' : 'border-neutral-800/60 bg-neutral-900/30'}`}>
+                          {m.active && <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />}
+                          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-neutral-200">{m.name}</span>
+                          {/* Hover actions: activate (text/vision) + delete. Size shows when idle. */}
+                          {activatable && (
+                            <button
+                              onClick={() => use(m.id)}
+                              disabled={busy === m.id}
+                              className="hidden shrink-0 rounded border border-neutral-700 px-1.5 text-[9px] leading-4 text-neutral-300 transition-all duration-150 hover:border-green-500 hover:text-green-400 active:scale-95 disabled:opacity-40 group-hover:block"
+                            >
+                              {busy === m.id ? '…' : 'Use'}
+                            </button>
+                          )}
+                          <span className={`shrink-0 font-mono text-[10px] text-neutral-500 tabular-nums ${activatable ? 'group-hover:hidden' : ''}`}>{gb(m.bytes)}</span>
+                          <button
+                            onClick={() => del(m.id, m.name)}
+                            disabled={busy === m.id || m.active}
+                            aria-label={`Delete ${m.name}`}
+                            title={m.active ? 'Deactivate before deleting' : 'Delete'}
+                            className="shrink-0 rounded p-0.5 text-neutral-700 transition-all duration-150 hover:text-red-400 active:scale-90 disabled:opacity-30 group-hover:text-neutral-500"
+                          >
+                            <Trash className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ))}
-        {info && info.models.length === 0 && (
-          <div className="px-4 py-4 text-center text-xs text-neutral-600">No models installed yet.</div>
         )}
       </div>
 

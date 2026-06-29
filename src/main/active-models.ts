@@ -9,6 +9,21 @@ import { modelsDir } from './runtime-env';
 
 export type Modality = 'image' | 'speech' | 'transcription';
 
+/**
+ * The single source of truth mapping a catalog model `kind` to its modality.
+ * 'text'/'vision' are the chat LLM (no modality — they load llama-server, not a
+ * stateless per-call runtime), so they return null. Everything that activates a
+ * model routes through this — never re-derive the mapping in a caller/UI.
+ */
+export function modalityForKind(kind?: string | null): Modality | null {
+  switch (kind) {
+    case 'image': return 'image';
+    case 'voice': return 'speech';
+    case 'transcription': return 'transcription';
+    default: return null; // text / vision / local / unknown -> chat LLM, not a modality
+  }
+}
+
 function storeFile(): string {
   return path.join(modelsDir(), 'active-modalities.json');
 }

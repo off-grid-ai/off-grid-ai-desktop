@@ -27,17 +27,29 @@ async function launch(extraEnv = {}) {
   const app = await electron.launch({ args: ['.'], env: { ...baseEnv, ...extraEnv } });
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
-  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; if (w) { w.setSize(1480, 940); w.center(); } });
+  await app.evaluate(({ BrowserWindow, screen }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    if (!w) return;
+    // Capture at the largest available display for a roomy view of the bento.
+    const displays = screen.getAllDisplays();
+    const big = displays.reduce((a, b) => (b.workAreaSize.width > a.workAreaSize.width ? b : a), displays[0]);
+    const { x, y, width, height } = big.workArea;
+    w.setBounds({ x, y, width, height });
+  });
   return { app, win };
 }
 
 // Launch 1: seed the isolated DB (main process) + mark onboarding done, then quit.
 let { app, win } = await launch({ OFFGRID_SEED_PRO: '1' });
 await wait(6000); // let activateMain + seedProDemo finish
-await win.evaluate(() => {
+await win.evaluate(async () => {
   localStorage.setItem('onboarding_completed', 'true');
   localStorage.setItem('offgrid:disable-capture', '1'); // no live auto-record in the demo
+  localStorage.setItem('og-theme', 'dark'); // capture in dark mode
+  // Build the keyword search index over the seeded observations so Search has results.
+  try { await window.api?.proInvoke?.('search:reindex'); } catch { /* model-less FTS still builds */ }
 });
+await wait(4000); // let the reindex finish
 await app.close();
 
 // Launch 2: into the shell with seeded data (seed flag set → no re-seed).
@@ -63,7 +75,7 @@ for (const [label, file] of [
     try {
       const box = win.getByPlaceholder(/Search everything/i);
       await box.click({ timeout: 4000 });
-      await box.fill('Gateway');
+      await box.fill('release notes');
       await wait(2500); // let FTS + semantic results land
     } catch (e) { console.error('search type', e.message); }
   }

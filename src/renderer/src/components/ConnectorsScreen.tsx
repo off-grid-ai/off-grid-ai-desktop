@@ -249,6 +249,7 @@ export function ConnectorsScreen() {
           const detail = detailId != null ? items.find((c) => c.id === detailId) : null;
           if (detail) {
             const dcat = CONNECTOR_CATALOG.find((x) => x.name === detail.name);
+            const dNotReady = dcat != null && !dcat.ready; // preview/unverified — don't expose Test/Sync
             const dtools = detail.tools ? (JSON.parse(detail.tools) as { name: string; description?: string }[]) : [];
             return (
               <div className="mx-auto max-w-[1500px] space-y-5">
@@ -258,19 +259,24 @@ export function ConnectorsScreen() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <h2 className="text-lg tracking-tight text-white">{detail.name}</h2>
-                      {detail.status === 'ok' ? <span className="text-[11px] text-green-500">connected</span> : detail.status === 'error' ? <span className="text-[11px] text-red-400">error</span> : <span className="text-[11px] text-neutral-600">not tested</span>}
+                      {dNotReady ? <span className="rounded-sm bg-neutral-800 px-1 py-0.5 text-[9px] uppercase tracking-wide text-neutral-500">disabled · preview</span> : detail.status === 'ok' ? <span className="text-[11px] text-green-500">connected</span> : detail.status === 'error' ? <span className="text-[11px] text-red-400">error</span> : <span className="text-[11px] text-neutral-600">not tested</span>}
                     </div>
                     <div className="truncate text-[11px] text-neutral-500">{detail.transport === 'http' ? detail.url : `${detail.command ?? ''} ${detail.args ? (JSON.parse(detail.args) as string[]).join(' ') : ''}`}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <button onClick={() => test(detail.id)} disabled={testingId === detail.id} className="flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300 hover:border-green-500 hover:text-green-500 disabled:opacity-50">{testingId === detail.id ? <IconLoader2 className="h-3.5 w-3.5 animate-spin" /> : <IconPlugConnected className="h-3.5 w-3.5" />} Test</button>
-                    <button onClick={() => toggle(detail.id, !detail.enabled)} className={`rounded-md px-2.5 py-1 text-xs ${detail.enabled ? 'text-green-500' : 'text-neutral-500'} hover:bg-neutral-800`}>{detail.enabled ? 'On' : 'Off'}</button>
+                    {!dNotReady && (
+                      <>
+                        <button onClick={() => test(detail.id)} disabled={testingId === detail.id} className="flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300 hover:border-green-500 hover:text-green-500 disabled:opacity-50">{testingId === detail.id ? <IconLoader2 className="h-3.5 w-3.5 animate-spin" /> : <IconPlugConnected className="h-3.5 w-3.5" />} Test</button>
+                        <button onClick={() => toggle(detail.id, !detail.enabled)} className={`rounded-md px-2.5 py-1 text-xs ${detail.enabled ? 'text-green-500' : 'text-neutral-500'} hover:bg-neutral-800`}>{detail.enabled ? 'On' : 'Off'}</button>
+                      </>
+                    )}
                     <button onClick={async () => { await remove(detail.id); setDetailId(null); }} className="rounded-md p-1 text-neutral-600 hover:text-red-400"><IconTrash className="h-4 w-4" /></button>
                   </div>
                 </div>
-                {detail.status === 'error' && detail.status_detail && <p className="text-[11px] text-red-400/80">{cleanError(detail.status_detail)}</p>}
+                {dNotReady && <p className="text-[11px] text-neutral-500">This integration isn't verified yet — connect/test/sync are disabled. You can remove this entry.</p>}
+                {!dNotReady && detail.status === 'error' && detail.status_detail && <p className="text-[11px] text-red-400/80">{cleanError(detail.status_detail)}</p>}
 
-                {detail.status === 'ok' && (
+                {!dNotReady && detail.status === 'ok' && (
                   <div className="flex items-center gap-2">
                     <button onClick={() => sync(detail.id)} disabled={syncingId === detail.id} className="flex items-center gap-1 rounded-md bg-green-500/90 px-3 py-1.5 text-xs text-neutral-950 hover:bg-green-400 disabled:opacity-50">{syncingId === detail.id ? <IconLoader2 className="h-3.5 w-3.5 animate-spin" /> : <IconRefresh className="h-3.5 w-3.5" />} Sync recent</button>
                     <input value={queries[detail.id] ?? ''} onChange={(e) => setQueries((p) => ({ ...p, [detail.id]: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter' && queries[detail.id]?.trim()) sync(detail.id, queries[detail.id]); }} placeholder={`Ask ${detail.name} for… (e.g. ABSLI)`} className="flex-1 rounded-md border border-neutral-800 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-200 outline-none focus:border-neutral-600" />
@@ -418,13 +424,19 @@ export function ConnectorsScreen() {
               <div className="space-y-2">
                 {items.map((c) => {
                   const cat = CONNECTOR_CATALOG.find((x) => x.name === c.name);
+                  // A connector whose catalog entry is not `ready` is a preview/unverified
+                  // integration (e.g. Gmail, Google Calendar) — never present it as working
+                  // "connected", even if a stale row exists. Show it as disabled.
+                  const notReady = cat != null && !cat.ready;
                   return (
-                    <button key={c.id} onClick={() => openDetail(c)} className="flex w-full items-center gap-3 rounded-md border border-neutral-800 bg-neutral-900/40 p-3 text-left transition-colors hover:border-neutral-700">
+                    <button key={c.id} onClick={() => openDetail(c)} className={`flex w-full items-center gap-3 rounded-md border border-neutral-800 bg-neutral-900/40 p-3 text-left transition-colors hover:border-neutral-700 ${notReady ? 'opacity-55' : ''}`}>
                       {cat ? <Badge id={cat.id} color={cat.color} letter={cat.letter} /> : <div className="h-9 w-9 shrink-0" />}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-neutral-100">{c.name}</span>
-                          {c.status === 'ok' ? (
+                          {notReady ? (
+                            <span className="rounded-sm bg-neutral-800 px-1 py-0.5 text-[9px] uppercase tracking-wide text-neutral-500">disabled · preview</span>
+                          ) : c.status === 'ok' ? (
                             <span className="flex items-center gap-1 text-[11px] text-green-500"><IconCircleCheck className="h-3.5 w-3.5" /> connected</span>
                           ) : c.status === 'error' ? (
                             <span className="flex items-center gap-1 text-[11px] text-red-400"><IconAlertTriangle className="h-3.5 w-3.5" /> error</span>
@@ -432,7 +444,7 @@ export function ConnectorsScreen() {
                             <span className="text-[11px] text-neutral-600">not tested</span>
                           )}
                         </div>
-                        <div className="text-[11px] text-neutral-500">{c.synced_count ?? 0} items synced · last {fmtAgo(c.last_synced)}</div>
+                        <div className="text-[11px] text-neutral-500">{notReady ? 'Integration not verified yet' : `${c.synced_count ?? 0} items synced · last ${fmtAgo(c.last_synced)}`}</div>
                       </div>
                       <IconChevronRight className="h-4 w-4 shrink-0 text-neutral-600" />
                     </button>

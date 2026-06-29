@@ -27,6 +27,9 @@
     "test:e2e": "electron-vite build && playwright test"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@lancedb/lancedb": "^0.30.0",
@@ -77,6 +80,7 @@
     "radix-ui": "^1.6.0",
     "react-force-graph-3d": "^1.29.0",
     "react-markdown": "^10.1.0",
+    "react-resizable-panels": "^2.1.9",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.0",
     "sharp": "^0.35.2",

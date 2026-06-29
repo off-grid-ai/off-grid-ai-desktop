@@ -85,34 +85,36 @@ export function HealthPanel(): React.ReactElement {
         </button>
       </div>
 
-      <div className="divide-y divide-neutral-800/40">
-        {(health?.components ?? []).map((c) => {
-          const meta = STATUS_META[c.status];
-          return (
-            <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
-              <StatusIcon status={c.status} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-mono text-xs text-neutral-200">{c.label}</div>
-                {c.detail && <div className="truncate text-[11px] text-neutral-500">{c.detail}</div>}
+      {!health ? (
+        <div className="px-4 py-6 text-center text-xs text-neutral-600">Checking components…</div>
+      ) : (
+        <div className="grid grid-cols-1 gap-1.5 p-3 sm:grid-cols-2 lg:grid-cols-3">
+          {health.components.map((c) => {
+            const meta = STATUS_META[c.status];
+            const canRestart = c.canRestart && (c.status === 'down' || c.status === 'ready');
+            return (
+              <div key={c.id} className="group flex items-center gap-2.5 rounded border border-neutral-800/60 bg-neutral-900/30 px-2.5 py-2 transition-colors duration-150 hover:border-neutral-700">
+                <StatusIcon status={c.status} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-mono text-[11px] text-neutral-200">{c.label}</div>
+                  {c.detail && <div className="truncate text-[10px] text-neutral-600">{c.detail}</div>}
+                </div>
+                {c.port && <span className="shrink-0 font-mono text-[9px] text-neutral-600">:{c.port}</span>}
+                <span className={cn('shrink-0 text-[10px]', meta.text)}>{meta.label}</span>
+                {canRestart && (
+                  <button
+                    onClick={() => restart(c.id)}
+                    disabled={restarting === c.id}
+                    className="shrink-0 rounded border border-neutral-700 px-1.5 py-0.5 text-[9px] leading-4 text-neutral-300 transition-all duration-150 hover:border-green-500/60 hover:text-white active:scale-95 disabled:opacity-50"
+                  >
+                    {restarting === c.id ? '…' : 'Restart'}
+                  </button>
+                )}
               </div>
-              {c.port && <span className="font-mono text-[10px] text-neutral-600">:{c.port}</span>}
-              <span className={cn('w-16 text-right text-[11px]', meta.text)}>{meta.label}</span>
-              {c.canRestart && (c.status === 'down' || c.status === 'ready') && (
-                <button
-                  onClick={() => restart(c.id)}
-                  disabled={restarting === c.id}
-                  className="rounded-md border border-neutral-700 px-2 py-1 text-[10px] text-neutral-300 transition-colors hover:border-green-500/60 hover:text-white disabled:opacity-50"
-                >
-                  {restarting === c.id ? '…' : 'Restart'}
-                </button>
-              )}
-            </div>
-          );
-        })}
-        {!health && (
-          <div className="px-4 py-6 text-center text-xs text-neutral-600">Checking components…</div>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {health && (
         <div className="border-t border-neutral-800/60 px-4 py-2 text-[10px] text-neutral-600">

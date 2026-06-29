@@ -107,6 +107,75 @@ function ProactiveSection(): React.ReactElement {
 }
 
 // ---------------------------------------------------------------------------
+// Software update — current version, manual check, automatic-update toggle
+// ---------------------------------------------------------------------------
+
+function SoftwareUpdateSection(): React.ReactElement {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api = (window as any).api;
+  const [auto, setAuto] = useState(true);
+  const [version, setVersion] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [status, setStatus] = useState('');
+  useEffect(() => {
+    api.updateGetPrefs?.().then((p: { currentVersion?: string; auto?: boolean }) => {
+      setVersion(p?.currentVersion ?? '');
+      setAuto(p?.auto !== false);
+    }).catch(() => {});
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
+  const toggle = (): void => {
+    const next = !auto;
+    setAuto(next);
+    api.updateSetAuto?.(next);
+  };
+  const check = async (): Promise<void> => {
+    setChecking(true);
+    setStatus('Checking for updates...');
+    try {
+      const r = await api.checkForUpdates?.();
+      if (!r) setStatus('Could not check right now.');
+      else if (r.status === 'available') setStatus(`Update ${r.version} found. Downloading in the background - you'll get a "Restart to update" prompt when it's ready.`);
+      else if (r.status === 'not-available') setStatus(`You're on the latest version (v${r.version}).`);
+      else setStatus(`Could not check: ${r.error}`);
+    } catch {
+      setStatus('Could not check right now.');
+    } finally {
+      setChecking(false);
+    }
+  };
+  // Body only — the card chrome + title come from SettingsCard.
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-neutral-500 text-sm">
+          Off Grid checks for updates in the background and installs them when you quit. Turn this off to update only when you choose.
+        </p>
+        <button
+          onClick={toggle}
+          role="switch"
+          aria-checked={auto}
+          className={`relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${auto ? 'bg-emerald-500' : 'bg-neutral-700'}`}
+        >
+          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${auto ? 'translate-x-6' : 'translate-x-1'}`} />
+        </button>
+      </div>
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          onClick={check}
+          disabled={checking}
+          className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:border-neutral-500 disabled:opacity-60"
+        >
+          {checking ? 'Checking...' : 'Check for updates'}
+        </button>
+        {version && <span className="text-xs text-neutral-600">Current: v{version}</span>}
+      </div>
+      {status && <p className="mt-2 text-xs text-neutral-500">{status}</p>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Secretary — what Off Grid has learned from your dismissals
 // ---------------------------------------------------------------------------
 
@@ -344,6 +413,11 @@ export function Settings() {
           {/* Data & privacy — one place to delete on-device data. */}
           <SettingsCard title="Data & privacy" summary="See and delete on-device data, per category or all at once." delay={0.42}>
             <DataPrivacyPanel />
+          </SettingsCard>
+
+          {/* Software update — check for updates + automatic-update control (core). */}
+          <SettingsCard title="Software update" summary="Check for updates and choose whether they install automatically." delay={0.46}>
+            <SoftwareUpdateSection />
           </SettingsCard>
 
           {/* Version footer — so you always know which build you're on. */}
