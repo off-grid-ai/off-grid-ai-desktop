@@ -96,7 +96,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   if (llamaHealth) { chat = 'ready'; chatDetail = activeModel ?? undefined; }
   else if (!modelsExist) { chat = 'not_installed'; chatDetail = 'No model installed'; }
   else if (llm.isReady()) { chat = 'starting'; chatDetail = 'Warming up…'; }
-  else { chat = 'down'; chatDetail = 'Model installed but server is not running'; }
+  else { chat = 'down'; chatDetail = llm.lastError() ?? 'Model installed but server is not running'; }
 
   const components: HealthComponent[] = [
     { id: 'chat', label: 'Chat model (llama-server)', status: chat, detail: chatDetail, port: LLAMA_PORT, canRestart: modelsExist },
