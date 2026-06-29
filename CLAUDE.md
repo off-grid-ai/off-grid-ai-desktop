@@ -23,6 +23,19 @@ Roadmap: **`ROADMAP_DESKTOP.md`** (this repo) and `../shared/ROADMAP.md`.
 
 Electron 39 + React 19 + Tailwind v4 + electron-vite; better-sqlite3; bundled `llama-server` (port 8439), `whisper.cpp`, `ffmpeg`, `sharp`. Local LLM is a reasoning model — pass `chat_template_kwargs:{enable_thinking:false}` + grammar-constrained `response_format` for structured output. userData dir is `~/Library/Application Support/Off Grid AI Desktop`.
 
+## Bundled chat engine (`llama-server`) — built in CI, gated, verified the hard way
+
+The chat engine is compiled from llama.cpp **in CI** (`scripts/build-llama.sh`, run by `release.yml` before signing), NOT shipped from the committed/LFS binary. Three engine failures already shipped a broken app to real users — each has a gate now; do not weaken them:
+
+- **Pin the macOS deployment target.** A binary built on a newer SDK gets `minos` = that SDK and silently refuses to launch on older macOS ("Chat model Down", no reason). The script sets `CMAKE_OSX_DEPLOYMENT_TARGET` and **gates on `minos`** (fails if it exceeds target). The committed binary is not trustworthy for this — CI rebuilds.
+- **Stage the exact `@rpath` names, as real files.** The names the binary loads (`libggml.0.dylib`) are **symlinks** to versioned files (`libggml.0.15.3.dylib`). `find -type f` skips symlinks → the bundle misses the linked name → dyld "Library not loaded" for every user (this was 0.0.28). Use `find` **without** `-type f` + `cp` (follows symlinks into real copies; no symlinks inside a signed .app). A **dependency-closure gate** fails the build if any `@rpath/<name>` isn't staged — that gate would have stopped 0.0.28.
+- **No foreign deps.** Any `/opt/homebrew` or `/usr/local` path in the engine's `otool -L` won't exist on a user's Mac; the script gates on this too (e.g. brew OpenSSL — disable it in the cmake config).
+
+Two process rules, learned from the same incident — they matter as much as the gates:
+
+- **Surface the engine's stderr; never guess at the cause.** When `llama-server` dies on load, classify its stderr into a real, actionable reason (`src/main/llama-error.ts`) and show it in System Health. A blank "Model installed but server is not running" got misdiagnosed as code-signing for days when the stderr said `unknown model architecture: 'gemma4'` the whole time.
+- **Verify the EXACT CI path, not an approximation.** A local build using different `cp`/`find` flags than `build-llama.sh` proves nothing — that is exactly how 0.0.28's regression slipped through (local test followed symlinks; CI's `-type f` didn't). Run `scripts/build-llama.sh` itself, then confirm the staged `.0.dylib` names exist as real files **and** a model loads, before claiming a fix is shipped.
+
 ## Conventions
 
 - Verify changes with `npx tsc --noEmit` (main: `tsconfig.node.json`, web: `tsconfig.web.json`) before declaring done.
