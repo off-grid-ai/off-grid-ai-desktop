@@ -9,6 +9,7 @@
 import os from 'os';
 import * as http from 'http';
 import { llm } from './llm';
+import { decideChatStatus } from './chat-health';
 import { getActiveModel, downloadModel, listInstalled, setActiveModel, setActiveModalChoice } from './models-manager';
 
 export type ComponentStatus = 'ready' | 'starting' | 'down' | 'not_installed';
@@ -88,15 +89,17 @@ export async function getSystemHealth(): Promise<SystemHealth> {
     return v === 'ready' ? 'ready' : v === 'not_installed' ? 'not_installed' : 'down';
   };
 
-  // Chat LLM (llama-server). ready = /health answers. starting = a model is
-  // present and we've kicked off init but it isn't answering yet. not_installed =
-  // no model on disk. down = model present but server isn't coming up.
-  let chat: ComponentStatus;
-  let chatDetail: string | undefined;
-  if (llamaHealth) { chat = 'ready'; chatDetail = activeModel ?? undefined; }
-  else if (!modelsExist) { chat = 'not_installed'; chatDetail = 'No model installed'; }
-  else if (llm.isReady()) { chat = 'starting'; chatDetail = 'Warming up…'; }
-  else { chat = 'down'; chatDetail = llm.lastError() ?? 'Model installed but server is not running'; }
+  // Chat LLM (llama-server). ready = /health answers 200. starting = the process
+  // is alive but the model is still loading (cold-start warm-up — /health 503).
+  // not_installed = no model on disk. down = model present but the process isn't
+  // running. (Decision extracted to chat-health.ts so it's unit-tested.)
+  const { status: chat, detail: chatDetail } = decideChatStatus({
+    healthy: !!llamaHealth,
+    loading: llm.isStarting(),
+    modelsExist,
+    activeModel,
+    lastError: llm.lastError(),
+  });
 
   const components: HealthComponent[] = [
     { id: 'chat', label: 'Chat model (llama-server)', status: chat, detail: chatDetail, port: LLAMA_PORT, canRestart: modelsExist },

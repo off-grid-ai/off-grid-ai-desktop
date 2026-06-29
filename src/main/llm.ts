@@ -762,6 +762,14 @@ export class LLMService {
       return this.initialized;
   }
 
+  /** True when the server process is alive but the model hasn't finished loading
+   *  yet — the normal several-second warm-up (gemma-4 at -ngl 99 isn't instant).
+   *  Lets Health show "Loading model…" instead of a scary "server is not running"
+   *  during a cold start. */
+  isStarting() {
+      return this.server !== null && !this.initialized;
+  }
+
   /** Human, actionable reason the chat server failed to start (null when healthy
    *  or never failed). Surfaced in the Health panel so "Down" explains itself. */
   lastError(): string | null {
