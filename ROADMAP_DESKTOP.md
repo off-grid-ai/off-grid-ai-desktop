@@ -122,6 +122,8 @@ The Off Grid chat (`MemoryChat.tsx`) is becoming a full local-first studio — l
 ## Parked (explicitly deferred — not now, per product call June 2026)
 - **Storage & retention** (cleanup/budget/auto-prune). Revisit when running all-day for weeks becomes the norm.
 - **Continuous ScreenCaptureKit → H.264 video** (smooth DVR vs current PNG frames). Current per-tick screenshots are good enough for now.
+- **Replay: scene grouping below the scrubber.** Group the timeline's frames into visible scenes/sessions (the `session.ts` windowing we built for entity carry-over) shown as labelled bands under the time slider, so it's not one flat strip of frames — helps people understand what a stretch of time *was*. (Parked 2026-06-29.)
+- **Entity → scene replay.** From an entity record, pull up the full scene(s) involving that entity and play them back — "show me everything around Nowshad" reconstructs and replays the relevant captured scene. Builds on scene detection + entity links. (Parked 2026-06-29.)
 
 ## Engineering track (parallel)
 Desktop implements capture/reflect/act **inline** today. For mobile reuse, extract into `@offgrid/*` packages (`capture`, `memory`, `skills`, `models`, `imagegen`, `ui`) once proven in-app. **Mobile is built last.**
