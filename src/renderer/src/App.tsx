@@ -477,15 +477,20 @@ function AppContent() {
 
   const openSearch = useCallback((q: string) => { setSearchQuery(q); setViewMode('search'); }, []);
 
-  // Deep-link targets (Replay moment, specific meeting) are one-shot: once we've
-  // left the screen that consumes them, clear them so a later normal visit isn't
-  // pinned to a stale moment. Covers every exit path (nav, back/forward, deep-link).
+  // Deep-link targets (Replay moment, specific meeting) are one-shot: clear them
+  // only when we ACTUALLY LEAVE the screen that consumes them — tracked against the
+  // previous view. Clearing via a viewMode+target dependency raced the navigation
+  // (the target was wiped on the same transition that set it, so Replay opened on
+  // "today"); keying off the transition out fixes that.
+  const prevViewRef = useRef(viewMode);
   useEffect(() => {
-    if (viewMode !== 'replay' && replayTarget !== null) setReplayTarget(null);
-    if (viewMode !== 'meetings' && meetingTarget !== null) setMeetingTarget(null);
-    if (viewMode !== 'actions' && actionsMode !== null) setActionsMode(null);
-    if (viewMode !== 'actions' && actionsEntity !== null) setActionsEntity(null);
-  }, [viewMode, replayTarget, meetingTarget, actionsMode, actionsEntity]);
+    const prev = prevViewRef.current;
+    prevViewRef.current = viewMode;
+    if (prev === viewMode) return;
+    if (prev === 'replay' && viewMode !== 'replay') setReplayTarget(null);
+    if (prev === 'meetings' && viewMode !== 'meetings') setMeetingTarget(null);
+    if (prev === 'actions' && viewMode !== 'actions') { setActionsMode(null); setActionsEntity(null); }
+  }, [viewMode]);
 
   // Open a project chat in the main Chat screen (existing convo or new-in-project).
   const handleOpenProjectChat = useCallback((target: { conversationId?: string; projectId?: string }) => {
