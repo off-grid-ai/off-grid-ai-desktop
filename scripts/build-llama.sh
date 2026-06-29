@@ -50,9 +50,15 @@ fi
 # (llm.ts spawns with DYLD_LIBRARY_PATH=<this dir>, so co-location is enough.)
 rm -rf "$DEST"; mkdir -p "$DEST"
 cp "$BIN" "$DEST/"
-# Copy ONLY the engine's own shared libs — never a stray host dylib that happens
-# to sit in the tree (e.g. libvips from sharp). Curated patterns keep it clean.
-find build -type f \( -name 'libllama*.dylib' -o -name 'libggml*.dylib' -o -name 'libmtmd*.dylib' \) -exec cp -f {} "$DEST/" \;
+# Copy ONLY the engine's own shared libs — never a stray host dylib (e.g. libvips).
+# Two non-obvious rules, both learned the hard way:
+#  - NO -type f: the names the binary links (libggml.0.dylib) are SYMLINKS to the
+#    versioned files; -type f would skip them and the bundle would miss the exact
+#    @rpath names → "Library not loaded" for every user.
+#  - cp (follows symlinks) → REAL copies of every name, not symlinks. Real files
+#    are bulletproof through electron-builder packaging + codesigning; symlinks
+#    inside a signed .app are a "should work" we don't need to gamble on.
+find build \( -name 'libllama*.dylib' -o -name 'libggml*.dylib' -o -name 'libmtmd*.dylib' \) -exec cp -f {} "$DEST/" \;
 chmod +x "$DEST/llama-server"
 echo "[build-llama] staged into $DEST:"; ls -1 "$DEST"
 
@@ -64,4 +70,21 @@ FOREIGN="$(for f in "$DEST"/llama-server "$DEST"/*.dylib; do otool -L "$f" 2>/de
 if [ -n "$FOREIGN" ]; then
   echo "[build-llama] FATAL: engine links non-system libs that won't exist on users' Macs:"; echo "$FOREIGN"; exit 1
 fi
-echo "[build-llama] done — single engine, minos=$MINOS, no foreign deps"
+
+# Gate: EVERY @rpath dependency the binary/dylibs link must actually be present in
+# DEST — by the EXACT name (e.g. libggml.0.dylib, not just libggml.0.15.3.dylib).
+# This is the one that catches "staged the versioned file but dropped the .0
+# symlink" → "Library not loaded" for every user. Resolve symlinks with -e.
+MISSING=""
+for f in "$DEST"/llama-server "$DEST"/*.dylib; do
+  while IFS= read -r dep; do
+    name="${dep#@rpath/}"
+    [ -e "$DEST/$name" ] || MISSING="$MISSING $name"
+  done < <(otool -L "$f" 2>/dev/null | awk '/@rpath\//{print $1}')
+done
+MISSING="$(echo "$MISSING" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/^ *//')"
+if [ -n "$MISSING" ]; then
+  echo "[build-llama] FATAL: engine references @rpath libs NOT bundled: $MISSING"; exit 1
+fi
+
+echo "[build-llama] done — single engine, minos=$MINOS, no foreign deps, all @rpath libs present"
