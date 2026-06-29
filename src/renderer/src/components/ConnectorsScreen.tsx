@@ -418,13 +418,19 @@ export function ConnectorsScreen() {
               <div className="space-y-2">
                 {items.map((c) => {
                   const cat = CONNECTOR_CATALOG.find((x) => x.name === c.name);
+                  // A connector whose catalog entry is not `ready` is a preview/unverified
+                  // integration (e.g. Gmail, Google Calendar) — never present it as working
+                  // "connected", even if a stale row exists. Show it as disabled.
+                  const notReady = cat != null && !cat.ready;
                   return (
-                    <button key={c.id} onClick={() => openDetail(c)} className="flex w-full items-center gap-3 rounded-md border border-neutral-800 bg-neutral-900/40 p-3 text-left transition-colors hover:border-neutral-700">
+                    <button key={c.id} onClick={() => openDetail(c)} className={`flex w-full items-center gap-3 rounded-md border border-neutral-800 bg-neutral-900/40 p-3 text-left transition-colors hover:border-neutral-700 ${notReady ? 'opacity-55' : ''}`}>
                       {cat ? <Badge id={cat.id} color={cat.color} letter={cat.letter} /> : <div className="h-9 w-9 shrink-0" />}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-neutral-100">{c.name}</span>
-                          {c.status === 'ok' ? (
+                          {notReady ? (
+                            <span className="rounded-sm bg-neutral-800 px-1 py-0.5 text-[9px] uppercase tracking-wide text-neutral-500">disabled · preview</span>
+                          ) : c.status === 'ok' ? (
                             <span className="flex items-center gap-1 text-[11px] text-green-500"><IconCircleCheck className="h-3.5 w-3.5" /> connected</span>
                           ) : c.status === 'error' ? (
                             <span className="flex items-center gap-1 text-[11px] text-red-400"><IconAlertTriangle className="h-3.5 w-3.5" /> error</span>
@@ -432,7 +438,7 @@ export function ConnectorsScreen() {
                             <span className="text-[11px] text-neutral-600">not tested</span>
                           )}
                         </div>
-                        <div className="text-[11px] text-neutral-500">{c.synced_count ?? 0} items synced · last {fmtAgo(c.last_synced)}</div>
+                        <div className="text-[11px] text-neutral-500">{notReady ? 'Integration not verified yet' : `${c.synced_count ?? 0} items synced · last ${fmtAgo(c.last_synced)}`}</div>
                       </div>
                       <IconChevronRight className="h-4 w-4 shrink-0 text-neutral-600" />
                     </button>
