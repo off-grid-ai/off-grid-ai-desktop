@@ -1,7 +1,7 @@
 {
   "name": "off-grid-ai",
   "productName": "Off Grid AI",
-  "version": "0.0.29",
+  "version": "0.0.30",
   "description": "Off Grid AI — a private, local-first AI that runs open models (text, vision, image, voice) entirely on your device. No cloud, no accounts.",
   "license": "AGPL-3.0-only",
   "main": "./out/main/index.js",
