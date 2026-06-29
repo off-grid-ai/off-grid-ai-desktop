@@ -7,6 +7,7 @@ import * as fs from "fs";
 import * as http from "http";
 import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit } from "./runtime-env";
 import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from "./model-sizing";
+import { classifyLlamaError } from "./llama-error";
 
 export type { KvCacheType, PerformanceMode };
 
@@ -94,6 +95,11 @@ export class LLMService {
   // a server that keeps dying (e.g. memory pressure on a too-large model) can NOT
   // thrash-respawn a multi-GB process forever.
   private restartTimes: number[] = [];
+  // Last ~50 stderr lines from llama-server, so we can explain WHY it died on
+  // load (unknown arch / OOM / OS-too-old) instead of a blank "Down".
+  private stderrTail: string[] = [];
+  // Human, actionable reason the server failed to come up (null when healthy).
+  private lastErrorMsg: string | null = null;
   private get settingsFile(): string { return path.join(getModelsDir(), "llm-settings.json"); }
 
   constructor() {
@@ -313,13 +319,13 @@ export class LLMService {
       this.mmProjPath = "";
     }
 
-    // Prefer the updated, self-contained llama.cpp build in bin/llama (supports
-    // newer architectures like gemma4); fall back to the legacy bin/llama-server.
+    // ONE engine: bin/llama/llama-server, built in CI from source with a pinned
+    // macOS deployment target (scripts/build-llama.sh) so it both supports the
+    // newest model archs (gemma4/qwen35) AND runs on macOS 13+. The old dual-
+    // engine setup shipped a second, older binary as a "fallback" that silently
+    // couldn't load those models — removed.
     const roots = binRoots();
-    const candidates = roots.flatMap((r) => [
-        path.join(r, "llama", "llama-server"),
-        path.join(r, "llama-server"),
-    ]);
+    const candidates = roots.map((r) => path.join(r, "llama", "llama-server"));
     const serverPath = candidates.find((p) => fs.existsSync(p)) ?? "";
     if (!serverPath) {
         console.error(`[LLMService] llama-server binary not found. Looked in:\n${candidates.join("\n")}`);
@@ -395,9 +401,14 @@ export class LLMService {
       },
     });
     this.server = proc;
+    this.stderrTail = [];
 
     proc.stderr?.on("data", (data) => {
-      console.log(`[llama-server] ${data}`);
+      const text = String(data);
+      console.log(`[llama-server] ${text}`);
+      // Keep a rolling tail so we can classify a load failure after it exits.
+      for (const line of text.split(/\r?\n/)) if (line.trim()) this.stderrTail.push(line);
+      if (this.stderrTail.length > 50) this.stderrTail = this.stderrTail.slice(-50);
     });
 
     proc.on("close", (code, signal) => {
@@ -410,6 +421,16 @@ export class LLMService {
         this.intentionalStop = false;
         this.server = null;
         this.initialized = false;
+        // If it died on its own (not our stop/swap), translate the stderr into a
+        // human reason so the Health panel can say WHY instead of a blank "Down".
+        const deliberateClose = wasIntentional || signal === 'SIGKILL' || signal === 'SIGTERM';
+        if (!deliberateClose && !this.paused) {
+          const failure = classifyLlamaError(this.stderrTail.join('\n'));
+          if (failure) {
+            this.lastErrorMsg = failure.reason;
+            console.error(`[LLMService] llama-server load failure (${failure.code}): ${failure.reason}`);
+          }
+        }
         // Do NOT auto-restart a DELIBERATE kill — a user/OS `kill` (SIGKILL/SIGTERM)
         // or our own teardown. Otherwise killing llama-server just respawns it,
         // making it impossible to stop without killing the whole app. Only recover
@@ -422,6 +443,7 @@ export class LLMService {
         await this.waitForReady();
         console.log("[LLMService] Vision server ready!");
         this.initialized = true;
+        this.lastErrorMsg = null; // healthy again — clear any prior failure reason
     } catch (e) {
         console.error("[LLMService] Failed to start server:", e);
         this.stop();
@@ -738,6 +760,12 @@ export class LLMService {
 
   isReady() {
       return this.initialized;
+  }
+
+  /** Human, actionable reason the chat server failed to start (null when healthy
+   *  or never failed). Surfaced in the Health panel so "Down" explains itself. */
+  lastError(): string | null {
+      return this.lastErrorMsg;
   }
 
   /** Hard restart: kill the server and spawn it fresh (picks up a model swap or
