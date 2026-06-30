@@ -94,6 +94,20 @@ jobs:
         run: npm ci
       - name: Build (typecheck + bundle)
         run: npm run build
+      # Same approach as mobile (.github/workflows/release.yml): collect the commits
+      # since the previous release tag into release-notes.md. Generated BEFORE publish
+      # so the tag electron-builder is about to create (v$VERSION) is not yet the
+      # "last tag" — git describe resolves to the PREVIOUS release. We drop the
+      # bot version-bump commit ([skip ci]) so notes are only real changes.
+      - name: Generate release notes
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          node scripts/release-notes.mjs \
+            "$LAST_TAG" \
+            "${{ needs.version.outputs.version }}" \
+            "${{ github.repository }}" \
+            > release-notes.md
+          cat release-notes.md
       - name: Package, sign, notarize & publish (DMG + auto-update metadata)
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -126,3 +140,11 @@ jobs:
           # they follow latest-mac.yml. One-time bridge so no Pro user is orphaned.
           cp dist/latest-mac.yml dist/pro-mac.yml
           gh release upload "v$VERSION" dist/pro-mac.yml --clobber
+      # electron-builder creates the GitHub release with empty notes; attach the
+      # notes generated above (mobile sets them at create time via --notes-file; the
+      # desktop release is created by electron-builder, so we set them after).
+      - name: Attach release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: gh release edit "v$VERSION" --notes-file release-notes.md
