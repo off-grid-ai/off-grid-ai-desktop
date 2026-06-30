@@ -489,8 +489,16 @@ function AppContent() {
   // static catalogue and are marked locked in the free build (open the
   // UpgradeScreen); core tabs (Projects / Chat / Models / Settings) sit where
   // they always did.
-  const proItem = (route: string): { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } => {
-    const f = getProFeature(route)!;
+  // A missing catalog entry must NEVER blank the whole app — no error boundary
+  // wraps the nav, so a TypeError here white-screens every user on boot (0.0.34).
+  // If a route has no ProFeature, skip that item and warn; a dropped tab is
+  // recoverable, a render-time throw is not.
+  const proItem = (route: string): { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } | null => {
+    const f = getProFeature(route);
+    if (!f) {
+      console.warn(`[nav] no pro catalog entry for "${route}" — skipping nav item`);
+      return null;
+    }
     return {
       label: f.label,
       icon: <f.icon className="h-5 w-5 shrink-0 text-neutral-400" weight="regular" />,
@@ -509,13 +517,12 @@ function AppContent() {
     proItem('entities'),
     { label: 'Projects', icon: <IconFolders className="h-5 w-5 shrink-0" />, view: 'projects' as ViewMode },
     { label: 'Chat', icon: <IconMessageCircle className="h-5 w-5 shrink-0" />, view: 'memory-chat' as ViewMode },
-    proItem('voice'),
     proItem('clipboard'),
     { label: 'Integrations', icon: <IconPlug className="h-5 w-5 shrink-0" />, view: 'connectors' as ViewMode },
     { label: 'Models', icon: <IconDownload className="h-5 w-5 shrink-0" />, view: 'models' as ViewMode },
     { label: 'Gateway', icon: <IconServer2 className="h-5 w-5 shrink-0" />, view: 'gateway' as ViewMode },
     proItem('notifications'),
-  ];
+  ].filter((i): i is { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } => i !== null);
   const bottomNav: { label: string; icon: React.ReactNode; view: ViewMode; locked?: boolean }[] = [
     { label: 'Settings', icon: <IconSettings className="h-5 w-5 shrink-0" />, view: 'settings' as ViewMode },
   ];
