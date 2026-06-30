@@ -19,7 +19,7 @@
 //   ## What's Changed     <- the full commit list (same as before)
 //   **Full Changelog**: …
 
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 
 const [prevTag = '', version = '0.0.0', repo = '', toRef = 'HEAD'] = process.argv.slice(2)
 
@@ -28,10 +28,12 @@ const [prevTag = '', version = '0.0.0', repo = '', toRef = 'HEAD'] = process.arg
 // stays out of the human summary - it still shows in the raw commit list below.
 const TYPE_GROUP = { feat: 'New', fix: 'Fixes', perf: 'Fixes' }
 
+// Pass args to git directly (no shell) so the range/refs are never interpreted as
+// command text. %s subject, %h short hash, tab-separated. Skip the bot version bump.
 const range = prevTag ? `${prevTag}..${toRef}` : toRef
-const raw = execSync(
-  // %s subject, %h short hash, tab-separated. Skip the bot version bump.
-  `git log ${range} --no-merges --invert-grep --grep='\\[skip ci\\]' --pretty=format:'%s\t%h'`,
+const raw = execFileSync(
+  'git',
+  ['log', range, '--no-merges', '--invert-grep', '--grep=\\[skip ci\\]', '--pretty=format:%s\t%h'],
   { encoding: 'utf8' },
 ).trim()
 
@@ -96,6 +98,12 @@ if (commits.length) {
   out.push('- No changes since the previous release.')
 }
 out.push('')
-out.push(`**Full Changelog**: https://github.com/${repo}/compare/${prevTag || 'v0.0.0'}...v${version}`)
+// On the first release there's no prior tag to compare against (a v0.0.0 compare
+// link would 404), so point at the release tag itself.
+if (prevTag) {
+  out.push(`**Full Changelog**: https://github.com/${repo}/compare/${prevTag}...v${version}`)
+} else {
+  out.push(`**Full Changelog**: https://github.com/${repo}/releases/tag/v${version}`)
+}
 
 process.stdout.write(out.join('\n') + '\n')
