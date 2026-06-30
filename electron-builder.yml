@@ -14,9 +14,13 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,tsconfig.web.tsbuildinfo}'
   - '!**/*.tsbuildinfo'
-# Free build: bundles only the local model runner (llama/whisper/ffmpeg/sd in
-# resources/bin) + UI assets. The capture/meeting native binaries (Swift watcher,
-# meeting-recorder) are Pro and are added by the Pro build's own config.
+# Bundles everything under resources/ (the local model runner — llama/whisper/ffmpeg/sd
+# — plus the native helpers release.yml stages into resources/bin: meeting-recorder, the
+# dictation hotkey, etc.) + UI assets. Those native binaries are built fresh and copied
+# into resources/bin by release.yml BEFORE this runs, so they get bundled and signed in
+# the normal pass. (An earlier note claimed a separate "Pro build config" added
+# meeting-recorder — there is no such config; that gap shipped it missing, so it is now
+# staged in release.yml like the rest.)
 extraResources:
   - from: resources
     to: .
