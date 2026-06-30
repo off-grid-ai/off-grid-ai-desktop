@@ -490,8 +490,9 @@ function AppContent() {
   // UpgradeScreen); core tabs (Projects / Chat / Models / Settings) sit where
   // they always did.
   // A missing catalog entry must NEVER blank the whole app — no error boundary
-  // wraps the nav, so a TypeError here white-screens every user. If a route has
-  // no ProFeature, skip that item and warn; a dropped tab is recoverable.
+  // wraps the nav, so a TypeError here white-screens every user on boot (0.0.34).
+  // If a route has no ProFeature, skip that item and warn; a dropped tab is
+  // recoverable, a render-time throw is not.
   const proItem = (route: string): { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } | null => {
     const f = getProFeature(route);
     if (!f) {
