@@ -45,7 +45,7 @@ await wait(6000); // let activateMain + seedProDemo finish
 await win.evaluate(async () => {
   localStorage.setItem('onboarding_completed', 'true');
   localStorage.setItem('offgrid:disable-capture', '1'); // no live auto-record in the demo
-  localStorage.setItem('og-theme', 'dark'); // capture in dark mode
+  localStorage.setItem('og-theme', 'light'); // capture in light mode (uniform gallery)
   // The Notifications inbox loads from localStorage (useNotifications), not the DB,
   // so seed synthetic approvals + to-dos here or the screen captures empty. Same
   // fictional people/projects as the rest of the demo seed.
