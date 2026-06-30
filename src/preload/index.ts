@@ -421,6 +421,7 @@ try {
     meetingGetState: () => ipcRenderer.invoke('meeting:get-state'),
     meetingList: () => ipcRenderer.invoke('meeting:list'),
     meetingDelete: (id: number) => ipcRenderer.invoke('meeting:delete', id),
+    meetingRetranscribe: (id: number) => ipcRenderer.invoke('meeting:retranscribe', id),
     meetingPlayablePath: (p: string) => ipcRenderer.invoke('meeting:playable-path', p),
     // The controller broadcasts its full state here; the renderer just reflects it.
     onMeetingState: (cb: (s: unknown) => void) => {
