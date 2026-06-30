@@ -47,8 +47,12 @@ do {
 setvbuf(stdout, nil, _IONBF, 0)
 
 let callback: CGEventTapCallBack = { _, type, event, _ in
-  // The system can disable the tap (timeout / user input) — re-enable it.
+  // The system can disable the tap (timeout / user input) — re-enable it. If a key
+  // was held when this happened, we may have missed the matching key-up, so emit an
+  // "up" and clear gPressed; otherwise the next press is swallowed (line ~59) and
+  // push-to-talk gets stuck.
   if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+    if gPressed { gPressed = false; print("up") }
     if let tap = gTap { CGEvent.tapEnable(tap: tap, enable: true) }
     return Unmanaged.passUnretained(event)
   }
