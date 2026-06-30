@@ -122,7 +122,7 @@ export const PRO_FEATURES: ProFeature[] = [
     icon: Waveform,
     tagline: 'Talk instead of type, fully local.',
     description:
-      'Hold Option+Space and speak — Off Grid transcribes on-device with whisper.cpp and pastes the text into whatever app you are in. Tap to toggle, hold to push-to-talk. Every recording and transcript is kept in a searchable library, and you can drop in any audio or video file to transcribe it. Runs in your Mac’s RAM; nothing leaves the device.',
+      'Hold Option+Space and speak — Off Grid AI Desktop transcribes on-device with whisper.cpp and pastes the text into whatever app you are in. Tap to toggle, hold to push-to-talk. Every recording and transcript is kept in a searchable library, and you can drop in any audio or video file to transcribe it. Runs in your Mac’s RAM; nothing leaves the device.',
     highlights: [
       'Option+Space push-to-talk or toggle, anywhere',
       'Paste-at-cursor + a searchable recordings library',

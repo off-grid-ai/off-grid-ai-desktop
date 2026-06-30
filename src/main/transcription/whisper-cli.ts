@@ -113,9 +113,10 @@ export class WhisperCliTranscription implements TranscriptionService {
     if (!opts.alreadyWav16k) {
       const ff = ffmpegBin();
       if (!ff) throw new Error('ffmpeg is required to decode audio and was not found.');
-      tmp = path.join(os.tmpdir(), `offgrid-stt-${Date.now()}-${Math.round(performance.now())}.wav`);
+      tmp = path.join(os.tmpdir(), `offgrid-stt-${Date.now()}-${Math.round(performance.now())}-${process.pid}.wav`);
       // 16 kHz mono PCM WAV; -vn drops any video track so A/V files work too.
-      await execFileAsync(ff, ['-y', '-i', input.path, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', tmp]);
+      // Cap the decode so a malformed/streaming input can't hang the process forever.
+      await execFileAsync(ff, ['-y', '-i', input.path, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', tmp], { timeout: 10 * 60_000 });
       wav = tmp;
     }
 
@@ -126,7 +127,7 @@ export class WhisperCliTranscription implements TranscriptionService {
       // Bias toward custom vocabulary (names/jargon) via the initial prompt.
       const prompt = (opts.prompt ?? '').trim();
       if (prompt) args.push('--prompt', prompt.slice(0, 800));
-      const { stdout } = await execFileAsync(bin, args, { maxBuffer: 64 * 1024 * 1024 });
+      const { stdout } = await execFileAsync(bin, args, { maxBuffer: 64 * 1024 * 1024, timeout: 30 * 60_000 });
       return { text: stdout.trim(), language: language === 'auto' ? undefined : language };
     } finally {
       if (tmp) fs.promises.unlink(tmp).catch(() => {});
