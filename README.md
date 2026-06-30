@@ -176,6 +176,11 @@ explicit opt-in, with a visible recording indicator, and nothing leaves the devi
 - **Reflects** — mind-share, balance, context-switching, and Day/Week trends.
 - **Meetings** — records **Google Meet + Zoom** (screen + system audio + mic), transcribes
   locally with whisper, and folds an LLM title/summary/attendees into your timeline.
+- **Dictation** — hold **⌥ Space** and talk; whisper transcribes **completely on-device**
+  and the text is pasted at your cursor in any app (over full-screen too). Tap-to-toggle or
+  push-to-talk, a searchable recordings library, drag-in audio/video file transcription, and
+  the people, projects, and to-dos from what you said folded into your memory. Nothing leaves
+  the device.
 - **Clipboard** — a private clipboard manager: searchable history of everything you copy,
   with image, PDF, and file previews, a quick-paste popup, all stored on-device.
 - **Acts (with approval)** — action items detected from your communication, an
@@ -202,6 +207,10 @@ locked until a valid key is activated.
 <tr>
 <td width="50%"><strong>Meetings</strong> — recorded + transcribed locally<br><img src="docs/screenshots/pro-meetings.png" width="100%" alt="Meetings" /></td>
 <td width="50%"><strong>Replay</strong> — rewind your screen like a film<br><img src="docs/screenshots/pro-replay.png" width="100%" alt="Replay" /></td>
+</tr>
+<tr>
+<td width="50%"><strong>Dictation</strong> — talk, transcribed on-device, pasted anywhere<br><img src="docs/screenshots/pro-voice.png" width="100%" alt="Voice dictation" /></td>
+<td width="50%"><strong>Clipboard</strong> — searchable history + quick-paste popup<br><img src="docs/screenshots/pro-clipboard.png" width="100%" alt="Clipboard" /></td>
 </tr>
 </table>
 

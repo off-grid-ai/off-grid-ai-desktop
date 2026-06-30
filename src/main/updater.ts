@@ -20,6 +20,11 @@ function autoEnabled(): boolean {
   return getSetting<boolean>('updates:auto', true); // default ON
 }
 
+type UpdateChannel = 'stable' | 'beta';
+function channelPref(): UpdateChannel {
+  return getSetting<UpdateChannel>('updates:channel', 'stable'); // default stable
+}
+
 // Apply the user's auto-update preference to the updater. With auto OFF nothing
 // downloads or installs without an explicit user action.
 function applyAutoPref(): void {
@@ -28,8 +33,20 @@ function applyAutoPref(): void {
   autoUpdater.autoInstallOnAppQuit = on;
 }
 
+// Point the updater at the chosen feed: 'beta' reads beta-mac.yml (the nightly,
+// pre-release channel — opt-in only); 'stable' reads latest-mac.yml. allowDowngrade
+// lets a user who switches beta → stable move back to the latest STABLE build even
+// though its version is "older" than the beta they were running.
+function applyChannel(): void {
+  const beta = channelPref() === 'beta';
+  autoUpdater.channel = beta ? 'beta' : 'latest';
+  autoUpdater.allowPrerelease = beta;
+  autoUpdater.allowDowngrade = true;
+}
+
 export function startAutoUpdates(): void {
   applyAutoPref();
+  applyChannel();
 
   // Apply a staged update on demand. autoInstallOnAppQuit only swaps the bundle
   // on a GRACEFUL quit — a force-kill (Activity Monitor, kill -9, killall) skips
@@ -43,8 +60,8 @@ export function startAutoUpdates(): void {
   // Lets a freshly-created window ask whether an update is already staged.
   ipcMain.handle('update:staged-version', () => stagedVersion);
 
-  // Current state for the Settings UI: the running version + whether auto is on.
-  ipcMain.handle('update:get-prefs', () => ({ currentVersion: app.getVersion(), auto: autoEnabled() }));
+  // Current state for the Settings UI: the running version + auto on/off + channel.
+  ipcMain.handle('update:get-prefs', () => ({ currentVersion: app.getVersion(), auto: autoEnabled(), channel: channelPref() }));
 
   // Toggle automatic updates. Persisted + applied live; turning it on kicks an
   // immediate background check so the user doesn't wait for the next interval.
@@ -53,6 +70,16 @@ export function startAutoUpdates(): void {
     applyAutoPref();
     if (on) autoUpdater.checkForUpdatesAndNotify().catch((e) => console.error('[update] check failed', e));
     return autoEnabled();
+  });
+
+  // Switch update channel (stable ⇄ beta/nightly). Persisted + applied live, then
+  // an immediate check so the user sees the channel's latest build right away.
+  ipcMain.handle('update:set-channel', (_e, channel: UpdateChannel) => {
+    const next: UpdateChannel = channel === 'beta' ? 'beta' : 'stable';
+    saveSetting('updates:channel', next);
+    applyChannel();
+    if (autoEnabled()) autoUpdater.checkForUpdatesAndNotify().catch((e) => console.error('[update] channel check failed', e));
+    return next;
   });
 
   // Manual "Check for updates". Resolves with a definite status the UI can show.

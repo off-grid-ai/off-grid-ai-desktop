@@ -100,7 +100,7 @@ export function startMediaServer(): void {
   // cache, models). Canonicalize each once at startup so symlink-resolved request
   // paths compare correctly (fall back to a plain resolve if the dir doesn't exist).
   const ud = app.getPath('userData');
-  allowedRoots = ['meetings', 'uploads', 'captures']
+  allowedRoots = ['meetings', 'uploads', 'captures', 'voice']
     .map((d) => path.join(ud, d))
     .map((d) => canonical(d) ?? path.resolve(d));
 

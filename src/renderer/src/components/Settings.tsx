@@ -114,13 +114,15 @@ function SoftwareUpdateSection(): React.ReactElement {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api = (window as any).api;
   const [auto, setAuto] = useState(true);
+  const [beta, setBeta] = useState(false);
   const [version, setVersion] = useState('');
   const [checking, setChecking] = useState(false);
   const [status, setStatus] = useState('');
   useEffect(() => {
-    api.updateGetPrefs?.().then((p: { currentVersion?: string; auto?: boolean }) => {
+    api.updateGetPrefs?.().then((p: { currentVersion?: string; auto?: boolean; channel?: string }) => {
       setVersion(p?.currentVersion ?? '');
       setAuto(p?.auto !== false);
+      setBeta(p?.channel === 'beta');
     }).catch(() => {});
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
@@ -128,6 +130,14 @@ function SoftwareUpdateSection(): React.ReactElement {
     const next = !auto;
     setAuto(next);
     api.updateSetAuto?.(next);
+  };
+  const toggleBeta = (): void => {
+    const next = !beta;
+    setBeta(next);
+    api.updateSetChannel?.(next ? 'beta' : 'stable');
+    setStatus(next
+      ? 'Switched to nightly builds — these ship on every change and are pre-release. Turn this off to return to stable.'
+      : 'Back on stable builds. You will move to the latest stable version on the next check.');
   };
   const check = async (): Promise<void> => {
     setChecking(true);
@@ -158,6 +168,19 @@ function SoftwareUpdateSection(): React.ReactElement {
           className={`relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${auto ? 'bg-emerald-500' : 'bg-neutral-700'}`}
         >
           <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${auto ? 'translate-x-6' : 'translate-x-1'}`} />
+        </button>
+      </div>
+      <div className="mt-4 flex items-start justify-between gap-4 border-t border-neutral-800 pt-4">
+        <p className="text-neutral-500 text-sm">
+          Get nightly builds. New features land here first, on every change, before they reach stable. These are pre-release - expect rough edges. Off by default.
+        </p>
+        <button
+          onClick={toggleBeta}
+          role="switch"
+          aria-checked={beta}
+          className={`relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${beta ? 'bg-emerald-500' : 'bg-neutral-700'}`}
+        >
+          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${beta ? 'translate-x-6' : 'translate-x-1'}`} />
         </button>
       </div>
       <div className="mt-4 flex items-center gap-3">

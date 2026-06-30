@@ -15,16 +15,30 @@ import { TooltipProvider } from './components/ui/tooltip'
 // exports a no-op ClipboardPopup), and in free builds the popup window never opens.
 import * as ProRenderer from '@offgrid/pro/renderer'
 const ClipboardPopup: FC = (ProRenderer as { ClipboardPopup?: FC }).ClipboardPopup ?? (() => null)
+const DictationOverlay: FC = (ProRenderer as { DictationOverlay?: FC }).DictationOverlay ?? (() => null)
 
-// The global-hotkey quick-paste popup loads this same renderer with #clip-popup,
-// so render just the compact popup there instead of the full app.
-const isClipPopup = window.location.hash === '#clip-popup'
+// The global-hotkey quick-paste popup and the dictation overlay load this same
+// renderer with a hash (#clip-popup / #dictation); render just that surface there
+// instead of the full app.
+const hash = window.location.hash
+const isClipPopup = hash === '#clip-popup'
+const isDictation = hash === '#dictation'
+
+// The dictation overlay is a transparent floating panel — strip the app's opaque
+// theme background off <html>/<body> so only the pill shows (no white box).
+if (isDictation) {
+  document.documentElement.style.background = 'transparent'
+  document.body.style.background = 'transparent'
+  document.body.style.backgroundImage = 'none'
+}
 
 // No analytics / telemetry. Off Grid AI is local-first — nothing leaves your device.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {isClipPopup ? (
       <ClipboardPopup />
+    ) : isDictation ? (
+      <DictationOverlay />
     ) : (
       <TooltipProvider delayDuration={300}>
         <App />

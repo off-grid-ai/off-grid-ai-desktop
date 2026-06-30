@@ -8,6 +8,7 @@ import {
   MagnifyingGlass,
   Broadcast,
   ClipboardText,
+  Waveform,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
@@ -114,6 +115,19 @@ export const PRO_FEATURES: ProFeature[] = [
     description:
       'Off Grid reaches out first — a morning briefing, a heads-up before meetings, approvals waiting on your decision, and to-dos it pulled from your day — even when the window is closed.',
     highlights: ['Proactive briefings & meeting prep', 'Approval queue for actions', 'Auto-extracted to-dos'],
+  },
+  {
+    route: 'voice',
+    label: 'Voice',
+    icon: Waveform,
+    tagline: 'Talk instead of type, fully local.',
+    description:
+      'Hold Option+Space and speak — Off Grid AI Desktop transcribes on-device with whisper.cpp and pastes the text into whatever app you are in. Tap to toggle, hold to push-to-talk. Every recording and transcript is kept in a searchable library, and you can drop in any audio or video file to transcribe it. Runs in your Mac’s RAM; nothing leaves the device.',
+    highlights: [
+      'Option+Space push-to-talk or toggle, anywhere',
+      'Paste-at-cursor + a searchable recordings library',
+      'Transcribe any audio/video file, all on-device',
+    ],
   },
   {
     route: 'clipboard',

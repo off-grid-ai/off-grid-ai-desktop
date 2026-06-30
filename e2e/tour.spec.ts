@@ -90,8 +90,17 @@ test('Clipboard is a Pro tab in the core build (shows upgrade)', async () => {
   await expect(page.getByRole('heading', { name: 'Clipboard' })).toBeVisible();
 });
 
+test('Voice is a Pro tab in the core build (shows upgrade)', async () => {
+  // Voice/dictation is Pro: in the free tour (OFFGRID_PRO=0) the tab is locked and
+  // renders the upgrade screen, not the dictation library.
+  await page.getByRole('button', { name: /Voice/ }).first().click();
+  await page.waitForTimeout(500);
+  await expect(page.getByText('Off Grid Pro · Available now')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Voice' })).toBeVisible();
+});
+
 test('Gateway screen renders', async () => {
-  await nav('Settings'); // leave the clipboard upgrade screen first
+  await nav('Settings'); // leave the upgrade screen first
   await nav('Gateway');
   await expect(page.getByText(/OpenAI-compatible/i).first()).toBeVisible();
 });

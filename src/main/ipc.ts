@@ -1646,13 +1646,19 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       const fs = await import('fs');
       const path = await import('path');
       const os = await import('os');
-      const { desktopExtraction } = await import('./rag/extractors');
-      if (!desktopExtraction.transcribeAudio) throw new Error('Transcription is not available.');
-      const buf = Buffer.from(audio as ArrayBuffer);
-      const tmp = path.join(os.tmpdir(), `offgrid-mic-${Date.now()}.${ext}`);
+      const { transcriptionService } = await import('./transcription/whisper-cli');
+      // Respect a Uint8Array's view bounds (byteOffset/length) — Buffer.from on the
+      // backing ArrayBuffer would copy the WHOLE buffer, corrupting a sliced view.
+      const buf = ArrayBuffer.isView(audio)
+          ? Buffer.from(audio.buffer, audio.byteOffset, audio.byteLength)
+          : Buffer.from(audio as ArrayBuffer);
+      // ext is renderer-controlled — strip anything but alphanumerics so it can't
+      // contain path separators / traversal sequences in the temp filename.
+      const safeExt = (ext || 'webm').replace(/[^a-zA-Z0-9]/g, '').slice(0, 10) || 'webm';
+      const tmp = path.join(os.tmpdir(), `offgrid-mic-${Date.now()}.${safeExt}`);
       await fs.promises.writeFile(tmp, buf);
       try {
-          return await desktopExtraction.transcribeAudio(tmp);
+          return (await transcriptionService.transcribe({ path: tmp })).text;
       } finally {
           fs.promises.unlink(tmp).catch(() => {});
       }

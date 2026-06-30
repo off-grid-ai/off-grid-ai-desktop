@@ -112,6 +112,15 @@ test('Clipboard is unlocked in the pro build', async () => {
   await expect(page.getByPlaceholder('Search clipboard history…')).toBeVisible();
 });
 
+test('Voice is unlocked in the pro build (renders the dictation library)', async () => {
+  await nav('Voice');
+  await expect(page.getByText('Off Grid Pro · Available now')).toHaveCount(0);
+  // The real screen: a search box, the dictation CTA, and the file-transcribe entry.
+  await expect(page.getByPlaceholder('Search transcripts')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start dictation' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Transcribe file' })).toBeVisible();
+});
+
 test('Restoring a copied file puts BOTH the path text and the file-url on the clipboard', async () => {
   // 1. A real file on disk (written from the test process — Playwright's evaluate
   //    sandbox has no `require`), then simulate a Finder "copy file" by putting its

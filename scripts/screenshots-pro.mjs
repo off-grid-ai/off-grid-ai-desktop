@@ -45,7 +45,19 @@ await wait(6000); // let activateMain + seedProDemo finish
 await win.evaluate(async () => {
   localStorage.setItem('onboarding_completed', 'true');
   localStorage.setItem('offgrid:disable-capture', '1'); // no live auto-record in the demo
-  localStorage.setItem('og-theme', 'dark'); // capture in dark mode
+  localStorage.setItem('og-theme', 'light'); // capture in light mode (uniform gallery)
+  // The Notifications inbox loads from localStorage (useNotifications), not the DB,
+  // so seed synthetic approvals + to-dos here or the screen captures empty. Same
+  // fictional people/projects as the rest of the demo seed.
+  const min = (m) => new Date(Date.now() - m * 60000).toISOString();
+  localStorage.setItem('my-memories-notifications', JSON.stringify([
+    { id: 'n1', type: 'approval', title: 'Reply to Sam Shafer re: pilot rollout', message: 'Off Grid drafted a reply about the v0.8.0 timeline. Approve to send.', timestamp: min(4), read: false, approvalId: 1 },
+    { id: 'n2', type: 'todo', title: "Review Tom's fix for the llama.cpp UI regression", message: 'Pulled from your screen activity in the llama.cpp repo.', timestamp: min(38), read: false, actionId: 1 },
+    { id: 'n3', type: 'approval', title: 'Create Linear issue: /v1/images edits endpoint', message: 'Add to the Gateway v1 milestone with the streaming acceptance criteria.', timestamp: min(72), read: false, approvalId: 2 },
+    { id: 'n4', type: 'todo', title: 'Send Priya the BFSI compliance deck before Friday', message: 'And loop in Daniel on the Northwind metrics before the kickoff.', timestamp: min(96), read: true, actionId: 2 },
+    { id: 'n5', type: 'todo', title: 'Have the privacy one-pager ready for Helio Labs', message: 'Extracted from your dictation about the pilot kickoff prep.', timestamp: min(140), read: false, actionId: 3 },
+    { id: 'n6', type: 'info', title: 'Synced with Priya on the v0.8.0 cut', message: 'Day view updated with the latest timeline.', timestamp: min(220), read: true },
+  ]));
   // Build the keyword search index over the seeded observations so Search has results.
   try { await window.api?.proInvoke?.('search:reindex'); } catch { /* model-less FTS still builds */ }
 });
@@ -69,6 +81,7 @@ for (const [label, file] of [
   ['Day', 'pro-day'], ['Reflect', 'pro-reflect'], ['Replay', 'pro-replay'],
   ['Meetings', 'pro-meetings'], ['Actions', 'pro-actions'], ['Entities', 'pro-entities'],
   ['Search', 'pro-search'], ['Notifications', 'pro-notifications'],
+  ['Voice', 'pro-voice'], ['Clipboard', 'pro-clipboard'],
 ]) {
   await nav(label);
   if (file === 'pro-search') {

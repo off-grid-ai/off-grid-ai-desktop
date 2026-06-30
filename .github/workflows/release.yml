@@ -1,9 +1,19 @@
 name: Build and Release
 
 on:
+  # Every merge to main publishes to the BETA (nightly) channel — opt-in users only.
   push:
     branches:
       - main
+  # Promote to STABLE on demand: Actions → Build and Release → Run workflow → stable.
+  # (Default beta, so an accidental run never ships stable to everyone.)
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel — beta = nightly opt-in feed; stable = everyone'
+        type: choice
+        options: [beta, stable]
+        default: beta
 
 permissions:
   contents: write
@@ -19,13 +29,17 @@ concurrency:
 # app.asar refuse to load — our local-first anti-tamper lever (we don't phone home).
 # Actions are pinned to commit SHAs. Windows is parked.
 jobs:
-  # Bump the version once and push it so the build job builds that exact commit.
+  # Resolve the channel + version. STABLE (manual promote) bumps the patch and
+  # commits it so main tracks the released version; BETA (every merge) stamps a
+  # throwaway -beta.<run> version WITHOUT committing, so nightly builds never move
+  # main's base version or spam it with bump commits.
   version:
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
       sha: ${{ steps.bump.outputs.sha }}
+      channel: ${{ steps.bump.outputs.channel }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -34,19 +48,30 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
-      - name: Bump patch version
+      - name: Resolve channel + version
         id: bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          npm version patch --no-git-tag-version
-          VERSION=$(node -p "require('./package.json').version")
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.channel }}" = "stable" ]; then
+            CHANNEL=stable
+            npm version patch --no-git-tag-version
+            VERSION=$(node -p "require('./package.json').version")
+            git add package.json package-lock.json
+            git commit -m "chore: bump version to $VERSION [skip ci]"
+            git push
+          else
+            CHANNEL=beta
+            # Base version with any existing prerelease suffix stripped, plus a
+            # monotonic -beta.<run_number>. electron-builder turns the -beta suffix
+            # into the `beta` channel (beta-mac.yml) automatically. No commit.
+            BASE=$(node -p "require('./package.json').version")
+            BASE=${BASE%%-*}
+            VERSION="${BASE}-beta.${{ github.run_number }}"
+          fi
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          git add package.json package-lock.json
-          git commit -m "chore: bump version to $VERSION [skip ci]"
-          git push
-          # Pin the build to THIS exact commit, not floating main (avoids the
-          # concurrent-bump version race).
+          # Pin the build to THIS exact commit, not floating main.
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   # Single build: pro code bundled, license-gated. Publishes to the default update
@@ -90,6 +115,17 @@ jobs:
           chmod +x resources/bin/meeting-recorder
           file resources/bin/meeting-recorder
           otool -l resources/bin/meeting-recorder | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print "[ci] meeting-recorder minos="$2; exit}'
+      # Compile the dictation push-to-talk helper (CGEventTap) and stage it into
+      # resources/bin so extraResources bundles it at Contents/Resources/bin — the
+      # path PushToTalkHotkey resolves. Self-contained: no committed binary, built
+      # fresh against the pinned target. If this ever fails to ship, dictation
+      # simply falls back to tap-to-toggle (globalShortcut), so it can't break a release.
+      - name: Build dictation hotkey helper (push-to-talk)
+        run: |
+          bash scripts/build-dictation-hotkey.sh
+          mkdir -p resources/bin
+          cp scripts/dictation-hotkey/dictation-hotkey resources/bin/dictation-hotkey
+          chmod +x resources/bin/dictation-hotkey
       # Private pro source into pro/ → __OFFGRID_PRO__ true. The checkout action
       # injects the token as an http.extraheader (never in a clone URL) and scrubs
       # it afterwards — safer than embedding ${TOKEN} in a git URL.
@@ -107,6 +143,12 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+      # Stamp the resolved version into package.json so electron-builder picks the
+      # right channel. For stable this matches the committed bump (no-op); for beta
+      # it applies the -beta.<run> version (no commit needed — this checkout is
+      # throwaway). The -beta suffix is what makes electron-builder write beta-mac.yml.
+      - name: Stamp build version
+        run: npm version "${{ needs.version.outputs.version }}" --no-git-tag-version --allow-same-version
       - name: Build (typecheck + bundle)
         run: npm run build
       # Same approach as mobile (.github/workflows/release.yml): collect the commits
@@ -136,14 +178,24 @@ jobs:
           # notarytool needs the API key as a file; write it from the secret.
           printf '%s' "$APPLE_API_KEY_CONTENT" > "$RUNNER_TEMP/AuthKey.p8"
           export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
-          # ONE signed + notarized build, published to the default update channel
-          # (the flow that shipped 0.0.22–0.0.24). electron-builder uploads the DMG
-          # (human download) plus the zip + latest-mac.yml + blockmap that
-          # electron-updater needs, so existing users keep auto-updating.
-          npx electron-builder --mac \
-            -c.dmg.artifactName='OffGrid-${version}.${ext}' \
-            --publish always
+          # ONE signed + notarized build. The version's channel decides the feed:
+          #   stable → latest-mac.yml, published as a normal release (everyone)
+          #   beta   → beta-mac.yml (from the -beta suffix), published as a
+          #            PRE-RELEASE so it never becomes /releases/latest and the
+          #            stable feed + the OffGrid-latest.dmg link stay untouched.
+          if [ "${{ needs.version.outputs.channel }}" = "stable" ]; then
+            npx electron-builder --mac \
+              -c.dmg.artifactName='OffGrid-${version}.${ext}' \
+              -c.publish.releaseType=release \
+              --publish always
+          else
+            npx electron-builder --mac \
+              -c.dmg.artifactName='OffGrid-${version}.${ext}' \
+              -c.publish.releaseType=prerelease \
+              --publish always
+          fi
       - name: Migrate legacy Pro update channel (publish pro-mac.yml)
+        if: needs.version.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
@@ -155,10 +207,45 @@ jobs:
           # they follow latest-mac.yml. One-time bridge so no Pro user is orphaned.
           cp dist/latest-mac.yml dist/pro-mac.yml
           gh release upload "v$VERSION" dist/pro-mac.yml --clobber
+      # Stable "always latest" download link. The versioned DMG (OffGrid-<v>.dmg)
+      # changes name every release, so /releases/latest/download/<name> can't target
+      # it. Upload a constant-named COPY so this URL is permanent across releases:
+      #   https://github.com/off-grid-ai/off-grid-ai-desktop/releases/latest/download/OffGrid-latest.dmg
+      # --clobber replaces the copy from the prior run. The versioned DMG + updater
+      # feed (latest-mac.yml) are untouched, so auto-update is unaffected.
+      - name: Publish stable latest.dmg alias
+        if: needs.version.outputs.channel == 'stable'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cp "dist/OffGrid-$VERSION.dmg" dist/OffGrid-latest.dmg
+          gh release upload "v$VERSION" dist/OffGrid-latest.dmg --clobber
+      # Constant nightly download link. /releases/latest EXCLUDES pre-releases, so it
+      # can never point at a beta build (that is exactly what keeps the STABLE link
+      # safe). Nightly therefore gets its own fixed-tag 'nightly' release whose dmg is
+      # force-replaced every beta build — a permanent, SEPARATE URL that never touches
+      # /releases/latest or the stable OffGrid-latest.dmg:
+      #   https://github.com/off-grid-ai/off-grid-ai-desktop/releases/download/nightly/OffGrid-nightly.dmg
+      - name: Publish constant nightly.dmg link
+        if: needs.version.outputs.channel == 'beta'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cp "dist/OffGrid-$VERSION.dmg" dist/OffGrid-nightly.dmg
+          # Ensure the rolling 'nightly' pre-release exists (kept separate from the
+          # versioned -beta.N releases electron-builder makes for the updater feed),
+          # then clobber its dmg so the link always serves the freshest nightly.
+          gh release view nightly >/dev/null 2>&1 || \
+            gh release create nightly --prerelease --title "Nightly (rolling)" \
+              --notes "Rolling nightly build, auto-updated on every change. Pre-release — expect rough edges. Stable: https://github.com/off-grid-ai/off-grid-ai-desktop/releases/latest"
+          gh release upload nightly dist/OffGrid-nightly.dmg --clobber
       # electron-builder creates the GitHub release with empty notes; attach the
       # notes generated above (mobile sets them at create time via --notes-file; the
       # desktop release is created by electron-builder, so we set them after).
       - name: Attach release notes
+        if: needs.version.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
