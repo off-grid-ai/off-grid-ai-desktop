@@ -75,6 +75,21 @@ jobs:
           command -v cmake >/dev/null || brew install cmake
           MACOS_DEPLOYMENT_TARGET=13.0 LLAMA_REF=b9838 bash scripts/build-llama.sh
           otool -l resources/bin/llama/llama-server | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print "[ci] bundled engine minos="$2; exit}'
+      # Compile the native meeting recorder (ScreenCaptureKit + AVFoundation) and stage
+      # it into resources/bin so extraResources bundles it at Contents/Resources/bin —
+      # the first path recorderBin() resolves in the packaged app (pro meeting-native.ts).
+      # Built fresh against the pinned macOS 13 target (NOT the committed dev copy), and
+      # signed automatically by the electron-builder pass. Without this the binary is
+      # never staged into the .app and packaged users hit "Meeting recorder binary not
+      # found" — same class of bug as the un-pinned/un-staged engine failures above.
+      - name: Build meeting recorder (native ScreenCaptureKit helper)
+        run: |
+          bash scripts/build-meeting-recorder.sh
+          mkdir -p resources/bin
+          cp scripts/meeting-recorder/meeting-recorder resources/bin/meeting-recorder
+          chmod +x resources/bin/meeting-recorder
+          file resources/bin/meeting-recorder
+          otool -l resources/bin/meeting-recorder | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print "[ci] meeting-recorder minos="$2; exit}'
       # Private pro source into pro/ → __OFFGRID_PRO__ true. The checkout action
       # injects the token as an http.extraheader (never in a clone URL) and scrubs
       # it afterwards — safer than embedding ${TOKEN} in a git URL.
