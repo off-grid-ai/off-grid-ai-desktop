@@ -136,6 +136,7 @@ try {
     // and a manual "check for updates" that resolves with a definite status.
     updateGetPrefs: () => ipcRenderer.invoke('update:get-prefs'),
     updateSetAuto: (on: boolean) => ipcRenderer.invoke('update:set-auto', on),
+    updateSetChannel: (channel: 'stable' | 'beta') => ipcRenderer.invoke('update:set-channel', channel),
     checkForUpdates: () => ipcRenderer.invoke('update:check'),
 
     // Watcher Events
