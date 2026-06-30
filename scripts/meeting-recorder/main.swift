@@ -91,32 +91,26 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
     func start() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
 
-        // Prefer the meeting WINDOW; fall back to the main display if not found.
-        let filter: SCContentFilter
-        var outW: Int
-        var outH: Int
-        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
-        func even(_ n: Int) -> Int { n % 2 == 0 ? n : n + 1 }
-
-        if let win = pickMeetingWindow(content, platform) {
-            errLog("[rec] capturing window: \(win.title ?? "?") [\(win.owningApplication?.applicationName ?? "?")]")
-            filter = SCContentFilter(desktopIndependentWindow: win)
-            outW = even(Int(win.frame.width * scale))
-            outH = even(Int(win.frame.height * scale))
-        } else {
-            let display: SCDisplay
-            if let m = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) {
-                display = m
-            } else if let first = content.displays.first {
-                display = first
-            } else {
-                throw NSError(domain: "rec", code: 1, userInfo: [NSLocalizedDescriptionKey: "no display"])
-            }
-            errLog("[rec] no meeting window found for '\(platform)', capturing display")
-            filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
-            outW = display.width
-            outH = display.height
+        // Capture the FULL display the call is on — the product records the SCREEN, and a
+        // single-window grab letterboxes the call inside a black frame. Pick the display
+        // holding the meeting window (multi-monitor), else the main display. Exclude Off
+        // Grid's own windows so we never record our own UI back into the recording.
+        guard !content.displays.isEmpty else {
+            throw NSError(domain: "rec", code: 1, userInfo: [NSLocalizedDescriptionKey: "no display"])
         }
+        let meetingWin = pickMeetingWindow(content, platform)
+        let display: SCDisplay = {
+            if let w = meetingWin,
+               let d = content.displays.first(where: { $0.frame.contains(CGPoint(x: w.frame.midX, y: w.frame.midY)) }) {
+                return d
+            }
+            return content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays[0]
+        }()
+        let selfApps = content.applications.filter { $0.applicationName.lowercased().contains("off grid") }
+        errLog("[rec] capturing display \(display.displayID) \(display.width)x\(display.height); excluding \(selfApps.count) Off Grid app(s)")
+        let filter = SCContentFilter(display: display, excludingApplications: selfApps, exceptingWindows: [])
+        let outW = display.width
+        let outH = display.height
 
         let cfg = SCStreamConfiguration()
         cfg.width = outW
