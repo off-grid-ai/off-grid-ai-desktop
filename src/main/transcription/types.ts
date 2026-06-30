@@ -27,6 +27,9 @@ export interface TranscribeOptions {
   suppressNonSpeech?: boolean;
   /** Input is already 16 kHz mono PCM WAV — skip the ffmpeg re-encode. Default false. */
   alreadyWav16k?: boolean;
+  /** Initial-prompt text that biases recognition toward custom vocabulary
+   *  (names, jargon) — whisper's --prompt. Keep it short. */
+  prompt?: string;
 }
 
 export interface TranscriptionService {

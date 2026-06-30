@@ -58,16 +58,20 @@ function sizeRank(f: string): number {
 /** Find the model to use for accurate (final) transcription. Prefers a
  *  MULTILINGUAL model (`.en` models are English-only) and a more capable size. */
 export function whisperModel(): string | null {
-  const dir = modelsDir();
-  // User-chosen transcription model wins, when it's actually present on disk.
-  const chosen = getActiveModal('transcription');
-  if (chosen && fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
-  const files = whisperModelFiles();
-  if (!files.length) return null;
-  const multi = files.filter((f) => !/\.en\.bin$/i.test(f));
-  const pool = multi.length ? multi : files;
-  const pick = [...pool].sort((a, b) => sizeRank(b) - sizeRank(a))[0];
-  return path.join(dir, pick);
+  try {
+    const dir = modelsDir();
+    // User-chosen transcription model wins, when it's actually present on disk.
+    const chosen = getActiveModal('transcription');
+    if (chosen && fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
+    const files = whisperModelFiles();
+    if (!files.length) return null;
+    const multi = files.filter((f) => !/\.en\.bin$/i.test(f));
+    const pool = multi.length ? multi : files;
+    const pick = [...pool].sort((a, b) => sizeRank(b) - sizeRank(a))[0];
+    return path.join(dir, pick);
+  } catch {
+    return null; // transient fs/store error → "no model", not a thrown exception
+  }
 }
 
 /** Smallest available model — used for fast, display-only dictation interim
@@ -119,6 +123,9 @@ export class WhisperCliTranscription implements TranscriptionService {
       const args = ['-m', model, '-f', wav, '-l', language, '-nt', '-np'];
       // -mc 0 + -sns: kill the repetition/hallucination loop + non-speech tokens.
       if (suppress) args.push('-mc', '0', '-sns');
+      // Bias toward custom vocabulary (names/jargon) via the initial prompt.
+      const prompt = (opts.prompt ?? '').trim();
+      if (prompt) args.push('--prompt', prompt.slice(0, 800));
       const { stdout } = await execFileAsync(bin, args, { maxBuffer: 64 * 1024 * 1024 });
       return { text: stdout.trim(), language: language === 'auto' ? undefined : language };
     } finally {

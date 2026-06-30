@@ -24,6 +24,14 @@ const hash = window.location.hash
 const isClipPopup = hash === '#clip-popup'
 const isDictation = hash === '#dictation'
 
+// The dictation overlay is a transparent floating panel — strip the app's opaque
+// theme background off <html>/<body> so only the pill shows (no white box).
+if (isDictation) {
+  document.documentElement.style.background = 'transparent'
+  document.body.style.background = 'transparent'
+  document.body.style.backgroundImage = 'none'
+}
+
 // No analytics / telemetry. Off Grid AI is local-first — nothing leaves your device.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

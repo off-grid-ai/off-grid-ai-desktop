@@ -69,6 +69,7 @@ for (const [label, file] of [
   ['Day', 'pro-day'], ['Reflect', 'pro-reflect'], ['Replay', 'pro-replay'],
   ['Meetings', 'pro-meetings'], ['Actions', 'pro-actions'], ['Entities', 'pro-entities'],
   ['Search', 'pro-search'], ['Notifications', 'pro-notifications'],
+  ['Voice', 'pro-voice'], ['Clipboard', 'pro-clipboard'],
 ]) {
   await nav(label);
   if (file === 'pro-search') {

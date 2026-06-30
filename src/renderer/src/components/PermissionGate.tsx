@@ -147,12 +147,12 @@ export function PermissionGate({ children }: PermissionGateProps) {
         ← Back to app
       </button>
 
-      <div className="relative z-10 h-full w-full flex flex-col items-center justify-center overflow-y-auto py-12 px-8">
+      <div className="relative z-10 h-full w-full flex flex-col items-center overflow-y-auto py-12 px-8">
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="w-full max-w-3xl"
+          className="w-full max-w-3xl my-auto"
         >
           {/* Icon */}
           <motion.div
