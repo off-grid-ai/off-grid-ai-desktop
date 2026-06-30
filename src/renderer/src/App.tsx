@@ -45,7 +45,7 @@ import {
 } from '@tabler/icons-react';
 import { cn } from './lib/utils';
 
-type ViewMode = 'dashboard' | 'day' | 'replay' | 'reflect' | 'actions' | 'connectors' | 'meetings' | 'chats' | 'memories' | 'entities' | 'graph' | 'memory-chat' | 'models' | 'gateway' | 'projects' | 'notifications' | 'settings' | 'search' | 'clipboard';
+type ViewMode = 'dashboard' | 'day' | 'replay' | 'reflect' | 'actions' | 'connectors' | 'meetings' | 'chats' | 'memories' | 'entities' | 'graph' | 'memory-chat' | 'models' | 'gateway' | 'projects' | 'notifications' | 'settings' | 'search' | 'clipboard' | 'voice';
 
 // Navigation state type for history tracking
 interface NavigationState {
@@ -185,46 +185,11 @@ function AppContent() {
   // existing conversation, or a request to start a new chat scoped to a project.
   const [chatTarget, setChatTarget] = useState<{ conversationId?: string; projectId?: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [meetingPlatform, setMeetingPlatform] = useState<string | null>(null);
   const rec = useMeetingRecorder();
 
-  // Proactive: a Zoom/Meet/Teams call detected → AUTO-record (visible indicator
-  // in-app + menu bar keeps it transparent).
-  useEffect(() => {
-    // Escape hatch for demo/screenshot captures: skip live meeting auto-record.
-    if (localStorage.getItem('offgrid:disable-capture') === '1') return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = (window as any).api;
-    const offDetected = api.onMeetingDetected?.((platform: string) => {
-      setMeetingPlatform(platform);
-      rec.start(platform);
-    });
-    const offEnded = api.onMeetingEnded?.(() => {
-      setMeetingPlatform(null);
-      rec.stop(); // call ended → finish + transcribe
-    });
-    const offStop = api.onMeetingStop?.(() => rec.stop()); // from the menu-bar tray
-    // Catch a call that was ALREADY in progress when this window loaded — the
-    // detector's edge broadcast can fire before the renderer is listening, so we
-    // ask main for the current state once on mount and auto-record if active.
-    void (async () => {
-      try {
-        const st = await api.meetingGetState?.();
-        if (st?.active && !rec.recording) {
-          setMeetingPlatform(st.platform ?? 'meeting');
-          rec.start(st.platform ?? undefined);
-        }
-      } catch { /* ignore */ }
-    })();
-    return () => { offDetected?.(); offEnded?.(); offStop?.(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Mirror recording state to main so the menu-bar tray can show it.
-  useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).api.meetingSetRecording?.(rec.recording);
-  }, [rec.recording]);
+  // The meeting recording lifecycle (detect → record → warn → stop → finalize) is
+  // owned by the main-process MeetingController. This view just reflects rec.* and
+  // offers a stop command — no detection, no timers, no start/stop decisions here.
 
   // Tell the capture layer which screen is showing, so self-capture can skip the
   // memory-mirror views (Day/Replay/Entities/…) and avoid looping the graph.
@@ -268,7 +233,8 @@ function AppContent() {
       '/projects': 'projects',
       '/notifications': 'notifications',
       '/search': 'search',
-      '/settings': 'settings'
+      '/settings': 'settings',
+      '/voice': 'voice'
     };
 
     if (viewMap[path]) {
@@ -284,7 +250,12 @@ function AppContent() {
       if (v) setViewMode(v);
     };
     window.addEventListener('og:navigate', onNav);
-    return () => window.removeEventListener('og:navigate', onNav);
+    // Main-driven navigation (tray → a screen).
+    const offNav = window.api.onNavigate?.((v: string) => setViewMode(v as ViewMode));
+    return () => {
+      window.removeEventListener('og:navigate', onNav);
+      offNav?.();
+    };
   }, []);
 
   // Update browser URL when view mode changes
@@ -308,7 +279,8 @@ function AppContent() {
       'notifications': '/notifications',
       'search': '/search',
       'settings': '/settings',
-      'clipboard': '/clipboard'
+      'clipboard': '/clipboard',
+      'voice': '/voice'
     };
 
     const newPath = urlMap[viewMode];
@@ -537,6 +509,7 @@ function AppContent() {
     proItem('entities'),
     { label: 'Projects', icon: <IconFolders className="h-5 w-5 shrink-0" />, view: 'projects' as ViewMode },
     { label: 'Chat', icon: <IconMessageCircle className="h-5 w-5 shrink-0" />, view: 'memory-chat' as ViewMode },
+    proItem('voice'),
     proItem('clipboard'),
     { label: 'Integrations', icon: <IconPlug className="h-5 w-5 shrink-0" />, view: 'connectors' as ViewMode },
     { label: 'Models', icon: <IconDownload className="h-5 w-5 shrink-0" />, view: 'models' as ViewMode },
@@ -577,15 +550,20 @@ function AppContent() {
       {/* Recording indicator — auto-records detected meetings; always visible. */}
       {(rec.recording || rec.busy) && (
         <button
-          onClick={() => rec.recording && rec.stop()}
+          onClick={() => (rec.warningSecondsLeft > 0 ? rec.keepAlive() : rec.recording && rec.stop())}
           className="absolute left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-red-500/40 bg-neutral-900/95 px-3.5 py-1.5 font-mono text-xs text-neutral-200 shadow-xl backdrop-blur hover:border-red-500"
         >
           {rec.busy ? (
             <><IconLoader2 className="h-3.5 w-3.5 animate-spin text-neutral-400" /> Transcribing meeting…</>
+          ) : rec.warningSecondsLeft > 0 ? (
+            <>
+              <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+              Stopping in {rec.warningSecondsLeft}s — click to keep, or rejoin the meeting
+            </>
           ) : (
             <>
               <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-              Recording {meetingPlatform === 'zoom' ? 'Zoom' : meetingPlatform === 'teams' ? 'Teams' : meetingPlatform === 'meet' ? 'Meet' : 'meeting'} · {Math.floor(rec.elapsed / 60)}:{String(rec.elapsed % 60).padStart(2, '0')} · click to stop
+              Recording {rec.platform === 'zoom' ? 'Zoom' : rec.platform === 'teams' ? 'Teams' : rec.platform === 'meet' ? 'Meet' : 'meeting'} · {Math.floor(rec.elapsed / 60)}:{String(rec.elapsed % 60).padStart(2, '0')} · click to stop
             </>
           )}
         </button>

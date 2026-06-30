@@ -414,27 +414,25 @@ try {
     // Meeting recorder (screen video + system audio + mic → local transcript)
     meetingSave: (audio: Uint8Array, meta: { startedAt: number; endedAt: number; ext?: string }) => ipcRenderer.invoke('meeting:save', audio, meta),
     // Native recorder — main process captures everything via the Swift binary.
+    // Commands only — the main-process MeetingController owns the lifecycle.
     meetingStart: (platform?: string) => ipcRenderer.invoke('meeting:start', platform),
     meetingStop: () => ipcRenderer.invoke('meeting:stop'),
+    meetingKeepAlive: () => ipcRenderer.invoke('meeting:keep-alive'),
     meetingGetState: () => ipcRenderer.invoke('meeting:get-state'),
     meetingList: () => ipcRenderer.invoke('meeting:list'),
     meetingDelete: (id: number) => ipcRenderer.invoke('meeting:delete', id),
     meetingPlayablePath: (p: string) => ipcRenderer.invoke('meeting:playable-path', p),
-    onMeetingDetected: (cb: (platform: string) => void) => {
-      const sub = (_e: unknown, platform: string): void => cb(platform);
-      ipcRenderer.on('meeting:detected', sub);
-      return () => ipcRenderer.removeListener('meeting:detected', sub);
+    // The controller broadcasts its full state here; the renderer just reflects it.
+    onMeetingState: (cb: (s: unknown) => void) => {
+      const sub = (_e: unknown, s: unknown): void => cb(s);
+      ipcRenderer.on('meeting:state', sub);
+      return () => ipcRenderer.removeListener('meeting:state', sub);
     },
-    onMeetingEnded: (cb: () => void) => {
-      const sub = (): void => cb();
-      ipcRenderer.on('meeting:ended', sub);
-      return () => ipcRenderer.removeListener('meeting:ended', sub);
-    },
-    meetingSetRecording: (recording: boolean) => ipcRenderer.invoke('meeting:set-recording', recording),
-    onMeetingStop: (cb: () => void) => {
-      const sub = (): void => cb();
-      ipcRenderer.on('meeting:stop', sub);
-      return () => ipcRenderer.removeListener('meeting:stop', sub);
+    // Main-driven view navigation (used by the tray to jump to a screen).
+    onNavigate: (cb: (view: string) => void) => {
+      const sub = (_e: unknown, view: string): void => cb(view);
+      ipcRenderer.on('navigate', sub);
+      return () => ipcRenderer.removeListener('navigate', sub);
     }
   });
   console.log("API Exposed successfully");

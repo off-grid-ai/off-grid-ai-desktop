@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const api = (window as any).api;
@@ -6,63 +6,67 @@ const api = (window as any).api;
 export interface MeetingRecorder {
   recording: boolean;
   busy: boolean; // transcribing after stop
-  elapsed: number;
+  elapsed: number; // seconds, display-only (derived from startedAt)
+  warningSecondsLeft: number; // >0 while the "switch back or we stop" warning shows
+  platform: string | null;
   error: string;
-  start: (platform?: string) => Promise<void>;
+  start: (platform?: string) => void;
   stop: () => void;
+  keepAlive: () => void;
 }
 
+interface MeetingState {
+  recording: boolean;
+  busy: boolean;
+  platform: string | null;
+  startedAt: number;
+  warningSecondsLeft: number;
+  error: string;
+}
+
+const EMPTY: MeetingState = { recording: false, busy: false, platform: null, startedAt: 0, warningSecondsLeft: 0, error: '' };
+
 /**
- * Meeting recorder. The actual capture runs in the MAIN process via a native
- * Swift binary (ScreenCaptureKit + AVFoundation): screen video + SYSTEM AUDIO
- * (the remote participants, captured before the audio hits any output device, so
- * it works on speakers / wired / Bluetooth alike) + microphone. This hook just
- * starts/stops it and tracks UI state. Lives once at the app root so a detected
- * meeting can auto-start it and a floating indicator can show recording state.
+ * Thin VIEW of the meeting recorder. The lifecycle (detect → record → warn → stop →
+ * finalize) lives entirely in the main-process MeetingController; this hook only
+ * subscribes to the state it broadcasts and sends commands. It makes NO start/stop
+ * decisions and owns no timers that drive recording — so there are no stale closures
+ * to leave a recording running (the old useEffect/captured-closure bug class is gone).
  */
 export function useMeetingRecorder(): MeetingRecorder {
-  const [recording, setRecording] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [st, setSt] = useState<MeetingState>(EMPTY);
   const [elapsed, setElapsed] = useState(0);
-  const [error, setError] = useState('');
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const stopTimer = useCallback((): void => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = null;
+  // Subscribe to the controller's broadcast + seed from current state on mount.
+  useEffect(() => {
+    let alive = true;
+    api.meetingGetState?.().then((s: MeetingState | undefined) => { if (alive && s) setSt(s); }).catch(() => {});
+    const off = api.onMeetingState?.((s: MeetingState) => setSt(s));
+    return () => { alive = false; off?.(); };
   }, []);
 
-  const start = useCallback(async (platform?: string): Promise<void> => {
-    if (recording) return;
-    setError('');
-    try {
-      const res = await api.meetingStart?.(platform);
-      if (res?.error) { setError(res.error); return; }
-      setElapsed(0);
-      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
-      setRecording(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not start recording');
-    }
-  }, [recording]);
+  // Display-only elapsed ticker derived from startedAt — drives nothing.
+  useEffect(() => {
+    if (!st.recording || !st.startedAt) { setElapsed(0); return; }
+    const tick = (): void => setElapsed(Math.max(0, Math.round((Date.now() - st.startedAt) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [st.recording, st.startedAt]);
 
-  const stop = useCallback((): void => {
-    if (!recording) return;
-    stopTimer();
-    setRecording(false);
-    setBusy(true);
-    // Main finalizes the files, muxes far-side + mic, transcribes, and stores.
-    void (async () => {
-      try {
-        const res = await api.meetingStop?.();
-        if (res?.error) setError(res.error);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not save recording');
-      } finally {
-        setBusy(false);
-      }
-    })();
-  }, [recording, stopTimer]);
+  const start = useCallback((platform?: string): void => { void api.meetingStart?.(platform); }, []);
+  const stop = useCallback((): void => { void api.meetingStop?.(); }, []);
+  const keepAlive = useCallback((): void => { void api.meetingKeepAlive?.(); }, []);
 
-  return { recording, busy, elapsed, error, start, stop };
+  return {
+    recording: st.recording,
+    busy: st.busy,
+    elapsed,
+    warningSecondsLeft: st.warningSecondsLeft,
+    platform: st.platform,
+    error: st.error,
+    start,
+    stop,
+    keepAlive,
+  };
 }
