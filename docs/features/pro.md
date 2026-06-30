@@ -12,6 +12,8 @@ acts**, on-device:
 - **Private CRM** — auto-built people/project/company records with cross-source summaries.
 - **Day · Reflect · Replay** — your day planned, where time goes, rewind your screen.
 - **Meetings** — local recording + transcription.
+- **[Dictation](dictation.md)** — hold ⌥Space, talk, on-device whisper pastes at your cursor.
+- **[Clipboard](clipboard.md)** — searchable copy history with a quick-paste popup.
 - **Proactive secretary** — surfaces what matters, drafts actions (approval-gated).
 - **Skills automation** — trigger → action (schedule / keyword / event).
 
