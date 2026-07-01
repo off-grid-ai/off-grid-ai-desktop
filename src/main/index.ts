@@ -195,7 +195,10 @@ app.whenReady().then(() => {
   // Only serve files inside the app's own media dirs — this scheme is reachable
   // from the renderer, so serving an arbitrary decoded path would be a local-file
   // read primitive. isPathAllowed is symlink-safe (canonicalizes both sides).
-  const ogCaptureRoots = ['meetings', 'uploads', 'captures', 'entity-photos'].map((d) =>
+  // NOTE: keep this in sync with the dirs the renderer requests over ogcapture://.
+  // 'generated-images' + 'style-thumbs' were missing, so every image-gen output and
+  // every style-picker thumbnail 403'd and rendered as a broken image.
+  const ogCaptureRoots = ['meetings', 'uploads', 'captures', 'entity-photos', 'generated-images', 'style-thumbs'].map((d) =>
     join(app.getPath('userData'), d),
   );
   protocol.handle('ogcapture', async (request) => {
