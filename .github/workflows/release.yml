@@ -62,12 +62,15 @@ jobs:
             git push
           else
             CHANNEL=beta
-            # Base version with any existing prerelease suffix stripped, plus a
-            # monotonic -beta.<run_number>. electron-builder turns the -beta suffix
-            # into the `beta` channel (beta-mac.yml) automatically. No commit.
+            # A nightly is a prerelease of the NEXT patch, so it sorts ABOVE the last
+            # stable, not below it: 0.0.35 stable -> 0.0.36-beta.<run> (NOT
+            # 0.0.35-beta.<run>, which semver ranks BELOW 0.0.35 and would read as a
+            # downgrade). electron-builder turns the -beta suffix into the `beta`
+            # channel (beta-mac.yml) automatically. No commit.
             BASE=$(node -p "require('./package.json').version")
             BASE=${BASE%%-*}
-            VERSION="${BASE}-beta.${{ github.run_number }}"
+            NEXT=$(node -e "const p='$BASE'.split('.').map(Number); console.log(p[0]+'.'+p[1]+'.'+(p[2]+1))")
+            VERSION="${NEXT}-beta.${{ github.run_number }}"
           fi
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
