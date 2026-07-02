@@ -864,7 +864,13 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     } catch (e) {
       console.error('RAG chat failed', e);
       const errorContent = 'Sorry, something went wrong while generating a response.';
-      setConvMessages(convId, prev => [...prev, { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }]);
+      // Update the streaming placeholder to show the error — never append a second bubble.
+      const sid = activeStreamId;
+      setConvMessages(convId, prev => {
+        const hasPlaceholder = sid && prev.some(m => m.id === sid);
+        if (hasPlaceholder) return prev.map(m => m.id === sid ? { ...m, content: errorContent, activity: undefined, streaming: false } : m);
+        return [...prev, { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }];
+      });
       try {
         await window.api.addRagMessage(convId, 'assistant', errorContent);
       } catch (_) { /* ignore */ }
@@ -1055,7 +1061,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       if (!cid) return;
       setConvMessages(cid, prev => prev.map(m => {
         if (m.id !== data.streamId || !m.streaming) return m;
-        if (data.type === 'content') return { ...m, content: (m.content || '') + (data.text || '') };
+        if (data.type === 'content') return { ...m, content: (m.content || '') + (data.text || ''), activity: undefined };
         if (data.type === 'reasoning') return { ...m, reasoning: (m.reasoning || '') + (data.text || '') };
         if (data.type === 'step') return { ...m, activity: data.step as ChatMessage['activity'] };
         return m;

@@ -73,6 +73,8 @@ Every PR must include in its body:
 - **Video** (when the change involves interaction or animation) — record a short screen capture (QuickTime / `ffmpeg -f avfoundation`) of the golden path and attach it. A 15-30 second clip is enough. If a video can't be captured (CI/headless), add a note explaining why and provide extra screenshots instead.
 - **Test output** — paste the relevant lines from `npm test` and `npm run test:e2e`.
 
+**Screenshot validation is mandatory — not optional.** Before embedding any screenshot in the PR body, read the image file and confirm it shows what the description claims. If the screenshot shows an unexpected state (wrong screen, error that contradicts the fix, two bubbles when one is expected, etc.), investigate why the screenshot looks that way, fix the underlying issue, and retake the screenshot. A screenshot that disproves the fix is worse than no screenshot at all.
+
 Without evidence the PR is not ready to merge.
 
 ## Reuse before building — check the inventory FIRST
