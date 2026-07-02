@@ -65,6 +65,14 @@ When iterating (a request, a fix, a tweak the user just confirmed), add a test t
 - **E2E** — Playwright Electron tour in `e2e/` (`npm run test:e2e`), DOM-driven, fresh temp profile, `OFFGRID_PRO=0`. Assert new surfaces render. Screenshot key states via `page.screenshot({ path: 'e2e/screenshots/<name>.png' })`; include those screenshots in the PR body.
 - Before declaring a change done: `npx tsc --noEmit -p tsconfig.node.json && npx tsc --noEmit -p tsconfig.web.json && npm test` — fix failures first.
 
+## E2E capture — SYNTHETIC data only, seeded via the demo script
+
+E2E and screenshot/video capture (including the Provit capture harness) run the app on a **fresh temp `OFFGRID_USER_DATA` profile** and must use **synthetic demo data only — never a real profile, never upload real user data.**
+
+- **Seed with the demo script.** A blank profile is EMPTY, so any flow that *generates* (chat, especially the "All memory" scope) will error with **"Sorry, something went wrong…"** — this is a **profile/RAG gap, not a bug**: no seeded memory store means the memory path throws before streaming. Launch the app with **`OFFGRID_SEED=force`** (see `src/main/index.ts` → `dev-seed.ts:seedDemo`) so the profile has synthetic chats/knowledge/memory and generation actually works. Use this for any e2e that exercises chat/generation.
+- **Model ports are single-owner.** Only one app instance can bind the model engine ports (`:7878` gateway, `:8439` llama-server, `:7879`). A running `npm run dev` will block a second capture instance's engine → generation errors that look like a bug but aren't. Free the ports (stop the dev app) before an e2e capture, or the recording exercises the error path only.
+- **Never upload private data.** Screenshots/video from real-profile runs (real chats, memories) must not be published. Capture runs must be synthetic-seeded so anything that lands in a PR or the public showcase is demo data.
+
 ## Pull requests — required evidence
 
 Every PR must include in its body:

@@ -9,6 +9,7 @@ import {
   Broadcast,
   ClipboardText,
   Waveform,
+  ShieldCheck,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
@@ -127,6 +128,19 @@ export const PRO_FEATURES: ProFeature[] = [
       'Option+Space push-to-talk or toggle, anywhere',
       'Paste-at-cursor + a searchable recordings library',
       'Transcribe any audio/video file, all on-device',
+    ],
+  },
+  {
+    route: 'vault',
+    label: 'Vault',
+    icon: ShieldCheck,
+    tagline: 'Passwords and secrets, encrypted on this device.',
+    description:
+      'An encrypted KDBX4 vault for web logins, app passwords, API keys, secure notes, and secret files (.env and the like). Your master password and a device-specific key together lock the vault - the file alone is unreadable. Back up the file anywhere; it stays opaque without both factors. Sync to other devices in your Off Grid mesh via EasyShare when you are ready.',
+    highlights: [
+      'AES-256 + Argon2id, device-key bound',
+      'Logins, app passwords, API keys, notes, and files',
+      'KDBX4 format - compatible with KeePassXC',
     ],
   },
   {

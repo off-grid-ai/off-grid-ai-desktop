@@ -45,7 +45,7 @@ import {
 } from '@tabler/icons-react';
 import { cn } from './lib/utils';
 
-type ViewMode = 'dashboard' | 'day' | 'replay' | 'reflect' | 'actions' | 'connectors' | 'meetings' | 'chats' | 'memories' | 'entities' | 'graph' | 'memory-chat' | 'models' | 'gateway' | 'projects' | 'notifications' | 'settings' | 'search' | 'clipboard' | 'voice';
+type ViewMode = 'dashboard' | 'day' | 'replay' | 'reflect' | 'actions' | 'connectors' | 'meetings' | 'chats' | 'memories' | 'entities' | 'graph' | 'memory-chat' | 'models' | 'gateway' | 'projects' | 'notifications' | 'settings' | 'search' | 'clipboard' | 'voice' | 'vault';
 
 // Navigation state type for history tracking
 interface NavigationState {
@@ -280,7 +280,8 @@ function AppContent() {
       'search': '/search',
       'settings': '/settings',
       'clipboard': '/clipboard',
-      'voice': '/voice'
+      'voice': '/voice',
+      'vault': '/vault'
     };
 
     const newPath = urlMap[viewMode];
@@ -518,6 +519,7 @@ function AppContent() {
     { label: 'Projects', icon: <IconFolders className="h-5 w-5 shrink-0" />, view: 'projects' as ViewMode },
     { label: 'Chat', icon: <IconMessageCircle className="h-5 w-5 shrink-0" />, view: 'memory-chat' as ViewMode },
     proItem('voice'),
+    proItem('vault'),
     proItem('clipboard'),
     { label: 'Integrations', icon: <IconPlug className="h-5 w-5 shrink-0" />, view: 'connectors' as ViewMode },
     { label: 'Models', icon: <IconDownload className="h-5 w-5 shrink-0" />, view: 'models' as ViewMode },
