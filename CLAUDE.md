@@ -62,8 +62,28 @@ When iterating (a request, a fix, a tweak the user just confirmed), add a test t
 
 - **Unit tests** — vitest, `src/**/*.test.ts` (run `npm test`). Keep logic pure and Electron-free so it's testable: extract decision logic into a no-import module and test that (see `model-sizing.ts`, `search-ranking.ts` + their `__tests__/`). DB/Electron-bound code (anything importing `getDB`, `vision`, etc.) can't be unit-tested directly — pull the pure part out.
 - **Regression guards for prompts/contracts** — when a fix lives in a prompt or string contract, assert it by reading the source (see `extract-prompt.test.ts`, which guards the observation-confabulation fix).
-- **E2E** — Playwright Electron tour in `e2e/` (`npm run test:e2e`), DOM-driven, fresh temp profile, `OFFGRID_PRO=0`. Assert new surfaces render.
+- **E2E** — Playwright Electron tour in `e2e/` (`npm run test:e2e`), DOM-driven, fresh temp profile, `OFFGRID_PRO=0`. Assert new surfaces render. Screenshot key states via `page.screenshot({ path: 'e2e/screenshots/<name>.png' })`; include those screenshots in the PR body.
 - Before declaring a change done: `npx tsc --noEmit -p tsconfig.node.json && npx tsc --noEmit -p tsconfig.web.json && npm test` — fix failures first.
+
+## E2E capture — SYNTHETIC data only, seeded via the demo script
+
+E2E and screenshot/video capture (including the Provit capture harness) run the app on a **fresh temp `OFFGRID_USER_DATA` profile** and must use **synthetic demo data only — never a real profile, never upload real user data.**
+
+- **Seed with the demo script.** A blank profile is EMPTY, so any flow that *generates* (chat, especially the "All memory" scope) will error with **"Sorry, something went wrong…"** — this is a **profile/RAG gap, not a bug**: no seeded memory store means the memory path throws before streaming. Launch the app with **`OFFGRID_SEED=force`** (see `src/main/index.ts` → `dev-seed.ts:seedDemo`) so the profile has synthetic chats/knowledge/memory and generation actually works. Use this for any e2e that exercises chat/generation.
+- **Model ports are single-owner.** Only one app instance can bind the model engine ports (`:7878` gateway, `:8439` llama-server, `:7879`). A running `npm run dev` will block a second capture instance's engine → generation errors that look like a bug but aren't. Free the ports (stop the dev app) before an e2e capture, or the recording exercises the error path only.
+- **Never upload private data.** Screenshots/video from real-profile runs (real chats, memories) must not be published. Capture runs must be synthetic-seeded so anything that lands in a PR or the public showcase is demo data.
+
+## Pull requests — required evidence
+
+Every PR must include in its body:
+
+- **Screenshots** — at minimum one before/after or annotated screenshot per changed surface. Use `page.screenshot()` in E2E tests to capture these automatically into `e2e/screenshots/`; embed them in the PR body with `![description](url)`.
+- **Video** (when the change involves interaction or animation) — record a short screen capture (QuickTime / `ffmpeg -f avfoundation`) of the golden path and attach it. A 15-30 second clip is enough. If a video can't be captured (CI/headless), add a note explaining why and provide extra screenshots instead.
+- **Test output** — paste the relevant lines from `npm test` and `npm run test:e2e`.
+
+**Screenshot validation is mandatory — not optional.** Before embedding any screenshot in the PR body, read the image file and confirm it shows what the description claims. If the screenshot shows an unexpected state (wrong screen, error that contradicts the fix, two bubbles when one is expected, etc.), investigate why the screenshot looks that way, fix the underlying issue, and retake the screenshot. A screenshot that disproves the fix is worse than no screenshot at all.
+
+Without evidence the PR is not ready to merge.
 
 ## Reuse before building — check the inventory FIRST
 
@@ -74,6 +94,8 @@ This is a hard rule, not a preference. **Before writing ANY new component, panel
 - UI follows the approved-library + brand-token rules in `docs/DESIGN.md`; icons are `@phosphor-icons/react` only (never lucide).
 
 ## Open core — pro feature code lives in the pro repo
+
+The `pro/` directory is a **git submodule** pointing at the private `desktop-pro` repo. It is present in the working tree when you have access to it, absent otherwise. Always run `git submodule update --init` after cloning or pulling if `pro/` is empty. Do not commit changes inside `pro/` from the core repo — commit them in `desktop-pro` first, then bump the submodule pointer here with `git add pro`.
 
 **All code for pro features lives in the `desktop-pro` repo (`pro/`), never in core (`desktop`).** Core is public (AGPL); shipping pro source in it defeats open core. This is a hard rule, not a preference.
 

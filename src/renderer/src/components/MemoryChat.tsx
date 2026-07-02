@@ -383,6 +383,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   // generation keeps its image/files when it finally runs — keyed per conversation.
   const queuedRef = useRef<Record<string, { text: string; atts: Attachment[] }[]>>({});
   const [queuedByConv, setQueuedByConv] = useState<Record<string, { text: string; atts: Attachment[] }[]>>({});
+  // Map streamId → convId so the onRagStream handler can route tokens to the right
+  // conversation regardless of which tab is active when the event fires.
+  const streamConvRef = useRef<Map<string, string>>(new Map());
 
   const markdownComponents: Components = {
     p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>,
@@ -504,7 +507,6 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
 
   // Assign the current chat to a project (or clear it). Persists if a conversation exists.
   const assignProject = useCallback(async (projectId: string | null) => {
-    setNoMemory(false); // choosing All-memory or a project turns memory on
     setActiveProjectId(projectId);
     setProjectMenuOpen(false);
     setProjCreating(false);
@@ -779,6 +781,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       return;
     }
 
+    let activeStreamId: string | undefined;
     try {
       // History: on regen the user turn is already in `messages` (drop anything
       // after it); on a normal send, append the new turn.
@@ -817,6 +820,8 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       // Placeholder message that fills in live as tokens/reasoning stream in
       // (matched by streamId in the onRagStream subscription).
       const streamId = `a-${Date.now()}`;
+      activeStreamId = streamId; // expose to finally for cleanup
+      streamConvRef.current.set(streamId, convId!);
       setConvMessages(convId, prev => [...prev, { id: streamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
       const result = await window.api.ragChat(modelQuery, 'All', history, activeProjectId, convId, noMemory && !activeProjectId, streamId, thinkingEnabled, imagePaths);
       const assistantContent = result.answer || 'No response returned.';
@@ -859,7 +864,13 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     } catch (e) {
       console.error('RAG chat failed', e);
       const errorContent = 'Sorry, something went wrong while generating a response.';
-      setConvMessages(convId, prev => [...prev, { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }]);
+      // Update the streaming placeholder to show the error — never append a second bubble.
+      const sid = activeStreamId;
+      setConvMessages(convId, prev => {
+        const hasPlaceholder = sid && prev.some(m => m.id === sid);
+        if (hasPlaceholder) return prev.map(m => m.id === sid ? { ...m, content: errorContent, activity: undefined, streaming: false } : m);
+        return [...prev, { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }];
+      });
       try {
         await window.api.addRagMessage(convId, 'assistant', errorContent);
       } catch (_) { /* ignore */ }
@@ -868,6 +879,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       setLoading(false);
       await loadConversations();
       drainQueue(convId);
+      if (activeStreamId) streamConvRef.current.delete(activeStreamId);
     }
   };
 
@@ -1041,18 +1053,22 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
 
   // Live streaming: route token/reasoning events to the in-flight assistant
   // message (matched by streamId === message id) so it fills in as it generates.
+  // Use streamConvRef to find the right conversation — setMessages is stale in a
+  // [] effect because it captures activeConversationId at mount time.
   useEffect(() => {
     const off = window.api.onRagStream?.((data) => {
-      setMessages(prev => prev.map(m => {
-        if (m.id !== data.streamId) return m;
-        if (data.type === 'content') return { ...m, content: (m.content || '') + (data.text || '') };
+      const cid = streamConvRef.current.get(data.streamId);
+      if (!cid) return;
+      setConvMessages(cid, prev => prev.map(m => {
+        if (m.id !== data.streamId || !m.streaming) return m;
+        if (data.type === 'content') return { ...m, content: (m.content || '') + (data.text || ''), activity: undefined };
         if (data.type === 'reasoning') return { ...m, reasoning: (m.reasoning || '') + (data.text || '') };
         if (data.type === 'step') return { ...m, activity: data.step as ChatMessage['activity'] };
         return m;
       }));
     });
     return () => off?.();
-  }, []);
+  }, [setConvMessages]);
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const copyText = useCallback((t: string, key?: string) => {

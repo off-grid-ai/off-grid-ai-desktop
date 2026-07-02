@@ -33,6 +33,7 @@ import { getActiveModal } from './active-models';
 import { embeddings } from './embeddings';
 import { docsText, docsHtml, openApiSpec } from './api-docs';
 import { handleMcpRequest } from './mcp-server';
+import { llm, type LlmSettings } from './llm';
 
 const UPSTREAM_HOST = '127.0.0.1';
 const UPSTREAM_PORT = 8439; // bundled llama-server (see llm.ts)
@@ -367,6 +368,80 @@ function parseSize(size: unknown): { width?: number; height?: number } {
   return { width: parseInt(m[1], 10), height: parseInt(m[2], 10) };
 }
 
+// ─── Chat message sanitization ───────────────────────────────────────────────
+// Some models (Gemma 4) enforce strict message ordering via their Jinja chat
+// template: system messages MUST be at the very beginning. Clients like Claude
+// Code intersperse system messages mid-conversation (tool context, updates),
+// which makes the template raise "System message must be at the beginning".
+// Fix: pull ALL system messages out, merge their content, and place a single
+// system message at position 0. Non-system messages keep their original order.
+/** Extract text from any system message content shape, preserving all readable parts. */
+function extractSystemText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return (content as { type?: string; text?: string; content?: unknown }[])
+    .map((p) => {
+      if (p.type === 'text' && p.text) return p.text;
+      // tool_result / tool_use blocks may carry nested text — include them so
+      // the merged system message retains all tool context, not just plain text.
+      if (typeof p.content === 'string') return p.content;
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function sanitizeChatMessages(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false;
+  const b = body as { messages?: unknown[] };
+  if (!Array.isArray(b.messages) || b.messages.length === 0) return false;
+
+  // Nothing to fix if there are no out-of-position system messages.
+  // A single system message already at index 0 is valid.
+  const firstIsSystem = (b.messages[0] as { role?: string }).role === 'system';
+  const hasOutOfPosition = b.messages.slice(firstIsSystem ? 1 : 0).some(
+    (m) => (m as { role?: string }).role === 'system',
+  );
+  if (!hasOutOfPosition) return false;
+
+  // Collect all system message text, preserving original content of any first
+  // system message at position 0 (keep its full content object, not just text).
+  const extraParts: string[] = [];
+  const rest: unknown[] = [];
+  let leadSystem: unknown = null;
+
+  for (let i = 0; i < b.messages.length; i++) {
+    const m = b.messages[i] as { role?: string; content?: unknown };
+    if (m.role === 'system') {
+      if (i === 0) {
+        leadSystem = m; // keep the lead system message as-is
+      } else {
+        const text = extractSystemText(m.content);
+        if (text.trim()) extraParts.push(text.trim());
+      }
+    } else {
+      rest.push(m);
+    }
+  }
+
+  if (leadSystem) {
+    // Append any out-of-position system content to the leading system message.
+    if (extraParts.length) {
+      const lead = leadSystem as { role: string; content: unknown };
+      const base = extractSystemText(lead.content);
+      lead.content = [base, ...extraParts].filter(Boolean).join('\n\n');
+    }
+    b.messages = [leadSystem, ...rest];
+  } else {
+    // No leading system message — create one from the merged parts.
+    b.messages = [
+      { role: 'system', content: extraParts.join('\n\n') },
+      ...rest,
+    ];
+  }
+  return true;
+}
+
 // ─── Text(+image) → text (chat, proxied) ─────────────────────────────────────
 // Walk an OpenAI chat body and replace any remote/file image_url with an inlined
 // base64 data URL (llama-server only accepts data URLs). Returns true if changed.
@@ -479,7 +554,11 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse, r
   let forward: Buffer = buf;
   try {
     body = JSON.parse(buf.toString('utf8'));
-    if (await inlineChatImages(body)) forward = Buffer.from(JSON.stringify(body));
+    let changed = await inlineChatImages(body);
+    // Gemma 4 (and others) reject system messages that aren't at position 0.
+    // Consolidate them before forwarding so any client's ordering works.
+    if (sanitizeChatMessages(body)) changed = true;
+    if (changed) forward = Buffer.from(JSON.stringify(body));
   } catch {
     // Not JSON, or image fetch failed — forward the original bytes untouched.
   }
@@ -967,6 +1046,27 @@ export function startModelServer(port = 7878): void {
         data: [...requests.values()].map((r) => ({ request_id: r.id, kind: r.kind, status: r.status, poll_url: `${r.collection}/${r.id}` })),
       });
       return;
+    }
+
+    // Runtime LLM settings (ctx size, KV-cache, flash-attn, GPU layers, threads,
+    // batch, sampling) — read + update remotely so a control plane (the console,
+    // via the gateway) can configure this node. setSettings persists and respawns
+    // llama-server when launch-time args change.
+    if (url === '/v1/settings' && method === 'GET') return json(res, 200, llm.getSettings());
+    if (url === '/v1/settings' && method === 'POST') {
+      // Mutating launch-time LLM args triggers a llama-server respawn — restrict
+      // to loopback so a LAN peer (e.g. the mobile app) can't cause a respawn loop.
+      const remote = req.socket.remoteAddress;
+      const isLocalhost = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+      if (!isLocalhost) {
+        json(res, 403, errBody('Settings mutations are restricted to localhost.', 'forbidden'));
+        return;
+      }
+      return void (async () => {
+        const patch = (await readJson(req)) as LlmSettings;
+        await llm.setSettings(patch);
+        json(res, 200, { success: true, settings: llm.getSettings() });
+      })().catch((e) => json(res, 500, { error: { message: String((e as Error)?.message ?? e) } }));
     }
 
     if (url === '/v1/embeddings' && method === 'POST') return void handleEmbeddings(req, res, rid);

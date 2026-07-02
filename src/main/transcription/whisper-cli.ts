@@ -75,14 +75,20 @@ export function whisperModel(): string | null {
 }
 
 /** Smallest available model — used for fast, display-only dictation interim
- *  ticks where latency matters more than accuracy. Falls back to whisperModel(). */
+ *  ticks where latency matters more than accuracy. Respects the user's explicit
+ *  transcription model choice (getActiveModal); otherwise picks the smallest. */
 export function smallWhisperModel(): string | null {
+  const dir = modelsDir();
+  try {
+    const chosen = getActiveModal('transcription');
+    if (chosen && fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
+  } catch { /* fall through to size-based pick */ }
   const files = whisperModelFiles();
   if (!files.length) return null;
   const multi = files.filter((f) => !/\.en\.bin$/i.test(f));
   const pool = multi.length ? multi : files;
   const pick = [...pool].sort((a, b) => sizeRank(a) - sizeRank(b))[0]; // smallest first
-  return path.join(modelsDir(), pick);
+  return path.join(dir, pick);
 }
 
 /** Resolve an opts.model (abs path or filename in modelsDir) to an absolute path. */
@@ -96,7 +102,11 @@ function resolveModel(model?: string): string | null {
 
 export class WhisperCliTranscription implements TranscriptionService {
   isAvailable(): boolean {
-    return !!whisperBin() && !!whisperModel() && !!ffmpegBin();
+    // ffmpeg is only required when the caller passes non-WAV input; transcription of
+    // pre-converted 16 kHz WAV (alreadyWav16k:true) succeeds without it. Report
+    // available if whisper + a model are present — the transcribe() call validates
+    // ffmpeg at that point when it's actually needed.
+    return !!whisperBin() && !!whisperModel();
   }
 
   async transcribe(input: { path: string }, opts: TranscribeOptions = {}): Promise<Transcript> {
@@ -113,10 +123,15 @@ export class WhisperCliTranscription implements TranscriptionService {
     if (!opts.alreadyWav16k) {
       const ff = ffmpegBin();
       if (!ff) throw new Error('ffmpeg is required to decode audio and was not found.');
-      tmp = path.join(os.tmpdir(), `offgrid-stt-${Date.now()}-${Math.round(performance.now())}-${process.pid}.wav`);
+      tmp = path.join(os.tmpdir(), `offgrid-stt-${Date.now()}-${process.pid}.wav`);
       // 16 kHz mono PCM WAV; -vn drops any video track so A/V files work too.
       // Cap the decode so a malformed/streaming input can't hang the process forever.
-      await execFileAsync(ff, ['-y', '-i', input.path, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', tmp], { timeout: 10 * 60_000 });
+      try {
+        await execFileAsync(ff, ['-y', '-i', input.path, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', tmp], { timeout: 10 * 60_000 });
+      } catch (e) {
+        fs.promises.unlink(tmp).catch(() => {});
+        throw e;
+      }
       wav = tmp;
     }
 

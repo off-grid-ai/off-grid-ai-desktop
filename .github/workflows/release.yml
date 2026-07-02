@@ -198,18 +198,24 @@ jobs:
               --publish always
           fi
       - name: Migrate legacy Pro update channel (publish pro-mac.yml)
-        if: needs.version.outputs.channel == 'stable'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
+          CHANNEL: ${{ needs.version.outputs.channel }}
         run: |
-          # Older Pro builds poll a SEPARATE channel (pro-mac.yml); the single build
-          # now publishes only the default latest-mac.yml. Upload a copy as
-          # pro-mac.yml (identical - same signed zip + version) so those installs see
-          # this release, auto-update, and land on the default channel. After that
-          # they follow latest-mac.yml. One-time bridge so no Pro user is orphaned.
-          cp dist/latest-mac.yml dist/pro-mac.yml
-          gh release upload "v$VERSION" dist/pro-mac.yml --clobber
+          # Older Pro builds poll a SEPARATE channel (pro-mac.yml); publish a copy
+          # on EVERY build (stable + nightly) so legacy Pro installs see updates on
+          # both channels and are never orphaned. Stable points at the versioned
+          # release; nightly points at the rolling 'nightly' pre-release tag.
+          if [ "$CHANNEL" = "stable" ]; then
+            cp dist/latest-mac.yml dist/pro-mac.yml
+            gh release upload "v$VERSION" dist/pro-mac.yml --clobber
+          else
+            # Nightly: upload alongside the rolling nightly tag so legacy Pro beta
+            # testers also get the freshest build.
+            cp dist/latest-mac.yml dist/pro-mac.yml
+            gh release upload nightly dist/pro-mac.yml --clobber
+          fi
       # Stable "always latest" download link. The versioned DMG (OffGrid-<v>.dmg)
       # changes name every release, so /releases/latest/download/<name> can't target
       # it. Upload a constant-named COPY so this URL is permanent across releases:

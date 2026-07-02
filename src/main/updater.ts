@@ -78,7 +78,9 @@ export function startAutoUpdates(): void {
     const next: UpdateChannel = channel === 'beta' ? 'beta' : 'stable';
     saveSetting('updates:channel', next);
     applyChannel();
-    if (autoEnabled()) autoUpdater.checkForUpdatesAndNotify().catch((e) => console.error('[update] channel check failed', e));
+    // Always check after a channel switch so the user gets immediate feedback
+    // on what's available — even if auto-updates are off.
+    autoUpdater.checkForUpdatesAndNotify().catch((e) => console.error('[update] channel check failed', e));
     return next;
   });
 

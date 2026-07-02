@@ -15,7 +15,8 @@ import { TooltipProvider } from './components/ui/tooltip'
 // exports a no-op ClipboardPopup), and in free builds the popup window never opens.
 import * as ProRenderer from '@offgrid/pro/renderer'
 const ClipboardPopup: FC = (ProRenderer as { ClipboardPopup?: FC }).ClipboardPopup ?? (() => null)
-const DictationOverlay: FC = (ProRenderer as { DictationOverlay?: FC }).DictationOverlay ?? (() => null)
+// DictationOverlay is a free-tier / open-core feature — lives in core, not pro.
+import { DictationOverlay } from './components/DictationOverlay'
 
 // The global-hotkey quick-paste popup and the dictation overlay load this same
 // renderer with a hash (#clip-popup / #dictation); render just that surface there
