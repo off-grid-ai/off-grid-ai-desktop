@@ -17,7 +17,7 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "start": "electron-vite preview",
     "demo": "npm run build && npm run demo:run",
-    "demo:run": "mkdir -p \"$PWD/.demo-profile\" && ln -sfn \"$HOME/Library/Application Support/Off Grid AI Desktop/models\" \"$PWD/.demo-profile/models\" && OFFGRID_PRO=1 OFFGRID_SEED_PRO=force OFFGRID_USER_DATA=\"$PWD/.demo-profile\" electron-vite preview",
+    "demo:run": "mkdir -p \"$PWD/.demo-profile\" && ln -sfn \"$HOME/Library/Application Support/Off Grid AI Desktop/models\" \"$PWD/.demo-profile/models\" && OFFGRID_PRO=1 OFFGRID_SEED=force OFFGRID_SEED_PRO=force OFFGRID_USER_DATA=\"$PWD/.demo-profile\" electron-vite preview",
     "demo:fresh": "rm -rf \"$PWD/.demo-profile\" && npm run demo",
     "dev": "electron-vite dev",
     "gateway": "OFFGRID_SERVER_ONLY=1 electron-vite dev",
