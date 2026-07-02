@@ -62,8 +62,18 @@ When iterating (a request, a fix, a tweak the user just confirmed), add a test t
 
 - **Unit tests** — vitest, `src/**/*.test.ts` (run `npm test`). Keep logic pure and Electron-free so it's testable: extract decision logic into a no-import module and test that (see `model-sizing.ts`, `search-ranking.ts` + their `__tests__/`). DB/Electron-bound code (anything importing `getDB`, `vision`, etc.) can't be unit-tested directly — pull the pure part out.
 - **Regression guards for prompts/contracts** — when a fix lives in a prompt or string contract, assert it by reading the source (see `extract-prompt.test.ts`, which guards the observation-confabulation fix).
-- **E2E** — Playwright Electron tour in `e2e/` (`npm run test:e2e`), DOM-driven, fresh temp profile, `OFFGRID_PRO=0`. Assert new surfaces render.
+- **E2E** — Playwright Electron tour in `e2e/` (`npm run test:e2e`), DOM-driven, fresh temp profile, `OFFGRID_PRO=0`. Assert new surfaces render. Screenshot key states via `page.screenshot({ path: 'e2e/screenshots/<name>.png' })`; include those screenshots in the PR body.
 - Before declaring a change done: `npx tsc --noEmit -p tsconfig.node.json && npx tsc --noEmit -p tsconfig.web.json && npm test` — fix failures first.
+
+## Pull requests — required evidence
+
+Every PR must include in its body:
+
+- **Screenshots** — at minimum one before/after or annotated screenshot per changed surface. Use `page.screenshot()` in E2E tests to capture these automatically into `e2e/screenshots/`; embed them in the PR body with `![description](url)`.
+- **Video** (when the change involves interaction or animation) — record a short screen capture (QuickTime / `ffmpeg -f avfoundation`) of the golden path and attach it. A 15-30 second clip is enough. If a video can't be captured (CI/headless), add a note explaining why and provide extra screenshots instead.
+- **Test output** — paste the relevant lines from `npm test` and `npm run test:e2e`.
+
+Without evidence the PR is not ready to merge.
 
 ## Reuse before building — check the inventory FIRST
 
