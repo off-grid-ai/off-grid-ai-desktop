@@ -47,4 +47,3 @@ test-results/
 # Marketing material (dev.to drafts, emails, assets) — publishing, not app code
 /marketing/
 scripts/dictation-hotkey/dictation-hotkey
-e2e/screenshots/
