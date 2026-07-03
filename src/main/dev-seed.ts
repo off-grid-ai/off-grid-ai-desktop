@@ -97,7 +97,7 @@ async function seedKnowledge(): Promise<void> {
   const files: { name: string; write: () => void }[] = [
     { name: 'offgrid-overview.md', write: () => fs.writeFileSync(path.join(dir, 'offgrid-overview.md'), MD) },
     { name: 'offgrid-faq.txt', write: () => fs.writeFileSync(path.join(dir, 'offgrid-faq.txt'),
-      'Off Grid AI — FAQ\n\nQ: Does anything leave my device?\nA: No. All inference runs locally; no cloud, no accounts, no API keys.\n\nQ: What can it run?\nA: Open models for text, vision, image, voice and speech, via one OpenAI-compatible gateway on 127.0.0.1:7878.\n\nQ: What is Pro?\nA: The sees/remembers/acts layer — capture, unified search, a proactive secretary — launching July 2026.\n') },
+      'Off Grid AI — FAQ\n\nQ: Does anything leave my device?\nA: No. All inference runs locally; no cloud, no accounts, no API keys.\n\nQ: What can it run?\nA: Open models for text, vision, image, voice and speech, via one OpenAI-compatible gateway on 127.0.0.1:7878.\n\nQ: What is Pro?\nA: The sees/remembers/acts layer — capture, unified search, a proactive secretary — live now, $49/year or $69 once.\n') },
     { name: 'offgrid-onepager.pdf', write: () => fs.writeFileSync(path.join(dir, 'offgrid-onepager.pdf'), tinyPdf('Off Grid AI - private, on-device AI. Run open models locally. No cloud.')) },
   ];
   for (const f of files) {

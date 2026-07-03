@@ -52,6 +52,23 @@ test('shows onboarding on a fresh install', async () => {
   await expect(page.getByRole('button', { name: /Continue|Start using Off Grid/i })).toBeVisible();
 });
 
+test('onboarding surfaces the Pro capability grid', async () => {
+  // Advance until the Pro step renders its capability cards, then assert a few
+  // capabilities are shown by name (Replay, Meetings, Vault). Regression guard
+  // for the onboarding redesign that showcases the Pro layer.
+  const btn = page.getByRole('button', { name: /Continue|Start using Off Grid/i });
+  for (let i = 0; i < 6; i++) {
+    if (await page.getByText('Meetings').isVisible().catch(() => false)) break;
+    if (!(await btn.isVisible().catch(() => false))) break;
+    await btn.click();
+    await page.waitForTimeout(400);
+  }
+  await expect(page.getByText('Replay')).toBeVisible();
+  await expect(page.getByText('Meetings')).toBeVisible();
+  await expect(page.getByText('Vault')).toBeVisible();
+  await page.screenshot({ path: 'e2e/screenshots/onboarding-pro-grid.png' });
+});
+
 test('completes onboarding and lands in the app shell', async () => {
   // Click through every onboarding step (Continue × N, then "Start using Off Grid").
   for (let i = 0; i < 6; i++) {

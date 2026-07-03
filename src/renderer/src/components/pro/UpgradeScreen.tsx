@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { ArrowSquareOut, Check, Sparkle, Key, CircleNotch } from '@phosphor-icons/react';
+import { ArrowSquareOut, Check, Sparkle, Key, CircleNotch, DeviceMobile } from '@phosphor-icons/react';
 import { PRO_PAY_URL, PRO_FEATURES, type ProFeature } from './proCatalog';
+import { OFF_GRID_MOBILE_URL, openExternal } from '../../constants/links';
 
 // License-key activation. Only meaningful in a pro-capable build (__OFFGRID_PRO__);
 // a core build has no pro code bundled, so entering a key would unlock nothing.
@@ -161,6 +162,23 @@ export function UpgradeScreen({ feature }: { feature?: ProFeature }): React.Reac
               <LicenseActivation />
             </>
           ) : null}
+
+          {/* Cross-sell: your Pro license spans both products. Mirrors mobile's
+              "Get Off Grid AI Desktop" row on its Pro tab. */}
+          <div className="border-t border-neutral-800" />
+          <button
+            onClick={() => openExternal(OFF_GRID_MOBILE_URL)}
+            className="group flex items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-2.5 text-left transition-colors hover:border-green-500/30"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-700 bg-neutral-800 transition-colors group-hover:border-green-500/30">
+              <DeviceMobile weight="regular" className="h-4 w-4 text-neutral-300 transition-colors group-hover:text-green-400" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-medium text-neutral-200">Get Off Grid AI Mobile</span>
+              <span className="mt-0.5 block text-[11px] leading-tight text-neutral-500">Your license covers your phone too - up to 5 devices, synced over your own network.</span>
+            </span>
+            <ArrowSquareOut weight="bold" className="h-4 w-4 shrink-0 text-neutral-500" />
+          </button>
         </aside>
       </div>
     </div>
