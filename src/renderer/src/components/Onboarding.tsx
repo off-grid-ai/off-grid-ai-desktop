@@ -3,7 +3,6 @@ import { motion, AnimatePresence, stagger, useAnimate } from 'motion/react';
 import { LampContainer } from './ui/lamp';
 import { OrbitingCircles } from './ui/orbiting-circles';
 import { GridBackdrop } from './ui/grid-backdrop';
-import { BorderBeam } from './ui/border-beam';
 import { cn } from '@renderer/lib/utils';
 import logo from '@/assets/logo.png';
 import {
@@ -15,9 +14,13 @@ import {
   Microphone,
   SpeakerHigh,
   FolderOpen,
-  Cpu,
-  LockKey,
-  Sparkle,
+  CalendarBlank,
+  CheckSquare,
+  Rewind,
+  MagnifyingGlass,
+  Graph,
+  ShieldCheck,
+  Waveform,
 } from '@phosphor-icons/react';
 
 // Word-by-word blur-in, matching the brand's terminal feel.
@@ -65,7 +68,7 @@ interface OnboardingProps {
   onComplete: () => void;
 }
 
-const steps = [{ id: 'welcome' }, { id: 'capabilities' }, { id: 'private' }];
+const steps = [{ id: 'welcome' }, { id: 'capabilities' }, { id: 'pro' }, { id: 'private' }];
 
 const ORBIT = [
   { icon: ChatCircle, label: 'Chat' },
@@ -74,6 +77,18 @@ const ORBIT = [
   { icon: Microphone, label: 'Voice' },
   { icon: SpeakerHigh, label: 'Speech' },
   { icon: FolderOpen, label: 'Projects' },
+];
+
+// The Pro layer — every capability described by what it does, on-device.
+const PRO_GRID = [
+  { icon: Rewind, label: 'Replay', line: 'Rewinds your screen history, so the doc or number you saw last week is a scrub away, not a hunt.' },
+  { icon: Microphone, label: 'Meetings', line: 'Records and transcribes your calls on-device, so you walk out with the decisions and to-dos already written.' },
+  { icon: CheckSquare, label: 'To-dos', line: 'Pulls the commitments out of your day and queues the next step, so nothing you promised quietly slips.' },
+  { icon: MagnifyingGlass, label: 'Memory', line: 'One search across everything you have seen, said, and saved, so you never lose a thing twice.' },
+  { icon: Graph, label: 'Entities', line: 'Builds a record of every person and project on its own, so you walk into any call knowing where you left off.' },
+  { icon: CalendarBlank, label: 'Day', line: 'Lays out your day from your work and the calendars you connect, so you start oriented instead of scrambling.' },
+  { icon: ShieldCheck, label: 'Vault', line: 'Encrypts passwords, keys, and secret files with a key that never leaves this Mac, so they stay yours alone.' },
+  { icon: Waveform, label: 'Voice', line: 'Hold Option+Space and talk - transcribed locally and pasted at your cursor, so you type with your voice anywhere.' },
 ];
 
 export function Onboarding({ onComplete }: OnboardingProps) {
@@ -159,38 +174,55 @@ export function Onboarding({ onComplete }: OnboardingProps) {
           </motion.div>
         )}
 
-        {/* Step 2 — Private + grows with you */}
+        {/* Step 2 — The Pro layer: it starts remembering */}
         {currentStep === 2 && (
           <motion.div key="step-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative flex h-full w-full flex-col items-center justify-center bg-neutral-950 px-6">
             <GridBackdrop className="opacity-70" />
-            <div className="relative z-10 mx-auto max-w-4xl">
-              <div className="mb-14 text-center">
-                <TextGenerate words="Yours, and only yours." className="text-3xl font-semibold tracking-tight text-white md:text-4xl" delay={0} />
+            <div className="relative z-10 mx-auto max-w-5xl">
+              <div className="mb-2 text-center">
+                <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-green-400">Off Grid Pro · live now</span>
               </div>
+              <div className="mb-3 text-center">
+                <TextGenerate words="Then it starts remembering." className="text-3xl font-semibold tracking-tight text-white md:text-4xl" delay={0} />
+              </div>
+              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="mx-auto mb-10 max-w-2xl text-center text-sm text-neutral-400">
+                The free app runs models. Pro adds the always-on layer: turn on capture and Off Grid keeps a private record of what you see and do, then acts on it with your approval. Every one runs on-device. Nothing is uploaded.
+              </motion.p>
 
-              <div className="grid gap-6 md:grid-cols-3">
-                {[
-                  { icon: Cpu, title: 'Run anything locally', body: 'Download the latest open models — text, vision, image, voice, speech — and run them through one local gateway. No API keys.' },
-                  { icon: LockKey, title: 'Truly private', body: 'Nothing leaves your device. No cloud, no telemetry, no account. Your conversations and files stay on your machine.' },
-                  { icon: Sparkle, title: 'Never forgets', body: 'Pro lands July 2026: always on, it remembers everything you see and do, makes it instantly findable with unified search, and a proactive secretary surfaces what matters and acts for you. Join early access — or pay now for lifetime free + first access.', pro: true },
-                ].map(({ icon: Icon, title, body, pro }, i) => (
+              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+                {PRO_GRID.map(({ icon: Icon, label, line }, i) => (
                   <motion.div
-                    key={title}
-                    initial={{ opacity: 0, y: 30 }}
+                    key={label}
+                    initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 + i * 0.2, duration: 0.5 }}
-                    className="group relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/50 p-8"
+                    transition={{ delay: 0.3 + i * 0.06, duration: 0.4 }}
+                    className="group relative overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 transition-colors hover:border-green-500/30"
                   >
-                    <BorderBeam duration={8} size={80} className={cn('opacity-0 transition-opacity group-hover:opacity-40', pro ? 'from-transparent via-green-500 to-transparent' : 'from-transparent via-neutral-700 to-transparent')} />
-                    {pro && <span className="absolute right-4 top-4 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-green-400">Pro</span>}
-                    <div className={cn('mb-6 flex h-12 w-12 items-center justify-center rounded-xl border', pro ? 'border-green-500/30 bg-green-500/10' : 'border-neutral-700 bg-neutral-800')}>
-                      <Icon className={cn('h-5 w-5', pro ? 'text-green-400' : 'text-neutral-400')} weight="regular" />
+                    <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-700 bg-neutral-800 transition-colors group-hover:border-green-500/30 group-hover:bg-green-500/10">
+                      <Icon className="h-4 w-4 text-neutral-400 transition-colors group-hover:text-green-400" weight="regular" />
                     </div>
-                    <h3 className="mb-3 text-lg font-medium text-white">{title}</h3>
-                    <p className="text-sm leading-relaxed text-neutral-500">{body}</p>
+                    <h3 className="mb-1 text-[13px] font-medium uppercase tracking-wide text-white">{label}</h3>
+                    <p className="text-xs leading-relaxed text-neutral-500">{line}</p>
                   </motion.div>
                 ))}
               </div>
+
+              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }} className="mt-8 text-center text-xs text-neutral-600">
+                Pro is live now. $49/year or $69 once - one license across up to 5 devices.
+              </motion.p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Step 3 — Private close */}
+        {currentStep === 3 && (
+          <motion.div key="step-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative flex h-full w-full flex-col items-center justify-center bg-neutral-950 px-6">
+            <GridBackdrop className="opacity-70" />
+            <div className="relative z-10 mx-auto max-w-2xl text-center">
+              <TextGenerate words="It all runs in your Mac's RAM." className="text-3xl font-semibold tracking-tight text-white md:text-5xl" delay={0} />
+              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="mx-auto mt-5 max-w-xl text-neutral-400">
+                No account, no API key, no telemetry. Inference happens on your CPU and GPU. Turn off wifi and it keeps working. You can verify it yourself.
+              </motion.p>
 
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1, duration: 0.5 }} className="mt-12 flex items-center justify-center gap-12">
                 <div className="text-center">

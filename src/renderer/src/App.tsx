@@ -41,8 +41,11 @@ import {
   IconLoader2,
   IconArrowLeft,
   IconArrowRight,
-  IconActivityHeartbeat
+  IconActivityHeartbeat,
+  IconDeviceMobile,
+  IconExternalLink
 } from '@tabler/icons-react';
+import { OFF_GRID_MOBILE_URL, openExternal } from './constants/links';
 import { cn } from './lib/utils';
 
 type ViewMode = 'dashboard' | 'day' | 'replay' | 'reflect' | 'actions' | 'connectors' | 'meetings' | 'chats' | 'memories' | 'entities' | 'graph' | 'memory-chat' | 'models' | 'gateway' | 'projects' | 'notifications' | 'settings' | 'search' | 'clipboard' | 'voice' | 'vault';
@@ -680,6 +683,21 @@ function AppContent() {
               <ModelStatusDot open={sidebarOpen} onClick={() => (sidebarOpen ? setViewMode('settings') : setSidebarOpen(true))} />
               <NavThemeToggle expanded={sidebarOpen} />
               {bottomNav.map(renderNavItem)}
+              {/* Cross-sell to the companion phone app — opens the /mobile page
+                  (App Store + Google Play). Mirrors mobile's link back to desktop. */}
+              <button
+                onClick={() => openExternal(OFF_GRID_MOBILE_URL)}
+                title={!sidebarOpen ? 'Get the mobile app' : undefined}
+                className={cn(
+                  'group/nav relative flex items-center gap-3 rounded-lg py-2 text-sm transition-colors',
+                  sidebarOpen ? 'px-3' : 'justify-center px-0',
+                  'text-neutral-500 hover:bg-neutral-500/10 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
+                )}
+              >
+                <IconDeviceMobile className="h-5 w-5 shrink-0" />
+                {sidebarOpen && <span className="flex-1 text-left whitespace-pre">Mobile app</span>}
+                {sidebarOpen && <IconExternalLink className="h-3.5 w-3.5 shrink-0 text-neutral-400/60" />}
+              </button>
             </div>
           </SidebarBody>
         </Sidebar>

@@ -55,6 +55,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.10",
     "@react-three/fiber": "^10.0.0-alpha.1",
+    "@scure/bip39": "^2.2.0",
     "@tabler/icons-react": "^3.36.1",
     "@tailwindcss/vite": "^4.1.18",
     "@tsparticles/engine": "^3.9.1",

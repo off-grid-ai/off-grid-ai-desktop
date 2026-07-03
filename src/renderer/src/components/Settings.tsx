@@ -50,7 +50,7 @@ function SettingsCard({
 }
 
 // A Pro section shown (disabled) in the free build: title + description + a
-// "Pro · July 2026" badge, dimmed and non-interactive.
+// "Pro" badge, dimmed and non-interactive.
 function ProPlaceholder({ title, description, delay = 0.18 }: { title: string; description: string; delay?: number }): React.ReactElement {
   return (
     <motion.div
@@ -60,7 +60,7 @@ function ProPlaceholder({ title, description, delay = 0.18 }: { title: string; d
       transition={{ duration: 0.6, delay }}
     >
       <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-green-400">
-        <LockKey weight="bold" className="h-3 w-3" /> Pro · July 2026
+        <LockKey weight="bold" className="h-3 w-3" /> Pro
       </span>
       <h3 className="mb-1 pr-28 text-base font-medium text-neutral-300">{title}</h3>
       <p className="text-sm text-neutral-600">{description}</p>
