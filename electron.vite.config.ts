@@ -1,6 +1,6 @@
 import { resolve } from 'path'
 import { existsSync } from 'fs'
-import { defineConfig } from 'electron-vite'
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -24,6 +24,13 @@ const proDefine = { __OFFGRID_PRO__: JSON.stringify(proExists) }
 export default defineConfig({
   main: {
     define: proDefine,
+    // Deps are externalized by default (resolved from node_modules at runtime).
+    // @scure/bip39 + @noble/hashes are ESM-only ("type":"module"); a CJS main
+    // process require()-ing them throws ERR_REQUIRE_ESM at runtime. Exclude them
+    // from externalization so Rollup BUNDLES them into the main chunk (transpiled
+    // to the output format), sidestepping the ESM/CJS boundary. Used by the pro
+    // vault recovery-phrase feature (pro/main/vault/vault-recovery.ts).
+    plugins: [externalizeDepsPlugin({ exclude: ['@scure/bip39', '@noble/hashes'] })],
     resolve: {
       alias: {
         '@offgrid/core': resolve('src'),
