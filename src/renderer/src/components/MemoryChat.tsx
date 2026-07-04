@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { shouldQueue, enqueue, dequeue, queuedCount } from '@renderer/lib/chat-queue';
+import { waitingLabel } from '@renderer/lib/chat-labels';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -1940,7 +1941,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-green-500 [animation-delay:150ms]" />
                           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-green-500 [animation-delay:300ms]" />
                         </span>
-                        <span className="text-xs text-neutral-500">Searching your memory…</span>
+                        <span className="text-xs text-neutral-500">{waitingLabel({ noMemory, hasProject: !!activeProjectId })}</span>
                       </div>
                     )}
                   </div>
