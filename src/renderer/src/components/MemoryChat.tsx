@@ -206,6 +206,16 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     setMessagesByConv(prev => ({ ...prev, [k]: typeof updater === 'function' ? (updater as (p: ChatMessage[]) => ChatMessage[])(prev[k] ?? []) : updater }));
   }, []);
   const [input, setInput] = useState('');
+  // Seed the composer from another surface (e.g. Scribe's "Continue in chat"). The
+  // sender switches to this view via 'og:navigate' and hands off the text here.
+  useEffect(() => {
+    const onSeed = (e: Event): void => {
+      const text = (e as CustomEvent).detail as string | undefined;
+      if (typeof text === 'string' && text.length > 0) setInput(text);
+    };
+    window.addEventListener('og:chat-seed', onSeed);
+    return () => window.removeEventListener('og:chat-seed', onSeed);
+  }, []);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   // Whether the active chat model can read images. Gate image attachment on this and
   // re-check periodically (the user can switch models from the Models screen).
