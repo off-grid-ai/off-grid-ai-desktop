@@ -154,6 +154,13 @@ test('Scribe is unlocked in the pro build and flags a misspelling as you type', 
   if (await dismiss.isVisible().catch(() => false)) await dismiss.click().catch(() => {})
   const pad = page.getByPlaceholder(/Scribe checks it as you go/i)
   await expect(pad).toBeVisible()
+  // Import → transform → live edit affordance (the native picker itself can't be driven).
+  const importBtn = page.getByRole('button', { name: 'Import' })
+  await importBtn.click()
+  await expect(page.getByText('Import & transform')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'My tone' })).toBeVisible()
+  await importBtn.click() // toggle the menu closed so it doesn't cover the review rail
+  await expect(page.getByText('Import & transform')).toHaveCount(0)
   // A real misspelling ("recieve") is flagged; a real-but-uncommon word
   // ("photosynthesis", absent from the compact frequency list but valid per the OS
   // lexicon) must NOT be flagged — the false-positive fix.
