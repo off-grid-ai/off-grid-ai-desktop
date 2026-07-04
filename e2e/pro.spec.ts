@@ -173,6 +173,12 @@ test('Scribe is unlocked in the pro build and flags a misspelling as you type', 
   expect(underlined).not.toContain('notes')
   await pad.focus()
   await page.screenshot({ path: 'e2e/screenshots/scribe-squiggle.png' })
+
+  // Document review: run the deep pass (falls back to rule issues with no model) and
+  // assert a score + issue cards render.
+  await page.getByRole('button', { name: 'Review document' }).click()
+  await expect(page.getByText(/to review|looks clean/).first()).toBeVisible({ timeout: 8000 })
+  await page.screenshot({ path: 'e2e/screenshots/scribe-review.png' })
 })
 
 test('Restoring a copied file puts BOTH the path text and the file-url on the clipboard', async () => {
