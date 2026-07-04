@@ -133,7 +133,7 @@ test('Replay moments are backed by a captured screen — connector-only moments 
 test('Clipboard is unlocked in the pro build', async () => {
   await nav('Clipboard')
   await expect(page.getByText('Off Grid Pro · Available now')).toHaveCount(0)
-  await expect(page.getByPlaceholder('Search clipboard history…')).toBeVisible()
+  await expect(page.getByPlaceholder('Search content or tags…')).toBeVisible()
 })
 
 test('Voice is unlocked in the pro build (renders the dictation library)', async () => {
