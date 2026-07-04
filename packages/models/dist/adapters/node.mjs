@@ -6,7 +6,6 @@ var NodeDownloadBridge = class {
     this.modelsDir = modelsDir;
     fs.mkdirSync(modelsDir, { recursive: true });
   }
-  modelsDir;
   pathFor(fileName) {
     return path.join(this.modelsDir, fileName);
   }
@@ -19,7 +18,6 @@ var NodeDownloadBridge = class {
     }
   }
   async download(url, destPath, opts) {
-    var _a;
     const tmp = `${destPath}.part`;
     let start = 0;
     try {
@@ -45,7 +43,7 @@ var NodeDownloadBridge = class {
         if (done) break;
         out.write(Buffer.from(value));
         written += value.length;
-        (_a = opts.onProgress) == null ? void 0 : _a.call(opts, written, total || written);
+        opts.onProgress?.(written, total || written);
       }
     } finally {
       out.end();
