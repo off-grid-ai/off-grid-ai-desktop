@@ -60,9 +60,11 @@ function sizeRank(f: string): number {
 export function whisperModel(): string | null {
   try {
     const dir = modelsDir();
-    // User-chosen transcription model wins, when it's actually present on disk.
+    // User-chosen transcription model wins, when it's a whisper ggml file present on disk.
+    // (The active-transcription slot is shared with Parakeet, whose ONNX files must never
+    // be handed to whisper — hence the ggml guard.)
     const chosen = getActiveModal('transcription');
-    if (chosen && fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
+    if (chosen && /ggml-.*\.bin$/i.test(chosen) && fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
     const files = whisperModelFiles();
     if (!files.length) return null;
     const multi = files.filter((f) => !/\.en\.bin$/i.test(f));
@@ -81,7 +83,7 @@ export function smallWhisperModel(): string | null {
   const dir = modelsDir();
   try {
     const chosen = getActiveModal('transcription');
-    if (chosen && fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
+    if (chosen && /ggml-.*\.bin$/i.test(chosen) && fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
   } catch { /* fall through to size-based pick */ }
   const files = whisperModelFiles();
   if (!files.length) return null;

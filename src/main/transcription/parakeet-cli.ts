@@ -14,6 +14,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { binRoots, modelsDir } from '../runtime-env'
+import { getActiveModal } from '../active-models'
+import { modelsByKind } from '@offgrid/models'
 import { ffmpegBin } from './whisper-cli'
 import type { TranscriptionService, Transcript, TranscribeOptions } from './types'
 
@@ -35,7 +37,7 @@ export function parakeetBin(): string | null {
   return existing(binRoots().map((r) => path.join(r, 'parakeet', 'sherpa-onnx-offline')))
 }
 
-/** The four files a sherpa-onnx offline transducer needs. */
+/** The four files a sherpa-onnx offline transducer needs (bundled-default names). */
 const MODEL_FILES = ['encoder.onnx', 'decoder.onnx', 'joiner.onnx', 'tokens.txt'] as const
 
 export interface ParakeetModel {
@@ -46,21 +48,71 @@ export interface ParakeetModel {
   tokens: string
 }
 
-/** Locate a directory holding a complete Parakeet ONNX model (bundled or downloaded). */
+/**
+ * Pick the encoder/decoder/joiner/tokens files out of a downloaded model's filenames by
+ * substring (names are slug-prefixed in the catalog, e.g. "parakeet-v2.encoder.int8.onnx").
+ * Pure — returns the four names or null if any role is missing. Testable without disk.
+ */
+export function matchParakeetFiles(names: string[]): {
+  encoder: string
+  decoder: string
+  joiner: string
+  tokens: string
+} | null {
+  const pick = (needle: string, ext?: RegExp): string | undefined =>
+    names.find((n) => n.toLowerCase().includes(needle) && (!ext || ext.test(n)))
+  const encoder = pick('encoder', /\.onnx$/i)
+  const decoder = pick('decoder', /\.onnx$/i)
+  const joiner = pick('joiner', /\.onnx$/i)
+  const tokens = pick('tokens', /\.txt$/i)
+  if (!encoder || !decoder || !joiner || !tokens) return null
+  return { encoder, decoder, joiner, tokens }
+}
+
+/** Resolve the Parakeet model to use: the active/downloaded catalog model first, then a
+ *  CI-bundled default. Honors the shared active-transcription slot when it names a
+ *  Parakeet file; otherwise uses the first fully-downloaded Parakeet catalog entry. */
 export function parakeetModel(): ParakeetModel | null {
-  const candidates = [
-    ...binRoots().map((r) => path.join(r, 'parakeet', 'model')),
-    path.join(modelsDir(), 'parakeet')
-  ]
-  for (const dir of candidates) {
+  const fromCatalog = downloadedCatalogModel()
+  if (fromCatalog) return fromCatalog
+  // Bundled default (CI-staged) — fixed file names in resources/bin/parakeet/model.
+  for (const dir of binRoots().map((r) => path.join(r, 'parakeet', 'model'))) {
     if (MODEL_FILES.every((f) => existsIn(dir, f))) {
       return {
         dir,
         encoder: path.join(dir, 'encoder.onnx'),
         decoder: path.join(dir, 'decoder.onnx'),
         joiner: path.join(dir, 'joiner.onnx'),
-        tokens: path.join(dir, 'tokens.txt')
+        tokens: path.join(dir, 'tokens.txt'),
       }
+    }
+  }
+  return null
+}
+
+/** A fully-downloaded Parakeet model from the catalog, in modelsDir. Prefers the entry
+ *  whose primary file is the active transcription pick. */
+function downloadedCatalogModel(): ParakeetModel | null {
+  const dir = modelsDir()
+  const entries = modelsByKind('transcription').filter((m) => m.engine === 'parakeet')
+  if (!entries.length) return null
+  const active = getActiveModal('transcription')
+  const primaryName = (e: (typeof entries)[number]): string =>
+    (e.files.find((f) => f.role === 'primary') ?? e.files[0]).name
+  const ordered = active
+    ? [...entries].sort((a, b) => (primaryName(a) === active ? -1 : primaryName(b) === active ? 1 : 0))
+    : entries
+  for (const e of ordered) {
+    const names = e.files.map((f) => f.name)
+    const matched = matchParakeetFiles(names)
+    if (!matched) continue
+    if (![matched.encoder, matched.decoder, matched.joiner, matched.tokens].every((n) => existsIn(dir, n))) continue
+    return {
+      dir,
+      encoder: path.join(dir, matched.encoder),
+      decoder: path.join(dir, matched.decoder),
+      joiner: path.join(dir, matched.joiner),
+      tokens: path.join(dir, matched.tokens),
     }
   }
   return null

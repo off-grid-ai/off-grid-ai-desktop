@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildParakeetArgs, parseParakeetOutput, type ParakeetModel } from '../parakeet-cli'
+import { buildParakeetArgs, parseParakeetOutput, matchParakeetFiles, type ParakeetModel } from '../parakeet-cli'
 
 const model: ParakeetModel = {
   dir: '/m',
@@ -53,4 +53,30 @@ describe('parseParakeetOutput', () => {
   it('returns empty string on unrecognized output', () => {
     expect(parseParakeetOutput('no transcript here')).toBe('')
   })
+})
+
+describe('matchParakeetFiles', () => {
+  it('picks the four roles from slug-prefixed catalog names', () => {
+    const m = matchParakeetFiles([
+      'parakeet-v2.encoder.int8.onnx',
+      'parakeet-v2.decoder.int8.onnx',
+      'parakeet-v2.joiner.int8.onnx',
+      'parakeet-v2.tokens.txt',
+    ]);
+    expect(m).toEqual({
+      encoder: 'parakeet-v2.encoder.int8.onnx',
+      decoder: 'parakeet-v2.decoder.int8.onnx',
+      joiner: 'parakeet-v2.joiner.int8.onnx',
+      tokens: 'parakeet-v2.tokens.txt',
+    });
+  });
+
+  it('requires .onnx for the model parts and .txt for tokens', () => {
+    // a stray "encoder" text file must not satisfy the encoder role
+    expect(matchParakeetFiles(['encoder.txt', 'decoder.onnx', 'joiner.onnx', 'tokens.txt'])).toBeNull();
+  });
+
+  it('returns null when a role is missing', () => {
+    expect(matchParakeetFiles(['encoder.onnx', 'decoder.onnx', 'tokens.txt'])).toBeNull();
+  });
 })
