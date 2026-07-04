@@ -145,6 +145,21 @@ test('Voice is unlocked in the pro build (renders the dictation library)', async
   await expect(page.getByRole('button', { name: 'Transcribe file' })).toBeVisible()
 })
 
+test('Voice settings let you pick Parakeet and download its models', async () => {
+  await nav('Voice')
+  await page.getByTitle('Voice settings').click()
+  await expect(page.getByText('Voice settings')).toBeVisible({ timeout: 6000 })
+  // The engine picker is the first <select> in the drawer (Transcription → Engine).
+  const engineSelect = page.locator('select').first()
+  await expect(engineSelect).toBeVisible({ timeout: 6000 })
+  await engineSelect.selectOption('parakeet')
+  // The catalog models render with a Download action (no model installed in the temp profile).
+  await expect(page.getByText('Parakeet TDT 0.6B v2')).toBeVisible({ timeout: 6000 })
+  await expect(page.getByRole('button', { name: 'Download' }).first()).toBeVisible()
+  // Capture just the picker element (the drawer is a narrow right slide-over).
+  await page.getByTestId('parakeet-models').screenshot({ path: 'e2e/screenshots/parakeet-models.png' })
+})
+
 test('Scribe is unlocked in the pro build and flags a misspelling as you type', async () => {
   await nav('Scribe')
   await expect(page.getByText('Off Grid Pro · Available now')).toHaveCount(0)
