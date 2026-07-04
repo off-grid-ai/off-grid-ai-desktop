@@ -159,6 +159,47 @@ Wire the learning flywheel fully (seams from §1.2): never-flag dictionary live 
 ## Phase 5 — Full-document report
 
 LLM batch pass (`WritingService.report`) → readability, sentence-length variety, repeats, clichés, wordiness, pacing. Rendered in a panel/`sheet`. The ProWritingAid-style differentiator. Deliberately NO plagiarism (needs cloud corpus — say why).
+Status: shipped a first cut — `ReviewPanel` (checkFull + 0-100 `scoreText` + applyable issue cards). Deeper report (readability/pacing metrics) still to add.
+
+---
+
+## Phase 6 — Import a document → transform → live edit (ROADMAP)
+
+Drop in a file, get it rewritten the way you want, then keep editing it live. The natural "start from what I have" entry point.
+
+- **Import:** txt / md / docx / pdf. Reuse what exists — `PDFExtractorModule` (native) for PDF, `mammoth` for docx (both already deps); md/txt read directly.
+- **Transform on import:** run the imported text through `WritingService.rewrite` with a chosen action (tone / shorten / simplify / translate / "match my brand voice" — see Phase 9). Streamed, with a before/after diff to accept or discard.
+- **Hand off to live edit:** the accepted result opens in `ScribeScreen`'s `AssistedTextarea` — squiggles, click-to-fix, select-to-rewrite all apply. So "transform" and "edit" are one continuous flow, not two tools.
+- **Seams:** new `scribe:import` IPC (native file dialog → extract → text); the transform is the existing `rewrite`; the editor is the existing screen. Long docs chunk by paragraph for the rewrite pass (reuse the report chunking).
+- **Save/export:** write the edited result back out (txt/md/docx). Small addition.
+
+## Phase 7 — Section-level feedback (ROADMAP)
+
+Beyond accept/reject on a single fix: select any passage and tell Scribe what you think ("too formal", "don't start sentences with 'So'", "keep my dashes"). Free-text, scoped to that selection.
+
+- **UI:** a "Give feedback" action in the `RewriteToolbar` (selection is already captured there) → a small note input.
+- **Payload:** `{ selection, note, surface }` → new `scribe:section-feedback` IPC.
+- **This is the raw signal that feeds the learning loop (Phase 8).**
+
+## Phase 8 — Learning loop + "What Scribe has learned" (ROADMAP)
+
+Feedback isn't just logged — it's distilled into a durable understanding of how *this* user writes, shown back to them and editable, exactly like the actions/secretary "What Off Grid has learned" panel.
+
+- **Partly exists:** accept/reject already calls `recordFeedback` → the hourly `distillPreferences` → `getPreferenceDoc`, and that doc is injected into every rewrite via `ContextStore.styleContext`. So a loop runs today.
+- **The delta:**
+  1. **A Scribe-specific style profile**, separate from the actions/secretary prefs doc (today they share `secretary_prefs`). New `writing_style_prefs` store so writing feedback shapes writing, not action-surfacing. Section feedback (Phase 7) + accept/reject both feed it; an hourly LLM distill folds them into durable rules ("prefers em-dashes; avoids 'leverage'; warm sign-offs").
+  2. **A "What Scribe has learned" settings section** — mirror the `SecretaryPrefs` component: show the distilled style doc, let the user read/edit/clear it, show pending-feedback count. Registered via the same section-registry seam.
+  3. That doc becomes the top of `styleContext`, so the more you correct Scribe, the more it sounds like you. Closed loop, visible and user-controllable.
+
+## Phase 9 — Style-guide files as the baseline (ROADMAP)
+
+Give Scribe the .md files that define how you write (e.g. `brand_voice.md`) and they become the authoritative baseline for every rewrite — above learned prefs, above RAG.
+
+- **Import style guides:** upload one or more .md/.txt files in Scribe settings; stored as a named "style guide" list (`writing_style_guides`).
+- **Priority order in the rewrite/companion prompt** (`styleContext` composition): (1) active style guides (declared, authoritative) → (2) learned style profile (Phase 8, inferred) → (3) RAG voice samples (observed). Declared beats inferred beats observed.
+- **Per-context selection:** a style guide can be marked "always" (all copy) or scoped (e.g. only when domain='email'), so `brand_voice.md` governs all customer-facing copy automatically.
+- **Token budget:** guides are summarized/trimmed to a budget before injection (reuse the preference-doc ~1800-char discipline); a large guide is distilled once into a compact rule set, cached.
+- **Seams:** new `scribe:style-guides:*` IPC (add/list/remove/toggle); `ContextStore.styleContext` composes the three layers; all on-device.
 
 ---
 
