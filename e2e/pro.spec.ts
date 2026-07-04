@@ -181,6 +181,20 @@ test('Scribe is unlocked in the pro build and flags a misspelling as you type', 
   await page.screenshot({ path: 'e2e/screenshots/scribe-review.png' })
 })
 
+test('Scribe settings expose style guides + the learning loop', async () => {
+  await nav('Settings')
+  const card = page.getByText('Scribe writing companion', { exact: false }).first()
+  await card.scrollIntoViewIfNeeded()
+  await card.click().catch(() => {})
+  // Style-guide upload affordance (brand_voice.md baseline) and the learned-style panel.
+  const addGuide = page.getByRole('button', { name: 'Add style guide…' })
+  await expect(addGuide).toBeVisible({ timeout: 6000 })
+  await expect(page.getByText('What Scribe has learned')).toBeVisible()
+  await addGuide.scrollIntoViewIfNeeded()
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: 'e2e/screenshots/scribe-settings.png' })
+})
+
 test('Restoring a copied file puts BOTH the path text and the file-url on the clipboard', async () => {
   // 1. A real file on disk (written from the test process — Playwright's evaluate
   //    sandbox has no `require`), then simulate a Finder "copy file" by putting its
