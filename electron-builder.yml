@@ -79,6 +79,9 @@ electronFuses:
 publish:
   provider: github
   owner: off-grid-ai
-  repo: desktop
+  # Current repo name. It was renamed from `desktop`; the old name still 301-redirects,
+  # but the updater must not depend on that redirect (a new `off-grid-ai/desktop` repo
+  # would silently break every client's update check). Point straight at the real repo.
+  repo: off-grid-ai-desktop
   # Publish (not draft) so electron-updater on installed apps sees the release.
   releaseType: release
