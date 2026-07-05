@@ -47,7 +47,13 @@ verify_sha256() {
 # extracting — a tampered archive could otherwise write outside "$work".
 safe_extract() {
   local tarball="$1" dest="$2"
-  if tar -tf "$tarball" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+  # Read the full listing FIRST, then grep the string. Piping `tar -tf | grep -q`
+  # under `set -o pipefail` fails OPEN: grep closes the pipe on its first match, tar
+  # dies with SIGPIPE (141), the pipeline is non-zero, the `if` is false, and the
+  # malicious archive extracts anyway. Materializing the listing avoids the SIGPIPE.
+  local listing
+  listing="$(tar -tf "$tarball")"
+  if printf '%s\n' "$listing" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
     echo "[parakeet] archive contains absolute or traversal paths — refusing to extract" >&2
     exit 1
   fi

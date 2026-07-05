@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickTranscription, engineForActiveModel } from '../select';
+import { pickTranscription, engineForActiveModel, effectiveEngine } from '../select';
 import type { TranscriptionService } from '../types';
 
 const svc = (available: boolean, tag: string): TranscriptionService => ({
@@ -63,5 +63,16 @@ describe('engineForActiveModel', () => {
 
   it('falls back to whisper for an unknown active value', () => {
     expect(engineForActiveModel('nope', entries)).toBe('whisper');
+  });
+});
+
+describe('effectiveEngine (fallback-aware labeling)', () => {
+  // In the test environment the Parakeet runtime isn't installed, so a Parakeet
+  // request must resolve to (and be labeled) 'whisper' — the exact provenance case.
+  it('labels a whisper request as whisper', () => {
+    expect(effectiveEngine('whisper')).toBe('whisper');
+  });
+  it('labels a Parakeet request as whisper when Parakeet is not installed', () => {
+    expect(effectiveEngine('parakeet')).toBe('whisper');
   });
 });
