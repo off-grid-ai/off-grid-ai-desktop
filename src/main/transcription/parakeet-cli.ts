@@ -136,13 +136,15 @@ function existsIn(dir: string, file: string): boolean {
  * flag shape is asserted in tests and easy to adjust when the CI binary is finalized.
  */
 export function buildParakeetArgs(model: ParakeetModel, wav: string, threads = 4): string[] {
+  // sherpa-onnx-offline infers "transducer" from the encoder/decoder/joiner trio - there
+  // is no --model-type flag. The wav is positional (last). Verified against v1.13.3 --help.
   return [
+    `--tokens=${model.tokens}`,
     `--encoder=${model.encoder}`,
     `--decoder=${model.decoder}`,
     `--joiner=${model.joiner}`,
-    `--tokens=${model.tokens}`,
     `--num-threads=${threads}`,
-    '--model-type=transducer',
+    '--decoding-method=greedy_search',
     wav
   ]
 }

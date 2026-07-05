@@ -17,11 +17,17 @@ describe('buildParakeetArgs', () => {
     expect(args).toContain('--joiner=/m/joiner.onnx')
     expect(args).toContain('--tokens=/m/tokens.txt')
     expect(args).toContain('--num-threads=6')
+    expect(args).toContain('--decoding-method=greedy_search')
     expect(args[args.length - 1]).toBe('/tmp/a.wav') // positional wav is last
   })
 
   it('defaults the thread count', () => {
     expect(buildParakeetArgs(model, '/tmp/a.wav')).toContain('--num-threads=4')
+  })
+
+  it('does not pass a --model-type flag (sherpa infers transducer)', () => {
+    // v1.13.3 has no --model-type; passing one errors. Regression guard.
+    expect(buildParakeetArgs(model, '/tmp/a.wav').some((a) => a.startsWith('--model-type'))).toBe(false)
   })
 })
 
