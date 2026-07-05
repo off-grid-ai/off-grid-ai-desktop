@@ -96,11 +96,11 @@ function downloadedCatalogModel(): ParakeetModel | null {
   const dir = modelsDir()
   const entries = modelsByKind('transcription').filter((m) => m.engine === 'parakeet')
   if (!entries.length) return null
+  // The transcription active-slot stores the catalog id (setActiveModalChoice stores the
+  // id as-is for transcription), so prefer the entry whose id is the active pick.
   const active = getActiveModal('transcription')
-  const primaryName = (e: (typeof entries)[number]): string =>
-    (e.files.find((f) => f.role === 'primary') ?? e.files[0]).name
   const ordered = active
-    ? [...entries].sort((a, b) => (primaryName(a) === active ? -1 : primaryName(b) === active ? 1 : 0))
+    ? [...entries].sort((a, b) => (a.id === active ? -1 : b.id === active ? 1 : 0))
     : entries
   for (const e of ordered) {
     const names = e.files.map((f) => f.name)
