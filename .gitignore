@@ -56,3 +56,4 @@ scripts/dictation-hotkey/dictation-hotkey
 
 # local PR-campaign target list (not for commit)
 pr-targets.local.md
+scripts/scribe-overlay/scribe-overlay

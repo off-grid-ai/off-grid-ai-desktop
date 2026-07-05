@@ -129,6 +129,16 @@ jobs:
           mkdir -p resources/bin
           cp scripts/dictation-hotkey/dictation-hotkey resources/bin/dictation-hotkey
           chmod +x resources/bin/dictation-hotkey
+      # Compile the Scribe system-wide overlay helper (AX read/measure + squiggle window)
+      # and stage it into resources/bin. Self-contained, deployment target pinned. If it ever
+      # fails to ship, Scribe simply falls back to the select-and-hotkey flow (the overlay
+      # service no-ops when the binary is absent), so it can't break a release.
+      - name: Build Scribe overlay helper
+        run: |
+          bash scripts/build-scribe-overlay.sh
+          mkdir -p resources/bin
+          cp scripts/scribe-overlay/scribe-overlay resources/bin/scribe-overlay
+          chmod +x resources/bin/scribe-overlay
       # Stage the Parakeet STT runtime (sherpa-onnx CLI + ONNX model) into
       # resources/bin/parakeet. Additive: with SHERPA_ONNX_URL / PARAKEET_MODEL_URL
       # unset this is a no-op and transcription stays on whisper, so it can't break a
