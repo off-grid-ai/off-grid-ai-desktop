@@ -95,17 +95,28 @@ export function parakeetModel(): ParakeetModel | null {
   return null
 }
 
+/** Does the active transcription pick refer to this catalog entry? The active-slot stores
+ *  EITHER the catalog id or a primary/on-disk filename (see active-models.isModelActive),
+ *  so match either form. Pure — exported for testing. */
+export function activeMatchesEntry(
+  active: string | null,
+  entry: { id: string; files: Array<{ name: string }> },
+): boolean {
+  if (!active) return false
+  return entry.id === active || entry.files.some((f) => f.name === active)
+}
+
 /** A fully-downloaded Parakeet model from the catalog, in modelsDir. Prefers the entry
- *  whose primary file is the active transcription pick. */
+ *  the user selected as active (matched by catalog id OR primary filename). */
 function downloadedCatalogModel(): ParakeetModel | null {
   const dir = modelsDir()
   const entries = modelsByKind('transcription').filter((m) => m.engine === 'parakeet')
   if (!entries.length) return null
-  // The transcription active-slot stores the catalog id (setActiveModalChoice stores the
-  // id as-is for transcription), so prefer the entry whose id is the active pick.
   const active = getActiveModal('transcription')
   const ordered = active
-    ? [...entries].sort((a, b) => (a.id === active ? -1 : b.id === active ? 1 : 0))
+    ? [...entries].sort((a, b) =>
+        activeMatchesEntry(active, a) ? -1 : activeMatchesEntry(active, b) ? 1 : 0,
+      )
     : entries
   for (const e of ordered) {
     const names = e.files.map((f) => f.name)

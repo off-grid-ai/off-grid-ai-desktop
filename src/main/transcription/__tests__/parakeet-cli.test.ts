@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildParakeetArgs, parseParakeetOutput, matchParakeetFiles, type ParakeetModel } from '../parakeet-cli'
+import { buildParakeetArgs, parseParakeetOutput, matchParakeetFiles, activeMatchesEntry, type ParakeetModel } from '../parakeet-cli'
 
 const model: ParakeetModel = {
   dir: '/m',
@@ -95,5 +95,28 @@ describe('matchParakeetFiles', () => {
 
   it('returns null when a role is missing', () => {
     expect(matchParakeetFiles(['encoder.onnx', 'decoder.onnx', 'tokens.txt'])).toBeNull();
+  });
+})
+
+describe('activeMatchesEntry', () => {
+  const entry = {
+    id: 'csukuangfj/parakeet-v2',
+    files: [{ name: 'parakeet-v2.encoder.int8.onnx' }, { name: 'parakeet-v2.tokens.txt' }],
+  };
+
+  it('matches by catalog id', () => {
+    expect(activeMatchesEntry('csukuangfj/parakeet-v2', entry)).toBe(true);
+  });
+
+  it('matches by a primary/on-disk filename (active-slot may store the filename)', () => {
+    expect(activeMatchesEntry('parakeet-v2.encoder.int8.onnx', entry)).toBe(true);
+  });
+
+  it('does not match a different pick', () => {
+    expect(activeMatchesEntry('ggml-base.bin', entry)).toBe(false);
+  });
+
+  it('returns false when nothing is active', () => {
+    expect(activeMatchesEntry(null, entry)).toBe(false);
   });
 })
