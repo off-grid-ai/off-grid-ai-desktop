@@ -128,15 +128,119 @@ let CATEGORY_COLOR: [String: NSColor] = [
 
 struct Underline { let rect: CGRect; let cat: String }   // rect in view coords
 
-// Target for the hover menu's items (NSMenuItem needs an ObjC target + action). Wired to closures
-// by IpcOverlay so the menu logic stays with the rest of the overlay.
-final class MenuTarget: NSObject {
+// Click target for the branded card's buttons (NSButton needs an ObjC target + action). Fix
+// buttons carry their index in .tag; wired to closures by IpcOverlay.
+final class CardTarget: NSObject {
+    var fixes: [String] = []
     var onReplace: ((String) -> Void)?
     var onTeach: (() -> Void)?
     var onIgnore: (() -> Void)?
-    @objc func replace(_ item: NSMenuItem) { onReplace?(item.representedObject as? String ?? "") }
-    @objc func teach(_ item: NSMenuItem) { onTeach?() }
-    @objc func ignore(_ item: NSMenuItem) { onIgnore?() }
+    var onClose: (() -> Void)?
+    @objc func replace(_ s: NSButton) { if s.tag >= 0, s.tag < fixes.count { onReplace?(fixes[s.tag]) } }
+    @objc func teach(_ s: NSButton) { onTeach?() }
+    @objc func ignore(_ s: NSButton) { onIgnore?() }
+    @objc func close(_ s: NSButton) { onClose?() }
+}
+
+// The branded correction card — a small non-activating panel (never steals focus from the app
+// you're typing in) styled to the Off Grid brand: dark card, emerald fixes, Menlo. Swift-drawn
+// (not an Electron window) so it's reliable floating over other apps.
+final class CardPanel {
+    let panel: NSPanel
+    let target = CardTarget()
+    private(set) var visible = false
+    private(set) var anchor: CGRect = .zero   // squiggle rect (cocoa global), for the hover bridge
+
+    private static let emerald = NSColor(calibratedRed: 0.204, green: 0.827, blue: 0.60, alpha: 1)
+    private static func menlo(_ s: CGFloat) -> NSFont { NSFont(name: "Menlo", size: s) ?? NSFont.systemFont(ofSize: s) }
+
+    init() {
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 240, height: 80),
+                        styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: true)
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    }
+
+    private func chip(_ title: String, _ action: Selector, tag: Int, accent: Bool) -> NSButton {
+        let b = NSButton(title: title, target: target, action: action)
+        b.tag = tag
+        b.bezelStyle = .rounded
+        b.font = CardPanel.menlo(12)
+        b.contentTintColor = accent ? CardPanel.emerald : NSColor(calibratedWhite: 0.82, alpha: 1)
+        return b
+    }
+
+    func present(message: String, fixes: [String], isSpelling: Bool, anchor: CGRect) {
+        self.anchor = anchor
+        target.fixes = fixes
+
+        let root = NSView()
+        root.wantsLayer = true
+        root.layer?.backgroundColor = NSColor(calibratedRed: 0.078, green: 0.078, blue: 0.078, alpha: 1).cgColor
+        root.layer?.cornerRadius = 8
+        root.layer?.borderWidth = 1
+        root.layer?.borderColor = NSColor(calibratedWhite: 0.16, alpha: 1).cgColor
+
+        let msg = NSTextField(labelWithString: message.isEmpty ? "Suggestion" : message)
+        msg.font = CardPanel.menlo(11)
+        msg.textColor = NSColor(calibratedWhite: 0.69, alpha: 1)
+        msg.lineBreakMode = .byTruncatingTail
+        msg.maximumNumberOfLines = 2
+
+        let rows = NSStackView(views: [msg])
+        rows.orientation = .vertical
+        rows.alignment = .leading
+        rows.spacing = 8
+        rows.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+        rows.translatesAutoresizingMaskIntoConstraints = false
+
+        if !fixes.isEmpty {
+            let fixRow = NSStackView()
+            fixRow.orientation = .horizontal
+            fixRow.spacing = 6
+            for (i, f) in fixes.enumerated() {
+                fixRow.addArrangedSubview(chip(f.isEmpty ? "Remove" : f, #selector(CardTarget.replace(_:)), tag: i, accent: true))
+            }
+            rows.addArrangedSubview(fixRow)
+        }
+        let secondary = NSStackView()
+        secondary.orientation = .horizontal
+        secondary.spacing = 6
+        secondary.addArrangedSubview(chip(isSpelling ? "Add to dictionary" : "Ignore",
+            isSpelling ? #selector(CardTarget.teach(_:)) : #selector(CardTarget.ignore(_:)), tag: -1, accent: false))
+        secondary.addArrangedSubview(chip("\u{2715}", #selector(CardTarget.close(_:)), tag: -1, accent: false))
+        rows.addArrangedSubview(secondary)
+
+        root.addSubview(rows)
+        NSLayoutConstraint.activate([
+            rows.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            rows.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            rows.topAnchor.constraint(equalTo: root.topAnchor),
+            rows.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+        ])
+        let size = rows.fittingSize
+        root.frame = NSRect(origin: .zero, size: size)
+        panel.setContentSize(size)
+        panel.contentView = root
+        // Position just below the squiggle (cocoa is bottom-left, so "below" = smaller y).
+        panel.setFrameOrigin(NSPoint(x: anchor.minX, y: anchor.minY - size.height - 4))
+        panel.orderFrontRegardless()   // non-activating: shows without stealing focus
+        visible = true
+    }
+
+    /// Should the card stay open given the current cursor? True while the pointer is over the card
+    /// or over the word it belongs to (with a little slack for the gap between them).
+    func keepOpen(mouse: CGPoint) -> Bool {
+        panel.frame.insetBy(dx: -12, dy: -12).contains(mouse) || anchor.insetBy(dx: -6, dy: -10).contains(mouse)
+    }
+
+    func dismiss() { if visible { panel.orderOut(nil); visible = false } }
 }
 
 final class SquiggleView: NSView {
@@ -227,13 +331,14 @@ final class IpcOverlay {
     var measuredKey = ""
     var lastChange = Date()
     let typingPause: TimeInterval = 0.4
-    // Hover-to-fix: a native menu appears when the cursor dwells over a squiggle. hitRects maps
+    // Hover-to-fix: the branded card appears when the cursor dwells over a squiggle. hitRects maps
     // on-screen squiggle rects (cocoa global) to a span index for hit-testing the mouse.
     var hitRects: [(rect: CGRect, idx: Int)] = []
     var mouseAt = CGPoint.zero
     var mouseMovedAt = Date.distantPast
-    var menuCooldownUntil = Date.distantPast
-    let menuTarget = MenuTarget()
+    var cardCooldownUntil = Date.distantPast
+    var cardSpanKey = ""          // which span the card is currently showing (avoid re-present flicker)
+    let card = CardPanel()
 
     func emit(_ obj: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: obj) else { return }
@@ -268,11 +373,13 @@ final class IpcOverlay {
     func tick() {
         guard let f = focusedTextElement(), let text = stringAttr(f.el, kAXValueAttribute as String) else {
             if lastContextKey != "blur" { emit(["type": "blur"]); lastContextKey = "blur"; lastText = "" }
+            dismissCard()
             overlay.draw([]); return
         }
         if text != lastText {
             lastChange = Date(); cache = [:]; measuredKey = ""
             preferSelection = false          // re-detect strategy after an edit
+            dismissCard()                    // the card's span may have shifted — don't leave it stale
         }
         let key = f.bundleId + "\u{1}" + text
         if key != lastContextKey {
@@ -325,50 +432,38 @@ final class IpcOverlay {
         }
         hitRects = hits
         overlay.draw(out)
-        maybeShowMenu(current)
+        updateCard(current)
     }
 
-    // Show the fix menu when the cursor has dwelled over a squiggle. Uses a global mouse monitor
-    // for position (window stays click-through), so we never steal clicks from the target app.
-    private func maybeShowMenu(_ current: [(loc: Int, len: Int, cat: String, message: String, fixes: [String])]) {
+    // Hover-driven branded card: show it when the cursor dwells over a squiggle; keep it while the
+    // cursor is over the card or the word; dismiss when it leaves both. Uses the global mouse
+    // position (the overlay window stays click-through, so we never steal clicks from the target
+    // app), while the card's own buttons handle their clicks as a normal non-activating panel.
+    private func updateCard(_ current: [(loc: Int, len: Int, cat: String, message: String, fixes: [String])]) {
         let now = Date()
-        guard now > menuCooldownUntil, now.timeIntervalSince(mouseMovedAt) > 0.45 else { return }
-        // Widen vertically — squiggles are thin; make them easy to hover.
+        if card.visible {
+            if !card.keepOpen(mouse: mouseAt) {
+                card.dismiss(); cardSpanKey = ""; cardCooldownUntil = now.addingTimeInterval(0.25)
+            }
+            return
+        }
+        guard now > cardCooldownUntil, now.timeIntervalSince(mouseMovedAt) > 0.45 else { return }
         guard let hit = hitRects.first(where: { $0.rect.insetBy(dx: -1, dy: -7).contains(mouseAt) }),
               hit.idx < current.count else { return }
-        let span = current[hit.idx]
-        showMenu(for: span)
+        showCard(for: current[hit.idx], anchor: hit.rect)
     }
 
-    private func showMenu(for span: (loc: Int, len: Int, cat: String, message: String, fixes: [String])) {
-        let menu = NSMenu()
-        if !span.message.isEmpty {
-            let header = NSMenuItem(title: span.message, action: nil, keyEquivalent: "")
-            header.isEnabled = false
-            menu.addItem(header)
-            menu.addItem(.separator())
-        }
-        for fix in span.fixes {
-            let title = fix.isEmpty ? "Remove" : "Replace with \u{201C}\(fix)\u{201D}"
-            let item = NSMenuItem(title: title, action: #selector(MenuTarget.replace(_:)), keyEquivalent: "")
-            item.target = menuTarget
-            item.representedObject = fix
-            menu.addItem(item)
-        }
-        if !span.fixes.isEmpty { menu.addItem(.separator()) }
-        let secondary = NSMenuItem(
-            title: span.cat == "spelling" ? "Add to dictionary" : "Ignore",
-            action: span.cat == "spelling" ? #selector(MenuTarget.teach(_:)) : #selector(MenuTarget.ignore(_:)),
-            keyEquivalent: "")
-        secondary.target = menuTarget
-        menu.addItem(secondary)
+    private func showCard(for span: (loc: Int, len: Int, cat: String, message: String, fixes: [String]), anchor: CGRect) {
+        card.target.onReplace = { [weak self] fix in self?.apply(span.loc, span.len, fix); self?.dismissCard() }
+        card.target.onTeach = { [weak self] in self?.emitAction("teach", span); self?.dismissCard() }
+        card.target.onIgnore = { [weak self] in self?.emitAction("ignore", span); self?.dismissCard() }
+        card.target.onClose = { [weak self] in self?.dismissCard() }
+        card.present(message: span.message, fixes: span.fixes, isSpelling: span.cat == "spelling", anchor: anchor)
+        cardSpanKey = spanKey(span.loc, span.len)
+    }
 
-        menuTarget.onReplace = { [weak self] fix in self?.apply(span.loc, span.len, fix) }
-        menuTarget.onTeach = { [weak self] in self?.emitAction("teach", span) }
-        menuTarget.onIgnore = { [weak self] in self?.emitAction("ignore", span) }
-
-        menu.popUp(positioning: nil, at: mouseAt, in: nil) // mouseAt is screen coords
-        menuCooldownUntil = Date().addingTimeInterval(0.6)
+    private func dismissCard() {
+        card.dismiss(); cardSpanKey = ""; cardCooldownUntil = Date().addingTimeInterval(0.3)
     }
 
     // Apply a replacement over a span via AX (set selection, then set the selected text). The
