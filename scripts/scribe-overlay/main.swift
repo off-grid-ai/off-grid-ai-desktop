@@ -90,6 +90,15 @@ func elementFrameAX(_ el: AXUIElement) -> CGRect? {
 
 extension unichar { var scalar: Unicode.Scalar { Unicode.Scalar(self) ?? Unicode.Scalar(65) } }
 
+// Coexist with macOS's own spellchecker the way TextWarden/Harper do: don't try to suppress the
+// native red underline (impossible for third-party apps + browsers use their own), but DO respect
+// words the user taught macOS via "Learn Spelling" — never draw a spelling squiggle on those.
+func isLearnedSpelling(_ text: String, _ loc: Int, _ len: Int) -> Bool {
+    let ns = text as NSString
+    guard loc >= 0, len > 0, loc + len <= ns.length else { return false }
+    return NSSpellChecker.shared.hasLearnedWord(ns.substring(with: NSRange(location: loc, length: len)))
+}
+
 func wordRanges(_ text: String) -> [(loc: Int, len: Int, word: String)] {
     var out: [(Int, Int, String)] = []
     let ns = text as NSString
@@ -426,6 +435,9 @@ final class IpcOverlay {
         var hits: [(CGRect, Int)] = []
         for (idx, s) in current.enumerated() {
             if out.count >= MAX_SQUIGGLES { break }
+            // Respect macOS's learned words (the TextWarden/Harper pattern) — skip spelling
+            // squiggles for words the user already taught the OS dictionary.
+            if s.cat == "spelling", isLearnedSpelling(text, s.loc, s.len) { continue }
             guard let r = cache[spanKey(s.loc, s.len)] else { continue }
             if let fr = frame, !fr.intersects(r) { continue }
             let cocoa = axRectToCocoa(r)
