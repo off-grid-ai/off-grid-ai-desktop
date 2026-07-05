@@ -99,6 +99,15 @@ func isLearnedSpelling(_ text: String, _ loc: Int, _ len: Int) -> Bool {
     return NSSpellChecker.shared.hasLearnedWord(ns.substring(with: NSRange(location: loc, length: len)))
 }
 
+// High-quality spelling suggestions from macOS itself (e.g. "gance" → "glance"), far better than a
+// small bundled wordlist. Used for the card's spelling fixes; grammar/style fixes still come from
+// the engine.
+func osSpellGuesses(_ word: String) -> [String] {
+    guard !word.isEmpty else { return [] }
+    let r = NSRange(location: 0, length: (word as NSString).length)
+    return NSSpellChecker.shared.guesses(forWordRange: r, in: word, language: nil, inSpellDocumentWithTag: 0) ?? []
+}
+
 func wordRanges(_ text: String) -> [(loc: Int, len: Int, word: String)] {
     var out: [(Int, Int, String)] = []
     let ns = text as NSString
@@ -137,18 +146,16 @@ let CATEGORY_COLOR: [String: NSColor] = [
 
 struct Underline { let rect: CGRect; let cat: String }   // rect in view coords
 
-// Click target for the branded card's buttons (NSButton needs an ObjC target + action). Fix
-// buttons carry their index in .tag; wired to closures by IpcOverlay.
-final class CardTarget: NSObject {
-    var fixes: [String] = []
-    var onReplace: ((String) -> Void)?
-    var onTeach: (() -> Void)?
-    var onIgnore: (() -> Void)?
-    var onClose: (() -> Void)?
-    @objc func replace(_ s: NSButton) { if s.tag >= 0, s.tag < fixes.count { onReplace?(fixes[s.tag]) } }
-    @objc func teach(_ s: NSButton) { onTeach?() }
-    @objc func ignore(_ s: NSButton) { onIgnore?() }
-    @objc func close(_ s: NSButton) { onClose?() }
+// A brand chip — a fully custom, layer-drawn clickable view. AppKit's NSButton won't let us set a
+// push button's fill/title color reliably (contentTintColor + bezelColor are ignored for rounded
+// buttons), so we own the drawing: emerald fill + dark text for primary (fixes), dark-grey fill +
+// light text for secondary. Click fires on mouseUp inside bounds.
+final class ChipView: NSView {
+    var onClick: (() -> Void)?
+    override var isFlipped: Bool { true }
+    override func mouseUp(with e: NSEvent) {
+        if bounds.contains(convert(e.locationInWindow, from: nil)) { onClick?() }
+    }
 }
 
 // The branded correction card — a small non-activating panel (never steals focus from the app
@@ -156,9 +163,13 @@ final class CardTarget: NSObject {
 // (not an Electron window) so it's reliable floating over other apps.
 final class CardPanel {
     let panel: NSPanel
-    let target = CardTarget()
     private(set) var visible = false
     private(set) var anchor: CGRect = .zero   // squiggle rect (cocoa global), for the hover bridge
+    // Set by the caller before present(); the chips invoke these.
+    var onReplace: ((String) -> Void)?
+    var onTeach: (() -> Void)?
+    var onIgnore: (() -> Void)?
+    var onClose: (() -> Void)?
 
     private static let emerald = NSColor(calibratedRed: 0.204, green: 0.827, blue: 0.60, alpha: 1)
     private static func menlo(_ s: CGFloat) -> NSFont { NSFont(name: "Menlo", size: s) ?? NSFont.systemFont(ofSize: s) }
@@ -167,8 +178,7 @@ final class CardPanel {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 240, height: 80),
                         styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: true)
         panel.isFloatingPanel = true
-        // Sit ABOVE the squiggle overlay window (which is at .screenSaver) so the card is never
-        // occluded by it.
+        // Sit ABOVE the squiggle overlay window (which is at .screenSaver) so the card is never occluded.
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
@@ -178,29 +188,42 @@ final class CardPanel {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     }
 
-    private func chip(_ title: String, _ action: Selector, tag: Int, accent: Bool) -> NSButton {
-        let b = NSButton(title: title, target: target, action: action)
-        b.tag = tag
-        b.bezelStyle = .rounded
-        b.font = CardPanel.menlo(12)
-        b.contentTintColor = accent ? CardPanel.emerald : NSColor(calibratedWhite: 0.82, alpha: 1)
-        return b
+    private func chip(_ title: String, accent: Bool, onClick: @escaping () -> Void) -> ChipView {
+        let v = ChipView()
+        v.wantsLayer = true
+        v.layer?.backgroundColor = (accent ? CardPanel.emerald : NSColor(calibratedWhite: 0.14, alpha: 1)).cgColor
+        v.layer?.cornerRadius = 6
+        v.onClick = onClick
+        let label = NSTextField(labelWithString: title)
+        label.font = CardPanel.menlo(12)
+        label.textColor = accent ? NSColor(calibratedWhite: 0.04, alpha: 1) : NSColor(calibratedWhite: 0.85, alpha: 1)
+        label.backgroundColor = .clear
+        label.isBezeled = false
+        label.drawsBackground = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        v.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 10),
+            label.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -10),
+            label.topAnchor.constraint(equalTo: v.topAnchor, constant: 5),
+            label.bottomAnchor.constraint(equalTo: v.bottomAnchor, constant: -5)
+        ])
+        return v
     }
 
     func present(message: String, fixes: [String], isSpelling: Bool, anchor: CGRect) {
         self.anchor = anchor
-        target.fixes = fixes
 
         let root = NSView()
         root.wantsLayer = true
-        root.layer?.backgroundColor = NSColor(calibratedRed: 0.078, green: 0.078, blue: 0.078, alpha: 1).cgColor
-        root.layer?.cornerRadius = 8
+        root.layer?.backgroundColor = NSColor(calibratedRed: 0.055, green: 0.055, blue: 0.055, alpha: 1).cgColor
+        root.layer?.cornerRadius = 10
         root.layer?.borderWidth = 1
-        root.layer?.borderColor = NSColor(calibratedWhite: 0.16, alpha: 1).cgColor
+        root.layer?.borderColor = NSColor(calibratedWhite: 0.18, alpha: 1).cgColor
 
         let msg = NSTextField(labelWithString: message.isEmpty ? "Suggestion" : message)
         msg.font = CardPanel.menlo(11)
-        msg.textColor = NSColor(calibratedWhite: 0.69, alpha: 1)
+        msg.textColor = NSColor(calibratedWhite: 0.72, alpha: 1)
         msg.lineBreakMode = .byTruncatingTail
         msg.maximumNumberOfLines = 2
 
@@ -215,17 +238,18 @@ final class CardPanel {
             let fixRow = NSStackView()
             fixRow.orientation = .horizontal
             fixRow.spacing = 6
-            for (i, f) in fixes.enumerated() {
-                fixRow.addArrangedSubview(chip(f.isEmpty ? "Remove" : f, #selector(CardTarget.replace(_:)), tag: i, accent: true))
+            for f in fixes {
+                fixRow.addArrangedSubview(chip(f.isEmpty ? "Remove" : f, accent: true) { [weak self] in self?.onReplace?(f) })
             }
             rows.addArrangedSubview(fixRow)
         }
         let secondary = NSStackView()
         secondary.orientation = .horizontal
         secondary.spacing = 6
-        secondary.addArrangedSubview(chip(isSpelling ? "Add to dictionary" : "Ignore",
-            isSpelling ? #selector(CardTarget.teach(_:)) : #selector(CardTarget.ignore(_:)), tag: -1, accent: false))
-        secondary.addArrangedSubview(chip("\u{2715}", #selector(CardTarget.close(_:)), tag: -1, accent: false))
+        secondary.addArrangedSubview(chip(isSpelling ? "Add to dictionary" : "Ignore", accent: false) { [weak self] in
+            if isSpelling { self?.onTeach?() } else { self?.onIgnore?() }
+        })
+        secondary.addArrangedSubview(chip("\u{2715}", accent: false) { [weak self] in self?.onClose?() })
         rows.addArrangedSubview(secondary)
 
         root.addSubview(rows)
@@ -413,22 +437,12 @@ final class IpcOverlay {
             for s in current { if let r = directBounds(f.el, s.loc, s.len) { fresh[spanKey(s.loc, s.len)] = r } }
             cache = fresh
         } else {
-            // Selection trick: only re-measure when the span set changed AND typing settled, so we
-            // don't move the cursor mid-type. (Trade-off: squiggles can lag a scroll until the next
-            // edit; acceptable for v1, revisited with an AXObserver scroll hook.)
-            let sig = spanSetSignature(current) + "|" + String(text.utf16.count)
-            if sig != measuredKey, Date().timeIntervalSince(lastChange) > typingPause {
-                let saved = getSelection(f.el)
-                var fresh: [String: CGRect] = [:]
-                for s in current {
-                    if fresh.count >= MAX_SQUIGGLES { break }
-                    if let r = selectionBounds(f.el, s.loc, s.len, fieldWidth: frame?.width ?? 0) {
-                        fresh[spanKey(s.loc, s.len)] = r
-                    }
-                }
-                if let sv = saved { setSelection(f.el, sv.location, sv.length) }
-                cache = fresh; measuredKey = sig
-            }
+            // Chromium/Electron/browser: the only way to get bounds here is the selection trick,
+            // which MOVES the caret — that makes live typing jumpy and corrupts input. Never do that
+            // while the user is in the field. Draw nothing live here; these apps are served by the
+            // on-demand hotkey flow instead. (A non-invasive text-marker bounds method would let us
+            // bring live squiggles back — tracked as a follow-up.)
+            cache = [:]
         }
 
         var out: [(CGRect, String)] = []
@@ -446,14 +460,14 @@ final class IpcOverlay {
         }
         hitRects = hits
         overlay.draw(out)
-        updateCard(current)
+        updateCard(current, text: text)
     }
 
     // Hover-driven branded card: show it when the cursor dwells over a squiggle; keep it while the
     // cursor is over the card or the word; dismiss when it leaves both. Uses the global mouse
     // position (the overlay window stays click-through, so we never steal clicks from the target
     // app), while the card's own buttons handle their clicks as a normal non-activating panel.
-    private func updateCard(_ current: [(loc: Int, len: Int, cat: String, message: String, fixes: [String])]) {
+    private func updateCard(_ current: [(loc: Int, len: Int, cat: String, message: String, fixes: [String])], text: String) {
         let now = Date()
         if card.visible {
             if !card.keepOpen(mouse: mouseAt) {
@@ -464,15 +478,25 @@ final class IpcOverlay {
         guard now > cardCooldownUntil, now.timeIntervalSince(mouseMovedAt) > 0.45 else { return }
         guard let hit = hitRects.first(where: { $0.rect.insetBy(dx: -1, dy: -7).contains(mouseAt) }),
               hit.idx < current.count else { return }
-        showCard(for: current[hit.idx], anchor: hit.rect)
+        showCard(for: current[hit.idx], anchor: hit.rect, text: text)
     }
 
-    private func showCard(for span: (loc: Int, len: Int, cat: String, message: String, fixes: [String]), anchor: CGRect) {
-        card.target.onReplace = { [weak self] fix in self?.apply(span.loc, span.len, fix); self?.dismissCard() }
-        card.target.onTeach = { [weak self] in self?.emitAction("teach", span); self?.dismissCard() }
-        card.target.onIgnore = { [weak self] in self?.emitAction("ignore", span); self?.dismissCard() }
-        card.target.onClose = { [weak self] in self?.dismissCard() }
-        card.present(message: span.message, fixes: span.fixes, isSpelling: span.cat == "spelling", anchor: anchor)
+    private func showCard(for span: (loc: Int, len: Int, cat: String, message: String, fixes: [String]), anchor: CGRect, text: String) {
+        // For spelling, prefer macOS's own guesses (much better than a small bundled wordlist).
+        var fixes = span.fixes
+        if span.cat == "spelling" {
+            let ns = text as NSString
+            if span.loc >= 0, span.len > 0, span.loc + span.len <= ns.length {
+                let word = ns.substring(with: NSRange(location: span.loc, length: span.len))
+                let guesses = osSpellGuesses(word)
+                if !guesses.isEmpty { fixes = Array(guesses.prefix(4)) }
+            }
+        }
+        card.onReplace = { [weak self] fix in self?.apply(span.loc, span.len, fix); self?.dismissCard() }
+        card.onTeach = { [weak self] in self?.emitAction("teach", span); self?.dismissCard() }
+        card.onIgnore = { [weak self] in self?.emitAction("ignore", span); self?.dismissCard() }
+        card.onClose = { [weak self] in self?.dismissCard() }
+        card.present(message: span.message, fixes: fixes, isSpelling: span.cat == "spelling", anchor: anchor)
         cardSpanKey = spanKey(span.loc, span.len)
     }
 
