@@ -21,11 +21,38 @@ MODEL_DIR="$DEST/model"
 : "${SHERPA_ONNX_URL:=}"      # tarball containing sherpa-onnx-offline for macOS arm64
 : "${PARAKEET_MODEL_URL:=}"   # OPTIONAL tarball of encoder/decoder/joiner/tokens (else the
                               # in-app Models picker downloads the model at runtime)
+: "${SHERPA_ONNX_SHA256:=}"   # OPTIONAL expected sha256 of the runtime tarball
+: "${PARAKEET_MODEL_SHA256:=}" # OPTIONAL expected sha256 of the model tarball
 
 if [[ -z "$SHERPA_ONNX_URL" ]]; then
   echo "[parakeet] SHERPA_ONNX_URL not set — skipping (whisper stays the engine)."
   exit 0
 fi
+
+# Supply-chain guards: this stages a remote tarball into a signed release artifact, so
+# verify integrity and never let an archive write outside the temp dir.
+#   verify_sha256 <file> <expected>  — abort on mismatch (no-op when expected is empty).
+verify_sha256() {
+  local file="$1" expected="$2"
+  [[ -z "$expected" ]] && { echo "[parakeet] WARNING: no sha256 pinned for $(basename "$file") — pin *_SHA256 to verify the download" >&2; return 0; }
+  local actual; actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "[parakeet] sha256 mismatch for $(basename "$file"): got $actual, expected $expected" >&2
+    exit 1
+  fi
+  echo "[parakeet] sha256 verified: $(basename "$file")"
+}
+
+# Reject absolute paths, parent-dir traversal, and symlink/hardlink entries BEFORE
+# extracting — a tampered archive could otherwise write outside "$work".
+safe_extract() {
+  local tarball="$1" dest="$2"
+  if tar -tf "$tarball" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+    echo "[parakeet] archive contains absolute or traversal paths — refusing to extract" >&2
+    exit 1
+  fi
+  tar -xf "$tarball" -C "$dest" # -xf auto-detects gz/bz2/xz
+}
 
 mkdir -p "$DEST"
 
@@ -34,7 +61,8 @@ trap 'rm -rf "$work"' EXIT
 
 echo "[parakeet] downloading runtime…"
 curl -fsSL "$SHERPA_ONNX_URL" -o "$work/sherpa.tar"
-tar -xf "$work/sherpa.tar" -C "$work" # -xf auto-detects gz/bz2/xz
+verify_sha256 "$work/sherpa.tar" "$SHERPA_ONNX_SHA256"
+safe_extract "$work/sherpa.tar" "$work"
 # Find the offline CLI, then take the bin/ + lib/ pair around it. We PRESERVE the
 # prebuilt's own bin/lib structure (dylibs live in ../lib, which is what the binary's
 # @rpath expects) rather than flatten — flattening would break @rpath. No symlinks are
@@ -74,7 +102,8 @@ fi
 echo "[parakeet] downloading model…"
 mkdir -p "$MODEL_DIR"
 curl -fsSL "$PARAKEET_MODEL_URL" -o "$work/model.tar"
-tar -xf "$work/model.tar" -C "$work"
+verify_sha256 "$work/model.tar" "$PARAKEET_MODEL_SHA256"
+safe_extract "$work/model.tar" "$work"
 for f in encoder.onnx decoder.onnx joiner.onnx tokens.txt; do
   src="$(find "$work" -type f -name "$f" | head -1)"
   if [[ -z "$src" ]]; then echo "[parakeet] model file $f missing from archive" >&2; exit 1; fi
