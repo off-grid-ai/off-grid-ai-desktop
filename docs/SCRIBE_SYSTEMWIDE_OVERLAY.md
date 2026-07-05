@@ -158,6 +158,30 @@ issues drawn (reuse engine's `maxIssues`).
 - **Manual matrix (can't be E2E'd):** Notes, Mail, Slack, Brave, VSCode — squiggle accuracy,
   scroll tracking, apply-fix, no-typing-disruption. Screenshots per app in the PR.
 
+## Build status (v1 — 2026-07-05)
+
+Implemented + green (compile / 3× tsc / 547 unit tests). **Needs on-device visual verification**
+(marked ⚠) — I can't drive the GUI.
+
+- ✅ **Swift binary** (`scripts/scribe-overlay/main.swift`): `--demo` visual mode (VERIFIED in Notes
+  by the user) + IPC mode (mechanism only). Direct bounds for native, selection-trick for
+  Chromium/Electron/browser (cursor saved/restored), per-category colors, viewport culling, cap,
+  bounds cache + typing-pause gating.
+- ✅ **Pro overlay service** (`pro/main/writing/overlay/`): spawns the binary, runs `checkSync`,
+  gates on enabled + systemWide + `inlineOverlay` + per-app rules + built-in terminal/secure-field
+  denylist, pushes spans, restarts on crash, no-ops when the binary is absent. Pure `issuesToSpans`
+  (tested).
+- ✅ **Hover-to-fix** ⚠: global-monitor dwell → native menu (engine's fixes + Add-to-dictionary /
+  Ignore) → AX apply → auto re-check. Add/Ignore round-trip to the engine (teach / session-ignore).
+- ✅ **Settings**: `surfaces.inlineOverlay` (default on) + toggle in Scribe settings + sanitizer.
+- ✅ **CI**: `scripts/build-scribe-overlay.sh` (target pinned, minos logged) + `release.yml` step →
+  `resources/bin/scribe-overlay`. Additive: absent binary → hotkey fallback.
+- ⚠ **To verify on-device**: squiggle accuracy in Slack + a browser (selection trick, scroll lag),
+  hover-menu placement + AX apply per app, no cursor disruption while typing, multi-monitor
+  coordinates. Then screenshots into the PR.
+- **Not yet**: AXObserver-driven refresh (still 15fps poll — fine but not optimal), scroll re-measure
+  for selection apps, branded React card (native menu for v1), Google Docs (canvas — hotkey only).
+
 ## Risks / open questions
 
 1. Cold-start browser AX (verify with quit-relaunch probe). 2. Card panel positioning over other
