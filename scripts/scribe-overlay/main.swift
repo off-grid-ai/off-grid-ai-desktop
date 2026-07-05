@@ -147,6 +147,19 @@ func focusedTextElement() -> AXUIElement? {
     return (role == "AXTextArea" || role == "AXTextField") ? el : nil
 }
 
+// The focused field's on-screen frame (AX coords). Squiggles outside it are for text that's
+// scrolled out of view — we must NOT draw those (they land off-screen / in scrollback).
+func elementFrameAX(_ el: AXUIElement) -> CGRect? {
+    guard let pv = attr(el, kAXPositionAttribute as String),
+          let sv = attr(el, kAXSizeAttribute as String) else { return nil }
+    var pos = CGPoint.zero, size = CGSize.zero
+    guard AXValueGetValue(pv as! AXValue, .cgPoint, &pos),
+          AXValueGetValue(sv as! AXValue, .cgSize, &size) else { return nil }
+    return CGRect(origin: pos, size: size)
+}
+
+let maxSquiggles = 300
+
 var lastSig = ""
 func refresh(_ overlay: Overlay) {
     guard let el = focusedTextElement(), let text = stringAttr(el, kAXValueAttribute as String) else {
@@ -154,11 +167,16 @@ func refresh(_ overlay: Overlay) {
         overlay.show(cocoaRects: [])
         return
     }
+    // Clip to the field's visible frame — AX returns coords for scrolled-off text too, so
+    // without this we'd draw squiggles thousands of px away (e.g. a terminal's scrollback).
+    let frame = elementFrameAX(el)
     var rects: [CGRect] = []
     var matched: [String] = []
     for w in wordRanges(text) where demoTargets.contains(w.word) {
+        if rects.count >= maxSquiggles { break }
         matched.append(w.word)
         if let r = directBounds(el, location: w.loc, length: w.len) {
+            if let f = frame, !f.intersects(r) { continue } // off-screen (scrolled out)
             rects.append(axRectToCocoa(r))
         }
     }
