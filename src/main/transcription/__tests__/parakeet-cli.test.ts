@@ -59,6 +59,17 @@ describe('parseParakeetOutput', () => {
   it('returns empty string on unrecognized output', () => {
     expect(parseParakeetOutput('no transcript here')).toBe('')
   })
+
+  it('parses REAL sherpa-onnx-offline v1.13.3 output (Parakeet TDT, captured on-device)', () => {
+    // Verbatim stdout shape from the staged static binary: a JSON object whose FIRST
+    // string keys are empty (lang/emotion/event) before "text". The parser must pick the
+    // "text" field, not an earlier empty one, and keep punctuation/apostrophes.
+    const real =
+      '{"lang": "", "emotion": "", "event": "", "text": "Well, I don\'t wish to see it any more, observed Phebe, turning away her eyes.", "timestamps": [0.40, 0.64], "tokens": [" Well", ","], "words": []}'
+    expect(parseParakeetOutput(real)).toBe(
+      "Well, I don't wish to see it any more, observed Phebe, turning away her eyes.",
+    )
+  })
 })
 
 describe('matchParakeetFiles', () => {

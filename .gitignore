@@ -26,6 +26,9 @@ electron/accessibility/ocr
 # them. Only the heavy optional runtimes we don't ship are excluded.
 resources/bin/coreml-sd/
 resources/bin/mflux/
+# Parakeet STT runtime — CI-staged via scripts/fetch-parakeet.sh (like mflux/coreml-sd),
+# not committed. Devs stage it locally with the same script.
+resources/bin/parakeet/
 # Gateway probe scratch output
 .gateway-probe/
 # TS build cache
@@ -50,3 +53,6 @@ scripts/dictation-hotkey/dictation-hotkey
 
 # Local demo profile — synthetic-data run target for `npm run demo` (never real userData)
 .demo-profile/
+
+# local PR-campaign target list (not for commit)
+pr-targets.local.md
