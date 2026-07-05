@@ -59,6 +59,13 @@ export function getActiveTranscription(): TranscriptionService {
   return getTranscription(engine);
 }
 
+/** The engine actually used for a requested one, after the whisper fallback. Single
+ *  source of truth for labeling a recording so provenance matches what really ran
+ *  (e.g. a Parakeet request labels 'whisper' when Parakeet isn't installed). */
+export function effectiveEngine(engine: TranscriptionEngine): TranscriptionEngine {
+  return pickTranscription(engine, { whisper, parakeet }).engine;
+}
+
 /** Is the Parakeet runtime installed (binary + model present)? */
 export function parakeetAvailable(): boolean {
   return parakeet.isAvailable();
