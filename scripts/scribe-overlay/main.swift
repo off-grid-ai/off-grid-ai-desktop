@@ -128,6 +128,17 @@ let CATEGORY_COLOR: [String: NSColor] = [
 
 struct Underline { let rect: CGRect; let cat: String }   // rect in view coords
 
+// Target for the hover menu's items (NSMenuItem needs an ObjC target + action). Wired to closures
+// by IpcOverlay so the menu logic stays with the rest of the overlay.
+final class MenuTarget: NSObject {
+    var onReplace: ((String) -> Void)?
+    var onTeach: (() -> Void)?
+    var onIgnore: (() -> Void)?
+    @objc func replace(_ item: NSMenuItem) { onReplace?(item.representedObject as? String ?? "") }
+    @objc func teach(_ item: NSMenuItem) { onTeach?() }
+    @objc func ignore(_ item: NSMenuItem) { onIgnore?() }
+}
+
 final class SquiggleView: NSView {
     var items: [Underline] = [] { didSet { needsDisplay = true } }
     override var isFlipped: Bool { false }
@@ -204,7 +215,7 @@ func runDemo() {
 
 final class IpcOverlay {
     let overlay = Overlay()
-    var spans: [(loc: Int, len: Int, cat: String)] = []
+    var spans: [(loc: Int, len: Int, cat: String, message: String, fixes: [String])] = []
     var lastContextKey = ""
     var preferSelection = false
     var lastText = ""
@@ -216,6 +227,13 @@ final class IpcOverlay {
     var measuredKey = ""
     var lastChange = Date()
     let typingPause: TimeInterval = 0.4
+    // Hover-to-fix: a native menu appears when the cursor dwells over a squiggle. hitRects maps
+    // on-screen squiggle rects (cocoa global) to a span index for hit-testing the mouse.
+    var hitRects: [(rect: CGRect, idx: Int)] = []
+    var mouseAt = CGPoint.zero
+    var mouseMovedAt = Date.distantPast
+    var menuCooldownUntil = Date.distantPast
+    let menuTarget = MenuTarget()
 
     func emit(_ obj: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: obj) else { return }
@@ -229,7 +247,8 @@ final class IpcOverlay {
             lock.lock()
             spans = raw.compactMap {
                 guard let l = $0["loc"] as? Int, let n = $0["len"] as? Int else { return nil }
-                return (l, n, ($0["cat"] as? String) ?? "grammar")
+                return (l, n, ($0["cat"] as? String) ?? "grammar",
+                        ($0["message"] as? String) ?? "", ($0["fixes"] as? [String]) ?? [])
             }
             lock.unlock()
         case "clear":
@@ -241,7 +260,7 @@ final class IpcOverlay {
     }
 
     private func spanKey(_ loc: Int, _ len: Int) -> String { "\(loc):\(len)" }
-    private func spanSetSignature(_ ss: [(loc: Int, len: Int, cat: String)]) -> String {
+    private func spanSetSignature(_ ss: [(loc: Int, len: Int, cat: String, message: String, fixes: [String])]) -> String {
         ss.map { "\($0.loc):\($0.len)" }.joined(separator: ",")
     }
 
@@ -295,16 +314,83 @@ final class IpcOverlay {
         }
 
         var out: [(CGRect, String)] = []
-        for s in current {
+        var hits: [(CGRect, Int)] = []
+        for (idx, s) in current.enumerated() {
             if out.count >= MAX_SQUIGGLES { break }
             guard let r = cache[spanKey(s.loc, s.len)] else { continue }
             if let fr = frame, !fr.intersects(r) { continue }
-            out.append((axRectToCocoa(r), s.cat))
+            let cocoa = axRectToCocoa(r)
+            out.append((cocoa, s.cat))
+            hits.append((cocoa, idx))
         }
+        hitRects = hits
         overlay.draw(out)
+        maybeShowMenu(current)
+    }
+
+    // Show the fix menu when the cursor has dwelled over a squiggle. Uses a global mouse monitor
+    // for position (window stays click-through), so we never steal clicks from the target app.
+    private func maybeShowMenu(_ current: [(loc: Int, len: Int, cat: String, message: String, fixes: [String])]) {
+        let now = Date()
+        guard now > menuCooldownUntil, now.timeIntervalSince(mouseMovedAt) > 0.45 else { return }
+        // Widen vertically — squiggles are thin; make them easy to hover.
+        guard let hit = hitRects.first(where: { $0.rect.insetBy(dx: -1, dy: -7).contains(mouseAt) }),
+              hit.idx < current.count else { return }
+        let span = current[hit.idx]
+        showMenu(for: span)
+    }
+
+    private func showMenu(for span: (loc: Int, len: Int, cat: String, message: String, fixes: [String])) {
+        let menu = NSMenu()
+        if !span.message.isEmpty {
+            let header = NSMenuItem(title: span.message, action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            menu.addItem(.separator())
+        }
+        for fix in span.fixes {
+            let title = fix.isEmpty ? "Remove" : "Replace with \u{201C}\(fix)\u{201D}"
+            let item = NSMenuItem(title: title, action: #selector(MenuTarget.replace(_:)), keyEquivalent: "")
+            item.target = menuTarget
+            item.representedObject = fix
+            menu.addItem(item)
+        }
+        if !span.fixes.isEmpty { menu.addItem(.separator()) }
+        let secondary = NSMenuItem(
+            title: span.cat == "spelling" ? "Add to dictionary" : "Ignore",
+            action: span.cat == "spelling" ? #selector(MenuTarget.teach(_:)) : #selector(MenuTarget.ignore(_:)),
+            keyEquivalent: "")
+        secondary.target = menuTarget
+        menu.addItem(secondary)
+
+        menuTarget.onReplace = { [weak self] fix in self?.apply(span.loc, span.len, fix) }
+        menuTarget.onTeach = { [weak self] in self?.emitAction("teach", span) }
+        menuTarget.onIgnore = { [weak self] in self?.emitAction("ignore", span) }
+
+        menu.popUp(positioning: nil, at: mouseAt, in: nil) // mouseAt is screen coords
+        menuCooldownUntil = Date().addingTimeInterval(0.6)
+    }
+
+    // Apply a replacement over a span via AX (set selection, then set the selected text). The
+    // resulting text change triggers a fresh context event → the engine re-checks automatically.
+    private func apply(_ loc: Int, _ len: Int, _ replacement: String) {
+        guard let f = focusedTextElement() else { return }
+        setSelection(f.el, loc, len)
+        if !setAX(f.el, kAXSelectedTextAttribute as String, replacement as CFString) {
+            FileHandle.standardError.write("apply: AXSelectedText set failed\n".data(using: .utf8)!)
+        }
+    }
+
+    private func emitAction(_ kind: String, _ span: (loc: Int, len: Int, cat: String, message: String, fixes: [String])) {
+        emit(["type": "action", "kind": kind, "loc": span.loc, "len": span.len])
     }
 
     func start() {
+        // Track the cursor across all apps (window stays click-through). Powers hover-to-fix.
+        NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+            self?.mouseAt = NSEvent.mouseLocation
+            self?.mouseMovedAt = Date()
+        }
         // Read stdin commands on a background thread; apply on main.
         DispatchQueue.global(qos: .userInitiated).async {
             while let line = readLine(strippingNewline: true) {
