@@ -21,6 +21,7 @@ import {
   Graph,
   ShieldCheck,
   Waveform,
+  PenNib,
 } from '@phosphor-icons/react';
 
 // Word-by-word blur-in, matching the brand's terminal feel.
@@ -89,6 +90,7 @@ const PRO_GRID = [
   { icon: CalendarBlank, label: 'Day', line: 'Lays out your day from your work and the calendars you connect, so you start oriented instead of scrambling.' },
   { icon: ShieldCheck, label: 'Vault', line: 'Encrypts passwords, keys, and secret files with a key that never leaves this Mac, so they stay yours alone.' },
   { icon: Waveform, label: 'Voice', line: 'Hold Option+Space and talk - transcribed locally and pasted at your cursor, so you type with your voice anywhere.' },
+  { icon: PenNib, label: 'Scribe', line: 'Fixes and rewrites your writing as you type, in any app, so what you send lands right - and every word stays on this Mac.' },
 ];
 
 export function Onboarding({ onComplete }: OnboardingProps) {

@@ -17,7 +17,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$ROOT_DIR/resources/bin/parakeet"
 MODEL_DIR="$DEST/model"
-mkdir -p "$MODEL_DIR"
 
 : "${SHERPA_ONNX_URL:=}"      # tarball/zip containing sherpa-onnx-offline for macOS arm64
 : "${PARAKEET_MODEL_URL:=}"   # tarball containing encoder.onnx/decoder.onnx/joiner.onnx/tokens.txt
@@ -26,6 +25,10 @@ if [[ -z "$SHERPA_ONNX_URL" || -z "$PARAKEET_MODEL_URL" ]]; then
   echo "[parakeet] SHERPA_ONNX_URL / PARAKEET_MODEL_URL not set — skipping (whisper stays the engine)."
   exit 0
 fi
+
+# Only create the staging dirs once we're actually going to fill them (avoid leaving an
+# empty resources/bin/parakeet/model on the skip path).
+mkdir -p "$MODEL_DIR"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
