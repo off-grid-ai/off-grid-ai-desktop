@@ -33,11 +33,30 @@ trap 'rm -rf "$work"' EXIT
 echo "[parakeet] downloading runtime…"
 curl -fsSL "$SHERPA_ONNX_URL" -o "$work/sherpa.tgz"
 tar -xzf "$work/sherpa.tgz" -C "$work"
-# Find the offline CLI wherever the archive nests it.
+# Find the offline CLI, then take the bin/ + lib/ pair around it. We PRESERVE the
+# prebuilt's own bin/lib structure (dylibs live in ../lib, which is what the binary's
+# @rpath expects) rather than flatten — flattening would break @rpath. No symlinks are
+# copied as symlinks: cp -RL follows them into real files (none inside a signed .app).
 bin="$(find "$work" -type f -name 'sherpa-onnx-offline' | head -1)"
 if [[ -z "$bin" ]]; then echo "[parakeet] sherpa-onnx-offline not found in archive" >&2; exit 1; fi
-cp "$bin" "$DEST/sherpa-onnx-offline"
-chmod +x "$DEST/sherpa-onnx-offline"
+root="$(dirname "$(dirname "$bin")")" # dir containing bin/ and lib/
+rm -rf "$DEST/bin" "$DEST/lib"
+cp -RL "$root/bin" "$DEST/bin"
+[[ -d "$root/lib" ]] && cp -RL "$root/lib" "$DEST/lib"
+chmod +x "$DEST/bin/sherpa-onnx-offline"
+echo "[parakeet] staged bin + $(find "$DEST/lib" -name '*.dylib' 2>/dev/null | wc -l | tr -d ' ') dylib(s)"
+
+# Dependency-closure gate: every @rpath/<name> the binary loads must resolve to a real
+# file under lib/ (the 0.0.28 trap was a missing linked dylib). Fails the build if not.
+missing=0
+while IFS= read -r name; do
+  [[ -f "$DEST/lib/$name" ]] || { echo "[parakeet] MISSING linked dylib: $name" >&2; missing=$((missing + 1)); }
+done < <(otool -L "$DEST/bin/sherpa-onnx-offline" | awk '/@rpath\//{print $1}' | sed 's|@rpath/||')
+if [[ "$missing" -gt 0 ]]; then echo "[parakeet] $missing @rpath dylib(s) unstaged - not shippable" >&2; exit 1; fi
+
+# minos gate: a binary built against a newer SDK silently refuses to launch on older
+# macOS. Log it so a too-new floor is caught in review (mirrors build-llama.sh).
+otool -l "$DEST/bin/sherpa-onnx-offline" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print "[parakeet] engine minos="$2; exit}'
 
 echo "[parakeet] downloading model…"
 curl -fsSL "$PARAKEET_MODEL_URL" -o "$work/model.tgz"
@@ -49,12 +68,16 @@ for f in encoder.onnx decoder.onnx joiner.onnx tokens.txt; do
 done
 
 # Gate: any /opt/homebrew or /usr/local dep won't exist on a user's Mac (same rule as the
-# llama engine). Fail loudly rather than ship a binary that can't launch.
-if otool -L "$DEST/sherpa-onnx-offline" | grep -qE '/opt/homebrew|/usr/local'; then
-  echo "[parakeet] foreign dylib dependency detected — not shippable" >&2
-  otool -L "$DEST/sherpa-onnx-offline" >&2
-  exit 1
-fi
+# llama engine). Check the binary AND every staged dylib. Fail loudly rather than ship
+# something that can't launch.
+for f in "$DEST/bin/sherpa-onnx-offline" "$DEST"/lib/*.dylib; do
+  [[ -f "$f" ]] || continue
+  if otool -L "$f" | grep -qE '/opt/homebrew|/usr/local'; then
+    echo "[parakeet] foreign dylib dependency in $(basename "$f") - not shippable" >&2
+    otool -L "$f" >&2
+    exit 1
+  fi
+done
 
 echo "[parakeet] staged:"
-ls -la "$DEST" "$MODEL_DIR"
+ls -la "$DEST/bin" "$MODEL_DIR"

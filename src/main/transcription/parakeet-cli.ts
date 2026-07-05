@@ -32,9 +32,14 @@ function existing(paths: string[]): string | null {
   return null
 }
 
-/** Resolve the bundled sherpa-onnx offline CLI across dev / packaged layouts. */
+/** Resolve the bundled sherpa-onnx offline CLI across dev / packaged layouts. The CI
+ *  stager preserves the prebuilt's bin/ + lib/ structure (so its @rpath finds the
+ *  dylibs), hence bin/sherpa-onnx-offline; the flat path is a fallback. */
 export function parakeetBin(): string | null {
-  return existing(binRoots().map((r) => path.join(r, 'parakeet', 'sherpa-onnx-offline')))
+  return existing([
+    ...binRoots().map((r) => path.join(r, 'parakeet', 'bin', 'sherpa-onnx-offline')),
+    ...binRoots().map((r) => path.join(r, 'parakeet', 'sherpa-onnx-offline')),
+  ])
 }
 
 /** The four files a sherpa-onnx offline transducer needs (bundled-default names). */
