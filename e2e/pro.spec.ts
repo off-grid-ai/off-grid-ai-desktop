@@ -157,7 +157,7 @@ test('Voice settings let you pick Parakeet and download its models', async () =>
   await expect(page.getByText('Parakeet TDT 0.6B v2')).toBeVisible({ timeout: 6000 })
   await expect(page.getByRole('button', { name: 'Download' }).first()).toBeVisible()
   // Capture just the picker element (the drawer is a narrow right slide-over).
-  await page.getByTestId('parakeet-models').screenshot({ path: 'e2e/screenshots/parakeet-models.png' })
+  await page.getByTestId('transcription-models').screenshot({ path: 'e2e/screenshots/parakeet-models.png' })
 })
 
 test('Scribe is unlocked in the pro build and flags a misspelling as you type', async () => {
