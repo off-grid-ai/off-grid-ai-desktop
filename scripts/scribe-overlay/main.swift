@@ -174,6 +174,7 @@ final class CardPanel {
     var onTeach: (() -> Void)?
     var onIgnore: (() -> Void)?
     var onClose: (() -> Void)?
+    var onSettings: (() -> Void)?
 
     private static let emerald = NSColor(calibratedRed: 0.204, green: 0.827, blue: 0.60, alpha: 1)
     private static func menlo(_ s: CGFloat) -> NSFont { NSFont(name: "Menlo", size: s) ?? NSFont.systemFont(ofSize: s) }
@@ -216,7 +217,7 @@ final class CardPanel {
         return v
     }
 
-    func present(message: String, fixes: [String], isSpelling: Bool, anchor: CGRect) {
+    func present(message: String, fixes: [String], category: String, isSpelling: Bool, anchor: CGRect) {
         self.anchor = anchor
 
         let root = NSView()
@@ -227,16 +228,24 @@ final class CardPanel {
         root.layer?.borderWidth = 1
         root.layer?.borderColor = NSColor(calibratedRed: 0.165, green: 0.165, blue: 0.165, alpha: 1).cgColor
 
+        // Category badge (SPELLING / GRAMMAR / CLARITY …) — small emerald caps, the "what kind".
+        let badge = NSTextField(labelWithString: category.uppercased())
+        badge.font = CardPanel.menlo(9)
+        badge.textColor = CardPanel.emerald
+        badge.backgroundColor = .clear
+        badge.isBezeled = false
+
         let msg = NSTextField(labelWithString: message.isEmpty ? "Suggestion" : message)
         msg.font = CardPanel.menlo(11)
         msg.textColor = NSColor(calibratedWhite: 0.72, alpha: 1)
-        msg.lineBreakMode = .byTruncatingTail
-        msg.maximumNumberOfLines = 2
+        msg.lineBreakMode = .byWordWrapping
+        msg.maximumNumberOfLines = 3
+        msg.preferredMaxLayoutWidth = 260
 
-        let rows = NSStackView(views: [msg])
+        let rows = NSStackView(views: [badge, msg])
         rows.orientation = .vertical
         rows.alignment = .leading
-        rows.spacing = 8
+        rows.spacing = 6
         rows.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
         rows.translatesAutoresizingMaskIntoConstraints = false
 
@@ -255,6 +264,7 @@ final class CardPanel {
         secondary.addArrangedSubview(chip(isSpelling ? "Add to dictionary" : "Ignore", accent: false) { [weak self] in
             if isSpelling { self?.onTeach?() } else { self?.onIgnore?() }
         })
+        secondary.addArrangedSubview(chip("\u{2699}", accent: false) { [weak self] in self?.onSettings?() }) // gear
         secondary.addArrangedSubview(chip("\u{2715}", accent: false) { [weak self] in self?.onClose?() })
         rows.addArrangedSubview(secondary)
 
@@ -502,7 +512,8 @@ final class IpcOverlay {
         card.onTeach = { [weak self] in self?.emitAction("teach", span); self?.dismissCard() }
         card.onIgnore = { [weak self] in self?.emitAction("ignore", span); self?.dismissCard() }
         card.onClose = { [weak self] in self?.dismissCard() }
-        card.present(message: span.message, fixes: fixes, isSpelling: span.cat == "spelling", anchor: anchor)
+        card.onSettings = { [weak self] in self?.emit(["type": "action", "kind": "open-settings"]); self?.dismissCard() }
+        card.present(message: span.message, fixes: fixes, category: span.cat, isSpelling: span.cat == "spelling", anchor: anchor)
         cardSpanKey = spanKey(span.loc, span.len)
     }
 
