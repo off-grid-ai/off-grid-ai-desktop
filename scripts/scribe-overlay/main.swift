@@ -158,7 +158,9 @@ final class CardPanel {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 240, height: 80),
                         styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: true)
         panel.isFloatingPanel = true
-        panel.level = .floating
+        // Sit ABOVE the squiggle overlay window (which is at .screenSaver) so the card is never
+        // occluded by it.
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.isOpaque = false
