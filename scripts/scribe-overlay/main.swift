@@ -1,24 +1,31 @@
-// Scribe overlay — Phase 1 vertical slice (VISUAL CHECKPOINT, not wired to the engine yet).
+// Scribe overlay — the native MECHANISM for system-wide inline squiggles. It carries NO writing
+// logic (no rules, no dictionary): it reads the focused field's text + geometry, draws squiggles
+// where it's told, and reports focus/typing back. The POLICY (what to underline) lives in the pro
+// Electron process, which runs the writing engine and drives this binary over stdio. This split
+// keeps the open-core boundary clean and the engine the single source of truth.
 //
-// Proves the hard part of the system-wide overlay: a transparent, click-through, always-on-top
-// window that draws wavy underlines at the correct on-screen position under words in ANOTHER
-// app's focused text field, and keeps tracking them as you type / scroll / move the window.
+// Two modes:
+//   (default) IPC   — stdin: JSON commands; stdout: JSON events; stderr: debug. Driven by Electron.
+//   --demo [words]  — standalone visual test: underlines a demo word set in the focused native
+//                     field, no Electron needed. Used to verify coordinates/drawing.
 //
-// P1 scope: NATIVE apps via direct AXBoundsForRange (Notes, Mail, TextEdit). It underlines a
-// small demo set of "misspelled" words so you can see placement without the real engine. The
-// engine/IPC wiring comes next; this is the checkpoint to confirm coordinates + drawing.
+// Build: swiftc -O scripts/scribe-overlay/main.swift -o /tmp/scribe-overlay \
+//          -framework Cocoa -framework ApplicationServices
 //
-// Build + run (from repo root):
-//   swiftc -O scripts/scribe-overlay/main.swift -o /tmp/scribe-overlay -framework Cocoa -framework ApplicationServices
-//   /tmp/scribe-overlay [word1 word2 ...]      # default demo words if none given
-// Then open Notes and type e.g.:  please recieve teh alot of wierd notes
-// You should see red wavy underlines under the four misspelled words, tracking as you edit.
-// Ctrl-C to quit.
-
+// IPC protocol (one JSON object per line):
+//   Electron → binary:
+//     {"cmd":"underline","spans":[{"loc":Int,"len":Int,"cat":"spelling|grammar|clarity|style|punctuation"}]}
+//     {"cmd":"clear"}                      remove all squiggles
+//     {"cmd":"quit"}                       exit
+//   binary → Electron:
+//     {"type":"context","bundleId":String,"app":String,"text":String,"editable":Bool}   focus/text changed
+//     {"type":"blur"}                      no focused text field
+//
 import Cocoa
 import ApplicationServices
+import Foundation
 
-// --- AX helpers (same technique as the probe) ------------------------------
+// ============================================================ AX helpers
 
 func attr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
     var out: CFTypeRef?
@@ -26,8 +33,12 @@ func attr(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
 }
 func stringAttr(_ el: AXUIElement, _ name: String) -> String? { attr(el, name) as? String }
 
-func directBounds(_ el: AXUIElement, location: Int, length: Int) -> CGRect? {
-    var range = CFRange(location: location, length: length)
+func setAX(_ el: AXUIElement, _ name: String, _ value: CFTypeRef) -> Bool {
+    AXUIElementSetAttributeValue(el, name as CFString, value) == .success
+}
+
+func directBounds(_ el: AXUIElement, _ loc: Int, _ len: Int) -> CGRect? {
+    var range = CFRange(location: loc, length: len)
     guard let axRange = AXValueCreate(.cfRange, &range) else { return nil }
     var out: CFTypeRef?
     guard AXUIElementCopyParameterizedAttributeValue(
@@ -38,64 +49,98 @@ func directBounds(_ el: AXUIElement, location: Int, length: Int) -> CGRect? {
     return rect
 }
 
+func getSelection(_ el: AXUIElement) -> CFRange? {
+    guard let v = attr(el, kAXSelectedTextRangeAttribute as String) else { return nil }
+    var r = CFRange()
+    return AXValueGetValue(v as! AXValue, .cfRange, &r) ? r : nil
+}
+@discardableResult
+func setSelection(_ el: AXUIElement, _ loc: Int, _ len: Int) -> Bool {
+    var r = CFRange(location: loc, length: len)
+    guard let v = AXValueCreate(.cfRange, &r) else { return false }
+    return setAX(el, kAXSelectedTextRangeAttribute as String, v)
+}
+
+// Chromium/Electron/browser path: AXBoundsForRange lies, so set the selection to the range and
+// read the selection's marker-range bounds. Caller restores the cursor afterward. Rejects the
+// whole-line bogus rect Chromium returns for the word before a newline.
+func selectionBounds(_ el: AXUIElement, _ loc: Int, _ len: Int, fieldWidth: CGFloat) -> CGRect? {
+    setSelection(el, 0, 0); usleep(6000)
+    guard setSelection(el, loc, len) else { return nil }
+    usleep(40000)
+    for attempt in 0 ..< 8 {
+        if attempt > 0 { usleep(7000) }
+        guard let marker = attr(el, "AXSelectedTextMarkerRange") else { continue }
+        var out: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            el, "AXBoundsForTextMarkerRange" as CFString, marker, &out) == .success, let v = out else { continue }
+        var rect = CGRect.zero
+        guard AXValueGetValue(v as! AXValue, .cgRect, &rect) else { continue }
+        if rect.width > 0, rect.height > 0, fieldWidth <= 0 || rect.width < fieldWidth * 0.8 { return rect }
+    }
+    return nil
+}
+
+func elementFrameAX(_ el: AXUIElement) -> CGRect? {
+    guard let pv = attr(el, kAXPositionAttribute as String), let sv = attr(el, kAXSizeAttribute as String) else { return nil }
+    var pos = CGPoint.zero, size = CGSize.zero
+    guard AXValueGetValue(pv as! AXValue, .cgPoint, &pos), AXValueGetValue(sv as! AXValue, .cgSize, &size) else { return nil }
+    return CGRect(origin: pos, size: size)
+}
+
 extension unichar { var scalar: Unicode.Scalar { Unicode.Scalar(self) ?? Unicode.Scalar(65) } }
 
-// UTF-16 word ranges (AX offsets are UTF-16), with trailing punctuation stripped for matching.
 func wordRanges(_ text: String) -> [(loc: Int, len: Int, word: String)] {
     var out: [(Int, Int, String)] = []
     let ns = text as NSString
-    var i = 0
-    let n = ns.length
-    let ws = CharacterSet.whitespacesAndNewlines
+    var i = 0; let n = ns.length; let ws = CharacterSet.whitespacesAndNewlines
     while i < n {
         while i < n, ws.contains(ns.character(at: i).scalar) { i += 1 }
-        let start = i
+        let s = i
         while i < n, !ws.contains(ns.character(at: i).scalar) { i += 1 }
-        if i > start {
-            let raw = ns.substring(with: NSRange(location: start, length: i - start))
-            let clean = raw.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).lowercased()
-            out.append((start, i - start, clean))
+        if i > s {
+            let raw = ns.substring(with: NSRange(location: s, length: i - s))
+            out.append((s, i - s, raw.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).lowercased()))
         }
     }
     return out
 }
 
-// --- coordinate transform (AX top-left global → Cocoa bottom-left global) ----
+// ============================================================ coordinate transform
 
-// AX rects: top-left origin at the primary (menubar) display, Y down. Cocoa: bottom-left origin
-// at the primary display, Y up. The flip is against the PRIMARY screen height and holds across
-// monitors because both are global relative to the same origin.
+// AX rects: top-left origin at the primary display, Y down. Cocoa: bottom-left, Y up. Flip against
+// the primary screen height; holds across monitors since both are global from the same origin.
 func axRectToCocoa(_ r: CGRect) -> CGRect {
     let primaryH = NSScreen.screens.first?.frame.height ?? r.maxY
     return CGRect(x: r.origin.x, y: primaryH - r.origin.y - r.size.height, width: r.size.width, height: r.size.height)
 }
 
-// --- overlay window + view --------------------------------------------------
+// ============================================================ overlay window + view
+
+let CATEGORY_COLOR: [String: NSColor] = [
+    "spelling":    NSColor(calibratedRed: 0.94, green: 0.27, blue: 0.27, alpha: 1),  // red
+    "grammar":     NSColor(calibratedRed: 0.96, green: 0.62, blue: 0.07, alpha: 1),  // amber
+    "clarity":     NSColor(calibratedRed: 0.23, green: 0.51, blue: 0.96, alpha: 1),  // blue
+    "style":       NSColor(calibratedRed: 0.55, green: 0.36, blue: 0.96, alpha: 1),  // violet
+    "punctuation": NSColor(calibratedRed: 0.55, green: 0.36, blue: 0.96, alpha: 1),
+    "demo":        NSColor(calibratedRed: 0.204, green: 0.827, blue: 0.60, alpha: 1) // emerald
+]
+
+struct Underline { let rect: CGRect; let cat: String }   // rect in view coords
 
 final class SquiggleView: NSView {
-    var rects: [CGRect] = [] { didSet { needsDisplay = true } }   // in this view's coords
+    var items: [Underline] = [] { didSet { needsDisplay = true } }
     override var isFlipped: Bool { false }
-
     override func draw(_ dirty: NSRect) {
-        NSColor.clear.set()
-        dirty.fill()
-        // Emerald (brand #34D399), deliberately NOT red — so it can't be confused with the
-        // OS's native red spellcheck underline while we verify placement.
-        let color = NSColor(calibratedRed: 0.204, green: 0.827, blue: 0.600, alpha: 1.0)
-        color.setStroke()
-        for r in rects {
-            let path = NSBezierPath()
-            path.lineWidth = 2.0
-            let baseline = r.minY - 1
-            let amp: CGFloat = 2.2
-            let step: CGFloat = 3.0
-            var x = r.minX
-            path.move(to: NSPoint(x: x, y: baseline))
-            var up = true
-            while x < r.maxX {
+        NSColor.clear.set(); dirty.fill()
+        for u in items {
+            (CATEGORY_COLOR[u.cat] ?? CATEGORY_COLOR["demo"]!).setStroke()
+            let path = NSBezierPath(); path.lineWidth = 2.0
+            let baseline = u.rect.minY - 1, amp: CGFloat = 2.0, step: CGFloat = 3.0
+            var x = u.rect.minX; path.move(to: NSPoint(x: x, y: baseline)); var up = true
+            while x < u.rect.maxX {
                 x += step
-                path.line(to: NSPoint(x: min(x, r.maxX), y: baseline + (up ? amp : -amp)))
-                up.toggle()
+                path.line(to: NSPoint(x: min(x, u.rect.maxX), y: baseline + (up ? amp : -amp))); up.toggle()
             }
             path.stroke()
         }
@@ -103,104 +148,158 @@ final class SquiggleView: NSView {
 }
 
 final class Overlay {
-    let window: NSWindow
-    let view: SquiggleView
-
+    let window: NSWindow; let view: SquiggleView; let unionOrigin: CGPoint
     init() {
-        // Cover the union of all screens.
         let union = NSScreen.screens.reduce(CGRect.zero) { $0.union($1.frame) }
         window = NSWindow(contentRect: union, styleMask: .borderless, backing: .buffered, defer: false)
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.ignoresMouseEvents = true              // click-through (P1; hit-testing comes in P3)
-        window.level = .screenSaver                   // above normal app windows
+        window.isOpaque = false; window.backgroundColor = .clear; window.ignoresMouseEvents = true
+        window.level = .screenSaver; window.hasShadow = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-        window.hasShadow = false
         view = SquiggleView(frame: CGRect(origin: .zero, size: union.size))
-        window.contentView = view
-        window.orderFrontRegardless()
-        // Remember the union origin to translate global Cocoa coords into view coords.
-        self.unionOrigin = union.origin
+        window.contentView = view; window.orderFrontRegardless()
+        unionOrigin = union.origin
     }
-    let unionOrigin: CGPoint
-
-    func show(cocoaRects: [CGRect]) {
-        view.rects = cocoaRects.map {
-            CGRect(x: $0.origin.x - unionOrigin.x, y: $0.origin.y - unionOrigin.y, width: $0.width, height: $0.height)
-        }
+    func draw(_ cocoa: [(CGRect, String)]) {
+        view.items = cocoa.map { Underline(rect: CGRect(x: $0.0.minX - unionOrigin.x, y: $0.0.minY - unionOrigin.y, width: $0.0.width, height: $0.0.height), cat: $0.1) }
     }
 }
 
-// --- refresh loop -----------------------------------------------------------
+let MAX_SQUIGGLES = 300
 
-let demoTargets: Set<String> = {
-    let args = Array(CommandLine.arguments.dropFirst())
-    return args.isEmpty ? ["recieve", "teh", "alot", "wierd", "seperate", "definately"] : Set(args.map { $0.lowercased() })
-}()
-
-func focusedTextElement() -> AXUIElement? {
-    guard let front = NSWorkspace.shared.frontmostApplication else { return nil }
-    let app = AXUIElementCreateApplication(front.processIdentifier)
-    guard let f = attr(app, kAXFocusedUIElementAttribute as String) else { return nil }
+func focusedTextElement() -> (el: AXUIElement, bundleId: String, app: String)? {
+    guard let front = NSWorkspace.shared.frontmostApplication,
+          let f = attr(AXUIElementCreateApplication(front.processIdentifier), kAXFocusedUIElementAttribute as String)
+    else { return nil }
     let el = f as! AXUIElement
     let role = stringAttr(el, kAXRoleAttribute as String) ?? ""
-    return (role == "AXTextArea" || role == "AXTextField") ? el : nil
+    guard role == "AXTextArea" || role == "AXTextField" else { return nil }
+    return (el, front.bundleIdentifier ?? "", front.localizedName ?? "")
 }
 
-// The focused field's on-screen frame (AX coords). Squiggles outside it are for text that's
-// scrolled out of view — we must NOT draw those (they land off-screen / in scrollback).
-func elementFrameAX(_ el: AXUIElement) -> CGRect? {
-    guard let pv = attr(el, kAXPositionAttribute as String),
-          let sv = attr(el, kAXSizeAttribute as String) else { return nil }
-    var pos = CGPoint.zero, size = CGSize.zero
-    guard AXValueGetValue(pv as! AXValue, .cgPoint, &pos),
-          AXValueGetValue(sv as! AXValue, .cgSize, &size) else { return nil }
-    return CGRect(origin: pos, size: size)
+// Measure a range with the right strategy: direct for native, selection for Chromium/Electron.
+// `preferSelection` is sticky per field once direct is seen to fail.
+func measure(_ el: AXUIElement, _ loc: Int, _ len: Int, frame: CGRect?, preferSelection: Bool) -> CGRect? {
+    if !preferSelection, let d = directBounds(el, loc, len) { return d }
+    return selectionBounds(el, loc, len, fieldWidth: frame?.width ?? 0)
 }
 
-let maxSquiggles = 300
+// ============================================================ demo mode
 
-var lastSig = ""
-func refresh(_ overlay: Overlay) {
-    guard let el = focusedTextElement(), let text = stringAttr(el, kAXValueAttribute as String) else {
-        if lastSig != "none" { print("[overlay] no focused text field"); lastSig = "none" }
-        overlay.show(cocoaRects: [])
-        return
+func runDemo() {
+    let targets: Set<String> = {
+        let a = Array(CommandLine.arguments.dropFirst().filter { $0 != "--demo" })
+        return a.isEmpty ? ["recieve", "teh", "alot", "wierd", "seperate", "definately"] : Set(a.map { $0.lowercased() })
+    }()
+    let overlay = Overlay()
+    FileHandle.standardError.write("demo targets: \(targets.sorted().joined(separator: ", "))\n".data(using: .utf8)!)
+    Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { _ in
+        guard let f = focusedTextElement(), let text = stringAttr(f.el, kAXValueAttribute as String) else { overlay.draw([]); return }
+        let frame = elementFrameAX(f.el)
+        var out: [(CGRect, String)] = []
+        for w in wordRanges(text) where targets.contains(w.word) {
+            if out.count >= MAX_SQUIGGLES { break }
+            if let r = directBounds(f.el, w.loc, w.len) {
+                if let fr = frame, !fr.intersects(r) { continue }
+                out.append((axRectToCocoa(r), "demo"))
+            }
+        }
+        overlay.draw(out)
     }
-    // Clip to the field's visible frame — AX returns coords for scrolled-off text too, so
-    // without this we'd draw squiggles thousands of px away (e.g. a terminal's scrollback).
-    let frame = elementFrameAX(el)
-    var rects: [CGRect] = []
-    var matched: [String] = []
-    for w in wordRanges(text) where demoTargets.contains(w.word) {
-        if rects.count >= maxSquiggles { break }
-        matched.append(w.word)
-        if let r = directBounds(el, location: w.loc, length: w.len) {
-            if let f = frame, !f.intersects(r) { continue } // off-screen (scrolled out)
-            rects.append(axRectToCocoa(r))
+}
+
+// ============================================================ IPC mode
+
+final class IpcOverlay {
+    let overlay = Overlay()
+    var spans: [(loc: Int, len: Int, cat: String)] = []
+    var lastContextKey = ""
+    var preferSelection = false
+    var lastText = ""
+    let lock = NSLock()
+
+    func emit(_ obj: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: obj) else { return }
+        FileHandle.standardOutput.write(data); FileHandle.standardOutput.write("\n".data(using: .utf8)!)
+    }
+
+    func handleCommand(_ obj: [String: Any]) {
+        switch obj["cmd"] as? String {
+        case "underline":
+            let raw = obj["spans"] as? [[String: Any]] ?? []
+            lock.lock()
+            spans = raw.compactMap {
+                guard let l = $0["loc"] as? Int, let n = $0["len"] as? Int else { return nil }
+                return (l, n, ($0["cat"] as? String) ?? "grammar")
+            }
+            lock.unlock()
+        case "clear":
+            lock.lock(); spans = []; lock.unlock()
+        case "quit":
+            exit(0)
+        default: break
         }
     }
-    let sig = matched.joined(separator: ",") + "|" + String(rects.count)
-    if sig != lastSig {
-        print("[overlay] matched \(matched.count) word(s): [\(matched.joined(separator: ", "))] → drawing \(rects.count) squiggle(s)")
-        if let f = rects.first { print("[overlay]   first squiggle at cocoa rect x=\(Int(f.minX)) y=\(Int(f.minY)) w=\(Int(f.width))") }
-        lastSig = sig
+
+    // Each tick: report context on change; re-measure current spans and redraw (tracks scroll).
+    func tick() {
+        guard let f = focusedTextElement(), let text = stringAttr(f.el, kAXValueAttribute as String) else {
+            if lastContextKey != "blur" { emit(["type": "blur"]); lastContextKey = "blur"; lastText = "" }
+            overlay.draw([]); return
+        }
+        let key = f.bundleId + "\u{1}" + text
+        if key != lastContextKey {
+            // On text change, re-detect strategy (direct works for native).
+            if text != lastText { preferSelection = false }
+            lastContextKey = key; lastText = text
+            emit(["type": "context", "bundleId": f.bundleId, "app": f.app, "text": text, "editable": true])
+        }
+        let frame = elementFrameAX(f.el)
+        lock.lock(); let current = spans; lock.unlock()
+        if current.isEmpty { overlay.draw([]); return }
+
+        // If direct fails on the first span, switch this field to the selection strategy and
+        // save/restore the cursor around the (invasive) selection measurements.
+        let saved = getSelection(f.el)
+        if !preferSelection, let first = current.first, directBounds(f.el, first.loc, first.len) == nil {
+            preferSelection = true
+        }
+        var out: [(CGRect, String)] = []
+        for s in current {
+            if out.count >= MAX_SQUIGGLES { break }
+            guard let r = measure(f.el, s.loc, s.len, frame: frame, preferSelection: preferSelection) else { continue }
+            if let fr = frame, !fr.intersects(r) { continue }
+            out.append((axRectToCocoa(r), s.cat))
+        }
+        if preferSelection, let sv = saved { setSelection(f.el, sv.location, sv.length) }
+        overlay.draw(out)
     }
-    overlay.show(cocoaRects: rects)
+
+    func start() {
+        // Read stdin commands on a background thread; apply on main.
+        DispatchQueue.global(qos: .userInitiated).async {
+            while let line = readLine(strippingNewline: true) {
+                guard let d = line.data(using: .utf8),
+                      let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
+                DispatchQueue.main.async { self.handleCommand(obj) }
+            }
+            DispatchQueue.main.async { exit(0) } // stdin closed → parent gone
+        }
+        // Native apps: cheap direct measure at 15fps tracks scroll perfectly. Selection apps are
+        // re-measured too but throttled inside measure(); acceptable for v1.
+        Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { _ in self.tick() }
+    }
 }
 
-// Accessibility permission gate.
+// ============================================================ entry
+
 if !AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary) {
-    print("Grant Accessibility to your terminal in System Settings → Privacy & Security → Accessibility, then rerun.")
+    FileHandle.standardError.write("Accessibility permission required.\n".data(using: .utf8)!)
     exit(1)
 }
-
-let appDelegateApp = NSApplication.shared
-appDelegateApp.setActivationPolicy(.accessory)   // no dock icon, don't steal focus
-let overlay = Overlay()
-print("Scribe overlay running. Targets: \(demoTargets.sorted().joined(separator: ", "))")
-print("Open Notes/TextEdit and type those words — you should see red wavy underlines. Ctrl-C to quit.")
-
-// 15 fps refresh (P1: simple + reliable. P2 swaps to AXObserver-driven + caching).
-Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { _ in refresh(overlay) }
-appDelegateApp.run()
+NSApplication.shared.setActivationPolicy(.accessory)
+if CommandLine.arguments.contains("--demo") {
+    runDemo()
+} else {
+    IpcOverlay().start()
+}
+NSApplication.shared.run()
