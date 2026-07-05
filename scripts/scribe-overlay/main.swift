@@ -153,6 +153,10 @@ struct Underline { let rect: CGRect; let cat: String }   // rect in view coords
 final class ChipView: NSView {
     var onClick: (() -> Void)?
     override var isFlipped: Bool { true }
+    // The card is a non-activating panel; without these the first click on a chip is swallowed
+    // (the view never enters the event chain, so mouseUp never fires).
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with e: NSEvent) { /* accept so we receive the matching mouseUp */ }
     override func mouseUp(with e: NSEvent) {
         if bounds.contains(convert(e.locationInWindow, from: nil)) { onClick?() }
     }
@@ -191,7 +195,8 @@ final class CardPanel {
     private func chip(_ title: String, accent: Bool, onClick: @escaping () -> Void) -> ChipView {
         let v = ChipView()
         v.wantsLayer = true
-        v.layer?.backgroundColor = (accent ? CardPanel.emerald : NSColor(calibratedWhite: 0.14, alpha: 1)).cgColor
+        // Secondary chips use surface-light #1E1E1E; primary (fixes) use emerald.
+        v.layer?.backgroundColor = (accent ? CardPanel.emerald : NSColor(calibratedRed: 0.118, green: 0.118, blue: 0.118, alpha: 1)).cgColor
         v.layer?.cornerRadius = 6
         v.onClick = onClick
         let label = NSTextField(labelWithString: title)
@@ -216,10 +221,11 @@ final class CardPanel {
 
         let root = NSView()
         root.wantsLayer = true
-        root.layer?.backgroundColor = NSColor(calibratedRed: 0.055, green: 0.055, blue: 0.055, alpha: 1).cgColor
+        // @offgrid/design dark tokens: surface #141414, border-light #2A2A2A (not pure black).
+        root.layer?.backgroundColor = NSColor(calibratedRed: 0.078, green: 0.078, blue: 0.078, alpha: 1).cgColor
         root.layer?.cornerRadius = 10
         root.layer?.borderWidth = 1
-        root.layer?.borderColor = NSColor(calibratedWhite: 0.18, alpha: 1).cgColor
+        root.layer?.borderColor = NSColor(calibratedRed: 0.165, green: 0.165, blue: 0.165, alpha: 1).cgColor
 
         let msg = NSTextField(labelWithString: message.isEmpty ? "Suggestion" : message)
         msg.font = CardPanel.menlo(11)
@@ -504,13 +510,41 @@ final class IpcOverlay {
         card.dismiss(); cardSpanKey = ""; cardCooldownUntil = Date().addingTimeInterval(0.3)
     }
 
-    // Apply a replacement over a span via AX (set selection, then set the selected text). The
-    // resulting text change triggers a fresh context event → the engine re-checks automatically.
+    // Apply a replacement over a span: select it, then replace. Try AXSelectedText first (works in
+    // native apps); Chromium/Electron ignore that, so fall back to paste (universal). This is a
+    // one-shot user action, so moving the caret here is fine.
     private func apply(_ loc: Int, _ len: Int, _ replacement: String) {
         guard let f = focusedTextElement() else { return }
         setSelection(f.el, loc, len)
-        if !setAX(f.el, kAXSelectedTextAttribute as String, replacement as CFString) {
-            FileHandle.standardError.write("apply: AXSelectedText set failed\n".data(using: .utf8)!)
+        usleep(15000)
+        // Verify AXSelectedText actually took (Chromium returns success but doesn't change the text);
+        // if the value didn't change, paste instead.
+        let before = stringAttr(f.el, kAXValueAttribute as String)
+        let axOk = setAX(f.el, kAXSelectedTextAttribute as String, replacement as CFString)
+        usleep(15000)
+        let after = stringAttr(f.el, kAXValueAttribute as String)
+        if !axOk || before == after {
+            pasteReplace(replacement)
+        }
+    }
+
+    // Replace the current selection by pasting — works in every app (the card is non-activating, so
+    // the target app keeps focus). Restores the user's clipboard afterward.
+    private func pasteReplace(_ replacement: String) {
+        let pb = NSPasteboard.general
+        let saved = pb.string(forType: .string)
+        pb.clearContents()
+        pb.setString(replacement, forType: .string)
+        let src = CGEventSource(stateID: .combinedSessionState)
+        let down = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true)  // 'v'
+        down?.flags = .maskCommand
+        let up = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false)
+        up?.flags = .maskCommand
+        down?.post(tap: .cghidEventTap)
+        up?.post(tap: .cghidEventTap)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            pb.clearContents()
+            if let s = saved { pb.setString(s, forType: .string) }
         }
     }
 
