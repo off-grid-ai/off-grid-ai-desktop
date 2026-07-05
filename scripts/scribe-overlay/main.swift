@@ -268,6 +268,37 @@ final class CardPanel {
         secondary.addArrangedSubview(chip("\u{2715}", accent: false) { [weak self] in self?.onClose?() })
         rows.addArrangedSubview(secondary)
 
+        mount(rows, in: root, anchor: anchor)
+    }
+
+    // Dark card container with the design-token surface + border.
+    private func styledRoot() -> NSView {
+        let root = NSView()
+        root.wantsLayer = true
+        root.layer?.backgroundColor = NSColor(calibratedRed: 0.078, green: 0.078, blue: 0.078, alpha: 1).cgColor
+        root.layer?.cornerRadius = 10
+        root.layer?.borderWidth = 1
+        root.layer?.borderColor = NSColor(calibratedRed: 0.165, green: 0.165, blue: 0.165, alpha: 1).cgColor
+        return root
+    }
+
+    private func makeRows() -> NSStackView {
+        let rows = NSStackView()
+        rows.orientation = .vertical
+        rows.alignment = .leading
+        rows.spacing = 6
+        rows.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+        rows.translatesAutoresizingMaskIntoConstraints = false
+        return rows
+    }
+
+    private func badge(_ text: String) -> NSTextField {
+        let b = NSTextField(labelWithString: text.uppercased())
+        b.font = CardPanel.menlo(9); b.textColor = CardPanel.emerald; b.backgroundColor = .clear; b.isBezeled = false
+        return b
+    }
+
+    private func mount(_ rows: NSStackView, in root: NSView, anchor: CGRect) {
         root.addSubview(rows)
         NSLayoutConstraint.activate([
             rows.leadingAnchor.constraint(equalTo: root.leadingAnchor),
@@ -279,10 +310,46 @@ final class CardPanel {
         root.frame = NSRect(origin: .zero, size: size)
         panel.setContentSize(size)
         panel.contentView = root
-        // Position just below the squiggle (cocoa is bottom-left, so "below" = smaller y).
+        // Position just below the anchor (cocoa is bottom-left, so "below" = smaller y).
         panel.setFrameOrigin(NSPoint(x: anchor.minX, y: anchor.minY - size.height - 4))
         panel.orderFrontRegardless()   // non-activating: shows without stealing focus
         visible = true
+    }
+
+    // Rewrite menu shown on the hotkey over a selection: action chips (emit the action key).
+    func presentMenu(anchor: CGRect, onPick: @escaping (String) -> Void, onClose: @escaping () -> Void) {
+        self.anchor = anchor
+        onSettings = nil
+        let root = styledRoot()
+        let rows = makeRows()
+        rows.addArrangedSubview(badge("Rewrite selection"))
+        let actions: [(String, String)] = [
+            ("Improve", "improve"), ("Shorten", "shorten"), ("Simplify", "simplify"),
+            ("Fix grammar", "fix-grammar"), ("Change tone", "tone"), ("Translate", "translate")
+        ]
+        var row: NSStackView?
+        for (i, a) in actions.enumerated() {
+            if i % 2 == 0 {
+                let r = NSStackView(); r.orientation = .horizontal; r.spacing = 6
+                rows.addArrangedSubview(r); row = r
+            }
+            row?.addArrangedSubview(chip(a.0, accent: true) { onPick(a.1) })
+        }
+        let sec = NSStackView(); sec.orientation = .horizontal; sec.spacing = 6
+        sec.addArrangedSubview(chip("\u{2715}", accent: false) { onClose() })
+        rows.addArrangedSubview(sec)
+        mount(rows, in: root, anchor: anchor)
+    }
+
+    // Transient "working" card while the model rewrites.
+    func presentBusy(_ message: String) {
+        let root = styledRoot()
+        let rows = makeRows()
+        let msg = NSTextField(labelWithString: message)
+        msg.font = CardPanel.menlo(12); msg.textColor = NSColor(calibratedWhite: 0.72, alpha: 1)
+        msg.backgroundColor = .clear; msg.isBezeled = false
+        rows.addArrangedSubview(msg)
+        mount(rows, in: root, anchor: anchor)
     }
 
     /// Should the card stay open given the current cursor? True while the pointer is over the card
@@ -389,6 +456,7 @@ final class IpcOverlay {
     var mouseMovedAt = Date.distantPast
     var cardCooldownUntil = Date.distantPast
     var cardSpanKey = ""          // which span the card is currently showing (avoid re-present flicker)
+    var cardPersistent = false    // rewrite menu / busy card stays until picked or closed (not hover-dismissed)
     let card = CardPanel()
 
     func emit(_ obj: [String: Any]) {
@@ -409,10 +477,53 @@ final class IpcOverlay {
             lock.unlock()
         case "clear":
             lock.lock(); spans = []; lock.unlock()
+        case "rewrite-menu":
+            showRewriteMenu()
+        case "apply-text":
+            if let t = obj["text"] as? String { applyText(t) } else { dismissCard() }
+        case "rewrite-cancel":
+            dismissCard()
         case "quit":
             exit(0)
         default: break
         }
+    }
+
+    // Non-invasive bounds of the CURRENT selection (native: bounds-for-range; Chromium: bounds of
+    // the live selection markers — a read, no caret movement).
+    private func selectionBoundsCocoa(_ el: AXUIElement) -> CGRect? {
+        if let sel = getSelection(el), sel.length > 0, let b = directBounds(el, sel.location, sel.length) {
+            return axRectToCocoa(b)
+        }
+        if let marker = attr(el, "AXSelectedTextMarkerRange") {
+            var out: CFTypeRef?
+            if AXUIElementCopyParameterizedAttributeValue(el, "AXBoundsForTextMarkerRange" as CFString, marker, &out) == .success,
+               let v = out {
+                var r = CGRect.zero
+                if AXValueGetValue(v as! AXValue, .cgRect, &r), r.width > 0 || r.height > 0 { return axRectToCocoa(r) }
+            }
+        }
+        return nil
+    }
+
+    // Hotkey over a selection → show the rewrite menu at the selection.
+    private func showRewriteMenu() {
+        guard let f = focusedTextElement(),
+              let sel = stringAttr(f.el, kAXSelectedTextAttribute as String),
+              !sel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let anchor = selectionBoundsCocoa(f.el) ?? CGRect(x: mouseAt.x, y: mouseAt.y, width: 1, height: 1)
+        cardPersistent = true
+        card.presentMenu(anchor: anchor, onPick: { [weak self] action in
+            guard let self = self else { return }
+            self.emit(["type": "rewrite", "action": action, "text": sel])
+            self.card.presentBusy("Rewriting\u{2026}")
+        }, onClose: { [weak self] in self?.dismissCard() })
+    }
+
+    // Rewrite result came back → paste it over the (still-selected) text.
+    private func applyText(_ text: String) {
+        pasteReplace(text)
+        dismissCard()
     }
 
     private func spanKey(_ loc: Int, _ len: Int) -> String { "\(loc):\(len)" }
@@ -485,6 +596,8 @@ final class IpcOverlay {
     // app), while the card's own buttons handle their clicks as a normal non-activating panel.
     private func updateCard(_ current: [(loc: Int, len: Int, cat: String, message: String, fixes: [String])], text: String) {
         let now = Date()
+        // The rewrite menu / busy card stays until the user picks or closes it — don't hover-dismiss.
+        if cardPersistent { return }
         if card.visible {
             if !card.keepOpen(mouse: mouseAt) {
                 card.dismiss(); cardSpanKey = ""; cardCooldownUntil = now.addingTimeInterval(0.25)
@@ -518,7 +631,7 @@ final class IpcOverlay {
     }
 
     private func dismissCard() {
-        card.dismiss(); cardSpanKey = ""; cardCooldownUntil = Date().addingTimeInterval(0.3)
+        card.dismiss(); cardSpanKey = ""; cardPersistent = false; cardCooldownUntil = Date().addingTimeInterval(0.3)
     }
 
     // Apply a replacement over a span: select it, then replace. Try AXSelectedText first (works in
