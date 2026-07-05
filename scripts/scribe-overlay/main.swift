@@ -108,6 +108,33 @@ func osSpellGuesses(_ word: String) -> [String] {
     return NSSpellChecker.shared.guesses(forWordRange: r, in: word, language: nil, inSpellDocumentWithTag: 0) ?? []
 }
 
+// Expand a (loc,len) span to the sentence that contains it — style/clarity fixes (passive voice,
+// wordiness) are sentence-level, so the model must rewrite the whole sentence, not the flagged
+// fragment. Bounds are the nearest . ! ? or newline on each side (UTF-16 offsets, matching AX).
+func sentenceRange(_ text: String, _ loc: Int, _ len: Int) -> (loc: Int, len: Int) {
+    let ns = text as NSString
+    let n = ns.length
+    guard loc >= 0, loc <= n else { return (loc, len) }
+    let enders = CharacterSet(charactersIn: ".!?\n")
+    var start = min(loc, n)
+    while start > 0 {
+        let c = ns.character(at: start - 1)
+        if let u = Unicode.Scalar(c), enders.contains(u) { break }
+        start -= 1
+    }
+    var end = min(loc + max(len, 0), n)
+    while end < n {
+        let c = ns.character(at: end)
+        end += 1
+        if let u = Unicode.Scalar(c), enders.contains(u) { break }
+    }
+    // Trim leading whitespace so the selection starts at the first word.
+    while start < end, let u = Unicode.Scalar(ns.character(at: start)), CharacterSet.whitespaces.contains(u) {
+        start += 1
+    }
+    return (start, max(0, end - start))
+}
+
 func wordRanges(_ text: String) -> [(loc: Int, len: Int, word: String)] {
     var out: [(Int, Int, String)] = []
     let ns = text as NSString
@@ -673,25 +700,25 @@ final class IpcOverlay {
                 if !guesses.isEmpty { fixes = Array(guesses.prefix(4)) }
             }
         }
-        let spanText: String = {
-            let ns = text as NSString
-            guard span.loc >= 0, span.len > 0, span.loc + span.len <= ns.length else { return "" }
-            return ns.substring(with: NSRange(location: span.loc, length: span.len))
-        }()
         card.onReplace = { [weak self] fix in self?.apply(span.loc, span.len, fix); self?.dismissCard() }
         card.onTeach = { [weak self] in self?.emitAction("teach", span); self?.dismissCard() }
         card.onIgnore = { [weak self] in self?.emitAction("ignore", span); self?.dismissCard() }
         card.onClose = { [weak self] in self?.dismissCard() }
         card.onSettings = { [weak self] in self?.emit(["type": "action", "kind": "open-settings"]); self?.dismissCard() }
-        // No canned fix (passive voice, wordiness…) → ask the model to rewrite just this span. Select
-        // it so the pasted result replaces exactly it, request the rewrite, and show a busy card.
+        // No canned fix (passive voice, wordiness, clarity) → rewrite with the model. These are
+        // SENTENCE-level, so expand to the enclosing sentence (grammar stays on the flagged span);
+        // select that range, request the rewrite, re-select+paste when it returns.
         card.onAiFix = { [weak self] in
-            guard let self = self, !spanText.isEmpty, let f = focusedTextElement() else { return }
-            setSelection(f.el, span.loc, span.len)
-            self.pendingRange = (span.loc, span.len)  // re-select before pasting the result
+            guard let self = self, let f = focusedTextElement() else { return }
+            let ns = text as NSString
+            let r = span.cat == "grammar" ? (loc: span.loc, len: span.len) : sentenceRange(text, span.loc, span.len)
+            guard r.loc >= 0, r.len > 0, r.loc + r.len <= ns.length else { return }
+            let target = ns.substring(with: NSRange(location: r.loc, length: r.len))
+            setSelection(f.el, r.loc, r.len)
+            self.pendingRange = (r.loc, r.len)  // re-select before pasting the result
             let action = span.cat == "grammar" ? "fix-grammar" : "improve"
             self.cardPersistent = true
-            self.emit(["type": "rewrite", "action": action, "text": spanText])
+            self.emit(["type": "rewrite", "action": action, "text": target])
             self.card.presentBusy("Rewriting\u{2026}")
         }
         card.present(message: span.message, fixes: fixes, category: span.cat, isSpelling: span.cat == "spelling", anchor: anchor)
