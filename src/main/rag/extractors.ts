@@ -15,7 +15,8 @@ import os from 'os';
 import path from 'path';
 import type { ExtractionBridges } from '@offgrid/rag';
 import { llm } from '../llm';
-import { transcriptionService, whisperBin, whisperModel, ffmpegBin } from '../transcription/whisper-cli';
+import { whisperBin, whisperModel, ffmpegBin } from '../transcription/whisper-cli';
+import { getActiveTranscription } from '../transcription/select';
 
 const execFileAsync = promisify(execFile);
 
@@ -47,9 +48,10 @@ export const desktopExtraction: ExtractionBridges = {
   },
 
   async transcribeAudio(p) {
-    // Delegates to the shared TranscriptionService (whisper-cli). Kept on the
+    // Delegates to the active TranscriptionService (whisper by default, Parakeet when
+    // the user selected a Parakeet model and its runtime is installed). Kept on the
     // ExtractionBridges surface for rag/file-ingest callers.
-    return (await transcriptionService.transcribe({ path: p })).text;
+    return (await getActiveTranscription().transcribe({ path: p })).text;
   },
 
   async sampleVideoFrames(p, opts) {
