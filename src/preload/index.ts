@@ -352,8 +352,6 @@ try {
     crmSetEntityPhoto: (id: number) => ipcRenderer.invoke('crm:set-entity-photo', id),
     crmClearEntityPhoto: (id: number) => ipcRenderer.invoke('crm:clear-entity-photo', id),
     crmMergeEntities: (keepId: number, mergeId: number) => ipcRenderer.invoke('crm:merge-entities', keepId, mergeId),
-    crmCreateEntity: (name: string, type?: string) => ipcRenderer.invoke('crm:create-entity', name, type),
-    crmLinkObservation: (obsId: number, entityId: number) => ipcRenderer.invoke('crm:link-observation', obsId, entityId),
     crmSplitObservations: (observationIds: number[], toName: string, toType?: string) =>
       ipcRenderer.invoke('crm:split-observations', observationIds, toName, toType),
     crmMergeSuggestions: () => ipcRenderer.invoke('crm:merge-suggestions'),
