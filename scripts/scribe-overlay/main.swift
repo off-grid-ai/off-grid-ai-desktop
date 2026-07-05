@@ -176,13 +176,6 @@ func focusedTextElement() -> (el: AXUIElement, bundleId: String, app: String)? {
     return (el, front.bundleIdentifier ?? "", front.localizedName ?? "")
 }
 
-// Measure a range with the right strategy: direct for native, selection for Chromium/Electron.
-// `preferSelection` is sticky per field once direct is seen to fail.
-func measure(_ el: AXUIElement, _ loc: Int, _ len: Int, frame: CGRect?, preferSelection: Bool) -> CGRect? {
-    if !preferSelection, let d = directBounds(el, loc, len) { return d }
-    return selectionBounds(el, loc, len, fieldWidth: frame?.width ?? 0)
-}
-
 // ============================================================ demo mode
 
 func runDemo() {
@@ -216,6 +209,13 @@ final class IpcOverlay {
     var preferSelection = false
     var lastText = ""
     let lock = NSLock()
+    // Bounds cache (AX rects, pre-conversion), keyed "loc:len". For selection-trick apps we only
+    // re-measure when the text/span set changes AND typing has settled — measuring moves the
+    // cursor, so doing it per-tick or mid-type would fight the user. Native apps re-measure freely.
+    var cache: [String: CGRect] = [:]
+    var measuredKey = ""
+    var lastChange = Date()
+    let typingPause: TimeInterval = 0.4
 
     func emit(_ obj: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: obj) else { return }
@@ -240,16 +240,23 @@ final class IpcOverlay {
         }
     }
 
-    // Each tick: report context on change; re-measure current spans and redraw (tracks scroll).
+    private func spanKey(_ loc: Int, _ len: Int) -> String { "\(loc):\(len)" }
+    private func spanSetSignature(_ ss: [(loc: Int, len: Int, cat: String)]) -> String {
+        ss.map { "\($0.loc):\($0.len)" }.joined(separator: ",")
+    }
+
+    // Each tick: report context on change; keep the cache fresh (per strategy) and redraw.
     func tick() {
         guard let f = focusedTextElement(), let text = stringAttr(f.el, kAXValueAttribute as String) else {
             if lastContextKey != "blur" { emit(["type": "blur"]); lastContextKey = "blur"; lastText = "" }
             overlay.draw([]); return
         }
+        if text != lastText {
+            lastChange = Date(); cache = [:]; measuredKey = ""
+            preferSelection = false          // re-detect strategy after an edit
+        }
         let key = f.bundleId + "\u{1}" + text
         if key != lastContextKey {
-            // On text change, re-detect strategy (direct works for native).
-            if text != lastText { preferSelection = false }
             lastContextKey = key; lastText = text
             emit(["type": "context", "bundleId": f.bundleId, "app": f.app, "text": text, "editable": true])
         }
@@ -257,20 +264,43 @@ final class IpcOverlay {
         lock.lock(); let current = spans; lock.unlock()
         if current.isEmpty { overlay.draw([]); return }
 
-        // If direct fails on the first span, switch this field to the selection strategy and
-        // save/restore the cursor around the (invasive) selection measurements.
-        let saved = getSelection(f.el)
+        // Detect strategy once per field/edit: if direct fails on the first span, it's a
+        // Chromium/Electron/browser field → selection trick.
         if !preferSelection, let first = current.first, directBounds(f.el, first.loc, first.len) == nil {
             preferSelection = true
         }
+
+        if !preferSelection {
+            // Native: direct bounds are cheap → refresh the cache every tick (tracks scroll).
+            var fresh: [String: CGRect] = [:]
+            for s in current { if let r = directBounds(f.el, s.loc, s.len) { fresh[spanKey(s.loc, s.len)] = r } }
+            cache = fresh
+        } else {
+            // Selection trick: only re-measure when the span set changed AND typing settled, so we
+            // don't move the cursor mid-type. (Trade-off: squiggles can lag a scroll until the next
+            // edit; acceptable for v1, revisited with an AXObserver scroll hook.)
+            let sig = spanSetSignature(current) + "|" + String(text.utf16.count)
+            if sig != measuredKey, Date().timeIntervalSince(lastChange) > typingPause {
+                let saved = getSelection(f.el)
+                var fresh: [String: CGRect] = [:]
+                for s in current {
+                    if fresh.count >= MAX_SQUIGGLES { break }
+                    if let r = selectionBounds(f.el, s.loc, s.len, fieldWidth: frame?.width ?? 0) {
+                        fresh[spanKey(s.loc, s.len)] = r
+                    }
+                }
+                if let sv = saved { setSelection(f.el, sv.location, sv.length) }
+                cache = fresh; measuredKey = sig
+            }
+        }
+
         var out: [(CGRect, String)] = []
         for s in current {
             if out.count >= MAX_SQUIGGLES { break }
-            guard let r = measure(f.el, s.loc, s.len, frame: frame, preferSelection: preferSelection) else { continue }
+            guard let r = cache[spanKey(s.loc, s.len)] else { continue }
             if let fr = frame, !fr.intersects(r) { continue }
             out.append((axRectToCocoa(r), s.cat))
         }
-        if preferSelection, let sv = saved { setSelection(f.el, sv.location, sv.length) }
         overlay.draw(out)
     }
 
