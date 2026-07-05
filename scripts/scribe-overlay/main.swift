@@ -165,10 +165,37 @@ final class ChipView: NSView {
 // The branded correction card — a small non-activating panel (never steals focus from the app
 // you're typing in) styled to the Off Grid brand: dark card, emerald fixes, Menlo. Swift-drawn
 // (not an Electron window) so it's reliable floating over other apps.
+// Light/dark palette (Off Grid design tokens) so the card mimics the app's theme instead of
+// always being dark. Emerald accent shifts too: #34D399 on dark, #059669 on light.
+enum CardTheme { case dark, light }
+struct CardPalette {
+    let cardBg: NSColor, border: NSColor, msg: NSColor
+    let chipBg: NSColor, chipText: NSColor        // secondary chips (Ignore / gear / ×)
+    let accent: NSColor, accentText: NSColor       // primary chips (fixes/Rephrase) + badge + stripe
+    static let dark = CardPalette(
+        cardBg: NSColor(calibratedRed: 0.078, green: 0.078, blue: 0.078, alpha: 1),   // #141414
+        border: NSColor(calibratedRed: 0.165, green: 0.165, blue: 0.165, alpha: 1),   // #2A2A2A
+        msg: NSColor(calibratedWhite: 0.72, alpha: 1),
+        chipBg: NSColor(calibratedRed: 0.118, green: 0.118, blue: 0.118, alpha: 1),    // #1E1E1E
+        chipText: NSColor(calibratedWhite: 0.85, alpha: 1),
+        accent: NSColor(calibratedRed: 0.204, green: 0.827, blue: 0.60, alpha: 1),     // #34D399
+        accentText: NSColor(calibratedWhite: 0.04, alpha: 1))
+    static let light = CardPalette(
+        cardBg: NSColor(calibratedWhite: 1.0, alpha: 1),                               // #FFFFFF
+        border: NSColor(calibratedRed: 0.898, green: 0.898, blue: 0.898, alpha: 1),    // #E5E5E5
+        msg: NSColor(calibratedWhite: 0.28, alpha: 1),
+        chipBg: NSColor(calibratedRed: 0.945, green: 0.945, blue: 0.945, alpha: 1),    // #F1F1F1
+        chipText: NSColor(calibratedWhite: 0.12, alpha: 1),
+        accent: NSColor(calibratedRed: 0.02, green: 0.588, blue: 0.412, alpha: 1),     // #059669
+        accentText: NSColor(calibratedWhite: 1.0, alpha: 1))
+}
+
 final class CardPanel {
     let panel: NSPanel
     private(set) var visible = false
     private(set) var anchor: CGRect = .zero   // squiggle rect (cocoa global), for the hover bridge
+    var theme: CardTheme = .dark              // set by IpcOverlay from the app's resolved theme
+    private var pal: CardPalette { theme == .light ? .light : .dark }
     // Set by the caller before present(); the chips invoke these.
     var onReplace: ((String) -> Void)?
     var onTeach: (() -> Void)?
@@ -177,7 +204,6 @@ final class CardPanel {
     var onSettings: (() -> Void)?
     var onAiFix: (() -> Void)?
 
-    private static let emerald = NSColor(calibratedRed: 0.204, green: 0.827, blue: 0.60, alpha: 1)
     private static func menlo(_ s: CGFloat) -> NSFont { NSFont(name: "Menlo", size: s) ?? NSFont.systemFont(ofSize: s) }
 
     init() {
@@ -197,13 +223,12 @@ final class CardPanel {
     private func chip(_ title: String, accent: Bool, onClick: @escaping () -> Void) -> ChipView {
         let v = ChipView()
         v.wantsLayer = true
-        // Secondary chips use surface-light #1E1E1E; primary (fixes) use emerald.
-        v.layer?.backgroundColor = (accent ? CardPanel.emerald : NSColor(calibratedRed: 0.118, green: 0.118, blue: 0.118, alpha: 1)).cgColor
+        v.layer?.backgroundColor = (accent ? pal.accent : pal.chipBg).cgColor
         v.layer?.cornerRadius = 6
         v.onClick = onClick
         let label = NSTextField(labelWithString: title)
         label.font = CardPanel.menlo(12)
-        label.textColor = accent ? NSColor(calibratedWhite: 0.04, alpha: 1) : NSColor(calibratedWhite: 0.85, alpha: 1)
+        label.textColor = accent ? pal.accentText : pal.chipText
         label.backgroundColor = .clear
         label.isBezeled = false
         label.drawsBackground = false
@@ -228,7 +253,7 @@ final class CardPanel {
 
         let msg = NSTextField(labelWithString: message.isEmpty ? "Suggestion" : message)
         msg.font = CardPanel.menlo(11)
-        msg.textColor = NSColor(calibratedWhite: 0.72, alpha: 1)
+        msg.textColor = pal.msg
         msg.lineBreakMode = .byWordWrapping
         msg.maximumNumberOfLines = 3
         msg.preferredMaxLayoutWidth = 260
@@ -271,12 +296,12 @@ final class CardPanel {
     private func styledRoot() -> NSView {
         let root = NSView()
         root.wantsLayer = true
-        root.layer?.backgroundColor = NSColor(calibratedRed: 0.078, green: 0.078, blue: 0.078, alpha: 1).cgColor // #141414
+        root.layer?.backgroundColor = pal.cardBg.cgColor
         root.layer?.cornerRadius = 10
         root.layer?.borderWidth = 1
-        root.layer?.borderColor = NSColor(calibratedRed: 0.165, green: 0.165, blue: 0.165, alpha: 1).cgColor // #2A2A2A
+        root.layer?.borderColor = pal.border.cgColor
         let stripe = CALayer()
-        stripe.backgroundColor = CardPanel.emerald.cgColor
+        stripe.backgroundColor = pal.accent.cgColor
         stripe.name = "accent"
         root.layer?.addSublayer(stripe)
         return root
@@ -294,7 +319,7 @@ final class CardPanel {
 
     private func badge(_ text: String) -> NSTextField {
         let b = NSTextField(labelWithString: text.uppercased())
-        b.font = CardPanel.menlo(9); b.textColor = CardPanel.emerald; b.backgroundColor = .clear; b.isBezeled = false
+        b.font = CardPanel.menlo(9); b.textColor = pal.accent; b.backgroundColor = .clear; b.isBezeled = false
         return b
     }
 
@@ -350,7 +375,7 @@ final class CardPanel {
         let root = styledRoot()
         let rows = makeRows()
         let msg = NSTextField(labelWithString: message)
-        msg.font = CardPanel.menlo(12); msg.textColor = NSColor(calibratedWhite: 0.72, alpha: 1)
+        msg.font = CardPanel.menlo(12); msg.textColor = pal.msg
         msg.backgroundColor = .clear; msg.isBezeled = false
         rows.addArrangedSubview(msg)
         mount(rows, in: root, anchor: anchor)
@@ -461,7 +486,14 @@ final class IpcOverlay {
     var cardCooldownUntil = Date.distantPast
     var cardSpanKey = ""          // which span the card is currently showing (avoid re-present flicker)
     var cardPersistent = false    // rewrite menu / busy card stays until picked or closed (not hover-dismissed)
+    var pendingRange: (loc: Int, len: Int)?  // range to re-select when a rewrite result returns
     let card = CardPanel()
+
+    init() {
+        // Default the card to the macOS system appearance until the app pushes its own theme.
+        let dark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle")?.lowercased() == "dark"
+        card.theme = dark ? .dark : .light
+    }
 
     func emit(_ obj: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: obj) else { return }
@@ -481,12 +513,19 @@ final class IpcOverlay {
             lock.unlock()
         case "clear":
             lock.lock(); spans = []; lock.unlock()
+        case "theme":
+            // App tells us its resolved theme so the card mimics it (light/dark).
+            if let t = obj["theme"] as? String { card.theme = (t == "light") ? .light : .dark }
         case "rewrite-menu":
             showRewriteMenu()
         case "apply-text":
             if let t = obj["text"] as? String { applyText(t) } else { dismissCard() }
         case "rewrite-cancel":
-            dismissCard()
+            // Show why briefly instead of silently vanishing (so a model failure is visible).
+            if cardPersistent {
+                card.presentBusy((obj["reason"] as? String) ?? "Could not rewrite - is the model loaded?")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in self?.dismissCard() }
+            } else { dismissCard() }
         case "quit":
             exit(0)
         default: break
@@ -513,19 +552,28 @@ final class IpcOverlay {
     // Hotkey over a selection → show the rewrite menu at the selection.
     private func showRewriteMenu() {
         guard let f = focusedTextElement(),
+              let range = getSelection(f.el), range.length > 0,
               let sel = stringAttr(f.el, kAXSelectedTextAttribute as String),
               !sel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let anchor = selectionBoundsCocoa(f.el) ?? CGRect(x: mouseAt.x, y: mouseAt.y, width: 1, height: 1)
         cardPersistent = true
         card.presentMenu(anchor: anchor, onPick: { [weak self] action in
             guard let self = self else { return }
+            self.pendingRange = (range.location, range.length)  // re-select before pasting the result
             self.emit(["type": "rewrite", "action": action, "text": sel])
             self.card.presentBusy("Rewriting\u{2026}")
         }, onClose: { [weak self] in self?.dismissCard() })
     }
 
-    // Rewrite result came back → paste it over the (still-selected) text.
+    // Rewrite result came back → RE-SELECT the original range, then paste so the rewrite REPLACES
+    // it. The selection set before the LLM call has usually collapsed by now (multi-second round
+    // trip), which is why an earlier version inserted at the cursor instead of replacing.
     private func applyText(_ text: String) {
+        if let r = pendingRange, let f = focusedTextElement() {
+            setSelection(f.el, r.loc, r.len)
+            usleep(15000)
+        }
+        pendingRange = nil
         pasteReplace(text)
         dismissCard()
     }
@@ -640,6 +688,7 @@ final class IpcOverlay {
         card.onAiFix = { [weak self] in
             guard let self = self, !spanText.isEmpty, let f = focusedTextElement() else { return }
             setSelection(f.el, span.loc, span.len)
+            self.pendingRange = (span.loc, span.len)  // re-select before pasting the result
             let action = span.cat == "grammar" ? "fix-grammar" : "improve"
             self.cardPersistent = true
             self.emit(["type": "rewrite", "action": action, "text": spanText])
@@ -650,7 +699,8 @@ final class IpcOverlay {
     }
 
     private func dismissCard() {
-        card.dismiss(); cardSpanKey = ""; cardPersistent = false; cardCooldownUntil = Date().addingTimeInterval(0.3)
+        card.dismiss(); cardSpanKey = ""; cardPersistent = false; pendingRange = nil
+        cardCooldownUntil = Date().addingTimeInterval(0.3)
     }
 
     // Apply a replacement over a span: select it, then replace. Try AXSelectedText first (works in
