@@ -175,6 +175,7 @@ final class CardPanel {
     var onIgnore: (() -> Void)?
     var onClose: (() -> Void)?
     var onSettings: (() -> Void)?
+    var onAiFix: (() -> Void)?
 
     private static let emerald = NSColor(calibratedRed: 0.204, green: 0.827, blue: 0.60, alpha: 1)
     private static func menlo(_ s: CGFloat) -> NSFont { NSFont(name: "Menlo", size: s) ?? NSFont.systemFont(ofSize: s) }
@@ -220,20 +221,10 @@ final class CardPanel {
     func present(message: String, fixes: [String], category: String, isSpelling: Bool, anchor: CGRect) {
         self.anchor = anchor
 
-        let root = NSView()
-        root.wantsLayer = true
-        // @offgrid/design dark tokens: surface #141414, border-light #2A2A2A (not pure black).
-        root.layer?.backgroundColor = NSColor(calibratedRed: 0.078, green: 0.078, blue: 0.078, alpha: 1).cgColor
-        root.layer?.cornerRadius = 10
-        root.layer?.borderWidth = 1
-        root.layer?.borderColor = NSColor(calibratedRed: 0.165, green: 0.165, blue: 0.165, alpha: 1).cgColor
+        let root = styledRoot()
 
-        // Category badge (SPELLING / GRAMMAR / CLARITY …) — small emerald caps, the "what kind".
-        let badge = NSTextField(labelWithString: category.uppercased())
-        badge.font = CardPanel.menlo(9)
-        badge.textColor = CardPanel.emerald
-        badge.backgroundColor = .clear
-        badge.isBezeled = false
+        let rows = makeRows()
+        rows.addArrangedSubview(badge(category))
 
         let msg = NSTextField(labelWithString: message.isEmpty ? "Suggestion" : message)
         msg.font = CardPanel.menlo(11)
@@ -241,23 +232,27 @@ final class CardPanel {
         msg.lineBreakMode = .byWordWrapping
         msg.maximumNumberOfLines = 3
         msg.preferredMaxLayoutWidth = 260
+        msg.backgroundColor = .clear
+        msg.isBezeled = false
+        rows.addArrangedSubview(msg)
 
-        let rows = NSStackView(views: [badge, msg])
-        rows.orientation = .vertical
-        rows.alignment = .leading
-        rows.spacing = 6
-        rows.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
-        rows.translatesAutoresizingMaskIntoConstraints = false
-
+        // Primary actions row. Canned fixes (spelling guesses, a-an, etc.) are emerald chips. When
+        // there's no canned fix (passive voice, wordiness, clarity), offer an emerald AI action that
+        // rewrites the span with the model - so every issue is actionable, not just Ignore.
+        let fixRow = NSStackView()
+        fixRow.orientation = .horizontal
+        fixRow.spacing = 6
         if !fixes.isEmpty {
-            let fixRow = NSStackView()
-            fixRow.orientation = .horizontal
-            fixRow.spacing = 6
             for f in fixes {
                 fixRow.addArrangedSubview(chip(f.isEmpty ? "Remove" : f, accent: true) { [weak self] in self?.onReplace?(f) })
             }
-            rows.addArrangedSubview(fixRow)
+        } else if !isSpelling {
+            let label = category == "grammar" ? "Fix grammar"
+                : (category == "clarity" ? "Make clearer" : "Rephrase")
+            fixRow.addArrangedSubview(chip(label, accent: true) { [weak self] in self?.onAiFix?() })
         }
+        if !fixRow.views.isEmpty { rows.addArrangedSubview(fixRow) }
+
         let secondary = NSStackView()
         secondary.orientation = .horizontal
         secondary.spacing = 6
@@ -271,14 +266,19 @@ final class CardPanel {
         mount(rows, in: root, anchor: anchor)
     }
 
-    // Dark card container with the design-token surface + border.
+    // Dark card container with the design-token surface + border + an emerald left accent stripe
+    // (the Off Grid brand marker so the card reads as ours, not a system menu).
     private func styledRoot() -> NSView {
         let root = NSView()
         root.wantsLayer = true
-        root.layer?.backgroundColor = NSColor(calibratedRed: 0.078, green: 0.078, blue: 0.078, alpha: 1).cgColor
+        root.layer?.backgroundColor = NSColor(calibratedRed: 0.078, green: 0.078, blue: 0.078, alpha: 1).cgColor // #141414
         root.layer?.cornerRadius = 10
         root.layer?.borderWidth = 1
-        root.layer?.borderColor = NSColor(calibratedRed: 0.165, green: 0.165, blue: 0.165, alpha: 1).cgColor
+        root.layer?.borderColor = NSColor(calibratedRed: 0.165, green: 0.165, blue: 0.165, alpha: 1).cgColor // #2A2A2A
+        let stripe = CALayer()
+        stripe.backgroundColor = CardPanel.emerald.cgColor
+        stripe.name = "accent"
+        root.layer?.addSublayer(stripe)
         return root
     }
 
@@ -308,6 +308,10 @@ final class CardPanel {
         ])
         let size = rows.fittingSize
         root.frame = NSRect(origin: .zero, size: size)
+        // Size the emerald accent stripe down the left edge (inside the rounded corners).
+        if let stripe = root.layer?.sublayers?.first(where: { $0.name == "accent" }) {
+            stripe.frame = CGRect(x: 0, y: 6, width: 3, height: size.height - 12)
+        }
         panel.setContentSize(size)
         panel.contentView = root
         // Position just below the anchor (cocoa is bottom-left, so "below" = smaller y).
@@ -621,11 +625,26 @@ final class IpcOverlay {
                 if !guesses.isEmpty { fixes = Array(guesses.prefix(4)) }
             }
         }
+        let spanText: String = {
+            let ns = text as NSString
+            guard span.loc >= 0, span.len > 0, span.loc + span.len <= ns.length else { return "" }
+            return ns.substring(with: NSRange(location: span.loc, length: span.len))
+        }()
         card.onReplace = { [weak self] fix in self?.apply(span.loc, span.len, fix); self?.dismissCard() }
         card.onTeach = { [weak self] in self?.emitAction("teach", span); self?.dismissCard() }
         card.onIgnore = { [weak self] in self?.emitAction("ignore", span); self?.dismissCard() }
         card.onClose = { [weak self] in self?.dismissCard() }
         card.onSettings = { [weak self] in self?.emit(["type": "action", "kind": "open-settings"]); self?.dismissCard() }
+        // No canned fix (passive voice, wordiness…) → ask the model to rewrite just this span. Select
+        // it so the pasted result replaces exactly it, request the rewrite, and show a busy card.
+        card.onAiFix = { [weak self] in
+            guard let self = self, !spanText.isEmpty, let f = focusedTextElement() else { return }
+            setSelection(f.el, span.loc, span.len)
+            let action = span.cat == "grammar" ? "fix-grammar" : "improve"
+            self.cardPersistent = true
+            self.emit(["type": "rewrite", "action": action, "text": spanText])
+            self.card.presentBusy("Rewriting\u{2026}")
+        }
         card.present(message: span.message, fixes: fixes, category: span.cat, isSpelling: span.cat == "spelling", anchor: anchor)
         cardSpanKey = spanKey(span.loc, span.len)
     }
