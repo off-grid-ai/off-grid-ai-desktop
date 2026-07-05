@@ -453,7 +453,7 @@ var CATALOG = [
     kind: "transcription",
     engine: "parakeet",
     org: "nvidia",
-    description: "High-accuracy English STT (int8) \u2014 tops the open ASR leaderboard",
+    description: "High-accuracy English STT (int8) - tops the open ASR leaderboard",
     minRamGb: 4,
     tags: ["Accurate", "English"],
     files: [
@@ -469,7 +469,7 @@ var CATALOG = [
     kind: "transcription",
     engine: "parakeet",
     org: "nvidia",
-    description: "Multilingual STT (int8) \u2014 25 European languages",
+    description: "Multilingual STT (int8) - 25 European languages",
     minRamGb: 4,
     isNew: true,
     tags: ["Accurate", "Multilingual"],

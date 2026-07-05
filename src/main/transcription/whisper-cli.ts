@@ -11,6 +11,7 @@ import os from 'os';
 import path from 'path';
 import { getActiveModal } from '../active-models';
 import { binRoots, modelsDir } from '../runtime-env';
+import { modelsByKind } from '@offgrid/models';
 import type { TranscriptionService, Transcript, TranscribeOptions, Seg } from './types';
 
 const execFileAsync = promisify(execFile);
@@ -50,6 +51,18 @@ function whisperModelFiles(): string[] {
   }
 }
 
+/** Resolve the active-transcription pick to a whisper ggml FILENAME, or null when it
+ *  isn't a whisper model. The slot may hold a bare ggml filename OR a catalog id (the
+ *  Models UI stores the id) - map the id to its primary file. Parakeet ids resolve to
+ *  null so their ONNX files are never handed to whisper. */
+function activeWhisperFile(chosen: string): string | null {
+  if (/ggml-.*\.bin$/i.test(chosen)) return chosen;
+  const entry = modelsByKind('transcription').find((m) => m.id === chosen);
+  if (!entry || entry.engine === 'parakeet') return null;
+  const primary = (entry.files.find((f) => f.role === 'primary') ?? entry.files[0])?.name;
+  return primary && /ggml-.*\.bin$/i.test(primary) ? primary : null;
+}
+
 /** Rank a model filename by capability/size (bigger = more accurate, slower). */
 function sizeRank(f: string): number {
   return /large/i.test(f) ? 4 : /medium/i.test(f) ? 3 : /small/i.test(f) ? 2 : /base/i.test(f) ? 1 : 0;
@@ -64,7 +77,8 @@ export function whisperModel(): string | null {
     // (The active-transcription slot is shared with Parakeet, whose ONNX files must never
     // be handed to whisper — hence the ggml guard.)
     const chosen = getActiveModal('transcription');
-    if (chosen && /ggml-.*\.bin$/i.test(chosen) && fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
+    const chosenFile = chosen ? activeWhisperFile(chosen) : null;
+    if (chosenFile && fs.existsSync(path.join(dir, chosenFile))) return path.join(dir, chosenFile);
     const files = whisperModelFiles();
     if (!files.length) return null;
     const multi = files.filter((f) => !/\.en\.bin$/i.test(f));
@@ -83,7 +97,8 @@ export function smallWhisperModel(): string | null {
   const dir = modelsDir();
   try {
     const chosen = getActiveModal('transcription');
-    if (chosen && /ggml-.*\.bin$/i.test(chosen) && fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
+    const chosenFile = chosen ? activeWhisperFile(chosen) : null;
+    if (chosenFile && fs.existsSync(path.join(dir, chosenFile))) return path.join(dir, chosenFile);
   } catch { /* fall through to size-based pick */ }
   const files = whisperModelFiles();
   if (!files.length) return null;
