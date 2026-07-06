@@ -397,14 +397,25 @@ final class CardPanel {
         mount(rows, in: root, anchor: anchor)
     }
 
-    // Transient "working" card while the model rewrites.
+    // Transient "working" card while the model rewrites — a compact emerald-dot + label row.
     func presentBusy(_ message: String) {
         let root = styledRoot()
         let rows = makeRows()
+        let dot = NSView()
+        dot.wantsLayer = true
+        dot.layer?.backgroundColor = pal.accent.cgColor
+        dot.layer?.cornerRadius = 4
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        dot.widthAnchor.constraint(equalToConstant: 8).isActive = true
+        dot.heightAnchor.constraint(equalToConstant: 8).isActive = true
         let msg = NSTextField(labelWithString: message)
         msg.font = CardPanel.menlo(12); msg.textColor = pal.msg
         msg.backgroundColor = .clear; msg.isBezeled = false
-        rows.addArrangedSubview(msg)
+        let row = NSStackView(views: [dot, msg])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 8
+        rows.addArrangedSubview(row)
         mount(rows, in: root, anchor: anchor)
     }
 
@@ -455,10 +466,24 @@ final class Overlay {
 
 let MAX_SQUIGGLES = 300
 
+// Electron/Chromium (Slack, VS Code, browsers) keep their accessibility tree OFF until an assistive
+// client asks for it — without this, their focused text field is invisible (nil) and Scribe does
+// nothing there. Set AXManualAccessibility (Electron) / AXEnhancedUserInterface (browsers) ONCE per
+// app pid to wake it. Native Cocoa apps ignore both and work regardless.
+var axEnabledPids = Set<pid_t>()
+func enableAXTree(_ app: AXUIElement, _ pid: pid_t) {
+    if axEnabledPids.contains(pid) { return }
+    axEnabledPids.insert(pid)
+    if AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) != .success {
+        AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+    }
+}
+
 func focusedTextElement() -> (el: AXUIElement, bundleId: String, app: String)? {
-    guard let front = NSWorkspace.shared.frontmostApplication,
-          let f = attr(AXUIElementCreateApplication(front.processIdentifier), kAXFocusedUIElementAttribute as String)
-    else { return nil }
+    guard let front = NSWorkspace.shared.frontmostApplication else { return nil }
+    let appEl = AXUIElementCreateApplication(front.processIdentifier)
+    enableAXTree(appEl, front.processIdentifier)
+    guard let f = attr(appEl, kAXFocusedUIElementAttribute as String) else { return nil }
     let el = f as! AXUIElement
     let role = stringAttr(el, kAXRoleAttribute as String) ?? ""
     guard role == "AXTextArea" || role == "AXTextField" else { return nil }
@@ -505,6 +530,9 @@ final class IpcOverlay {
     var measuredKey = ""
     var lastChange = Date()
     let typingPause: TimeInterval = 0.4
+    // Chromium/Electron/browser only: how long the user must pause before we do the caret-moving
+    // measurement (so squiggles appear shortly after you stop typing, never while typing).
+    let selectionIdle: TimeInterval = 1.2
     // Hover-to-fix: the branded card appears when the cursor dwells over a squiggle. hitRects maps
     // on-screen squiggle rects (cocoa global) to a span index for hit-testing the mouse.
     var hitRects: [(rect: CGRect, idx: Int)] = []
@@ -643,12 +671,29 @@ final class IpcOverlay {
             for s in current { if let r = directBounds(f.el, s.loc, s.len) { fresh[spanKey(s.loc, s.len)] = r } }
             cache = fresh
         } else {
-            // Chromium/Electron/browser: the only way to get bounds here is the selection trick,
-            // which MOVES the caret — that makes live typing jumpy and corrupts input. Never do that
-            // while the user is in the field. Draw nothing live here; these apps are served by the
-            // on-demand hotkey flow instead. (A non-invasive text-marker bounds method would let us
-            // bring live squiggles back — tracked as a follow-up.)
-            cache = [:]
+            // Chromium/Electron/browser (Slack, browsers): the only way to get per-word bounds is
+            // the selection trick, which briefly moves the caret. To keep typing smooth we do it
+            // ONLY when the user has clearly paused (>= selectionIdle) AND the caret is collapsed
+            // (never disturb an active selection), measure just the issue spans, and restore the
+            // caret precisely. So squiggles appear a moment after you stop typing, never during it.
+            let idle = Date().timeIntervalSince(lastChange)
+            let sig = spanSetSignature(current) + "|" + String(text.utf16.count)
+            let sel = getSelection(f.el)
+            let caretCollapsed = (sel?.length ?? 0) == 0
+            if sig != measuredKey, idle >= selectionIdle, caretCollapsed {
+                let saved = sel
+                var fresh: [String: CGRect] = [:]
+                for s in current {
+                    if fresh.count >= MAX_SQUIGGLES { break }
+                    if let r = selectionBounds(f.el, s.loc, s.len, fieldWidth: frame?.width ?? 0) {
+                        fresh[spanKey(s.loc, s.len)] = r
+                    }
+                }
+                if let sv = saved { setSelection(f.el, sv.location, sv.length) }  // restore caret
+                cache = fresh
+                measuredKey = sig
+            }
+            // Between measurements, keep showing the last cache (squiggles persist as you read).
         }
 
         var out: [(CGRect, String)] = []
