@@ -19,13 +19,11 @@ Status legend: **OPEN** · **IN PROGRESS** · **RESOLVED** (with evidence) · **
   category hues, which is the G-2 decision) — not a light/dark bug. Evidence still owed: light-mode
   screenshots of the settings panel + rewrite toolbar (folded into G-10).
 
-- **G-2 · Color-coded issue categories** — DECISION NEEDED. Squiggles + review cards color-code by
-  category (red spelling, blue style, amber punctuation, violet tone) in the overlay, `AssistedTextarea`,
-  and `ReviewPanel`. Philosophy rule #3 says "do not color-code information; use position/size/weight,"
-  and "emerald and only emerald." This is a deliberate Grammarly convention (at-a-glance error type)
-  that conflicts with the brand. Options: (a) keep as an intentional, documented exception; (b) go
-  monochrome + rely on the category label text; (c) single emerald underline for everything, category
-  only in the card. Needs the user's call before changing.
+- **G-2 · Color-coded issue categories** — RESOLVED (user decision: brand-align). Dropped the
+  rainbow for the two brand colors: **semantic error red** for correctness (spelling/grammar/
+  punctuation) and **emerald** for suggestions (style/clarity/tone/word-choice). Applied in all three
+  places: overlay binary `CATEGORY_COLOR`, `AssistedTextarea` `UNDERLINE`, `ReviewPanel`
+  `CATEGORY_COLOR`.
 
 - **G-3 · a11y on icon-only buttons** — OPEN. The card gear/×, settings gear, and disabled-apps
   remove (×) buttons need `aria-label`/`title`. Philosophy rule #8 (accessible by default).
