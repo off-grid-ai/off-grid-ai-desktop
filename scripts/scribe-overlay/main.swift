@@ -162,13 +162,19 @@ func axRectToCocoa(_ r: CGRect) -> CGRect {
 
 // ============================================================ overlay window + view
 
+// Brand palette (../brand/DESIGN_PHILOSOPHY.md): correctness issues use the semantic error red;
+// suggestions use the single emerald accent. Two brand colors, not a rainbow.
+let CATEGORY_ERROR = NSColor(calibratedRed: 0.937, green: 0.267, blue: 0.267, alpha: 1)   // #EF4444
+let CATEGORY_ACCENT = NSColor(calibratedRed: 0.204, green: 0.827, blue: 0.60, alpha: 1)   // #34D399
 let CATEGORY_COLOR: [String: NSColor] = [
-    "spelling":    NSColor(calibratedRed: 0.94, green: 0.27, blue: 0.27, alpha: 1),  // red
-    "grammar":     NSColor(calibratedRed: 0.96, green: 0.62, blue: 0.07, alpha: 1),  // amber
-    "clarity":     NSColor(calibratedRed: 0.23, green: 0.51, blue: 0.96, alpha: 1),  // blue
-    "style":       NSColor(calibratedRed: 0.55, green: 0.36, blue: 0.96, alpha: 1),  // violet
-    "punctuation": NSColor(calibratedRed: 0.55, green: 0.36, blue: 0.96, alpha: 1),
-    "demo":        NSColor(calibratedRed: 0.204, green: 0.827, blue: 0.60, alpha: 1) // emerald
+    "spelling":    CATEGORY_ERROR,
+    "grammar":     CATEGORY_ERROR,
+    "punctuation": CATEGORY_ERROR,
+    "clarity":     CATEGORY_ACCENT,
+    "style":       CATEGORY_ACCENT,
+    "tone":        CATEGORY_ACCENT,
+    "word-choice": CATEGORY_ACCENT,
+    "demo":        CATEGORY_ACCENT
 ]
 
 struct Underline { let rect: CGRect; let cat: String }   // rect in view coords
