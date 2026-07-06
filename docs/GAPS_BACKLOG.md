@@ -37,6 +37,17 @@ Status legend: **OPEN** · **IN PROGRESS** · **RESOLVED** (with evidence) · **
   Anti-pattern list says avoid pill shapes, but a toggle switch is a conventional control, not a
   pill *button*. Flagging for awareness; probably keep.
 
+### Spelling false-positives (proactive audit, 2026-07-06 — the class the user keeps hitting)
+
+- **G-11 · Contractions flagged** — RESOLVED. `I'll`, `I've`, `don't`, `it's`, `o'clock` were
+  flagged (tokenize as one non-dictionary word). `isContraction()` accepts known head + standard
+  clitic. Tested. (User-reported.)
+- **G-12 · URLs / emails / @mentions / #tags / `code` flagged** — RESOLVED. Their letter-runs
+  (getoffgridai, wednesday, handles) flooded chat/email with red squiggles. `protectedRanges()`
+  skips any token inside such a span. Benefits the overlay too (same engine). Tested.
+- **G-13 · Hyphenated compounds flagged** — RESOLVED. `well-known`, `on-device`, `end-to-end`
+  accepted when every part is a valid word. Tested.
+
 ### Functional (from on-device testing, 2026-07-06)
 
 - **G-6 · Slack live squiggles — not visually confirmed** — OPEN. Root cause fixed + PROVEN: the
