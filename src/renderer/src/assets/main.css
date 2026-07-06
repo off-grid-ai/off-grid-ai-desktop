@@ -353,6 +353,21 @@ code {
   .og-shooting-star { animation: none; display: none; }
 }
 
+/* Honor prefers-reduced-motion app-wide (design philosophy #7): collapse transitions/animations
+   to near-instant so scale/slide/fade flourishes (active:scale-95, transition-all, card reveals,
+   the squiggle-card slide) don't play for users who opt out. Reduced to ~0 rather than removed
+   outright so any transitionend-dependent code still fires. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Static star field — themeable so it reads in BOTH modes: dark dots on light,
    bright dots on dark. Tiled radial-gradients, repeated across the viewport. */
 .og-starfield {
