@@ -653,8 +653,10 @@ final class IpcOverlay {
         let sig = "\(range.location):\(range.length)"
         if sig == affordanceSig { return }  // already showing for this exact selection
         affordanceSig = sig
-        // Anchor just below-right of the cursor; the pill mounts below its anchor.
-        let anchor = CGRect(x: mouseAt.x + 6, y: mouseAt.y - 10, width: 1, height: 1)
+        // Anchor to the SELECTION itself (just below the selected line), not the mouse — so the pill
+        // sits with the text it acts on. Falls back to the cursor only when bounds are unavailable
+        // (e.g. Chromium, where a non-invasive selection rect isn't reliable).
+        let anchor = selectionBoundsCocoa(el) ?? CGRect(x: mouseAt.x + 6, y: mouseAt.y - 10, width: 1, height: 1)
         affordance.presentAffordance(anchor: anchor) { [weak self] in
             self?.hideAffordance()
             self?.showRewriteMenu()
