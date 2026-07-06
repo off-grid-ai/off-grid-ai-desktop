@@ -425,6 +425,16 @@ final class CardPanel {
         mount(rows, in: root, anchor: anchor)
     }
 
+    // Small floating affordance shown when the user selects a passage in any app (Grammarly-style):
+    // one emerald "Rephrase with Scribe" pill that opens the full rewrite menu on click.
+    func presentAffordance(anchor: CGRect, onOpen: @escaping () -> Void) {
+        self.anchor = anchor
+        let root = styledRoot()
+        let rows = makeRows()
+        rows.addArrangedSubview(chip("\u{2726} Rephrase with Scribe", accent: true) { onOpen() })
+        mount(rows, in: root, anchor: anchor)
+    }
+
     /// Should the card stay open given the current cursor? True while the pointer is over the card
     /// or over the word it belongs to (with a little slack for the gap between them).
     func keepOpen(mouse: CGPoint) -> Bool {
@@ -549,11 +559,18 @@ final class IpcOverlay {
     var cardPersistent = false    // rewrite menu / busy card stays until picked or closed (not hover-dismissed)
     var pendingRange: (loc: Int, len: Int)?  // range to re-select when a rewrite result returns
     let card = CardPanel()
+    // Selection affordance (own panel so it doesn't fight the hover card): shows a "Rephrase" pill
+    // when the user selects a passage. appAllowed tracks whether Scribe is active for the focused
+    // app (the service sends `underline` for allowed apps, `clear` for denied/paused ones).
+    let affordance = CardPanel()
+    var appAllowed = false
+    var affordanceSig = ""
 
     init() {
-        // Default the card to the macOS system appearance until the app pushes its own theme.
+        // Default both cards to the macOS system appearance until the app pushes its own theme.
         let dark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle")?.lowercased() == "dark"
         card.theme = dark ? .dark : .light
+        affordance.theme = card.theme
     }
 
     func emit(_ obj: [String: Any]) {
@@ -564,6 +581,7 @@ final class IpcOverlay {
     func handleCommand(_ obj: [String: Any]) {
         switch obj["cmd"] as? String {
         case "underline":
+            appAllowed = true  // service only sends underline for allowed + active apps
             let raw = obj["spans"] as? [[String: Any]] ?? []
             lock.lock()
             spans = raw.compactMap {
@@ -573,10 +591,14 @@ final class IpcOverlay {
             }
             lock.unlock()
         case "clear":
+            appAllowed = false  // denied / paused / disabled app → no squiggles, no affordance
             lock.lock(); spans = []; lock.unlock()
         case "theme":
-            // App tells us its resolved theme so the card mimics it (light/dark).
-            if let t = obj["theme"] as? String { card.theme = (t == "light") ? .light : .dark }
+            // App tells us its resolved theme so both cards mimic it (light/dark).
+            if let t = obj["theme"] as? String {
+                let th: CardTheme = (t == "light") ? .light : .dark
+                card.theme = th; affordance.theme = th
+            }
         case "rewrite-menu":
             showRewriteMenu()
         case "apply-text":
@@ -611,6 +633,34 @@ final class IpcOverlay {
     }
 
     // Hotkey over a selection → show the rewrite menu at the selection.
+    private func hideAffordance() {
+        if affordanceSig != "" { affordance.dismiss(); affordanceSig = "" }
+    }
+
+    // Grammarly-style: when the user selects a passage (in any Scribe-active app), float a small
+    // "Rephrase with Scribe" pill near the cursor. Click it → the full rewrite menu. Non-invasive:
+    // reads the selection range/text (no caret movement); anchors at the mouse where the drag ended.
+    private func updateAffordance(_ el: AXUIElement) {
+        // Never compete with the hover/menu card, and only in Scribe-active apps.
+        if card.visible || cardPersistent || !appAllowed { hideAffordance(); return }
+        // Wait until the drag finishes (left button up) so it doesn't flicker mid-selection.
+        if NSEvent.pressedMouseButtons & 1 != 0 { return }
+        guard let range = getSelection(el), range.length >= 12,
+              let sel = stringAttr(el, kAXSelectedTextAttribute as String),
+              sel.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8 else {
+            hideAffordance(); return
+        }
+        let sig = "\(range.location):\(range.length)"
+        if sig == affordanceSig { return }  // already showing for this exact selection
+        affordanceSig = sig
+        // Anchor just below-right of the cursor; the pill mounts below its anchor.
+        let anchor = CGRect(x: mouseAt.x + 6, y: mouseAt.y - 10, width: 1, height: 1)
+        affordance.presentAffordance(anchor: anchor) { [weak self] in
+            self?.hideAffordance()
+            self?.showRewriteMenu()
+        }
+    }
+
     private func showRewriteMenu() {
         guard let f = focusedTextElement(),
               let range = getSelection(f.el), range.length > 0,
@@ -648,7 +698,7 @@ final class IpcOverlay {
     func tick() {
         guard let f = focusedTextElement(), let text = stringAttr(f.el, kAXValueAttribute as String) else {
             if lastContextKey != "blur" { emit(["type": "blur"]); lastContextKey = "blur"; lastText = "" }
-            dismissCard()
+            dismissCard(); hideAffordance()
             overlay.draw([]); return
         }
         if text != lastText {
@@ -661,6 +711,9 @@ final class IpcOverlay {
             lastContextKey = key; lastText = text
             emit(["type": "context", "bundleId": f.bundleId, "app": f.app, "text": text, "editable": true])
         }
+        // Selection affordance runs regardless of whether there are squiggles (you often select
+        // clean text to change its tone), so do it before the no-squiggle early return.
+        updateAffordance(f.el)
         let frame = elementFrameAX(f.el)
         lock.lock(); let current = spans; lock.unlock()
         if current.isEmpty { overlay.draw([]); return }
