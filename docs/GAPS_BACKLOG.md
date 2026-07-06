@@ -25,11 +25,13 @@ Status legend: **OPEN** · **IN PROGRESS** · **RESOLVED** (with evidence) · **
   places: overlay binary `CATEGORY_COLOR`, `AssistedTextarea` `UNDERLINE`, `ReviewPanel`
   `CATEGORY_COLOR`.
 
-- **G-3 · a11y on icon-only buttons** — OPEN. The card gear/×, settings gear, and disabled-apps
-  remove (×) buttons need `aria-label`/`title`. Philosophy rule #8 (accessible by default).
+- **G-3 · a11y on icon-only buttons** — RESOLVED (DOM buttons). Added `aria-label` (+`title`) to the
+  settings-close X and the disabled-apps remove X. The overlay card's gear/× are native AppKit chips
+  (Swift `NSView`), not DOM — out of scope for web a11y; AppKit handles their accessibility.
 
-- **G-4 · `prefers-reduced-motion` not honored** — OPEN. `active:scale-95` / `transition-all` on
-  Scribe buttons + card slide should be suppressed under reduced-motion. Philosophy rule #7.
+- **G-4 · `prefers-reduced-motion` not honored** — RESOLVED. Added the standard global rule in
+  `src/renderer/src/assets/main.css` collapsing all transitions/animations to ~instant under
+  reduced-motion (was only disabling the shooting-star). App-wide, not just Scribe.
 
 - **G-5 · Toggle uses `rounded-full`** — LOW / likely-accept. `WritingSettings` toggle is a pill.
   Anti-pattern list says avoid pill shapes, but a toggle switch is a conventional control, not a
@@ -53,10 +55,11 @@ Status legend: **OPEN** · **IN PROGRESS** · **RESOLVED** (with evidence) · **
   native Cocoa apps get truly-live underlines (non-invasive bounds). Revisit if a non-invasive
   per-range bounds method is found (AX text markers returned whole-element bounds in testing).
 
-- **G-9 · provit E2E never got a clean green run** — OPEN. NativeMacActor works; the acceptance
-  journey (`journeys/scribe-overlay.json`) failed on foreground contention (other automations stealing
-  front). Findings written for the provit agent: re-focus appTarget before each capture; serialize
-  native-mac runs; fix step-1 "emerald" → red/violet copy.
+- **G-9 · provit E2E never got a clean green run** — OPEN (findings written up, handed off).
+  NativeMacActor works; the acceptance journey failed on foreground contention (other automations
+  stealing front), not a Scribe bug. Full writeup + ranked provit fixes + repro steps in
+  **`SCRIBE_PROVIT_FINDINGS.md`**. Ball is in the provit agent's court (re-focus appTarget per
+  capture; capture-by-windowID / serialize native-mac runs; fix the journey's red-vs-emerald copy).
 
 ### Verification debt (mine — built but not visually confirmed by me)
 
