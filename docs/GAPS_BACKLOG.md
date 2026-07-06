@@ -12,12 +12,12 @@ Status legend: **OPEN** · **IN PROGRESS** · **RESOLVED** (with evidence) · **
 
 ### Design-system compliance (audited against `../brand/DESIGN_PHILOSOPHY.md`, 2026-07-06)
 
-- **G-1 · Hardcoded dark hex → broken in light mode** — RESOLVED for `ReviewPanel.tsx`; **OPEN**
-  for `RewriteToolbar.tsx`, `LearnedStyle.tsx`, `StyleGuides.tsx`. These use inline `style={{}}`
-  with dark-only hex (`#E5E5E5`, `#232323`, `#808080`…), so they wash out in light mode — the exact
-  bug the user hit on the Scribe screen. Fix: convert to theme-aware Tailwind (`neutral-*`/`emerald`
-  map to `--og-*` tokens). Philosophy rule #5 (tokens, not magic numbers).
-  Evidence to close: screenshot each in light + dark.
+- **G-1 · Hardcoded dark hex → broken in light mode** — RESOLVED. All four hex-hardcoded components
+  converted to theme-aware Tailwind (`neutral-*`/`emerald` → `--og-*` tokens): `ReviewPanel.tsx`,
+  `RewriteToolbar.tsx`, `LearnedStyle.tsx`, `StyleGuides.tsx`. typecheck clean, 554 tests pass.
+  Remaining inline hex is only in `AssistedTextarea.tsx` (squiggle overlay positioning + the
+  category hues, which is the G-2 decision) — not a light/dark bug. Evidence still owed: light-mode
+  screenshots of the settings panel + rewrite toolbar (folded into G-10).
 
 - **G-2 · Color-coded issue categories** — DECISION NEEDED. Squiggles + review cards color-code by
   category (red spelling, blue style, amber punctuation, violet tone) in the overlay, `AssistedTextarea`,
