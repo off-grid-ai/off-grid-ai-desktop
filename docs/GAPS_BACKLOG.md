@@ -88,6 +88,19 @@ Status legend: **OPEN** · **IN PROGRESS** · **RESOLVED** (with evidence) · **
   apply (onApply) edits plain text; in rich mode the doc is HTML, so applying from the side panel
   won't reflect. Rich mode has its own inline click-to-fix instead. Wire the review panel's apply to
   the TipTap doc later, or hide per-issue apply buttons in rich mode.
-- **G-17 · Rich-mode squiggle hover card** — OPEN. Rich mode applies the first fix on click; it does
-  not yet show the full hover card (choose among suggestions / add-to-dictionary / rephrase) that the
-  plain-text modes have. Add a ProseMirror hover tooltip later.
+- **G-17 · Rich-mode squiggle hover card** — RESOLVED. Extracted a single shared `IssuePopover`
+  (message + fixes + Remove + Add-to-dictionary/Ignore) consumed by BOTH the plain-text editor and
+  the TipTap editor; rich mode now hovers the real card resolved to the ProseMirror range, not a dead
+  native `title=` tooltip. (User-reported: "I liked the card better, this is useless".)
+- **G-18 · Rephrase pill / squiggles in the browser address bar** — RESOLVED. The `AXSearchField`
+  subrole alone missed Chromium's omnibox (Chrome/Arc/Edge/Brave expose a plain AXTextField). Added
+  `isAddressOrSearchField` (subrole + descriptive metadata: role-description/description/placeholder/
+  title matching address/search/url markers) gating BOTH the squiggle and pill paths; `isRephrasableProse`
+  also rejects selections whose tokens are bare URLs/domains/emails. Overlay recompiles clean.
+  (User-reported.)
+- **G-19 · Whole-feature SOLID/DRY audit** — RESOLVED. 3 parallel auditors across engine / main-wiring
+  / renderer, then 3 fixers. Collapsed every duplicated source of truth: category→color (was 4 copies),
+  button/chip primitives (6 copies), issue-card renderer (2), countSyllables (2), severity map (2),
+  extractJson (2), model-call seam (3 bypasses), REWRITE_ACTIONS/tone list/hover-close/escapeRegExp.
+  Fixed a real bug (rich-mode minimap/jump on stale text). ~400 dup lines removed, +tests. Gate: tsc
+  web+node clean, 617 tests, production build OK. See commit `ad88bf1` (pro) + `b3b0200` (overlay).
