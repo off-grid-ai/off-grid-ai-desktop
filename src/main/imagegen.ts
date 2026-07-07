@@ -11,6 +11,8 @@ import { llm } from './llm';
 import { isMfluxModelId, mfluxAvailable, getMfluxModel, runMflux, cancelMflux, MFLUX_MODELS } from './mflux';
 import { getActiveModal } from './active-models';
 import { binRoots, dataDir, modelsDir } from './runtime-env';
+import { sdServer } from './sd-server';
+import { standardModelDefaults, taesdFilename } from './image-defaults';
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {
@@ -208,6 +210,14 @@ export async function downloadLora(
   return dest;
 }
 
+/** Resolve the TAESD decoder for a model's family, if the file is installed.
+ *  Returns null (so callers just skip taesd) when it isn't — the feature is a
+ *  no-op until the tiny decoder is downloaded into the models dir. */
+export function resolveTaesd(base: string): string | null {
+  const p = path.join(modelsDir(), taesdFilename(base));
+  return fs.existsSync(p) ? p : null;
+}
+
 /** Find a companion file (text encoder / vae) in the models dir by pattern. */
 function findInModels(re: RegExp): string | null {
   try {
@@ -323,6 +333,10 @@ export interface ImageGenParams {
   strength?: number;
   /** LoRA adapters to apply: name (filename w/o ext) + weight (e.g. 0.8). */
   loras?: { name: string; weight: number }[];
+  /** Use the TAESD tiny decoder instead of the full VAE — a large speed win on
+   *  the VAE decode (multi-second -> sub-second on Metal at ≥768px), at a small
+   *  cost in decode fidelity. No-op if the matching taesd file isn't installed. */
+  fastVae?: boolean;
 }
 
 export interface ImageGenOutput {
@@ -349,12 +363,13 @@ let cancelled = false;
 /** Kill an in-progress generation. Returns true if one was running. */
 export function cancelImageGen(): boolean {
   cancelMflux(); // no-op if mflux isn't the active runtime
+  void sdServer.cancelCurrent(); // cancels the in-flight job on the resident server (no-op if idle)
   if (currentChild) {
     cancelled = true;
     currentChild.kill('SIGKILL');
     return true;
   }
-  return running; // mflux gen has no currentChild but sets running
+  return running; // mflux/persistent-server gen has no currentChild but sets running
 }
 
 export async function generateImage(
@@ -491,6 +506,57 @@ export async function generateImage(
 
   const base = path.basename(model);
   const isZImage = /z[-_]?image/i.test(base);
+
+  // --- Persistent sd-server fast path -----------------------------------------
+  // A plain full-pipeline checkpoint doing txt2img (no LoRA, no init image) runs
+  // on the RESIDENT sd-server, which keeps the model loaded across images: the
+  // first image pays the ~13s Metal shader warmup + model load, but every image
+  // after skips BOTH (measured ~45s cold -> ~7s warm on an M4). The step count /
+  // resolution / quality are UNCHANGED — this only removes per-image warmup and
+  // reload. Special stacks stay on one-shot sd-cli below: Z-Image (3-file stack),
+  // Core ML (ANE), UNET-only checkpoints needing separate CLIP+VAE, img2img, and
+  // LoRA (sd.cpp can't merge a LoRA into quantized weights anyway).
+  if (!coreml && !isZImage && !params.initImage && loras.length === 0 && ggufIsFullCheckpoint(model)) {
+    const d = standardModelDefaults(base);
+    const width = params.width ?? d.defaultSize;
+    const height = params.height ?? d.defaultSize;
+    running = true;
+    cancelled = false;
+    // Same unified-memory dance as the one-shot path: free the LLM, let the OS
+    // reclaim its pages, then load the image model. The LLM is warmed back up by
+    // the server's idle-eviction hook (below) once image generation goes quiet —
+    // NOT after each image — so a burst of images stays warm.
+    sdServer.setEvictionHook(() => { try { llm.resume(); } catch { /* ignore */ } });
+    try { llm.pause(); } catch { /* ignore */ }
+    await new Promise((r) => setTimeout(r, 2500));
+    const taesd = params.fastVae ? resolveTaesd(base) : null;
+    try {
+      await sdServer.ensureUp({ modelPath: model, diffusionFa: true, taesdPath: taesd ?? undefined, threads: Math.max(1, os.cpus().length - 2) });
+      const { png, seed: usedSeed } = await sdServer.generate(
+        {
+          prompt: params.prompt,
+          negativePrompt: params.negativePrompt?.trim() || DEFAULT_NEGATIVE,
+          width,
+          height,
+          steps: params.steps ?? d.defaultSteps,
+          seed,
+          cfgScale: params.cfgScale ?? d.defaultCfg,
+          sampleMethod: d.sampler,
+        },
+        (p) => onProgress?.({ step: p.step, total: p.total, secPerStep: 0, phase: 'sampling' }),
+      );
+      fs.writeFileSync(outPath, png);
+      return { dataUrl: `data:image/png;base64,${png.toString('base64')}`, path: outPath, seed: usedSeed, model: base };
+    } catch (e) {
+      // On failure, tear the server down (frees memory + warms the LLM via the
+      // eviction hook) so a crash doesn't leave chat starved indefinitely.
+      sdServer.stop();
+      throw e;
+    } finally {
+      running = false;
+    }
+  }
+
   const threads = String(Math.max(1, os.cpus().length - 2));
   // Live preview: write a rough partial image every step ('proj' needs no extra
   // model) so the UI can show the image forming step-by-step.
@@ -540,19 +606,11 @@ export async function generateImage(
       ...previewArgs,
     ];
   } else {
-    // Per-model defaults. Distilled few-step models (SDXL-Lightning, *-Turbo)
-    // need very low steps, cfg≈1 and euler — ~7× faster at near-SDXL quality.
-    const isLightning = /lightning/i.test(base);
-    const isTurbo = /turbo/i.test(base);
-    const isXL = /sdxl|xl/i.test(base) || isLightning;
-    const isV2 = /v2-1|v2\.1/i.test(base);
-    const fewStep = isLightning || isTurbo;
-    const nameStepMatch = base.match(/(\d+)\s*step/i);
-    // SDXL-Lightning's sweet spot is 768 (what our style thumbnails use): great
-    // quality, fast, and freeze-safe — full 1024 forces a slow tiled VAE decode.
-    // Full (non-distilled) XL stays at 1024 where the extra detail pays off.
-    const defaultSize = isTurbo ? 512 : isLightning ? 768 : isXL ? 1024 : isV2 ? 768 : 512;
-    const defaultSteps = isTurbo ? 4 : isLightning ? (nameStepMatch ? parseInt(nameStepMatch[1], 10) : 4) : 28;
+    // Per-model defaults (shared with the persistent-server path above via the
+    // single-source-of-truth helper). Distilled few-step models (SDXL-Lightning,
+    // *-Turbo) need very low steps, cfg≈1 and euler — ~7× faster at near-SDXL
+    // quality; full checkpoints need ~28 steps + real CFG.
+    const { defaultSize, defaultSteps, defaultCfg, sampler, isXL } = standardModelDefaults(base);
     // Full checkpoint → load with -m. UNET-only quant → load the diffusion model
     // separately and supply SDXL CLIP-L/CLIP-G + VAE; if those companions aren't
     // installed, fail with a clear message instead of the cryptic sd.cpp abort.
@@ -586,8 +644,8 @@ export async function generateImage(
       '-W', String(params.width ?? defaultSize),
       '-H', String(params.height ?? defaultSize),
       '--steps', String(params.steps ?? defaultSteps),
-      '--cfg-scale', String(params.cfgScale ?? (fewStep ? 1.0 : 7)),
-      '--sampling-method', fewStep ? 'euler' : 'dpm++2m',
+      '--cfg-scale', String(params.cfgScale ?? defaultCfg),
+      '--sampling-method', sampler,
       '--diffusion-fa',
       '-t', threads,
       '-s', String(seed),
@@ -598,7 +656,11 @@ export async function generateImage(
     // pass — exactly what our freeze-safe 768 thumbnail batch skipped.
     const effW = params.width ?? defaultSize;
     const effH = params.height ?? defaultSize;
-    if (isXL && Math.max(effW, effH) > 768) args.push('--vae-tiling');
+    // TAESD decode (opt-in): swaps the slow full-VAE decode for the tiny one. When
+    // present it makes VAE-tiling moot (taesd is already cheap), so prefer it.
+    const cliTaesd = params.fastVae ? resolveTaesd(base) : null;
+    if (cliTaesd) args.push('--taesd', cliTaesd);
+    else if (isXL && Math.max(effW, effH) > 768) args.push('--vae-tiling');
     args.push('-n', params.negativePrompt?.trim() || DEFAULT_NEGATIVE);
     // img2img (not supported by Z-Image gen-only turbo).
     if (params.initImage) {
