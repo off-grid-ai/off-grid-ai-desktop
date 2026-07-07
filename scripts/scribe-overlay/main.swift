@@ -503,6 +503,10 @@ func focusedTextElement() -> (el: AXUIElement, bundleId: String, app: String)? {
     let el = f as! AXUIElement
     let role = stringAttr(el, kAXRoleAttribute as String) ?? ""
     guard role == "AXTextArea" || role == "AXTextField" else { return nil }
+    // Skip search fields / address bars (browser omnibox) — those aren't for prose, and squiggling
+    // a URL is noise. Chromium's omnibox is an AXTextField with the AXSearchField subrole.
+    let subrole = stringAttr(el, kAXSubroleAttribute as String) ?? ""
+    if subrole == "AXSearchField" { return nil }
     return (el, front.bundleIdentifier ?? "", front.localizedName ?? "")
 }
 
@@ -632,6 +636,22 @@ final class IpcOverlay {
         return nil
     }
 
+    // Is a selection real prose worth offering to rephrase? Rejects URLs, emails, file paths, and
+    // single-token selections (address bars, search boxes) — needs ≥2 words and no URL/path shape.
+    private func isRephrasableProse(_ s: String) -> Bool {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.count < 12 { return false }
+        if t.contains(" ") == false { return false }               // single token (URL, handle, path)
+        let lower = t.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("www.") { return false }
+        if t.contains("://") { return false }
+        // A "word" with a dot-domain or @ and no spaces around it → looks like a URL/email token.
+        if t.range(of: #"^\S+\.(com|org|net|io|co|is|ai|dev|app|gov|edu)\S*$"#, options: .regularExpression) != nil { return false }
+        // Require at least two word-ish tokens.
+        let words = t.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
+        return words.count >= 2
+    }
+
     // Hotkey over a selection → show the rewrite menu at the selection.
     private func hideAffordance() {
         if affordanceSig != "" { affordance.dismiss(); affordanceSig = "" }
@@ -645,9 +665,14 @@ final class IpcOverlay {
         if card.visible || cardPersistent || !appAllowed { hideAffordance(); return }
         // Wait until the drag finishes (left button up) so it doesn't flicker mid-selection.
         if NSEvent.pressedMouseButtons & 1 != 0 { return }
+        // Only offer to rephrase real PROSE — not a URL in the address bar, a search box, a single
+        // token, or a field that isn't for writing. Requires multiple words and non-URL content.
+        let role = stringAttr(el, kAXRoleAttribute as String) ?? ""
+        let subrole = stringAttr(el, kAXSubroleAttribute as String) ?? ""
         guard let range = getSelection(el), range.length >= 12,
               let sel = stringAttr(el, kAXSelectedTextAttribute as String),
-              sel.trimmingCharacters(in: .whitespacesAndNewlines).count >= 8 else {
+              isRephrasableProse(sel),
+              subrole != "AXSearchField" && !role.contains("SearchField") else {
             hideAffordance(); return
         }
         let sig = "\(range.location):\(range.length)"
