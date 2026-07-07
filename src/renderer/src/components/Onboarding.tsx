@@ -178,9 +178,12 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
         {/* Step 2 — The Pro layer: it starts remembering */}
         {currentStep === 2 && (
-          <motion.div key="step-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative flex h-full w-full flex-col items-center justify-center bg-neutral-950 px-6">
+          <motion.div key="step-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative h-full w-full overflow-y-auto bg-neutral-950 px-6">
             <GridBackdrop className="opacity-70" />
-            <div className="relative z-10 mx-auto max-w-5xl">
+            {/* Scrollable, vertically centered when it fits; pb clears the fixed footer nav so the
+                grid + pricing never hide behind the Continue button (regressed when the grid grew
+                to 9 cards). */}
+            <div className="relative z-10 mx-auto flex min-h-full max-w-5xl flex-col justify-center py-16 pb-44">
               <div className="mb-2 text-center">
                 <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-green-400">Off Grid Pro · live now</span>
               </div>
@@ -191,7 +194,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                 The free app runs models. Pro adds the always-on layer: turn on capture and Off Grid keeps a private record of what you see and do, then acts on it with your approval. Every one runs on-device. Nothing is uploaded.
               </motion.p>
 
-              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                 {PRO_GRID.map(({ icon: Icon, label, line }, i) => (
                   <motion.div
                     key={label}
