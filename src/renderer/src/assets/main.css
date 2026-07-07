@@ -390,3 +390,40 @@ code {
     radial-gradient(1px 1px at 150px 192px, rgba(255,255,255,0.60), transparent),
     radial-gradient(1px 1px at 205px 120px, rgba(255,255,255,0.78), transparent);
 }
+
+/* Scribe markdown preview — Tailwind Preflight strips default element styles, so the rendered
+   HTML (h1-h6, strong, lists, code, quotes) needs its own scoped prose styling. Theme-aware via
+   the --og-* tokens; monospace to match the brutalist/terminal brand. */
+.scribe-preview { font-family: var(--og-font-mono); }
+.scribe-preview > * + * { margin-top: 0.75em; }
+.scribe-preview h1 { font-size: 1.6em; font-weight: 600; line-height: 1.25; }
+.scribe-preview h2 { font-size: 1.35em; font-weight: 600; line-height: 1.3; }
+.scribe-preview h3 { font-size: 1.15em; font-weight: 600; }
+.scribe-preview h4, .scribe-preview h5, .scribe-preview h6 { font-weight: 600; }
+.scribe-preview strong { font-weight: 700; color: var(--og-text); }
+.scribe-preview em { font-style: italic; }
+.scribe-preview a { color: var(--og-primary); text-decoration: underline; }
+.scribe-preview ul { list-style: disc; padding-left: 1.4em; }
+.scribe-preview ol { list-style: decimal; padding-left: 1.4em; }
+.scribe-preview li { margin-top: 0.2em; }
+.scribe-preview code {
+  font-family: var(--og-font-mono);
+  background: var(--og-surface-light);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+}
+.scribe-preview pre {
+  background: var(--og-surface);
+  border: 1px solid var(--og-border-light);
+  border-radius: 8px;
+  padding: 0.8em 1em;
+  overflow-x: auto;
+}
+.scribe-preview pre code { background: none; padding: 0; }
+.scribe-preview blockquote {
+  border-left: 3px solid var(--og-border-light);
+  padding-left: 1em;
+  color: var(--og-text-secondary);
+}
+.scribe-preview hr { border: none; border-top: 1px solid var(--og-border-light); }
