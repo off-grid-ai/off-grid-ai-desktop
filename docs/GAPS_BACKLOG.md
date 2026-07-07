@@ -76,3 +76,18 @@ Status legend: **OPEN** · **IN PROGRESS** · **RESOLVED** (with evidence) · **
 
 - **G-10 · New Scribe screen + busy card look** — OPEN. Redesign + compact busy card are typechecked
   and code-reviewed but I did not screenshot the final look. Evidence to close: light + dark screenshots.
+
+## Editor & rich text (2026-07-07)
+
+- **G-14 · Markdown preview looked unstyled** — RESOLVED. It rendered but Tailwind Preflight strips
+  heading/bold/list styles; added scoped `.scribe-preview` prose CSS.
+- **G-15 · Real rich-text mode (TipTap)** — DONE (needs on-device visual check). Rich text is now a
+  single WYSIWYG (TipTap/ProseMirror), no preview split; live squiggles as PM decorations, click-to-
+  fix; own toolbar. Compiles + production-bundles. NOT visually verified by me.
+- **G-16 · Rich-mode side-panel "apply fix" is inert** — OPEN (minor). The Review panel's one-click
+  apply (onApply) edits plain text; in rich mode the doc is HTML, so applying from the side panel
+  won't reflect. Rich mode has its own inline click-to-fix instead. Wire the review panel's apply to
+  the TipTap doc later, or hide per-issue apply buttons in rich mode.
+- **G-17 · Rich-mode squiggle hover card** — OPEN. Rich mode applies the first fix on click; it does
+  not yet show the full hover card (choose among suggestions / add-to-dictionary / rephrase) that the
+  plain-text modes have. Add a ProseMirror hover tooltip later.
