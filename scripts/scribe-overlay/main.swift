@@ -495,6 +495,28 @@ func enableAXTree(_ app: AXUIElement, _ pid: pid_t) {
     }
 }
 
+// Address bar / search box detection. The AXSearchField subrole ALONE is unreliable — Chromium's
+// omnibox (Chrome/Arc/Edge/Brave) is a plain AXTextField that does NOT report that subrole, so a
+// multi-word URL or query selected there slipped past and got a Rephrase pill. Browsers instead
+// describe the omnibox in its metadata ("Search or type a URL", "Address and search bar"), so we
+// also match those keywords across role-description / description / placeholder / title. Applied at
+// BOTH gates (squiggles + rephrase pill) so neither ever fires on an address/search field.
+func isAddressOrSearchField(_ el: AXUIElement) -> Bool {
+    if (stringAttr(el, kAXSubroleAttribute as String) ?? "") == "AXSearchField" { return true }
+    let hay = [
+        stringAttr(el, kAXRoleDescriptionAttribute as String),
+        stringAttr(el, kAXDescriptionAttribute as String),
+        stringAttr(el, kAXPlaceholderValueAttribute as String),
+        stringAttr(el, kAXTitleAttribute as String)
+    ].compactMap { $0 }.joined(separator: " ").lowercased()
+    if hay.isEmpty { return false }
+    let markers = [
+        "address", "search", "type a url", "type url", "search or type",
+        "omnibox", "enter website", "url or search", "web address"
+    ]
+    return markers.contains { hay.contains($0) }
+}
+
 func focusedTextElement() -> (el: AXUIElement, bundleId: String, app: String)? {
     guard let front = NSWorkspace.shared.frontmostApplication else { return nil }
     let appEl = AXUIElementCreateApplication(front.processIdentifier)
@@ -504,9 +526,8 @@ func focusedTextElement() -> (el: AXUIElement, bundleId: String, app: String)? {
     let role = stringAttr(el, kAXRoleAttribute as String) ?? ""
     guard role == "AXTextArea" || role == "AXTextField" else { return nil }
     // Skip search fields / address bars (browser omnibox) — those aren't for prose, and squiggling
-    // a URL is noise. Chromium's omnibox is an AXTextField with the AXSearchField subrole.
-    let subrole = stringAttr(el, kAXSubroleAttribute as String) ?? ""
-    if subrole == "AXSearchField" { return nil }
+    // a URL is noise. Robust detection (subrole + descriptive metadata) — see isAddressOrSearchField.
+    if isAddressOrSearchField(el) { return nil }
     return (el, front.bundleIdentifier ?? "", front.localizedName ?? "")
 }
 
@@ -649,7 +670,16 @@ final class IpcOverlay {
         if t.range(of: #"^\S+\.(com|org|net|io|co|is|ai|dev|app|gov|edu)\S*$"#, options: .regularExpression) != nil { return false }
         // Require at least two word-ish tokens.
         let words = t.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
-        return words.count >= 2
+        if words.count < 2 { return false }
+        // Reject if ANY token is a bare URL/domain/email (a query like "buy shoes nike.com" is not
+        // prose to rephrase). Prose tokens don't carry :// or a TLD-shaped dotted tail.
+        let domainish = #"^\S+\.(com|org|net|io|co|is|ai|dev|app|gov|edu)(/\S*)?$"#
+        for w in words {
+            let w = String(w)
+            if w.contains("://") || w.contains("@") { return false }
+            if w.range(of: domainish, options: .regularExpression) != nil { return false }
+        }
+        return true
     }
 
     // Hotkey over a selection → show the rewrite menu at the selection.
@@ -666,13 +696,12 @@ final class IpcOverlay {
         // Wait until the drag finishes (left button up) so it doesn't flicker mid-selection.
         if NSEvent.pressedMouseButtons & 1 != 0 { return }
         // Only offer to rephrase real PROSE — not a URL in the address bar, a search box, a single
-        // token, or a field that isn't for writing. Requires multiple words and non-URL content.
-        let role = stringAttr(el, kAXRoleAttribute as String) ?? ""
-        let subrole = stringAttr(el, kAXSubroleAttribute as String) ?? ""
+        // token, or a field that isn't for writing. Requires multiple words and non-URL content, and
+        // rejects address/search fields even when Chromium hides the AXSearchField subrole.
         guard let range = getSelection(el), range.length >= 12,
               let sel = stringAttr(el, kAXSelectedTextAttribute as String),
               isRephrasableProse(sel),
-              subrole != "AXSearchField" && !role.contains("SearchField") else {
+              !isAddressOrSearchField(el) else {
             hideAffordance(); return
         }
         let sig = "\(range.location):\(range.length)"
