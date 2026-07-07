@@ -1,6 +1,5 @@
-import { D as DownloadBridge } from '../types-C3JiELTS.js';
-
-declare class NodeDownloadBridge implements DownloadBridge {
+import type { DownloadBridge } from '../types';
+export declare class NodeDownloadBridge implements DownloadBridge {
     private readonly modelsDir;
     constructor(modelsDir: string);
     pathFor(fileName: string): string;
@@ -10,5 +9,3 @@ declare class NodeDownloadBridge implements DownloadBridge {
         signal?: AbortSignal;
     }): Promise<number>;
 }
-
-export { NodeDownloadBridge };

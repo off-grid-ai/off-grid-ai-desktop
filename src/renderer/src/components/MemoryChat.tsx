@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { shouldQueue, enqueue, dequeue, queuedCount } from '@renderer/lib/chat-queue';
+import { getComposerEditor } from '@renderer/bootstrap/editorSlot';
 import { waitingLabel } from '@renderer/lib/chat-labels';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -205,6 +206,16 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     setMessagesByConv(prev => ({ ...prev, [k]: typeof updater === 'function' ? (updater as (p: ChatMessage[]) => ChatMessage[])(prev[k] ?? []) : updater }));
   }, []);
   const [input, setInput] = useState('');
+  // Seed the composer from another surface (e.g. Scribe's "Continue in chat"). The
+  // sender switches to this view via 'og:navigate' and hands off the text here.
+  useEffect(() => {
+    const onSeed = (e: Event): void => {
+      const text = (e as CustomEvent).detail as string | undefined;
+      if (typeof text === 'string' && text.length > 0) setInput(text);
+    };
+    window.addEventListener('og:chat-seed', onSeed);
+    return () => window.removeEventListener('og:chat-seed', onSeed);
+  }, []);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   // Whether the active chat model can read images. Gate image attachment on this and
   // re-check periodically (the user can switch models from the Models screen).
@@ -2159,18 +2170,35 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                       {transcribing ? 'Transcribing…' : recording ? 'Recording — tap to send' : 'Tap to record a voice note'}
                     </span>
                   </button>
-                ) : (
-                  <textarea
-                    ref={inputRef}
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    onPaste={handlePaste}
-                    rows={1}
-                    placeholder={mode === 'image' ? 'Describe an image to generate…' : activeProjectName ? `Ask about “${activeProjectName}”…` : 'Ask anything…'}
-                    className="max-h-52 w-full resize-none overflow-y-auto bg-transparent px-3.5 pt-3 text-sm text-neutral-200 placeholder-neutral-600 outline-none"
-                  />
-                )}
+                ) : (() => {
+                  const composerProps = {
+                    textareaRef: inputRef,
+                    value: input,
+                    onChange: setInput,
+                    onKeyDown: handleKeyDown,
+                    onPaste: handlePaste,
+                    rows: 1,
+                    placeholder: mode === 'image' ? 'Describe an image to generate…' : activeProjectName ? `Ask about “${activeProjectName}”…` : 'Ask anything…',
+                    className: 'max-h-52 w-full resize-none overflow-y-auto bg-transparent px-3.5 pt-3 text-sm text-neutral-200 placeholder-neutral-600 outline-none',
+                  };
+                  // Pro registers Scribe's AssistedTextarea into this slot (live squiggles +
+                  // click-to-fix); free builds fall back to the plain textarea. No pro import here.
+                  const Editor = getComposerEditor();
+                  return Editor ? (
+                    <Editor {...composerProps} />
+                  ) : (
+                    <textarea
+                      ref={inputRef}
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      onPaste={handlePaste}
+                      rows={1}
+                      placeholder={composerProps.placeholder}
+                      className={composerProps.className}
+                    />
+                  );
+                })()}
                 <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-2 px-2.5 pb-2.5 pt-1">
                   <div className="flex min-w-0 items-center gap-2">
                   {/* "+" menu — attach / image / project / tools */}

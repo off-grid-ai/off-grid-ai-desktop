@@ -1641,12 +1641,15 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       return synthesize(text, chosen);
   });
 
-  // --- Voice input (STT via bundled whisper) ------------------------------
+  // --- Voice input (STT via the active engine: whisper default / Parakeet opt-in) ---
   ipcMain.handle('voice:transcribe', async (_e, audio: ArrayBuffer | Uint8Array, ext = 'webm') => {
       const fs = await import('fs');
       const path = await import('path');
       const os = await import('os');
-      const { transcriptionService } = await import('./transcription/whisper-cli');
+      // Route through the active-model-implied engine so a Parakeet selection is honored
+      // (falls back to whisper when Parakeet isn't installed).
+      const { getActiveTranscription } = await import('./transcription/select');
+      const transcriptionService = getActiveTranscription();
       // Respect a Uint8Array's view bounds (byteOffset/length) — Buffer.from on the
       // backing ArrayBuffer would copy the WHOLE buffer, corrupting a sliced view.
       const buf = ArrayBuffer.isView(audio)

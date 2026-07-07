@@ -24,4 +24,10 @@ export const SLOTS = {
   composerToolMenu: 'composer.toolMenu',
   /** Always-mounted root component(s) near the app root (e.g. capture indicator). */
   appRoot: 'app.root',
+  /**
+   * Replacement editor for the chat composer (pro's Scribe AssistedTextarea). When
+   * registered, core renders it instead of the plain <textarea>; otherwise core falls
+   * back to the plain textarea. Contract: EditorSlotProps in editorSlot.ts.
+   */
+  composerEditor: 'composer.editor',
 } as const;

@@ -10,6 +10,7 @@ import {
   ClipboardText,
   Waveform,
   ShieldCheck,
+  PenNib,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
@@ -124,6 +125,19 @@ export const PRO_FEATURES: ProFeature[] = [
       'Option+Space push-to-talk or toggle, anywhere',
       'Paste-at-cursor + a searchable recordings library',
       'Transcribe any audio/video file, all on-device',
+    ],
+  },
+  {
+    route: 'scribe',
+    label: 'Scribe',
+    icon: PenNib,
+    tagline: 'Say what you mean, in your words, on your Mac.',
+    description:
+      'Fix the typo before it reaches anyone, then make the sentence land. Scribe underlines spelling, grammar, and wordiness as you type and fixes it in a click. Select any text and change the tone, make it shorter, translate it, or ask for a better way to say it. It writes in your voice because it reads the same on-device memory as the rest of Off Grid AI Desktop - it knows your people, your projects, and how you write, so your names are never flagged and rewrites sound like you. Every word stays in your Mac. Nothing is sent anywhere.',
+    highlights: [
+      'Live spelling, grammar, and clarity fixes as you type',
+      'Select to rewrite, change tone, shorten, or translate',
+      'Knows your people and projects; writes in your voice, on-device',
     ],
   },
   {

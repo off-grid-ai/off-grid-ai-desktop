@@ -353,6 +353,21 @@ code {
   .og-shooting-star { animation: none; display: none; }
 }
 
+/* Honor prefers-reduced-motion app-wide (design philosophy #7): collapse transitions/animations
+   to near-instant so scale/slide/fade flourishes (active:scale-95, transition-all, card reveals,
+   the squiggle-card slide) don't play for users who opt out. Reduced to ~0 rather than removed
+   outright so any transitionend-dependent code still fires. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Static star field — themeable so it reads in BOTH modes: dark dots on light,
    bright dots on dark. Tiled radial-gradients, repeated across the viewport. */
 .og-starfield {
@@ -375,3 +390,67 @@ code {
     radial-gradient(1px 1px at 150px 192px, rgba(255,255,255,0.60), transparent),
     radial-gradient(1px 1px at 205px 120px, rgba(255,255,255,0.78), transparent);
 }
+
+/* Scribe markdown preview — Tailwind Preflight strips default element styles, so the rendered
+   HTML (h1-h6, strong, lists, code, quotes) needs its own scoped prose styling. Theme-aware via
+   the --og-* tokens; monospace to match the brutalist/terminal brand. */
+.scribe-preview { font-family: var(--og-font-mono); }
+.scribe-preview > * + * { margin-top: 0.75em; }
+.scribe-preview h1 { font-size: 1.6em; font-weight: 600; line-height: 1.25; }
+.scribe-preview h2 { font-size: 1.35em; font-weight: 600; line-height: 1.3; }
+.scribe-preview h3 { font-size: 1.15em; font-weight: 600; }
+.scribe-preview h4, .scribe-preview h5, .scribe-preview h6 { font-weight: 600; }
+.scribe-preview strong { font-weight: 700; color: var(--og-text); }
+.scribe-preview em { font-style: italic; }
+.scribe-preview a { color: var(--og-primary); text-decoration: underline; }
+.scribe-preview ul { list-style: disc; padding-left: 1.4em; }
+.scribe-preview ol { list-style: decimal; padding-left: 1.4em; }
+.scribe-preview li { margin-top: 0.2em; }
+.scribe-preview code {
+  font-family: var(--og-font-mono);
+  background: var(--og-surface-light);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+}
+.scribe-preview pre {
+  background: var(--og-surface);
+  border: 1px solid var(--og-border-light);
+  border-radius: 8px;
+  padding: 0.8em 1em;
+  overflow-x: auto;
+}
+.scribe-preview pre code { background: none; padding: 0; }
+.scribe-preview blockquote {
+  border-left: 3px solid var(--og-border-light);
+  padding-left: 1em;
+  color: var(--og-text-secondary);
+}
+.scribe-preview hr { border: none; border-top: 1px solid var(--og-border-light); }
+
+/* Rich-text (TipTap/ProseMirror) editor — Tailwind Preflight strips element styling, so the
+   WYSIWYG content needs scoped prose CSS (same as the markdown preview) plus editor chrome.
+   Theme-aware via --og-* tokens; monospace to match the brand. */
+.scribe-rt-content { outline: none; min-height: 60vh; font-family: var(--og-font-mono); font-size: 15px; line-height: 1.75; color: var(--og-text); }
+.scribe-rt-content:focus { outline: none; }
+.scribe-rt-content > * + * { margin-top: 0.75em; }
+.scribe-rt-content h1 { font-size: 1.6em; font-weight: 600; line-height: 1.25; }
+.scribe-rt-content h2 { font-size: 1.35em; font-weight: 600; line-height: 1.3; }
+.scribe-rt-content h3 { font-size: 1.15em; font-weight: 600; }
+.scribe-rt-content strong { font-weight: 700; }
+.scribe-rt-content em { font-style: italic; }
+.scribe-rt-content a { color: var(--og-primary); text-decoration: underline; }
+.scribe-rt-content ul { list-style: disc; padding-left: 1.4em; }
+.scribe-rt-content ol { list-style: decimal; padding-left: 1.4em; }
+.scribe-rt-content li { margin-top: 0.2em; }
+.scribe-rt-content blockquote { border-left: 3px solid var(--og-border-light); padding-left: 1em; color: var(--og-text-secondary); }
+.scribe-rt-content code { font-family: var(--og-font-mono); background: var(--og-surface-light); border-radius: 4px; padding: 0.1em 0.35em; font-size: 0.9em; }
+.scribe-rt-content pre { background: var(--og-surface); border: 1px solid var(--og-border-light); border-radius: 8px; padding: 0.8em 1em; overflow-x: auto; }
+.scribe-rt-content pre code { background: none; padding: 0; }
+.scribe-rt-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder); color: var(--og-text-muted); float: left; height: 0; pointer-events: none;
+}
+/* Live squiggles as ProseMirror decorations — wavy underline, brand-colored, clickable. */
+.scribe-rt-squiggle { text-decoration: underline wavy; text-decoration-thickness: 1px; text-underline-offset: 2px; cursor: pointer; }
+.scribe-rt-error { text-decoration-color: #EF4444; }
+.scribe-rt-suggest { text-decoration-color: #34D399; }
