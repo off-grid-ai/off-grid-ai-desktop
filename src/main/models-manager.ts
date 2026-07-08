@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { llm } from './llm';
 import { getAllActiveModals, setActiveModal as setModal, modalityForKind, isModelActive, type Modality } from './active-models';
+import { recordDownloaded, removeDownloaded, findDownloaded, installedDownloadedIds, downloadedProtectedNames, readDownloaded } from './downloaded-models';
 
 export interface DownloadProgress {
   modelId: string;
@@ -36,7 +37,13 @@ export async function getCatalog(): Promise<{ kinds: readonly string[]; models: 
       id: lm.id, name: lm.name, kind: lm.kind, org: 'Local', params: lm.params,
       tags: ['Imported'], files: [{ name: lm.primary, url: '', sizeBytes: lm.sizeBytes }],
     }));
-  return { kinds: MODEL_KINDS, models: [...locals, ...CATALOG] };
+  // Free-form Hugging Face downloads whose files are all still present — surfaced
+  // so they're browsable + activatable like any installed model (tagged Downloaded).
+  const installedDl = new Set(installedDownloadedIds(dir));
+  const downloaded = readDownloaded(dir)
+    .filter((m) => installedDl.has(m.id))
+    .map((m) => ({ id: m.id, name: m.name, kind: m.kind, org: 'Hugging Face', tags: ['Downloaded'], files: m.files.map((name) => ({ name, url: '' })) }));
+  return { kinds: MODEL_KINDS, models: [...locals, ...downloaded, ...CATALOG] };
 }
 
 /** Catalog ids (plus imported local ids) whose files are fully present on disk. */
@@ -53,7 +60,7 @@ export async function listInstalled(): Promise<string[]> {
   const locals = getLocalModels()
     .filter((lm) => { try { return fs.statSync(path.join(dir, lm.primary)).size > 0; } catch { return false; } })
     .map((lm) => lm.id);
-  return [...locals, ...catalog];
+  return [...locals, ...installedDownloadedIds(dir), ...catalog];
 }
 
 export async function searchModels(query: string, kind?: string): Promise<unknown[]> {
@@ -80,7 +87,8 @@ export function cancelDownload(modelId: string): boolean {
  *  AND a status registry (so a headless poller can read it). */
 export async function downloadModel(modelId: string, onProgress?: ProgressCb): Promise<{ success: boolean; error?: string }> {
   const { CATALOG, resolveHuggingFaceModel } = await import('@offgrid/models');
-  const entry = CATALOG.find((m) => m.id === modelId) ?? (await resolveHuggingFaceModel(modelId));
+  const inCatalog = CATALOG.find((m) => m.id === modelId);
+  const entry = inCatalog ?? (await resolveHuggingFaceModel(modelId));
   if (!entry) return { success: false, error: 'unknown model' };
 
   const dir = llm.getModelsDir();
@@ -157,6 +165,12 @@ export async function downloadModel(modelId: string, onProgress?: ProgressCb): P
       fs.renameSync(partPath, dest);
     }
     if (controller.signal.aborted) { send({ status: 'cancelled' }); return { success: false, error: 'cancelled' }; }
+    // Register a free-form Hugging Face download (not a catalog entry) so it counts
+    // as installed + activatable and its files aren't flagged as "unused". Catalog
+    // models are recognized by CATALOG membership already, so skip them.
+    if (!inCatalog) {
+      recordDownloaded(dir, { id: modelId, name: entry.name ?? modelId, kind: entry.kind, files: entry.files.map((f) => f.name) });
+    }
     send({ percent: 100, status: 'completed' });
     return { success: true };
   } catch (err) {
@@ -206,6 +220,8 @@ export async function deleteModel(modelId: string): Promise<{ success: boolean; 
       try { fs.rmSync(path.join(dir, f.name), { force: true }); freed++; } catch { /* ignore */ }
       try { fs.rmSync(path.join(dir, `${f.name}.part`), { force: true }); } catch { /* ignore */ }
     }
+    // Drop it from the downloaded registry too (no-op for a catalog model).
+    if (findDownloaded(dir, modelId)) removeDownloaded(dir, modelId);
   }
 
   // If this was the active chat model, clear the selection so we don't point at gone files.
@@ -408,6 +424,8 @@ export async function getStorageInfo(): Promise<StorageInfo> {
   CATALOG.forEach((m) => m.files?.forEach((f) => known.add(f.name)));
   // Protect imported local models from being flagged/deleted as orphans.
   localProtectedNames().forEach((n) => known.add(n));
+  // Protect free-form Hugging Face downloads too (else they show as "unused files").
+  downloadedProtectedNames(dir).forEach((n) => known.add(n));
   // Protect the active selections' files from being flagged as orphans.
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(dir, 'active-model.json'), 'utf-8'));
@@ -424,11 +442,19 @@ export async function getStorageInfo(): Promise<StorageInfo> {
   const locals = getLocalModels();
   const installed = await listInstalled();
   const sizeOf = (name: string): number => { try { return fs.statSync(path.join(dir, name)).size; } catch { return 0; } };
+  const downloaded = readDownloaded(dir);
   const models: ModelDiskEntry[] = installed.map((id) => {
     const lm = id.startsWith('local:') ? locals.find((m) => m.id === id) : undefined;
     if (lm) {
       const bytes = [lm.primary, lm.mmproj].filter(Boolean).reduce((s, n) => s + sizeOf(n as string), 0);
       return { id, name: lm.name, kind: 'local', bytes, active: isModelActive({ kind: 'local', id, activeChatId: active, modals }) };
+    }
+    // Free-form HF download: not in CATALOG, so read its files/kind from the registry.
+    const dl = downloaded.find((m) => m.id === id);
+    if (dl && !CATALOG.some((m) => m.id === id)) {
+      const bytes = dl.files.reduce((s, n) => s + sizeOf(n), 0);
+      const primary = dl.files[0];
+      return { id, name: dl.name, kind: dl.kind, bytes, active: isModelActive({ kind: dl.kind, id, primaryFile: primary, activeChatId: active, modals }) };
     }
     const e = CATALOG.find((m) => m.id === id);
     const bytes = (e?.files ?? []).reduce((s, f) => s + sizeOf(f.name), 0);

@@ -350,8 +350,10 @@ export function ModelsScreen() {
             <span className="flex items-center gap-1 text-[11px] text-green-500">
               <IconCircleCheck className="h-3.5 w-3.5" /> Active
             </span>
-          ) : isInstalled && !isHf ? (
+          ) : isInstalled ? (
             // Every installed model is activatable for its type — no kind branch.
+            // Includes a downloaded HF model (registered as installed), so its search
+            // card flips from Download to Use instead of resetting.
             <button onClick={() => useModel(m.id)} disabled={!!switching}
               className="flex items-center gap-1 rounded border border-neutral-700 px-2.5 py-1 text-[10px] text-neutral-300 transition-all duration-150 hover:border-green-500 hover:text-green-400 active:scale-95 disabled:opacity-40">
               {switching === m.id ? <><IconLoader2 className="h-3 w-3 animate-spin" /> Switching</> : 'Use'}
@@ -370,7 +372,7 @@ export function ModelsScreen() {
               <IconDownload className="h-3 w-3" /> Download
             </button>
           )}
-          {(isInstalled && !isHf) && (
+          {isInstalled && (
             <button onClick={() => removeModel(m.id, m.name)} disabled={deleting === m.id || active}
               title={active ? 'Switch to another model before deleting' : 'Delete from disk'}
               className="rounded p-1 text-neutral-700 transition-all duration-150 hover:text-red-400 active:scale-90 disabled:opacity-30 group-hover:text-neutral-500">
