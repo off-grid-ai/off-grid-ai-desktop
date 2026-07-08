@@ -10,6 +10,7 @@ import { SkillsPanel } from './SkillsPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { ModelPicker } from './ModelPicker';
 import { resolveTier, type ImageTier } from '@offgrid/core/shared/image-defaults';
+import { looksLikeImageRequest, cleanImagePrompt } from '@renderer/lib/image-intent';
 import { Button } from '@renderer/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from '@renderer/components/ui/dropdown-menu';
@@ -733,12 +734,19 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     }
 
     // Image-generation mode: render a prompt → image instead of a memory answer.
-    if (mode === 'image') {
+    // Also auto-route when the user clearly asks for an image in chat ("draw a
+    // dog") so they get a picture instead of the text model refusing. Intent
+    // detection only fires in chat mode when an image model is available.
+    const autoImage = mode !== 'image' && imageAvailable && looksLikeImageRequest(trimmed);
+    if (mode === 'image' || autoImage) {
       setImgProgress(null);
       try {
         const seedNum = imgSeed.trim() === '' ? -1 : parseInt(imgSeed, 10);
         const styleObj = STYLE_PRESETS.find(s => s.name === activeStyle);
-        const fullPrompt = styleObj ? `${trimmed}, ${styleObj.prompt}` : trimmed;
+        // In explicit image mode keep the exact prompt (+ any chosen style); on
+        // auto-route strip the "draw/generate an image of" phrasing to the subject.
+        const basePrompt = mode === 'image' ? trimmed : cleanImagePrompt(trimmed);
+        const fullPrompt = styleObj ? `${basePrompt}, ${styleObj.prompt}` : basePrompt;
         const img = await window.api.generateImage({
           prompt: fullPrompt,
           negativePrompt: imgNegative.trim() || undefined,
