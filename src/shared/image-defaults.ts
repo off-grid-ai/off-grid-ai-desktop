@@ -52,31 +52,6 @@ export function standardModelDefaults(baseName: string): StandardModelDefaults {
   return { defaultSize, defaultSteps: 28, defaultCfg: 7, sampler: 'dpm++2m', scheduler: 'discrete', fewStep, isXL };
 }
 
-/** Quality tier the user can pick in the composer. 'fast' is the default (~30s
- *  at 512²); 'quality' renders at the model's native resolution (crisper, but
- *  ~3× slower on an M4). Only meaningful for distilled few-step models — full
- *  models already run at native res. */
-export type ImageTier = 'fast' | 'quality';
-
-export interface TierResolved {
-  width: number;
-  height: number;
-  steps: number;
-}
-
-/** Resolve the size + steps for a model at a given tier. Distilled models get the
- *  fast 512 recipe by default, or their native 1024 in 'quality'; full models
- *  ignore the tier (always native). Steps come from the model recipe (+2 at the
- *  quality tier for the extra resolution's detail). Pure. */
-export function resolveTier(baseName: string, tier: ImageTier): TierResolved {
-  const d = standardModelDefaults(baseName);
-  if (d.fewStep && tier === 'quality') {
-    const size = d.isXL ? 1024 : 768;
-    return { width: size, height: size, steps: d.defaultSteps + 2 };
-  }
-  return { width: d.defaultSize, height: d.defaultSize, steps: d.defaultSteps };
-}
-
 /** The Tiny AutoEncoder (TAESD) filename that matches a checkpoint's family.
  *  TAESD is a tiny drop-in VAE that decodes fast but softens detail and BLANKS at
  *  1024 (it overflows), so it's opt-in only (fast low-res drafts), never the

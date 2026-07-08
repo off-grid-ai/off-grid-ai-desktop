@@ -9,7 +9,7 @@ import { VoiceBubble, stopAllVoicePlayback } from './VoiceBubble';
 import { SkillsPanel } from './SkillsPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { ModelPicker } from './ModelPicker';
-import { resolveTier, type ImageTier } from '@offgrid/core/shared/image-defaults';
+import { standardModelDefaults } from '@offgrid/core/shared/image-defaults';
 import { looksLikeImageRequest, cleanImagePrompt } from '@renderer/lib/image-intent';
 import { Button } from '@renderer/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
@@ -256,9 +256,6 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const [imageAvailable, setImageAvailable] = useState(false);
   const [imgSize, setImgSize] = useState(512);
   const [imgSteps, setImgSteps] = useState(10);
-  // Quality tier: 'fast' (512, ~30s) is the default; 'quality' renders at the
-  // model's native res (crisper, ~3x slower). Drives imgSize/imgSteps below.
-  const [imgTier, setImgTier] = useState<ImageTier>('fast');
   const [imgSeed, setImgSeed] = useState('');
   const [imgNegative, setImgNegative] = useState('');
   const [imgInit, setImgInit] = useState<string | null>(null);
@@ -500,16 +497,16 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     }
   }, [genThumbsBusy, styleThumbs]);
 
-  // Match canvas + steps to the model + quality tier, from the SINGLE shared
-  // source of truth (@offgrid/core/shared/image-defaults) that the main process
-  // also uses — so the two layers can never drift. (A stale copy of this logic
-  // once defaulted turbo models to 4 steps -> rainbow artifacts.)
+  // Seed the size + steps controls with the model's sensible defaults (from the
+  // SINGLE shared source of truth the main process also uses — so the two layers
+  // can never drift; a stale copy of this logic once defaulted turbo models to 4
+  // steps -> rainbow artifacts). The user can then adjust Size/Steps directly.
   useEffect(() => {
     if (!imgModel) return;
-    const { width, steps } = resolveTier(imgModel, imgTier);
-    setImgSize(width);
-    setImgSteps(steps);
-  }, [imgModel, imgTier]);
+    const d = standardModelDefaults(imgModel);
+    setImgSize(d.defaultSize);
+    setImgSteps(d.defaultSteps);
+  }, [imgModel]);
 
   const activeProjectName = projects.find(p => p.id === activeProjectId)?.name ?? null;
 
@@ -1977,22 +1974,6 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
               {/* Image options (image mode, expandable) */}
               {mode === 'image' && showImageOptions && (
                 <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-neutral-800 px-3 py-2 text-[11px] text-neutral-500">
-                  <label className="flex items-center gap-1.5">
-                    Quality
-                    <span className="inline-flex overflow-hidden rounded-md border border-neutral-800">
-                      {(['fast', 'quality'] as const).map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => setImgTier(t)}
-                          className={`px-2 py-1 uppercase tracking-wide transition-all duration-150 active:scale-95 ${imgTier === t ? 'bg-green-500/15 text-green-500' : 'bg-neutral-950 text-neutral-500 hover:text-neutral-300'}`}
-                          title={t === 'fast' ? 'Fast — 512px, ~30s' : 'Quality — native resolution, sharper but ~3x slower'}
-                        >
-                          {t === 'fast' ? 'Fast' : 'Quality'}
-                        </button>
-                      ))}
-                    </span>
-                  </label>
                   {imgModels.length > 1 && (
                     <label className="flex items-center gap-1.5">
                       Model
