@@ -20,9 +20,12 @@ describe('DreamShaper quant catalog entries', () => {
     expect(full.files[0].name).toMatch(/Q8/i);
     expect(light.files[0].name).toMatch(/Q4/i);
   });
-  it('tags the light quant Light (and both Versatile+Fast)', () => {
+  it("tags the light quant Fast+Light; the full Q8 is Versatile but NOT Fast", () => {
+    // 'Fast' is reserved for the distilled Light (Q4) variant — few-step AND
+    // memory-safe on 16GB. The full Q8 freezes 16GB machines, so it's not 'Fast'.
     expect(light.tags).toEqual(expect.arrayContaining(['Versatile', 'Fast', 'Light']));
-    expect(full.tags).toEqual(expect.arrayContaining(['Versatile', 'Fast']));
+    expect(full.tags).toContain('Versatile');
+    expect(full.tags).not.toContain('Fast');
     expect(full.tags).not.toContain('Light');
   });
   it('the light quant is smaller on disk', () => {

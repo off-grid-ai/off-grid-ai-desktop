@@ -356,7 +356,9 @@ var CATALOG = [
     id: "offgrid-ai/realvisxl-v5.0-lightning-GGUF",
     name: "RealVisXL v5.0 Lightning (photoreal)",
     kind: "image",
-    tags: ["Fast", "Photoreal"],
+    // Full Q8: few-step, but ~4.2GB pegs a 16GB Mac — 'Fast' is reserved for the
+    // Light (Q4) sibling that's both few-step AND memory-safe.
+    tags: ["Photoreal"],
     org: "RealVis",
     description: "Photoreal SDXL, few-step (fast) \u2014 Off Grid GGUF build of SG161222/RealVisXL_V5.0_Lightning.",
     minRamGb: 8,
@@ -383,7 +385,9 @@ var CATALOG = [
     id: "offgrid-ai/dreamshaper-xl-v2-turbo-GGUF",
     name: "DreamShaper XL v2 Turbo (versatile)",
     kind: "image",
-    tags: ["Versatile", "Fast"],
+    // Full Q8: few-step, but ~4.2GB pegs a 16GB Mac — 'Fast' is reserved for the
+    // Light (Q4) sibling that's both few-step AND memory-safe.
+    tags: ["Versatile"],
     org: "Lykon",
     description: "The all-rounder \u2014 photoreal, art, fantasy, 3D. Off Grid GGUF build of Lykon/dreamshaper-xl-v2-turbo. Full Q8 quant (best quality); best on 24GB+ RAM.",
     minRamGb: 8,
