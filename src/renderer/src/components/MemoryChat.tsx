@@ -269,6 +269,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const [styleThumbs, setStyleThumbs] = useState<Record<string, string>>({});
   const [genThumbsBusy, setGenThumbsBusy] = useState(false);
   const [imgProgress, setImgProgress] = useState<{ step: number; total: number; secPerStep: number; preview?: string; phase?: 'sampling' | 'decoding' } | null>(null);
+  // True while an image is generating (explicit image mode OR an auto-routed chat
+  // request like "draw a dog"), so the image progress/warm-up UI shows even when
+  // the global mode is still 'ask'.
+  const [generatingImage, setGeneratingImage] = useState(false);
   const [projects, setProjects] = useState<ProjectLite[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   // Captured-memory context is a Pro ("remembers") feature; core chats are plain
@@ -740,6 +744,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     const autoImage = mode !== 'image' && imageAvailable && looksLikeImageRequest(trimmed);
     if (mode === 'image' || autoImage) {
       setImgProgress(null);
+      setGeneratingImage(true);
       try {
         const seedNum = imgSeed.trim() === '' ? -1 : parseInt(imgSeed, 10);
         const styleObj = STYLE_PRESETS.find(s => s.name === activeStyle);
@@ -785,6 +790,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         markGenerating(convId, false);
         setLoading(false);
         setImgProgress(null);
+        setGeneratingImage(false);
         await loadConversations();
         drainQueue(convId);
       }
@@ -1917,7 +1923,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                 {!!activeConversationId && generatingConvs.has(activeConversationId) && !messages.some(m => m.streaming) ? (
                   <div className="mb-5 flex flex-col items-start">
                     <div className="mb-1 text-[10px] uppercase tracking-wider text-neutral-600">Off Grid</div>
-                    {mode === 'image' ? (
+                    {mode === 'image' || generatingImage ? (
                       <div className="rounded-md border border-neutral-800 bg-neutral-900/40 p-3">
                         {imgProgress?.preview ? (
                           <img src={imgProgress.preview} alt="forming" className="mb-2 w-56 rounded-md border border-neutral-800" />
@@ -2368,7 +2374,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                         <TooltipContent>Stop generating</TooltipContent>
                       </Tooltip>
                     )}
-                    {loading && mode === 'image' ? (
+                    {loading && (mode === 'image' || generatingImage) ? (
                       <Button type="button" variant="outline" onClick={() => window.api.cancelImageGen?.()} className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10">
                         <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
                         Stop
