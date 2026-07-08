@@ -1993,7 +1993,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   </label>
                   <label className="flex items-center gap-1.5">
                     Steps
-                    <input type="number" min={4} max={50} value={imgSteps} onChange={e => setImgSteps(Math.max(4, Math.min(50, Number(e.target.value) || 16)))} className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500" />
+                    <input type="number" min={4} max={50} value={imgSteps} onChange={e => setImgSteps(Math.max(4, Math.min(50, Number(e.target.value) || 16)))} className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
                   </label>
                   <label className="flex items-center gap-1.5">
                     Seed
