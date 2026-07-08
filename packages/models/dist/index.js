@@ -253,7 +253,7 @@ var CATALOG = [
     id: "leejet/Z-Image-Turbo-GGUF",
     name: "Z-Image Turbo (2026)",
     kind: "image",
-    tags: ["Recommended", "2026", "Fast", "Top quality"],
+    tags: ["Recommended", "2026", "Top quality"],
     org: "Alibaba Tongyi",
     description: "Flagship 2026 model \u2014 1024px in ~8 steps, top quality-per-byte, strong bilingual text. Apache-2.0. (diffusion + Qwen3 encoder + VAE)",
     minRamGb: 12,

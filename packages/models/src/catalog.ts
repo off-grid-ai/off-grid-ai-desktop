@@ -207,7 +207,11 @@ export const CATALOG: ModelEntry[] = [
     id: 'leejet/Z-Image-Turbo-GGUF',
     name: 'Z-Image Turbo (2026)',
     kind: 'image',
-    tags: ['Recommended', '2026', 'Fast', 'Top quality'],
+    // NOT tagged 'Fast': despite the "Turbo" name this is a FLUX-class diffusion
+    // transformer (DiT + Qwen3-4B text encoder + FLUX VAE) — heavy and slow on
+    // Apple Silicon via ggml, not a few-step SDXL distill. 'Fast' is reserved for
+    // models verified fast on-device (dreamshaper-turbo, realvis-lightning).
+    tags: ['Recommended', '2026', 'Top quality'],
     org: 'Alibaba Tongyi',
     description: 'Flagship 2026 model — 1024px in ~8 steps, top quality-per-byte, strong bilingual text. Apache-2.0. (diffusion + Qwen3 encoder + VAE)',
     minRamGb: 12,
