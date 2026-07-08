@@ -1985,6 +1985,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   <label className="flex items-center gap-1.5">
                     Size
                     <select value={imgSize} onChange={e => setImgSize(Number(e.target.value))} className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500">
+                      <option value={256}>256</option>
                       <option value={512}>512</option>
                       <option value={640}>640</option>
                       <option value={768}>768</option>
@@ -2301,17 +2302,27 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                     </TooltipTrigger>
                     <TooltipContent>{thinkingEnabled ? 'Reasoning on — the model thinks step by step (slower)' : 'Reasoning off — direct answers (faster)'}</TooltipContent>
                   </Tooltip>
-                  {mode === 'image' && (
-                    <>
-                      {/* Active image-mode pill — click the × to drop back to chat. */}
-                      <Button type="button" variant="outline" size="sm" onClick={() => { setMode('ask'); setShowImageOptions(false); }} title="Back to chat" className="h-8 gap-1.5 rounded-full border-green-500 text-primary">
+                  {/* Image toggle — always available; turning it on makes the next
+                      prompt generate an image instead of a chat reply. */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { const on = mode !== 'image'; setMode(on ? 'image' : 'ask'); if (!on) setShowImageOptions(false); }}
+                        className={`h-8 gap-1.5 rounded-full ${mode === 'image' ? 'border-green-500 text-primary' : 'text-neutral-400'}`}
+                      >
                         <Sparkles className="h-3.5 w-3.5" /> Image
-                        <X className="h-3.5 w-3.5 opacity-70" />
+                        {mode === 'image' && <X className="h-3.5 w-3.5 opacity-70" />}
                       </Button>
-                      <Button type="button" variant="outline" size="sm" onClick={() => setShowImageOptions(o => !o)} className={`h-8 gap-1.5 rounded-full ${showImageOptions ? 'text-primary' : ''}`}>
-                        <SlidersHorizontal className="h-3.5 w-3.5" /> Image options
-                      </Button>
-                    </>
+                    </TooltipTrigger>
+                    <TooltipContent>{mode === 'image' ? 'Image mode on — your prompt generates an image (click to return to chat)' : 'Generate an image from your prompt'}</TooltipContent>
+                  </Tooltip>
+                  {mode === 'image' && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setShowImageOptions(o => !o)} className={`h-8 gap-1.5 rounded-full ${showImageOptions ? 'text-primary' : ''}`}>
+                      <SlidersHorizontal className="h-3.5 w-3.5" /> Image options
+                    </Button>
                   )}
                   {queuedCount(queuedByConv, activeConversationId) > 0 && (
                     <span className="flex h-8 items-center rounded-full border border-neutral-800 px-2.5 text-[11px] text-neutral-400">
