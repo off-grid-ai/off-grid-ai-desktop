@@ -12,7 +12,7 @@ import { isMfluxModelId, mfluxAvailable, getMfluxModel, runMflux, cancelMflux, M
 import { getActiveModal } from './active-models';
 import { binRoots, dataDir, modelsDir } from './runtime-env';
 import { sdServer } from './sd-server';
-import { standardModelDefaults, taesdFilename } from './image-defaults';
+import { standardModelDefaults, taesdFilename } from '../shared/image-defaults';
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {

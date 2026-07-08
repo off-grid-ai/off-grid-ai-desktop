@@ -8,7 +8,7 @@
  * few-step sigmas and smears the output.
  */
 import { describe, it, expect } from 'vitest';
-import { standardModelDefaults, taesdFilename } from '../image-defaults';
+import { standardModelDefaults, taesdFilename, resolveTier } from '../../shared/image-defaults';
 
 describe('standardModelDefaults', () => {
   it('keeps full SDXL (animagine) at high quality: 1024, 28 steps, real CFG, discrete schedule', () => {
@@ -61,5 +61,23 @@ describe('taesdFilename', () => {
   });
   it('uses the base decoder for SD1.5 / non-XL models', () => {
     expect(taesdFilename('dreamshaper_8.safetensors')).toBe('taesd.safetensors');
+  });
+});
+
+describe('resolveTier', () => {
+  const TURBO = 'dreamshaper-xl-v2-turbo-Q8_0.gguf';
+
+  it('fast tier: distilled model at 512 / 10 steps (the ~30s recipe)', () => {
+    expect(resolveTier(TURBO, 'fast')).toEqual({ width: 512, height: 512, steps: 10 });
+  });
+
+  it('quality tier: distilled XL model at native 1024 with +2 steps', () => {
+    expect(resolveTier(TURBO, 'quality')).toEqual({ width: 1024, height: 1024, steps: 12 });
+  });
+
+  it('full (non-distilled) models ignore the tier — always native res / full steps', () => {
+    const full = 'juggernaut-xl-v9-Q8_0.gguf';
+    expect(resolveTier(full, 'fast')).toEqual({ width: 1024, height: 1024, steps: 28 });
+    expect(resolveTier(full, 'quality')).toEqual({ width: 1024, height: 1024, steps: 28 });
   });
 });
