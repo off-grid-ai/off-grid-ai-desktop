@@ -56,6 +56,8 @@ export interface SdGenRequest {
    *  per step) — the fast, few-step turbo/lightning config. */
   cfgScale?: number;
   sampleMethod?: string;
+  /** Denoiser sigma schedule (e.g. 'karras'). Essential for crisp few-step output. */
+  scheduler?: string;
 }
 
 /** Build the sd-server launch argv (context/model args only; generation params
@@ -84,9 +86,10 @@ export function buildImgGenRequest(req: SdGenRequest): Record<string, unknown> {
     width: req.width ?? 512,
     height: req.height ?? 512,
     sample_params: {
-      sample_steps: req.steps ?? 4,
-      sample_method: req.sampleMethod ?? 'euler',
-      guidance: { txt_cfg: req.cfgScale ?? 1.0 },
+      sample_steps: req.steps ?? 8,
+      sample_method: req.sampleMethod ?? 'dpm++2m',
+      scheduler: req.scheduler ?? 'karras',
+      guidance: { txt_cfg: req.cfgScale ?? 2.0 },
     },
   };
   if (typeof req.seed === 'number' && req.seed >= 0) body.seed = req.seed;

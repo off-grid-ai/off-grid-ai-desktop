@@ -5,21 +5,28 @@
 // sd-cli path in imagegen.ts. Keeping it in one place stops the two paths from
 // drifting apart (e.g. one defaulting SDXL to 1024 while the other uses 768).
 //
-// The defaults encode the quality/speed tradeoff learned per model family:
-// distilled few-step models (SDXL-Lightning, *-Turbo) look great at ~4 steps
-// with cfg≈1 and euler; full (non-distilled) checkpoints need ~28 steps and real
-// CFG for quality — dropping their step count wrecks the image.
+// The defaults encode the quality/speed tradeoff measured on an M4:
+// - Distilled few-step models (SDXL-Lightning, *-Turbo, DMD2) render 5-star at
+//   8 steps / cfg 2 IF the KARRAS sigma schedule is used. The default `discrete`
+//   schedule undercooks few-step sigmas → smeared/painterly output (this was the
+//   single biggest quality bug). 4 steps is too few (rainbow artifacts); 8 is the
+//   crisp floor. At 512² this is ~12s warm on the persistent server.
+// - Full (non-distilled) checkpoints need ~28 steps + real CFG for quality;
+//   dropping their step count wrecks the image, and they're fine on `discrete`.
 
 export interface StandardModelDefaults {
-  /** Default square size (px). SDXL is trained at 1024; distilled/SD1.5 smaller. */
+  /** Default square size (px). Distilled fast-path is 512; full XL stays 1024. */
   defaultSize: number;
   /** Denoising steps. Full checkpoints need many; distilled models are few-step. */
   defaultSteps: number;
-  /** Classifier-free guidance scale. 1.0 = CFG off (fast, for distilled models). */
+  /** Classifier-free guidance scale. */
   defaultCfg: number;
   /** Sampling method. */
   sampler: string;
-  /** Whether this is a distilled few-step model (Lightning/Turbo). */
+  /** Denoiser sigma schedule. KARRAS is essential for crisp few-step output;
+   *  full models use the engine default (discrete). */
+  scheduler: string;
+  /** Whether this is a distilled few-step model (Lightning/Turbo/DMD2). */
   fewStep: boolean;
   /** Whether this is an SDXL-family model (larger native resolution). */
   isXL: boolean;
@@ -29,19 +36,17 @@ export interface StandardModelDefaults {
 export function standardModelDefaults(baseName: string): StandardModelDefaults {
   const base = baseName;
   const isLightning = /lightning/i.test(base);
-  const isTurbo = /turbo/i.test(base);
+  const isTurbo = /turbo|dmd2?|hyper/i.test(base);
   const isXL = /sdxl|xl/i.test(base) || isLightning;
   const isV2 = /v2-1|v2\.1/i.test(base);
   const fewStep = isLightning || isTurbo;
-  // A model can name its own step budget (e.g. "…-8step.gguf").
-  const nameStepMatch = base.match(/(\d+)\s*step/i);
-  // SDXL-Lightning's sweet spot is 768 (great quality, freeze-safe); full XL
-  // stays at 1024 where the detail pays off; turbo/SD1.5 default to 512.
-  const defaultSize = isTurbo ? 512 : isLightning ? 768 : isXL ? 1024 : isV2 ? 768 : 512;
-  const defaultSteps = isTurbo ? 4 : isLightning ? (nameStepMatch ? parseInt(nameStepMatch[1], 10) : 4) : 28;
-  const defaultCfg = fewStep ? 1.0 : 7;
-  const sampler = fewStep ? 'euler' : 'dpm++2m';
-  return { defaultSize, defaultSteps, defaultCfg, sampler, fewStep, isXL };
+  if (fewStep) {
+    // Proven crisp+fast config: 8 steps, cfg 2, dpm++2m, KARRAS, 512².
+    return { defaultSize: 512, defaultSteps: 8, defaultCfg: 2, sampler: 'dpm++2m', scheduler: 'karras', fewStep, isXL };
+  }
+  // Full (non-distilled) checkpoints: many steps, real CFG, engine-default schedule.
+  const defaultSize = isXL ? 1024 : isV2 ? 768 : 512;
+  return { defaultSize, defaultSteps: 28, defaultCfg: 7, sampler: 'dpm++2m', scheduler: 'discrete', fewStep, isXL };
 }
 
 /** The Tiny AutoEncoder (TAESD) filename that matches a checkpoint's family.

@@ -529,7 +529,10 @@ export async function generateImage(
     sdServer.setEvictionHook(() => { try { llm.resume(); } catch { /* ignore */ } });
     try { llm.pause(); } catch { /* ignore */ }
     await new Promise((r) => setTimeout(r, 2500));
-    const taesd = params.fastVae ? resolveTaesd(base) : null;
+    // taesd defaults ON for distilled models (sub-second decode, quality parity
+    // with the full VAE once the KARRAS schedule is used); off for full models
+    // (preserve full-VAE fidelity). Caller can force either way via params.fastVae.
+    const taesd = (params.fastVae ?? d.fewStep) ? resolveTaesd(base) : null;
     try {
       await sdServer.ensureUp({ modelPath: model, diffusionFa: true, taesdPath: taesd ?? undefined, threads: Math.max(1, os.cpus().length - 2) });
       const { png, seed: usedSeed } = await sdServer.generate(
@@ -542,6 +545,7 @@ export async function generateImage(
           seed,
           cfgScale: params.cfgScale ?? d.defaultCfg,
           sampleMethod: d.sampler,
+          scheduler: d.scheduler,
         },
         (p) => onProgress?.({ step: p.step, total: p.total, secPerStep: 0, phase: 'sampling' }),
       );
@@ -607,10 +611,10 @@ export async function generateImage(
     ];
   } else {
     // Per-model defaults (shared with the persistent-server path above via the
-    // single-source-of-truth helper). Distilled few-step models (SDXL-Lightning,
-    // *-Turbo) need very low steps, cfg≈1 and euler — ~7× faster at near-SDXL
-    // quality; full checkpoints need ~28 steps + real CFG.
-    const { defaultSize, defaultSteps, defaultCfg, sampler, isXL } = standardModelDefaults(base);
+    // single-source-of-truth helper). Distilled few-step models need ~8 steps,
+    // cfg 2 and the KARRAS schedule for crisp output; full checkpoints need ~28
+    // steps + real CFG on the engine-default schedule.
+    const { defaultSize, defaultSteps, defaultCfg, sampler, scheduler, fewStep, isXL } = standardModelDefaults(base);
     // Full checkpoint → load with -m. UNET-only quant → load the diffusion model
     // separately and supply SDXL CLIP-L/CLIP-G + VAE; if those companions aren't
     // installed, fail with a clear message instead of the cryptic sd.cpp abort.
@@ -646,6 +650,7 @@ export async function generateImage(
       '--steps', String(params.steps ?? defaultSteps),
       '--cfg-scale', String(params.cfgScale ?? defaultCfg),
       '--sampling-method', sampler,
+      '--scheduler', scheduler,
       '--diffusion-fa',
       '-t', threads,
       '-s', String(seed),
@@ -656,9 +661,10 @@ export async function generateImage(
     // pass — exactly what our freeze-safe 768 thumbnail batch skipped.
     const effW = params.width ?? defaultSize;
     const effH = params.height ?? defaultSize;
-    // TAESD decode (opt-in): swaps the slow full-VAE decode for the tiny one. When
-    // present it makes VAE-tiling moot (taesd is already cheap), so prefer it.
-    const cliTaesd = params.fastVae ? resolveTaesd(base) : null;
+    // TAESD decode: defaults ON for distilled models (fast, quality parity under
+    // KARRAS), OFF for full models (keep full-VAE fidelity); caller can override.
+    // When present it makes VAE-tiling moot (taesd is already cheap), so prefer it.
+    const cliTaesd = (params.fastVae ?? fewStep) ? resolveTaesd(base) : null;
     if (cliTaesd) args.push('--taesd', cliTaesd);
     else if (isXL && Math.max(effW, effH) > 768) args.push('--vae-tiling');
     args.push('-n', params.negativePrompt?.trim() || DEFAULT_NEGATIVE);

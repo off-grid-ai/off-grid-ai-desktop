@@ -49,24 +49,27 @@ describe('contextKey', () => {
 });
 
 describe('buildImgGenRequest', () => {
-  it('nests steps/method/guidance under sample_params (NOT top-level)', () => {
-    const body = buildImgGenRequest({ prompt: 'a cat', width: 512, height: 512, steps: 4, cfgScale: 1, sampleMethod: 'euler' });
+  it('nests steps/method/scheduler/guidance under sample_params (NOT top-level)', () => {
+    const body = buildImgGenRequest({ prompt: 'a cat', width: 512, height: 512, steps: 8, cfgScale: 2, sampleMethod: 'dpm++2m', scheduler: 'karras' });
     expect(body).not.toHaveProperty('sample_steps');
     const sp = body.sample_params as Record<string, unknown>;
-    expect(sp.sample_steps).toBe(4);
-    expect(sp.sample_method).toBe('euler');
-    expect(sp.guidance).toEqual({ txt_cfg: 1 });
+    expect(sp.sample_steps).toBe(8);
+    expect(sp.sample_method).toBe('dpm++2m');
+    expect(sp.scheduler).toBe('karras');
+    expect(sp.guidance).toEqual({ txt_cfg: 2 });
     expect(body.width).toBe(512);
     expect(body.prompt).toBe('a cat');
   });
 
-  it('applies fast defaults (512, 4 steps, euler, cfg 1) when unspecified', () => {
+  it('applies the crisp fast defaults (512, 8 steps, dpm++2m, KARRAS, cfg 2) when unspecified', () => {
     const body = buildImgGenRequest({ prompt: 'x' });
     expect(body.width).toBe(512);
     expect(body.height).toBe(512);
     const sp = body.sample_params as Record<string, unknown>;
-    expect(sp.sample_steps).toBe(4);
-    expect(sp.guidance).toEqual({ txt_cfg: 1 });
+    expect(sp.sample_steps).toBe(8);
+    expect(sp.sample_method).toBe('dpm++2m');
+    expect(sp.scheduler).toBe('karras');
+    expect(sp.guidance).toEqual({ txt_cfg: 2 });
   });
 
   it('sends a concrete seed, but omits it when -1 (random)', () => {
