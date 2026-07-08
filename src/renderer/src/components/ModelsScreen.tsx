@@ -94,9 +94,13 @@ function fmtReleaseDate(iso?: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
 
-function featureRank(m: { id?: string; credibility?: string }): number {
+function featureRank(m: { id?: string; credibility?: string; tags?: string[] }): number {
+  // Distilled few-step models (tagged "Fast" in the catalog) render in ~30s vs
+  // ~100s for the non-distilled ones, so surface them first. Then our own org's
+  // models, then everything else.
+  if (m.tags?.some((t) => /^fast/i.test(t))) return 0;
   if (m.credibility !== 'offgrid') return 2;
-  return /realvis|juggernaut|dreamshaper/i.test(m.id || '') ? 0 : 1;
+  return 1;
 }
 
 const MODE_LABELS: Record<string, string> = { txt2img: 'Text→Image', img2img: 'Image→Image' };
@@ -290,9 +294,14 @@ export function ModelsScreen() {
         {/* Badges row */}
         {(tags.length > 0 || fit !== 'ok') && (
           <div className="flex flex-wrap items-center gap-1">
-            {tags.map((t) => (
-              <span key={t} className={`rounded-sm px-1 py-px text-[8px] uppercase tracking-wide ${/challenger/i.test(t) ? 'text-amber-400' : 'bg-neutral-800 text-neutral-500'}`}>{t}</span>
-            ))}
+            {tags.map((t) => {
+              // "Fast" = distilled few-step model (~30s vs ~100s) — highlight in
+              // the emerald brand accent so it reads as the recommended quick pick.
+              const isFast = /^fast/i.test(t);
+              return (
+                <span key={t} className={`rounded-sm px-1 py-px text-[8px] uppercase tracking-wide ${isFast ? 'border border-green-500/60 text-green-500' : /challenger/i.test(t) ? 'text-amber-400' : 'bg-neutral-800 text-neutral-500'}`}>{t}</span>
+              );
+            })}
             {fit !== 'ok' && (
               <span className={`rounded-sm px-1.5 py-px text-[8px] uppercase tracking-wide ${fit === 'tight' ? 'border border-amber-400/60 text-amber-400' : 'border border-amber-400/60 bg-amber-400/10 text-amber-400'}`}>
                 {fit === 'tight' ? 'Tight on RAM' : 'May not fit'}
