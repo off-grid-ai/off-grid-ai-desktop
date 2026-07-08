@@ -1,30 +1,17 @@
 // Dictation overlay renderer (#dictation hash route). Free-tier / open-core feature.
 // Runs in the small, non-focusable always-on-top window. Owns the mic capture pipeline:
-// getUserMedia → AudioWorklet (raw Float32 PCM) → batched chunks streamed to main,
-// plus a live RMS level meter, an elapsed timer, and the interim transcript.
+// getUserMedia → MediaRecorder (webm/opus) → on stop, the whole recording ships to
+// main as one blob, plus a live RMS level meter and an elapsed timer.
+//
+// Why MediaRecorder and NOT a raw-PCM AudioWorklet: the browser writes the correct
+// sample rate + timing into the container, so nothing can be mislabeled/stretched
+// (the AudioWorklet path shipped a 2x-slow "slow-mo" bug). Main runs ONE ffmpeg
+// pass (container → 16 kHz mono) for whisper. The AudioContext here drives ONLY the
+// level meter (an AnalyserNode) — it never touches the recorded audio.
 
 import { useEffect, useRef, useState } from 'react';
 import { Microphone, Square } from '@phosphor-icons/react';
 import { voice } from '@renderer/lib/voiceApi';
-
-// Inline AudioWorklet: posts each input frame (Float32) at the device's NATIVE
-// rate back to the main thread. We deliberately do NOT downsample here — naive
-// in-worklet decimation has no anti-aliasing filter and shreds ASR accuracy. Main
-// resamples to 16 kHz with ffmpeg (proper anti-alias filter). The renderer reports
-// the honest ctx.sampleRate, so nothing is mislabeled/stretched.
-const WORKLET_SRC = `
-class PCMWorklet extends AudioWorkletProcessor {
-  process(inputs) {
-    const ch = inputs[0] && inputs[0][0];
-    if (ch && ch.length) this.port.postMessage(ch.slice(0));
-    return true;
-  }
-}
-registerProcessor('pcm-worklet', PCMWorklet);
-`;
-
-const TARGET_RATE = 16000;
-const FLUSH_SAMPLES = TARGET_RATE / 4; // ~250 ms batches
 
 type Phase = 'recording' | 'transcribing';
 
@@ -40,12 +27,16 @@ export function DictationOverlay(): React.JSX.Element | null {
 
   const ctxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const pendingRef = useRef<number[]>([]);
-  const rateRef = useRef(TARGET_RATE);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const blobsRef = useRef<Blob[]>([]);
+  const rafRef = useRef<number | null>(null);
   const startRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const errorHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
+  // True while a live-interim request is in flight — the next timeslice waits for it,
+  // so we never queue up overlapping interim passes (self-pacing).
+  const interimBusyRef = useRef(false);
 
   useEffect(() => {
     const el = transcriptRef.current;
@@ -54,57 +45,90 @@ export function DictationOverlay(): React.JSX.Element | null {
 
   async function startCapture(): Promise<void> {
     const v = voice();
-    if (!v || ctxRef.current) return;
+    if (!v || streamRef.current) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       streamRef.current = stream;
-      // Native context rate — do NOT force { sampleRate: 16000 } (Electron/Chromium
-      // can then report 16000 while delivering native-rate frames, the bug that
-      // stretched recordings 2-3x). The worklet downsamples whatever the device
-      // gives to a fixed 16 kHz, so we ALWAYS stream + label 16 kHz downstream.
+
+      // Capture with MediaRecorder — the browser owns the encode and writes correct
+      // rate/timing into the webm/opus container, so the recording can't be
+      // mislabeled or time-stretched. A 1s timeslice emits chunks as we go: on stop
+      // we ship the whole blob for the final pass, and between ticks we ship the
+      // growing recording-so-far for a live-interim transcript on screen.
+      blobsRef.current = [];
+      interimBusyRef.current = false;
+      const rec = new MediaRecorder(stream);
+      recorderRef.current = rec;
+      rec.ondataavailable = (e) => {
+        if (!e.data || e.data.size === 0) return;
+        blobsRef.current.push(e.data);
+        // Live interim: transcribe the recording-so-far. Self-paced — skip while a
+        // previous interim is still running (never pile up / hammer the machine).
+        if (interimBusyRef.current || rec.state !== 'recording') return;
+        interimBusyRef.current = true;
+        const type = rec.mimeType || 'audio/webm';
+        const soFar = new Blob(blobsRef.current, { type });
+        void soFar
+          .arrayBuffer()
+          .then((buf) => v.sendInterimAudio(buf, type))
+          .then((text) => { if (text) setInterim(text); })
+          .catch(() => { /* interim is best-effort */ })
+          .finally(() => { interimBusyRef.current = false; });
+      };
+      rec.onstop = () => {
+        const type = rec.mimeType || 'audio/webm';
+        const blob = new Blob(blobsRef.current, { type });
+        blobsRef.current = [];
+        void blob.arrayBuffer().then((buf) => v.sendAudio(buf, type)).finally(() => teardownStream());
+      };
+      rec.start(1000); // 1s timeslices → ondataavailable every ~1s
+
+      // Level meter ONLY — an AnalyserNode on the same stream drives the VU bars.
+      // Kept entirely separate from the recorder; it never touches recorded audio.
       const ctx = new AudioContext();
       ctxRef.current = ctx;
-      const blob = new Blob([WORKLET_SRC], { type: 'application/javascript' });
-      const url = URL.createObjectURL(blob);
-      await ctx.audioWorklet.addModule(url);
-      URL.revokeObjectURL(url);
-
-      const src = ctx.createMediaStreamSource(stream);
-      const node = new AudioWorkletNode(ctx, 'pcm-worklet');
-      // Report the HONEST native context rate (forced-16k removed, so it no longer
-      // lies). Main ffmpeg-resamples to 16k with a proper anti-alias filter.
-      const rate = ctx.sampleRate;
-      rateRef.current = rate;
-      node.port.onmessage = (e: MessageEvent<Float32Array>) => {
-        const frame = e.data;
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const buf = new Uint8Array(analyser.fftSize);
+      const tick = (): void => {
+        analyser.getByteTimeDomainData(buf);
         let sum = 0;
-        for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
-        setLevel(Math.min(1, Math.sqrt(sum / frame.length) * 6));
-        const pend = pendingRef.current;
-        for (let i = 0; i < frame.length; i++) pend.push(frame[i]);
-        if (pend.length >= FLUSH_SAMPLES) {
-          const batch = new Float32Array(pend.splice(0, pend.length));
-          void v.sendChunk(batch, rate);
-        }
+        for (let i = 0; i < buf.length; i++) { const x = (buf[i] - 128) / 128; sum += x * x; }
+        setLevel(Math.min(1, Math.sqrt(sum / buf.length) * 6));
+        rafRef.current = requestAnimationFrame(tick);
       };
-      src.connect(node);
-      node.connect(ctx.destination);
+      rafRef.current = requestAnimationFrame(tick);
     } catch (e) {
       stopCapture();
       setError(e instanceof Error ? e.message : 'Microphone unavailable');
     }
   }
 
-  function stopCapture(): void {
+  /** Stop the mic tracks + meter (called after the blob is shipped, and as a
+   *  safety net on teardown). Idempotent. */
+  function teardownStream(): void {
     try {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
       void ctxRef.current?.close();
     } catch { /* ignore */ }
+    rafRef.current = null;
     streamRef.current = null;
     ctxRef.current = null;
-    pendingRef.current = [];
+  }
+
+  /** Stop everything. If the recorder is still running, stop() fires onstop which
+   *  ships the blob and then tears down; otherwise tear down directly. */
+  function stopCapture(): void {
+    const rec = recorderRef.current;
+    recorderRef.current = null;
+    if (rec && rec.state !== 'inactive') {
+      try { rec.stop(); return; } catch { /* fall through to teardown */ }
+    }
+    teardownStream();
   }
 
   useEffect(() => {
@@ -129,8 +153,8 @@ export function DictationOverlay(): React.JSX.Element | null {
       v.on('interim', (text) => setInterim(String(text ?? ''))),
       v.on('end', () => {
         setPhase('transcribing');
-        const pend = pendingRef.current;
-        if (pend.length) { void v.sendChunk(new Float32Array(pend.splice(0, pend.length)), rateRef.current); }
+        // Stop the recorder — its onstop ships the complete blob to main, then
+        // tears down the stream. (No PCM to flush; the container holds it all.)
         stopCapture();
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       }),
