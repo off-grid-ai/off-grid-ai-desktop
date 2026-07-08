@@ -6,7 +6,7 @@
 import type { ModelEntry, ModelKind, ModelRecommendationTier } from './types';
 
 const HF = 'https://huggingface.co';
-const resolve = (repo: string, file: string) => `${HF}/${repo}/resolve/main/${file}`;
+const resolve = (repo: string, file: string): string => `${HF}/${repo}/resolve/main/${file}`;
 
 // RAM tier -> max LLM size + quant (ported from mobile MODEL_RECOMMENDATIONS).
 export const RECOMMENDATION_TIERS: ModelRecommendationTier[] = [
@@ -459,6 +459,43 @@ export const CATALOG: ModelEntry[] = [
     description: 'Highest accuracy (large); needs more RAM',
     minRamGb: 8,
     files: [{ name: 'ggml-large-v3.bin', url: resolve('ggerganov/whisper.cpp', 'ggml-large-v3.bin'), role: 'primary', sizeBytes: 3095000000 }],
+  },
+  // --- transcription (Parakeet, NVIDIA NeMo) — sherpa-onnx offline transducer (ONNX).
+  // A model is 4 files (encoder/decoder/joiner/tokens); on-disk names are slug-prefixed
+  // so multiple Parakeet models coexist in the flat models dir without colliding. Higher
+  // accuracy than whisper; served by the bundled sherpa-onnx CLI (engine: 'parakeet'). ---
+  {
+    id: 'csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8',
+    name: 'Parakeet TDT 0.6B v2',
+    kind: 'transcription',
+    engine: 'parakeet',
+    org: 'nvidia',
+    description: 'High-accuracy English STT (int8) - tops the open ASR leaderboard',
+    minRamGb: 4,
+    tags: ['Accurate', 'English'],
+    files: [
+      { name: 'parakeet-v2.encoder.int8.onnx', url: resolve('csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8', 'encoder.int8.onnx'), role: 'primary', sizeBytes: 652000000 },
+      { name: 'parakeet-v2.decoder.int8.onnx', url: resolve('csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8', 'decoder.int8.onnx'), role: 'aux', sizeBytes: 7260000 },
+      { name: 'parakeet-v2.joiner.int8.onnx', url: resolve('csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8', 'joiner.int8.onnx'), role: 'aux', sizeBytes: 1740000 },
+      { name: 'parakeet-v2.tokens.txt', url: resolve('csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8', 'tokens.txt'), role: 'tokenizer', sizeBytes: 9600 },
+    ],
+  },
+  {
+    id: 'csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8',
+    name: 'Parakeet TDT 0.6B v3',
+    kind: 'transcription',
+    engine: 'parakeet',
+    org: 'nvidia',
+    description: 'Multilingual STT (int8) - 25 European languages',
+    minRamGb: 4,
+    isNew: true,
+    tags: ['Accurate', 'Multilingual'],
+    files: [
+      { name: 'parakeet-v3.encoder.int8.onnx', url: resolve('csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8', 'encoder.int8.onnx'), role: 'primary', sizeBytes: 652000000 },
+      { name: 'parakeet-v3.decoder.int8.onnx', url: resolve('csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8', 'decoder.int8.onnx'), role: 'aux', sizeBytes: 7260000 },
+      { name: 'parakeet-v3.joiner.int8.onnx', url: resolve('csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8', 'joiner.int8.onnx'), role: 'aux', sizeBytes: 1740000 },
+      { name: 'parakeet-v3.tokens.txt', url: resolve('csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8', 'tokens.txt'), role: 'tokenizer', sizeBytes: 9600 },
+    ],
   },
 ];
 
