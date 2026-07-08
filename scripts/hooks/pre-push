@@ -16,3 +16,11 @@ if ! npm run --silent test:coverage; then
   exit 1
 fi
 echo "[pre-push] coverage gate passed."
+
+# Standing reminder (see CLAUDE.md "Pending hygiene adoption"). Non-blocking - just surfaces
+# the deferred gold-standard prettier + tight-eslint adoption before each push so it is not
+# forgotten. Remove this echo (and the CLAUDE.md section) once the adoption PR has landed.
+echo ""
+echo "[pre-push] TODO before merge: adopt the gold-standard prettier config (repo-wide reformat)"
+echo "           and tighten eslint (complexity / max-lines / max-params / no-shadow). Deferred"
+echo "           to its own PR - see CLAUDE.md 'Pending hygiene adoption'."

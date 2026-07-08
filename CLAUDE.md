@@ -56,6 +56,14 @@ Two process rules, learned from the same incident — they matter as much as the
 - Main-process changes need an app restart; renderer changes hot-reload.
 - Don't over-restart — it interrupts capture.
 
+## Pending hygiene adoption — READ BEFORE EVERY PUSH
+
+**TODO (deferred to its own PR — do NOT bundle into an unrelated PR):** adopt the wednesday-solutions
+gold-standard code hygiene. The pre-push hook echoes this reminder so it isn't forgotten. Two parts:
+
+1. **Prettier — repo-wide reformat.** Adopt `.prettierrc`: `{ printWidth: 120, tabWidth: 2, useTabs: false, singleQuote: true, trailingComma: 'none' }`. Desktop has no `.prettierrc` today (prettier defaults), so applying this reformats the whole tree — a huge diff. Do it ALONE, in its own PR/commit, so it never swamps a feature/refactor diff.
+2. **ESLint — tighten to the gold-standard rules** (adapted to desktop's flat config + React web, not RN/redux): `curly: all`, `no-console: [allow error,warn]`, `no-else-return`, `no-empty`, `prefer-template`, `max-params: 3`, `complexity` (gold standard is 5 — start looser, e.g. 15-20, and ratchet), `max-lines-per-function: 250`, `max-lines: 350`, `@typescript-eslint/no-shadow`. Many current files violate the structural caps (MemoryChat 2601, ipc.ts 1707, etc.), so introduce them with a **ratchet** like the coverage floor: set to `warn` (or grandfather the known-large files) and tighten to `error` as the god-files get decomposed — never lower a threshold to pass. Gold-standard source: github.com/wednesday-solutions/react-template (`.eslintrc.js`, `.prettierrc`).
+
 ## Testing — test every approved behavior change in the same pass
 
 When iterating (a request, a fix, a tweak the user just confirmed), add a test that captures that specific behavior **as part of the same change** — a regression test that would fail before the change and pass after. This applies to bug fixes (test the exact broken case), new branches/conditions (cover each), and copy/contract changes other code depends on. Do not defer tests to "later" or a separate commit. Err toward MORE tests, not fewer — one case per branch, condition, and error path, not a single token test per file.
