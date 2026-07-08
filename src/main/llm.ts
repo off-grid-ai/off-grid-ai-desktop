@@ -767,10 +767,17 @@ export class LLMService {
     this.stop();
   }
 
-  /** Resume after image generation and warm the server back up. */
+  /** Resume after image generation and warm the server back up (resident mode). */
   resume() {
     this.paused = false;
     this.init().catch(() => {});
+  }
+
+  /** Clear the pause block WITHOUT warming the server (on-demand mode). The server
+   *  stays down and lazily respawns on the next chat/tool turn, freeing its RAM in
+   *  the meantime. Pairs with pause() as the on-demand counterpart of resume(). */
+  releasePause() {
+    this.paused = false;
   }
 
   isReady() {

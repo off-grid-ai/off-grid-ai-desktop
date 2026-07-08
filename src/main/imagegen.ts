@@ -7,7 +7,6 @@ import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { llm } from './llm';
 import { modalityQueue } from './modality-queue/queue';
 import { isMfluxModelId, mfluxAvailable, getMfluxModel, runMflux, cancelMflux, MFLUX_MODELS } from './mflux';
 import { getActiveModal } from './active-models';
@@ -396,15 +395,9 @@ export async function generateImage(
   params: ImageGenParams,
   onProgress?: (p: ImageGenProgress & { preview?: string }) => void,
 ): Promise<ImageGenOutput> {
-  return modalityQueue.run({ tier: 2, label: 'image', evicts: ['llm'] }, async () => {
-    try {
-      return await runImageGen(params, onProgress);
-    } finally {
-      // Warm the chat model back up now that generation is done (the queue evicts it
-      // before we run; re-warming stays the image path's job, as llm.resume() did).
-      llm.resume();
-    }
-  });
+  // The queue evicts 'llm' before this runs AND re-warms it (mode-aware) when the
+  // job finishes — so the image path no longer touches llm.pause/resume itself.
+  return modalityQueue.run({ tier: 2, label: 'image', evicts: ['llm'] }, () => runImageGen(params, onProgress));
 }
 
 async function runImageGen(

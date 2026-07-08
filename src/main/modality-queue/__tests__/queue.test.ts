@@ -37,26 +37,30 @@ describe('ModalityQueue', () => {
     expect(events).toEqual(['a-start', 'a-end', 'b-start', 'b-end']);
   });
 
-  it('fires the evict hook BEFORE a job runs, for declared+resident evictables', async () => {
+  it('evicts a declared engine BEFORE the job, then re-warms it AFTER', async () => {
     const q = new ModalityQueue();
     const order: string[] = [];
     const evict = vi.fn(async () => { order.push('evict'); });
-    q.registerEvictable('llm', { evict });
+    const warm = vi.fn(async () => { order.push('warm'); });
+    q.registerEvictable('llm', { evict, warm });
 
     await q.run({ tier: 2, label: 'image', evicts: ['llm'] }, async () => { order.push('job'); });
 
     expect(evict).toHaveBeenCalledTimes(1);
-    expect(order).toEqual(['evict', 'job']);
+    expect(warm).toHaveBeenCalledTimes(1);
+    // evict before the job, warm after it (mode-aware behavior lives in the hook).
+    expect(order).toEqual(['evict', 'job', 'warm']);
   });
 
-  it('does not evict an engine that is not resident', async () => {
+  it('always calls evict for a declared id (idempotent even if the engine is down)', async () => {
+    // The queue does NOT track exact residency — it always evicts, so an engine that
+    // lazily reloaded can't slip through and leave two models resident.
     const q = new ModalityQueue();
     const evict = vi.fn();
     q.registerEvictable('llm', { evict });
-    q.setResident('llm', false); // engine already down (e.g. idle-evicted)
 
     await q.run({ tier: 2, label: 'image', evicts: ['llm'] }, async () => {});
-    expect(evict).not.toHaveBeenCalled();
+    expect(evict).toHaveBeenCalledTimes(1);
   });
 
   it('lets a tier-1 job run alongside a running tier-2 when coexist is on', async () => {

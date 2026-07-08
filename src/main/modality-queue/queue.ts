@@ -15,11 +15,15 @@ import { DEFAULT_POLICY, selectNext, type PolicyConfig, type QueueJob, type Tier
 
 /** An engine that can free its resident memory on demand (and warm back up). */
 export interface Evictable {
-  /** Free the engine's memory NOW. Awaited before a job that evicts it runs. */
+  /** Free the engine's memory NOW. Awaited before a job that evicts it runs.
+   *  MUST be idempotent/safe when the engine is already down (the queue always
+   *  calls it for a declared id rather than tracking exact residency, so an engine
+   *  that lazily reloaded can't slip through and leave two models resident). */
   evict: () => Promise<void> | void;
-  /** Optional: warm the engine back up. Not called by the queue itself — the
-   *  engine's own lazy-init handles re-warming on next use; kept for callers that
-   *  want an explicit warm hook. */
+  /** Warm the engine back up after the evicting job finishes. Called by the queue
+   *  in run()'s finally. Make it MODE-AWARE: a 'resident' engine reloads here (low
+   *  latency next use); an 'on-demand' engine should NOT reload — just clear any
+   *  eviction block so it can lazily load on its own next use (frees RAM meanwhile). */
   warm?: () => Promise<void> | void;
 }
 
@@ -43,12 +47,16 @@ interface Waiter {
   admit: () => void;
 }
 
+interface RunningEntry {
+  job: QueueJob;
+  /** Ids this job evicted, to re-warm when it finishes. */
+  evicted: string[];
+}
+
 export class ModalityQueue {
-  private running = new Map<string, QueueJob>();
+  private running = new Map<string, RunningEntry>();
   private waiting: Waiter[] = [];
   private evictables = new Map<string, Evictable>();
-  /** Which evictable ids are currently resident (so we only evict what's up). */
-  private resident = new Set<string>();
   private seqCounter = 0;
   private idCounter = 0;
   private changeCbs = new Set<(s: QueueState) => void>();
@@ -73,20 +81,11 @@ export class ModalityQueue {
   }
 
   /** Register (or replace) an evictable engine by id. Engines register themselves
-   *  so the queue never imports them (layering). Marked resident up front — the
-   *  first job that evicts it will free it if it's actually loaded; evict() is a
-   *  no-op when the engine is already down. */
+   *  so the queue never imports them (layering). The queue does NOT track exact
+   *  residency — it always calls evict() for a declared id (evict is idempotent),
+   *  so an engine that lazily reloaded can't leave two models resident. */
   registerEvictable(id: string, e: Evictable): void {
     this.evictables.set(id, e);
-    this.resident.add(id);
-  }
-
-  /** Mark an engine resident/not so the queue only evicts what's actually loaded.
-   *  Optional: an engine that self-evicts on idle can report its state here. */
-  setResident(id: string, resident: boolean): void {
-    if (!this.evictables.has(id)) return;
-    if (resident) this.resident.add(id);
-    else this.resident.delete(id);
   }
 
   onChange(cb: (s: QueueState) => void): () => void {
@@ -96,7 +95,7 @@ export class ModalityQueue {
 
   getState(): QueueState {
     return {
-      running: [...this.running.values()].map((j) => ({ label: j.label, tier: j.tier })),
+      running: [...this.running.values()].map((e) => ({ label: e.job.label, tier: e.job.tier })),
       queued: this.waiting.map((w) => ({ label: w.job.label, tier: w.job.tier })),
     };
   }
@@ -133,7 +132,16 @@ export class ModalityQueue {
     try {
       return await fn();
     } finally {
+      const entry = this.running.get(job.id);
       this.running.delete(job.id);
+      // Re-warm what this job evicted. Each engine's warm() is mode-aware: a
+      // 'resident' engine reloads now; an 'on-demand' engine just clears its
+      // eviction block and stays down until its own next use.
+      for (const id of entry?.evicted ?? []) {
+        const e = this.evictables.get(id);
+        if (!e?.warm) continue;
+        try { await e.warm(); } catch (err) { console.error(`[ModalityQueue] warm '${id}' failed:`, err); }
+      }
       this.emitChange();
       this.pump();
     }
@@ -145,7 +153,7 @@ export class ModalityQueue {
     // Admit greedily: tier-1 can coexist with a running tier-2, so more than one
     // waiter may become admissible on a single change.
     for (;;) {
-      const runningArr = [...this.running.values()];
+      const runningArr = [...this.running.values()].map((e) => e.job);
       const waitingArr = this.waiting.map((w) => w.job);
       const next = selectNext(runningArr, waitingArr, this.cfg);
       if (!next) return;
@@ -154,26 +162,28 @@ export class ModalityQueue {
       if (idx === -1) return; // shouldn't happen — selectNext picks from waiting
       const waiter = this.waiting[idx];
       this.waiting.splice(idx, 1);
-      this.running.set(waiter.job.id, waiter.job);
+      const entry: RunningEntry = { job: waiter.job, evicted: [] };
+      this.running.set(waiter.job.id, entry);
 
       // Evict what this job declares, THEN admit. Eviction is async IO; we run it
       // in a microtask so pump() itself stays synchronous and the running-set
       // bookkeeping is consistent before any await.
-      void this.admitAfterEvict(waiter);
+      void this.admitAfterEvict(waiter, entry);
     }
   }
 
-  private async admitAfterEvict(waiter: Waiter): Promise<void> {
-    const toEvict = (waiter.request.evicts ?? []).filter((id) => this.resident.has(id));
-    for (const id of toEvict) {
+  private async admitAfterEvict(waiter: Waiter, entry: RunningEntry): Promise<void> {
+    // Always evict every declared id (evict is idempotent when the engine is down),
+    // so an engine that lazily reloaded is still freed. Record them for re-warm.
+    for (const id of waiter.request.evicts ?? []) {
       const e = this.evictables.get(id);
       if (!e) continue;
       try {
         await e.evict();
+        entry.evicted.push(id);
       } catch (err) {
         console.error(`[ModalityQueue] evict '${id}' failed:`, err);
       }
-      this.resident.delete(id);
     }
     this.emitChange();
     waiter.admit();

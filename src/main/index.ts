@@ -22,6 +22,7 @@ import { setupLicenseIpc } from './license-ipc'
 import { nativeImage } from 'electron'
 import { purgeLegacyChatImports, getSetting } from './database'
 import { modalityQueue } from './modality-queue/queue'
+import { getResidencyMode } from './runtime-residency'
 
 // Pin one canonical userData dir ("Off Grid AI Desktop") regardless of package
 // name, and migrate data from the legacy split dirs ("My Memories" had the
@@ -337,10 +338,16 @@ app.whenReady().then(() => {
       // Register the chat engine as evictable so the ModalityQueue can free it
       // before a heavy tier-2 job (image gen) runs — the generalization of the old
       // inline llm.pause() guard. pause() frees the server AND blocks the capture
-      // pipeline from respawning it while the image model is resident.
+      // pipeline from respawning it while the image model is resident. Re-warm is
+      // MODE-AWARE: resident = reload now (low-latency next chat); on-demand = just
+      // release the pause block and let it lazily respawn on the next chat (frees
+      // its RAM meanwhile).
       modalityQueue.registerEvictable('llm', {
         evict: () => { try { llm.pause(); } catch { /* ignore */ } },
-        warm: () => { llm.resume(); },
+        warm: () => {
+          if (getResidencyMode('llm') === 'resident') llm.resume();
+          else llm.releasePause();
+        },
       });
       // Apply persisted queue settings (defaults: enabled, tier-1 coexists).
       modalityQueue.setEnabled(getSetting('modalityQueueEnabled', true));
