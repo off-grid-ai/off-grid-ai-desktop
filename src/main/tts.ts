@@ -13,7 +13,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { getActiveModal } from './active-models';
-import { resourceFile, appRoot } from './runtime-env';
+import { resourceFile, appRoot, onHostQuit } from './runtime-env';
 import { getResidencyMode } from './runtime-residency';
 import type { ManagedRuntime } from './runtime-manager';
 
@@ -66,6 +66,20 @@ let serveReady: Promise<void> | null = null;
 let serveStdout = '';
 let reqSeq = 0;
 const servePending = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
+// Free the ~330MB worker after this long idle even in resident mode - nothing in the
+// queue evicts 'tts' today (only image/chat declare evicts), so without this the
+// worker would live for the whole session. Mirrors sd-server / whisper-server idle-evict.
+const SERVE_IDLE_MS = 5 * 60_000;
+const SERVE_REQ_TIMEOUT_MS = 60_000; // a single synth shouldn't take longer; guards a hung worker
+let serveIdleTimer: ReturnType<typeof setTimeout> | null = null;
+function armIdleEvict(): void {
+  if (serveIdleTimer) clearTimeout(serveIdleTimer);
+  serveIdleTimer = setTimeout(() => stopServe(), SERVE_IDLE_MS);
+  serveIdleTimer.unref?.();
+}
+function clearIdleEvict(): void {
+  if (serveIdleTimer) { clearTimeout(serveIdleTimer); serveIdleTimer = null; }
+}
 
 function startServe(): Promise<void> {
   if (serveReady) return serveReady;
@@ -105,22 +119,39 @@ function startServe(): Promise<void> {
 }
 
 function stopServe(): void {
+  clearIdleEvict();
   const c = serveChild;
   serveChild = null;
   serveReady = null;
   if (c) { try { c.kill('SIGKILL'); } catch { /* ignore */ } }
 }
 
-/** Synthesize on the resident worker (model stays warm across calls). */
+// Never leave the worker running past app quit.
+onHostQuit(() => stopServe());
+
+/** Synthesize on the resident worker (model stays warm across calls). Bounded by a
+ *  timeout so a hung worker rejects (and frees `busy`) instead of wedging TTS. */
 async function synthResident(text: string, voice: string, out: string): Promise<void> {
   await startServe();
+  clearIdleEvict(); // busy now; re-arm when the request settles
   const c = serveChild;
   if (!c?.stdin) throw new Error('tts worker not running');
   const id = String(++reqSeq);
-  await new Promise<void>((resolve, reject) => {
-    servePending.set(id, { resolve, reject });
-    c.stdin!.write(JSON.stringify({ id, text: text.slice(0, 2000), voice, out }) + '\n');
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        servePending.delete(id);
+        reject(new Error('tts worker timed out'));
+      }, SERVE_REQ_TIMEOUT_MS);
+      servePending.set(id, {
+        resolve: () => { clearTimeout(timer); resolve(); },
+        reject: (e) => { clearTimeout(timer); reject(e); },
+      });
+      c.stdin!.write(JSON.stringify({ id, text: text.slice(0, 2000), voice, out }) + '\n');
+    });
+  } finally {
+    armIdleEvict(); // idle again - free the model after SERVE_IDLE_MS
+  }
 }
 
 /** TTS as a ManagedRuntime for the shared residency seam — same interface as every

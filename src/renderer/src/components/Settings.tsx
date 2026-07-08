@@ -160,7 +160,7 @@ function RuntimeResidencySection(): React.ReactElement {
                   aria-checked={resident}
                   aria-disabled={row.locked}
                   disabled={row.locked}
-                  title={row.locked ? 'Required in memory — screen replay depends on this model' : undefined}
+                  title={row.locked ? 'Required in memory - screen replay depends on this model' : undefined}
                   aria-label={`${row.label} residency`}
                   className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${resident ? 'bg-emerald-500' : 'bg-neutral-700'} ${row.locked ? 'cursor-not-allowed opacity-50' : ''}`}
                 >
