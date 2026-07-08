@@ -10,9 +10,10 @@
 import type { TranscriptionService } from './types';
 import { transcriptionService as whisper } from './whisper-cli';
 import { parakeetTranscription as parakeet } from './parakeet-cli';
-import { whisperServerTranscription as whisperResident } from './whisper-server';
+import { whisperServerTranscription as whisperResident, whisperServer } from './whisper-server';
 import { getActiveModal } from '../active-models';
 import { modelsByKind } from '@offgrid/models';
+import type { ManagedRuntime } from '../runtime-manager';
 
 export type TranscriptionEngine = 'whisper' | 'parakeet' | 'whisper-resident';
 
@@ -85,6 +86,19 @@ export function effectiveEngine(engine: TranscriptionEngine): TranscriptionEngin
   return pickTranscription(engine, ALL).engine;
 }
 
+/** Map a chosen dictation engine + the STT residency mode to the engine to actually
+ *  request. Pure. Residency only affects the whisper path: 'resident' routes whisper
+ *  to the warm whisper-server ('whisper-resident'), which itself degrades to one-shot
+ *  whisper-cli when its binary isn't built. Parakeet has no resident server, so it
+ *  stays the one-shot CLI regardless of mode (honest — no false "resident"). */
+export function residentAwareEngine(
+  chosen: 'whisper' | 'parakeet',
+  mode: 'resident' | 'on-demand',
+): TranscriptionEngine {
+  if (chosen === 'whisper' && mode === 'resident') return 'whisper-resident';
+  return chosen;
+}
+
 /** Is the Parakeet runtime installed (binary + model present)? */
 export function parakeetAvailable(): boolean {
   return parakeet.isAvailable();
@@ -94,3 +108,14 @@ export function parakeetAvailable(): boolean {
 export function residentWhisperAvailable(): boolean {
   return whisperResident.isAvailable();
 }
+
+/** STT as a ManagedRuntime for the shared residency seam. The only resident STT
+ *  holder is the whisper-server; the whisper-cli and Parakeet paths are one-shot
+ *  CLIs that free their model on exit. So evict stops the server; warm/release are
+ *  no-ops (it lazily re-spawns via ensureUp on the next resident transcription). */
+export const sttRuntime: ManagedRuntime = {
+  modality: 'stt',
+  evict: () => { whisperServer.stop(); },
+  warm: () => { /* lazily re-spawned by whisper-server ensureUp on next use */ },
+  release: () => { whisperServer.stop(); },
+};

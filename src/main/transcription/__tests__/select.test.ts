@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickTranscription, engineForActiveModel, effectiveEngine } from '../select';
+import { pickTranscription, engineForActiveModel, effectiveEngine, residentAwareEngine } from '../select';
 import type { TranscriptionService } from '../types';
 
 const svc = (available: boolean, tag: string): TranscriptionService => ({
@@ -81,6 +81,18 @@ describe('engineForActiveModel', () => {
 
   it('falls back to whisper for an unknown active value', () => {
     expect(engineForActiveModel('nope', entries)).toBe('whisper');
+  });
+});
+
+describe('residentAwareEngine', () => {
+  it('routes a whisper choice to whisper-resident only in resident mode', () => {
+    expect(residentAwareEngine('whisper', 'resident')).toBe('whisper-resident');
+    expect(residentAwareEngine('whisper', 'on-demand')).toBe('whisper');
+  });
+
+  it('keeps Parakeet on its one-shot CLI regardless of mode (no resident server)', () => {
+    expect(residentAwareEngine('parakeet', 'resident')).toBe('parakeet');
+    expect(residentAwareEngine('parakeet', 'on-demand')).toBe('parakeet');
   });
 });
 

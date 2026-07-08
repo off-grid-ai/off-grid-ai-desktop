@@ -350,6 +350,7 @@ app.whenReady().then(() => {
   // doesn't spawn anything until the engine is actually used.
   import('./tts').then(({ ttsRuntime }) => registerRuntime(ttsRuntime)).catch(() => {});
   import('./imagegen').then(({ imageRuntime }) => registerRuntime(imageRuntime)).catch(() => {});
+  import('./transcription/select').then(({ sttRuntime }) => registerRuntime(sttRuntime)).catch(() => {});
 
   createWindow()
 
