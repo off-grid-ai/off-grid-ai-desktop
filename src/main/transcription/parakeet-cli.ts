@@ -17,7 +17,7 @@ import { binRoots, modelsDir } from '../runtime-env'
 import { getActiveModal } from '../active-models'
 import { ffmpegBin } from './whisper-cli'
 import { existing } from './bin-resolution'
-import { modelsByEngine } from './select'
+import { modelsByEngine } from './classify'
 import type { TranscriptionService, Transcript, TranscribeOptions } from './types'
 
 const execFileAsync = promisify(execFile)

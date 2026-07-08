@@ -14,39 +14,13 @@ import { whisperServerTranscription as whisperResident, whisperServer } from './
 import { getActiveModal } from '../active-models';
 import { modelsByKind } from '@offgrid/models';
 import type { ManagedRuntime } from '../runtime-manager';
+// The pure engine classifiers live in a LEAF module (classify.ts) so the CLIs can import
+// them without forming a load-time cycle back through select (which reads the CLI
+// singletons at module scope). Re-exported here so existing importers/tests keep working.
+import { catalogEngine, modelsByEngine, type CatalogTranscriptionEngine } from './classify';
+export { catalogEngine, modelsByEngine, type CatalogTranscriptionEngine };
 
 export type TranscriptionEngine = 'whisper' | 'parakeet' | 'whisper-resident';
-
-/**
- * The catalog `engine` field for a transcription model. Only Parakeet models carry an
- * explicit engine; every other transcription entry (no `engine`) is a whisper ggml
- * model. Never a runtime-only value (whisper-resident is a residency mode, not a catalog
- * model). This is the single source of truth for classifying a catalog entry by engine.
- */
-export type CatalogTranscriptionEngine = 'whisper' | 'parakeet';
-
-/** A transcription catalog entry, narrowed to what engine classification needs. */
-type TranscriptionEntry = { id: string; engine?: string; files: Array<{ name: string }> };
-
-/** The engine a catalog transcription entry belongs to. The catalog only tags Parakeet
- *  entries; anything without that tag is a whisper ggml model. Single source of truth so
- *  no caller re-does the `engine === 'parakeet'` classification. Pure. */
-export function catalogEngine(entry: { engine?: string } | undefined | null): CatalogTranscriptionEngine {
-  return entry?.engine === 'parakeet' ? 'parakeet' : 'whisper';
-}
-
-/**
- * The transcription catalog entries for one engine. The one place the catalog is
- * partitioned by engine — whisper-cli (its whisper/Parakeet guard) and parakeet-cli
- * (its Parakeet-only filter) both call this instead of re-filtering `modelsByKind`.
- * Pure over the passed entries; the no-arg default reads the live catalog for callers.
- */
-export function modelsByEngine(
-  engine: CatalogTranscriptionEngine,
-  entries: readonly TranscriptionEntry[] = modelsByKind('transcription'),
-): TranscriptionEntry[] {
-  return entries.filter((e) => catalogEngine(e) === engine);
-}
 
 interface Services {
   whisper: TranscriptionService;

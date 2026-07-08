@@ -13,7 +13,7 @@ import { getActiveModal } from '../active-models';
 import { binRoots, modelsDir } from '../runtime-env';
 import { modelsByKind } from '@offgrid/models';
 import { existing } from './bin-resolution';
-import { catalogEngine } from './select';
+import { catalogEngine } from './classify';
 import type { TranscriptionService, Transcript, TranscribeOptions, Seg } from './types';
 
 const execFileAsync = promisify(execFile);
