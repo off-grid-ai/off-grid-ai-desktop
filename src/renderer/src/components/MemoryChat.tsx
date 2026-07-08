@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { shouldQueue, enqueue, dequeue, queuedCount, clearQueue } from '@renderer/lib/chat-queue';
 import { waitingLabel } from '@renderer/lib/chat-labels';
+import { timeAgo } from '@renderer/lib/time';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -179,20 +180,6 @@ const STYLE_PRESETS: { name: string; prompt: string; preview: string; swatch: st
   { name: 'Fantasy art', prompt: 'epic fantasy concept art, dramatic, highly detailed', preview: 'a majestic dragon perched on a mountain peak', swatch: 'from-purple-800 via-indigo-700 to-amber-600' },
   { name: 'Studio portrait', prompt: 'studio portrait, soft key light, bokeh background', preview: 'a golden retriever dog', swatch: 'from-neutral-600 via-neutral-800 to-neutral-900' },
 ];
-
-function timeAgo(dateStr: string): string {
-  const date = new Date(dateStr + 'Z');
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
 
 const NEW_CHAT = '__new__'; // bucket key for a fresh, not-yet-saved conversation
 const EMPTY_MSGS: ChatMessage[] = [];

@@ -15,6 +15,7 @@ import {
   IconLayoutGrid,
 } from '@tabler/icons-react';
 import { ArtifactCanvas, type Artifact } from './ArtifactCanvas';
+import { timeAgo } from '@renderer/lib/time';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const api = (window as any).api;
@@ -99,18 +100,6 @@ function fmtSize(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function timeAgo(dateStr: string): string {
-  const date = new Date(dateStr + 'Z');
-  const diffMin = Math.floor((Date.now() - date.getTime()) / 60000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 export function ProjectsScreen({ onOpenChat }: ProjectsScreenProps) {
