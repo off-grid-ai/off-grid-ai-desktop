@@ -290,6 +290,21 @@ export const CATALOG: ModelEntry[] = [
     files: [{ name: 'realvisxl-v5.0-Q8_0.gguf', url: resolve('offgrid-ai/realvisxl-v5.0-GGUF', 'realvisxl-v5.0-Q8_0.gguf'), role: 'primary', sizeBytes: 4180000000 }],
   },
   {
+    // Light (Q4_K) sibling — ~35% less memory, runs on a 16GB Mac. Tagged 'Light'
+    // so the RAM-aware default + "Recommended" badge pick it on <= 16GB machines.
+    id: 'offgrid-ai/realvisxl-v5.0-GGUF-Q4',
+    name: 'RealVisXL v5.0 (Light)',
+    kind: 'image',
+    tags: ['Photoreal', 'Light'],
+    org: 'RealVis',
+    description: 'Top photorealism SDXL. Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of SG161222/RealVisXL_V5.0.',
+    minRamGb: 8,
+    quant: 'Q4_K',
+    releaseDate: '2024-08-05',
+    imageModes: ['txt2img', 'img2img'],
+    files: [{ name: 'realvisxl-v5.0-Q4_K.gguf', url: resolve('offgrid-ai/realvisxl-v5.0-GGUF', 'realvisxl-v5.0-Q4_K.gguf'), role: 'primary', sizeBytes: 2800000000 }],
+  },
+  {
     id: 'offgrid-ai/realvisxl-v5.0-lightning-GGUF',
     name: 'RealVisXL v5.0 Lightning (photoreal)',
     kind: 'image',
@@ -301,6 +316,20 @@ export const CATALOG: ModelEntry[] = [
     releaseDate: '2024-09-02',
     imageModes: ['txt2img', 'img2img'],
     files: [{ name: 'realvisxl-v5.0-lightning-Q8_0.gguf', url: resolve('offgrid-ai/realvisxl-v5.0-lightning-GGUF', 'realvisxl-v5.0-lightning-Q8_0.gguf'), role: 'primary', sizeBytes: 4180000000 }],
+  },
+  {
+    // Light (Q4_K) sibling — few-step photoreal, ~35% less memory, 16GB-friendly.
+    id: 'offgrid-ai/realvisxl-v5.0-lightning-GGUF-Q4',
+    name: 'RealVisXL v5.0 Lightning (Light)',
+    kind: 'image',
+    tags: ['Fast', 'Photoreal', 'Light'],
+    org: 'RealVis',
+    description: 'Photoreal SDXL, few-step (fast). Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of SG161222/RealVisXL_V5.0_Lightning.',
+    minRamGb: 8,
+    quant: 'Q4_K',
+    releaseDate: '2024-09-02',
+    imageModes: ['txt2img', 'img2img'],
+    files: [{ name: 'realvisxl-v5.0-lightning-Q4_K.gguf', url: resolve('offgrid-ai/realvisxl-v5.0-lightning-GGUF', 'realvisxl-v5.0-lightning-Q4_K.gguf'), role: 'primary', sizeBytes: 2800000000 }],
   },
   {
     id: 'offgrid-ai/dreamshaper-xl-v2-turbo-GGUF',
@@ -347,6 +376,20 @@ export const CATALOG: ModelEntry[] = [
     files: [{ name: 'juggernaut-xl-v9-Q8_0.gguf', url: resolve('offgrid-ai/juggernaut-xl-v9-GGUF', 'juggernaut-xl-v9-Q8_0.gguf'), role: 'primary', sizeBytes: 4350000000 }],
   },
   {
+    // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
+    id: 'offgrid-ai/juggernaut-xl-v9-GGUF-Q4',
+    name: 'Juggernaut XL v9 (Light)',
+    kind: 'image',
+    tags: ['Photoreal', 'Light'],
+    org: 'RunDiffusion',
+    description: 'Versatile photoreal SDXL. Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of RunDiffusion/Juggernaut-XL-v9.',
+    minRamGb: 8,
+    quant: 'Q4_K',
+    releaseDate: '2024-02-18',
+    imageModes: ['txt2img', 'img2img'],
+    files: [{ name: 'juggernaut-xl-v9-Q4_K.gguf', url: resolve('offgrid-ai/juggernaut-xl-v9-GGUF', 'juggernaut-xl-v9-Q4_K.gguf'), role: 'primary', sizeBytes: 2900000000 }],
+  },
+  {
     id: 'offgrid-ai/animagine-xl-4.0-GGUF',
     name: 'Animagine XL 4.0 (anime)',
     kind: 'image',
@@ -358,6 +401,20 @@ export const CATALOG: ModelEntry[] = [
     releaseDate: '2025-01-10',
     imageModes: ['txt2img', 'img2img'],
     files: [{ name: 'animagine-xl-4.0-Q8_0.gguf', url: resolve('offgrid-ai/animagine-xl-4.0-GGUF', 'animagine-xl-4.0-Q8_0.gguf'), role: 'primary', sizeBytes: 4180000000 }],
+  },
+  {
+    // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
+    id: 'offgrid-ai/animagine-xl-4.0-GGUF-Q4',
+    name: 'Animagine XL 4.0 (Light)',
+    kind: 'image',
+    tags: ['Anime', 'Light'],
+    org: 'Cagliostro',
+    description: 'Leading anime SDXL — strong character knowledge. Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of cagliostrolab/animagine-xl-4.0.',
+    minRamGb: 8,
+    quant: 'Q4_K',
+    releaseDate: '2025-01-10',
+    imageModes: ['txt2img', 'img2img'],
+    files: [{ name: 'animagine-xl-4.0-Q4_K.gguf', url: resolve('offgrid-ai/animagine-xl-4.0-GGUF', 'animagine-xl-4.0-Q4_K.gguf'), role: 'primary', sizeBytes: 2800000000 }],
   },
   {
     id: 'offgrid-ai/illustrious-xl-v2.0-GGUF',
@@ -373,6 +430,20 @@ export const CATALOG: ModelEntry[] = [
     files: [{ name: 'illustrious-xl-v2.0-Q8_0.gguf', url: resolve('offgrid-ai/illustrious-xl-v2.0-GGUF', 'illustrious-xl-v2.0-Q8_0.gguf'), role: 'primary', sizeBytes: 4180000000 }],
   },
   {
+    // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
+    id: 'offgrid-ai/illustrious-xl-v2.0-GGUF-Q4',
+    name: 'Illustrious XL v2.0 (Light)',
+    kind: 'image',
+    tags: ['Anime', 'Light'],
+    org: 'OnomaAI',
+    description: 'Top anime / illustration SDXL base. Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of OnomaAIResearch/Illustrious-XL-v2.0.',
+    minRamGb: 8,
+    quant: 'Q4_K',
+    releaseDate: '2025-04-18',
+    imageModes: ['txt2img', 'img2img'],
+    files: [{ name: 'illustrious-xl-v2.0-Q4_K.gguf', url: resolve('offgrid-ai/illustrious-xl-v2.0-GGUF', 'illustrious-xl-v2.0-Q4_K.gguf'), role: 'primary', sizeBytes: 2800000000 }],
+  },
+  {
     id: 'offgrid-ai/pony-diffusion-v6-xl-GGUF',
     name: 'Pony Diffusion V6 XL (stylized)',
     kind: 'image',
@@ -384,6 +455,20 @@ export const CATALOG: ModelEntry[] = [
     releaseDate: '2024-05-25',
     imageModes: ['txt2img', 'img2img'],
     files: [{ name: 'pony-diffusion-v6-xl-Q8_0.gguf', url: resolve('offgrid-ai/pony-diffusion-v6-xl-GGUF', 'pony-diffusion-v6-xl-Q8_0.gguf'), role: 'primary', sizeBytes: 4180000000 }],
+  },
+  {
+    // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
+    id: 'offgrid-ai/pony-diffusion-v6-xl-GGUF-Q4',
+    name: 'Pony Diffusion V6 XL (Light)',
+    kind: 'image',
+    tags: ['Stylized', 'Light'],
+    org: 'PurpleSmartAI',
+    description: 'Dominant SDXL for stylized characters & illustration. Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of Pony Diffusion V6 XL.',
+    minRamGb: 8,
+    quant: 'Q4_K',
+    releaseDate: '2024-05-25',
+    imageModes: ['txt2img', 'img2img'],
+    files: [{ name: 'pony-diffusion-v6-xl-Q4_K.gguf', url: resolve('offgrid-ai/pony-diffusion-v6-xl-GGUF', 'pony-diffusion-v6-xl-Q4_K.gguf'), role: 'primary', sizeBytes: 2800000000 }],
   },
   // --- voice (TTS); open models, ONNX runtime (no Python) ---
   {

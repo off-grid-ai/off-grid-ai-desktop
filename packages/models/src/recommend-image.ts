@@ -24,6 +24,15 @@ export const LIGHT_MODEL_RAM_CEILING_GB = 16;
 const hasLightTag = (m: RecommendableModel): boolean =>
   (m.tags ?? []).some((t) => /^light$/i.test(t));
 
+const isVersatile = (m: RecommendableModel): boolean =>
+  (m.tags ?? []).some((t) => /^versatile$/i.test(t));
+
+/** Prefer the 'Versatile' all-rounder (DreamShaper) when several models qualify,
+ *  so the badge is stable no matter how many Light variants the catalog lists /
+ *  their order. Falls back to the first candidate. */
+const pickVersatileFirst = (candidates: RecommendableModel[]): RecommendableModel | undefined =>
+  candidates.find(isVersatile) ?? candidates[0];
+
 /** Family key for pairing a full quant with its Light sibling: the id with any
  *  trailing quant suffix (e.g. "-Q4") stripped, so both DreamShaper entries map
  *  to the same family. */
@@ -50,8 +59,8 @@ export function recommendedImageModelId(models: RecommendableModel[], ramGb: num
   const fullOfLightFamily = images.filter((m) => !hasLightTag(m) && lightFamilies.has(familyKey(m)));
 
   if (ramGb <= LIGHT_MODEL_RAM_CEILING_GB) {
-    return (light[0] ?? images[0]).id;
+    return (pickVersatileFirst(light) ?? images[0]).id;
   }
   // Above the ceiling: the full sibling of a Light family, else any non-Light image model.
-  return (fullOfLightFamily[0] ?? images.find((m) => !hasLightTag(m)) ?? images[0]).id;
+  return (pickVersatileFirst(fullOfLightFamily) ?? images.find((m) => !hasLightTag(m)) ?? images[0]).id;
 }

@@ -66,4 +66,22 @@ describe('recommendedImageModelId', () => {
     // Big machine, only a Light model of its family -> its full sibling absent, so Light.
     expect(recommendedImageModelId([light], 32)).toBe(light.id);
   });
+
+  it('prefers the Versatile all-rounder when several Light models exist (order-independent)', () => {
+    // Other families' Light entries listed BEFORE the versatile one — the badge
+    // must still land on the Versatile (DreamShaper) family, not the first Light.
+    const otherLight: ModelEntry = { id: 'x/photo-GGUF-Q4', name: 'Photo Light', kind: 'image', tags: ['Photoreal', 'Light'], files: [{ name: 'photo-Q4.gguf', url: '' }] };
+    const otherFull: ModelEntry = { id: 'x/photo-GGUF', name: 'Photo', kind: 'image', tags: ['Photoreal'], files: [{ name: 'photo-Q8.gguf', url: '' }] };
+    const many = [otherFull, otherLight, full, light];
+    expect(recommendedImageModelId(many, 16)).toBe(light.id);   // versatile Light
+    expect(recommendedImageModelId(many, 32)).toBe(full.id);    // versatile full
+  });
+
+  it('lists a Light variant for every offgrid image model in the catalog', () => {
+    const imageFamilies = CATALOG.filter((m) => m.kind === 'image' && m.id.startsWith('offgrid-ai/') && !/-Q4$/.test(m.id));
+    for (const fam of imageFamilies) {
+      const hasLight = CATALOG.some((m) => m.id === `${fam.id}-Q4` && (m.tags ?? []).includes('Light'));
+      expect(hasLight, `${fam.id} should have a Light (-Q4) sibling`).toBe(true);
+    }
+  });
 });
