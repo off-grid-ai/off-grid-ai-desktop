@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { llm } from './llm';
+import { modalityQueue } from './modality-queue/queue';
 import { isMfluxModelId, mfluxAvailable, getMfluxModel, runMflux, cancelMflux, MFLUX_MODELS } from './mflux';
 import { getActiveModal } from './active-models';
 import { binRoots, dataDir, modelsDir } from './runtime-env';
@@ -384,7 +385,29 @@ export function cancelImageGen(): boolean {
   return running; // mflux/persistent-server gen has no currentChild but sets running
 }
 
+/**
+ * Public entry: run image generation through the ModalityQueue so the image model
+ * can't be resident alongside the chat model on unified memory. `evicts: ['llm']`
+ * frees the llama-server before generation starts — the exact guard the old inline
+ * llm.pause() did, now owned by the queue (see modality-queue/queue.ts). When the
+ * queue is disabled it just runs immediately (prior concurrent behavior).
+ */
 export async function generateImage(
+  params: ImageGenParams,
+  onProgress?: (p: ImageGenProgress & { preview?: string }) => void,
+): Promise<ImageGenOutput> {
+  return modalityQueue.run({ tier: 2, label: 'image', evicts: ['llm'] }, async () => {
+    try {
+      return await runImageGen(params, onProgress);
+    } finally {
+      // Warm the chat model back up now that generation is done (the queue evicts it
+      // before we run; re-warming stays the image path's job, as llm.resume() did).
+      llm.resume();
+    }
+  });
+}
+
+async function runImageGen(
   params: ImageGenParams,
   onProgress?: (p: ImageGenProgress & { preview?: string }) => void,
 ): Promise<ImageGenOutput> {
@@ -392,9 +415,9 @@ export async function generateImage(
   if (!params.prompt?.trim()) throw new Error('A prompt is required.');
 
   // --- MLX / mflux runtime branch (FLUX / Z-Image with native LoRA) ----------
-  // Self-contained: reuses the single-flight guard + llm.pause()/resume() (so
-  // the LLM and image model never coexist on Apple Silicon unified memory), then
-  // delegates the spawn to the mflux module. Returns before the sd-cli path.
+  // Self-contained: reuses the single-flight guard; the LLM is already evicted by the
+  // queue (evicts: ['llm']) before we get here, then delegates the spawn to the mflux
+  // module. Returns before the sd-cli path.
   if (isMfluxModelId(params.model)) {
     const def = getMfluxModel(params.model)!;
     const outDir = path.join(dataDir(), 'generated-images');
@@ -402,7 +425,7 @@ export async function generateImage(
     const outPath = path.join(outDir, `img-${String(Date.now())}.png`);
     running = true;
     cancelled = false;
-    try { llm.pause(); } catch { /* ignore */ }
+    // Give the OS a moment to reclaim the freed LLM pages before the image load spike.
     await new Promise((r) => setTimeout(r, 2500));
     try {
       await runMflux(
@@ -431,7 +454,7 @@ export async function generateImage(
     } finally {
       running = false;
       currentChild = null;
-      llm.resume();
+      // LLM warm-back-up happens once in the generateImage() wrapper's finally.
     }
   }
 
@@ -658,11 +681,9 @@ export async function generateImage(
   cancelled = false;
   // CRITICAL on Apple Silicon (unified memory): the LLM (gemma) and the image
   // model can't both be resident — together they overflow RAM and the whole
-  // system swaps/hangs. Free the LLM first, then give the OS a moment to
-  // actually reclaim its pages before we load the (large) image model.
-  // pause() frees the server AND blocks the capture pipeline from respawning it
-  // mid-generation (which would put both models in memory and freeze the box).
-  try { llm.pause(); } catch { /* ignore */ }
+  // system swaps/hangs. The ModalityQueue has already evicted the LLM (evicts:
+  // ['llm']) AND blocks the capture pipeline from respawning it while this heavy
+  // tier-2 job holds the slot.
   // Give the OS time to actually reclaim the freed LLM pages before the image
   // model's load spike — otherwise the brief overlap causes a short stutter.
   await new Promise((r) => setTimeout(r, 2500));
@@ -732,7 +753,7 @@ export async function generateImage(
     running = false;
     currentChild = null;
     fs.promises.unlink(previewPath).catch(() => {});
-    // Resume the LLM (unblock respawns + warm it back up) now that gen is done.
-    llm.resume();
+    // LLM warm-back-up happens once in the generateImage() wrapper's finally
+    // (covers both this sd-cli path and the mflux path).
   }
 }

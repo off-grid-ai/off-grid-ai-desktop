@@ -20,7 +20,8 @@ import { loadProFeaturesMain } from './bootstrap/loadProFeaturesMain'
 import { initLicensing } from './licensing/license-service'
 import { setupLicenseIpc } from './license-ipc'
 import { nativeImage } from 'electron'
-import { purgeLegacyChatImports } from './database'
+import { purgeLegacyChatImports, getSetting } from './database'
+import { modalityQueue } from './modality-queue/queue'
 
 // Pin one canonical userData dir ("Off Grid AI Desktop") regardless of package
 // name, and migrate data from the legacy split dirs ("My Memories" had the
@@ -333,6 +334,17 @@ app.whenReady().then(() => {
   // 3. Initialize LLM (Async)
   // We don't await this to avoid blocking window creation
   import('./llm').then(({ llm }) => {
+      // Register the chat engine as evictable so the ModalityQueue can free it
+      // before a heavy tier-2 job (image gen) runs — the generalization of the old
+      // inline llm.pause() guard. pause() frees the server AND blocks the capture
+      // pipeline from respawning it while the image model is resident.
+      modalityQueue.registerEvictable('llm', {
+        evict: () => { try { llm.pause(); } catch { /* ignore */ } },
+        warm: () => { llm.resume(); },
+      });
+      // Apply persisted queue settings (defaults: enabled, tier-1 coexists).
+      modalityQueue.setEnabled(getSetting('modalityQueueEnabled', true));
+      modalityQueue.setTier1CoexistsWithTier2(getSetting('modalityTier1CoexistsWithTier2', true));
       llm.init().catch(err => console.error("Failed to init LLM:", err));
   });
 
