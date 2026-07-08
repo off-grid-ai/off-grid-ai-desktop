@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow, app, clipboard } from 'electron';
 import { getDB, getChatSessions, upsertChatSummary, getMemoriesForSession, getMemoryRecordsForSession, getMasterMemory, updateMasterMemory, getAllChatSummaries, upsertEntity, addEntityFact, updateEntitySummary, getEntities, getEntityDetails, upsertEntitySession, rebuildEntityEdgesForSession, getEntityGraph, rebuildEntityEdgesForAllSessions, deleteEntity, deleteMemory, getEntitiesForSession, getDashboardStats, getUserProfile, saveUserProfile, UserProfile, createRagConversation, getRagConversations, getRagConversation, deleteRagConversation, addRagMessage, getRagMessages, updateRagConversationTitle, searchRagConversationIds, getSettings, saveSetting, getSetting } from './database';
 import { embeddings } from './embeddings';
+import { getResidency, setResidencyMode, type Modality, type ResidencyMode } from './runtime-residency';
 import { getPermissionStatus, requestAccessibilityPermission, requestScreenRecordingPermission, openAccessibilitySettings, openScreenRecordingSettings } from './permissions';
 import { getPrompt, getAllPromptDefs, resetPrompt, getPromptTemplate } from './prompts';
 // import { llm } from './llm'; // Moved to dynamic import to support ESM
@@ -1107,6 +1108,11 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       console.log(`[IPC] Setting saved: ${key} =`, value);
       return true;
   });
+
+  // Per-modality runtime residency (on-demand vs in-memory/resident). The full map
+  // drives the queue's mode-aware re-warm and each engine's job path.
+  ipcMain.handle('runtime:residency:get', () => getResidency());
+  ipcMain.handle('runtime:residency:set', (_e, modality: Modality, mode: ResidencyMode) => setResidencyMode(modality, mode));
 
   // Fleet console IPC (console:*) is a pro feature — registered by pro's
   // activateMain, not here, so the open build doesn't ship it.

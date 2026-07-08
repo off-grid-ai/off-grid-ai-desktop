@@ -133,6 +133,9 @@ try {
     getStagedUpdateVersion: () => ipcRenderer.invoke('update:staged-version'),
     installUpdate: () => ipcRenderer.invoke('update:install'),
     // Software-update controls for Settings: current version + auto-update toggle,
+    // Per-modality runtime residency (on-demand vs resident/in-memory).
+    residencyGet: () => ipcRenderer.invoke('runtime:residency:get'),
+    residencySet: (modality: string, mode: string) => ipcRenderer.invoke('runtime:residency:set', modality, mode),
     // and a manual "check for updates" that resolves with a definite status.
     updateGetPrefs: () => ipcRenderer.invoke('update:get-prefs'),
     updateSetAuto: (on: boolean) => ipcRenderer.invoke('update:set-auto', on),
