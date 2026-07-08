@@ -56,7 +56,14 @@ export function DictationOverlay(): React.JSX.Element | null {
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       streamRef.current = stream;
-      const ctx = new AudioContext({ sampleRate: TARGET_RATE });
+      // Use the NATIVE context rate — do NOT force { sampleRate: 16000 }. In
+      // Electron/Chromium, forcing a non-native rate can make ctx.sampleRate
+      // report 16000 while the worklet is actually fed native-rate (e.g. 44.1kHz)
+      // frames, so the PCM gets mislabeled 16k downstream — the audio then plays
+      // ~2.75x too slow (stretched) and transcription hears garbled slow-motion.
+      // With the native rate reported honestly, the main process resamples to 16k
+      // via ffmpeg before transcription.
+      const ctx = new AudioContext();
       ctxRef.current = ctx;
       const blob = new Blob([WORKLET_SRC], { type: 'application/javascript' });
       const url = URL.createObjectURL(blob);
