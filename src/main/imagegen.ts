@@ -310,12 +310,17 @@ const DEFAULT_NEGATIVE =
   'blurry, low quality, low resolution, jpeg artifacts, deformed, disfigured, bad anatomy, extra limbs, watermark, text, signature, grainy, oversaturated';
 
 /** Whether image generation is usable right now (binary + at least one model). */
-export function imageGenStatus(): { available: boolean; models: string[]; reason?: string } {
+export function imageGenStatus(): { available: boolean; models: string[]; active: string | null; reason?: string } {
   const models = listImageModels();
+  // The model an incoming request would actually load (the user's active pick,
+  // else the resolver default) — so the composer can default its picker to it and
+  // match the Active-models panel, instead of guessing from a name heuristic (which
+  // used to land on the parked Core ML model).
+  const active = activeImageModel();
   // Available if EITHER runtime is usable: sd-cli (with a model) or MLX/mflux.
-  if (!findSdCli() && !mfluxAvailable()) return { available: false, models, reason: 'no image runtime found' };
-  if (!models.length) return { available: false, models, reason: 'no image model installed' };
-  return { available: true, models };
+  if (!findSdCli() && !mfluxAvailable()) return { available: false, models, active, reason: 'no image runtime found' };
+  if (!models.length) return { available: false, models, active, reason: 'no image model installed' };
+  return { available: true, models, active };
 }
 
 export interface ImageGenParams {

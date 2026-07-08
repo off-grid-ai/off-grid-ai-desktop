@@ -462,13 +462,18 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         try { setConvMessages(first.id, mapRagMessages(await window.api.getRagMessages(first.id))); } catch { setConvMessages(first.id, []); }
       }
     })();
-    window.api.imageGenStatus?.().then((s: { available: boolean; models?: string[] }) => {
+    window.api.imageGenStatus?.().then((s: { available: boolean; models?: string[]; active?: string | null }) => {
       setImageAvailable(!!s?.available);
       const models = s?.models || [];
       setImgModels(models);
-      // Default to the best fit: Z-Image Turbo (2026 flagship) > SDXL-Lightning > SDXL > 2.1 > rest.
-      const preferred = models.find(m => /z[-_]?image/i.test(m)) || models.find(m => /lightning/i.test(m)) || models.find(m => /sdxl|xl/i.test(m)) || models.find(m => /v2-1|v2\.1/i.test(m)) || models[0] || '';
-      setImgModel(prev => prev || preferred);
+      // Default the picker to the ACTIVE image model (what the Active-models panel
+      // shows, e.g. DreamShaper) so the composer never mismatches it. Fall back to a
+      // preference that skips the parked/slow Core ML dir (it would otherwise win on
+      // an "sdxl" name match and default the composer to a non-distilled model).
+      const usable = models.filter(m => !/coreml/i.test(m));
+      const preferred = usable.find(m => /dreamshaper/i.test(m)) || usable.find(m => /lightning|turbo/i.test(m)) || usable.find(m => /z[-_]?image/i.test(m)) || usable.find(m => /sdxl|xl/i.test(m)) || usable[0] || models[0] || '';
+      const active = s?.active || preferred;
+      setImgModel(prev => prev || active);
     }).catch(() => {});
     window.api.listProjects?.().then((p: ProjectLite[]) => setProjects(p || [])).catch(() => {});
     window.api.styleThumbs?.().then((t: Record<string, string>) => setStyleThumbs(t || {})).catch(() => {});
