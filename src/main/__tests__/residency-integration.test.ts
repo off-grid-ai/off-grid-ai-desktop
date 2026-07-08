@@ -44,14 +44,16 @@ describe('residency integration (real queue + real seam + real engines)', () => 
     expect(llm.loaded).toBe(true);   // resident -> reloaded after the job
   });
 
-  it('on-demand LLM: evicted for the job and left DOWN afterwards (RAM stays free)', async () => {
+  it('on-demand engine: evicted for the job and left DOWN afterwards (RAM stays free)', async () => {
+    // Use an UNLOCKED modality (tts) — the llm is locked resident (screen replay),
+    // so it can never be on-demand; that lock is asserted in runtime-residency.test.
     const q = new ModalityQueue();
-    const s = store({ llm: 'on-demand' });
-    const llm = new FakeEngine('llm');
-    registerRuntime(llm, { queue: q, readMode: s.read });
+    const s = store({ tts: 'on-demand' });
+    const tts = new FakeEngine('tts');
+    registerRuntime(tts, { queue: q, readMode: s.read });
 
-    await q.run({ tier: 2, label: 'image', evicts: ['llm'] }, async () => {});
-    expect(llm.loaded).toBe(false);  // on-demand -> stays down (release, no reload)
+    await q.run({ tier: 2, label: 'image', evicts: ['tts'] }, async () => {});
+    expect(tts.loaded).toBe(false);  // on-demand -> stays down (release, no reload)
   });
 
   it('flipping the mode at runtime changes the re-warm without re-registering', async () => {
@@ -73,16 +75,16 @@ describe('residency integration (real queue + real seam + real engines)', () => 
     // on-demand engine that reloaded itself between jobs cannot stay resident
     // alongside the next heavy model (the beachball this whole system prevents).
     const q = new ModalityQueue();
-    const s = store({ llm: 'on-demand' });
-    const llm = new FakeEngine('llm');
-    registerRuntime(llm, { queue: q, readMode: s.read });
+    const s = store({ tts: 'on-demand' });
+    const tts = new FakeEngine('tts');
+    registerRuntime(tts, { queue: q, readMode: s.read });
 
-    await q.run({ tier: 2, label: 'image', evicts: ['llm'] }, async () => {});
-    expect(llm.loaded).toBe(false);
-    llm.loaded = true; // simulate a chat turn lazily reloading the LLM
+    await q.run({ tier: 2, label: 'image', evicts: ['tts'] }, async () => {});
+    expect(tts.loaded).toBe(false);
+    tts.loaded = true; // simulate the engine lazily reloading itself between jobs
 
     let duringJob: boolean | null = null;
-    await q.run({ tier: 2, label: 'image', evicts: ['llm'] }, async () => { duringJob = llm.loaded; });
+    await q.run({ tier: 2, label: 'image', evicts: ['tts'] }, async () => { duringJob = tts.loaded; });
     expect(duringJob).toBe(false); // evicted again despite having reloaded
   });
 

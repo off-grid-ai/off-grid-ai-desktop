@@ -20,6 +20,18 @@ export type ResidencyMode = 'resident' | 'on-demand';
 
 export const MODALITIES: readonly Modality[] = ['llm', 'image', 'stt', 'tts'];
 
+// Modalities LOCKED to resident — they can never be set on-demand. The chat model
+// (llm) is locked because the always-on screen-replay/capture pipeline distills
+// frames through it continuously; on-demand would leave it evicted after any image
+// gen and the background distill would thrash-reload the ~5GB model. So it stays
+// in memory (the queue still evicts it MOMENTARILY during a competing heavy job,
+// then re-warms it — that's contention handling, not a user on-demand choice).
+export const LOCKED_RESIDENT: readonly Modality[] = ['llm'];
+
+export function isResidencyLocked(m: Modality): boolean {
+  return LOCKED_RESIDENT.includes(m);
+}
+
 // Defaults deliberately MATCH today's behavior, so turning the feature on changes
 // nothing until the user flips a toggle: the chat model is already a resident
 // llama-server; image/STT/TTS already load per use and free after.
@@ -46,6 +58,9 @@ export function normalizeResidency(raw: unknown): Record<Modality, ResidencyMode
       if (isMode(v)) out[m] = v;
     }
   }
+  // Locked modalities are always resident, regardless of what was persisted — a
+  // stale on-demand value (or a hand-edited settings file) can never take effect.
+  for (const m of LOCKED_RESIDENT) out[m] = 'resident';
   return out;
 }
 
@@ -59,9 +74,11 @@ export function getResidencyMode(modality: Modality): ResidencyMode {
   return getResidency()[modality];
 }
 
-/** Persist the mode for one modality, returning the updated full map. */
+/** Persist the mode for one modality, returning the updated full map. A locked
+ *  modality (e.g. the chat model) ignores the requested mode and stays resident. */
 export function setResidencyMode(modality: Modality, mode: ResidencyMode): Record<Modality, ResidencyMode> {
-  const next = { ...getResidency(), [modality]: mode };
+  const effective = isResidencyLocked(modality) ? 'resident' : mode;
+  const next = { ...getResidency(), [modality]: effective };
   saveSetting(SETTING_KEY, next);
   return next;
 }

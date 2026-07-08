@@ -113,8 +113,8 @@ function ProactiveSection(): React.ReactElement {
 // Runtime residency — per-engine on-demand vs in-memory (core infra). On a 16GB
 // Mac keeping a model warm trades RAM for latency; the queue evicts a warm model
 // when another engine needs the memory, so 'resident' is safe to opt into.
-const RESIDENCY_ROWS: { modality: 'llm' | 'image' | 'stt' | 'tts'; label: string; hint: string }[] = [
-  { modality: 'llm', label: 'Chat model', hint: 'The local LLM (gemma). Resident = instant replies; on-demand frees ~5GB between turns.' },
+const RESIDENCY_ROWS: { modality: 'llm' | 'image' | 'stt' | 'tts'; label: string; hint: string; locked?: boolean }[] = [
+  { modality: 'llm', label: 'Chat model', locked: true, hint: 'The local LLM (gemma). Kept in memory because screen replay distills captures through it continuously - on-demand would thrash-reload ~5GB. It is still freed momentarily during image generation, then reloaded.' },
   { modality: 'image', label: 'Image generation', hint: 'Resident keeps the diffusion model warm (~45s cold to ~7s warm); on-demand frees it after each image.' },
   { modality: 'stt', label: 'Dictation (speech-to-text)', hint: 'Resident keeps Whisper warm for fast live text; on-demand loads per recording. Parakeet always loads per use.' },
   { modality: 'tts', label: 'Text-to-speech', hint: 'Resident keeps the voice model warm; on-demand frees ~330MB between phrases.' },
@@ -128,7 +128,8 @@ function RuntimeResidencySection(): React.ReactElement {
     api.residencyGet?.().then((m: Record<string, string>) => setModes(m || {})).catch(() => {});
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
-  const toggle = (modality: string): void => {
+  const toggle = (modality: string, locked?: boolean): void => {
+    if (locked) return; // locked modalities (chat model) stay in-memory — no toggle
     const next = modes[modality] === 'resident' ? 'on-demand' : 'resident';
     setModes((prev) => ({ ...prev, [modality]: next }));
     api.residencySet?.(modality, next);
@@ -142,7 +143,7 @@ function RuntimeResidencySection(): React.ReactElement {
       </p>
       <div className="flex flex-col divide-y divide-neutral-800">
         {RESIDENCY_ROWS.map((row) => {
-          const resident = modes[row.modality] === 'resident';
+          const resident = row.locked || modes[row.modality] === 'resident';
           return (
             <div key={row.modality} className="flex items-start justify-between gap-4 py-3 first:pt-0">
               <div>
@@ -151,14 +152,17 @@ function RuntimeResidencySection(): React.ReactElement {
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <span className={`text-[11px] tabular-nums ${resident ? 'text-emerald-400' : 'text-neutral-500'}`}>
-                  {resident ? 'in-memory' : 'on-demand'}
+                  {row.locked ? 'in-memory (required)' : resident ? 'in-memory' : 'on-demand'}
                 </span>
                 <button
-                  onClick={() => toggle(row.modality)}
+                  onClick={() => toggle(row.modality, row.locked)}
                   role="switch"
                   aria-checked={resident}
+                  aria-disabled={row.locked}
+                  disabled={row.locked}
+                  title={row.locked ? 'Required in memory — screen replay depends on this model' : undefined}
                   aria-label={`${row.label} residency`}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${resident ? 'bg-emerald-500' : 'bg-neutral-700'}`}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${resident ? 'bg-emerald-500' : 'bg-neutral-700'} ${row.locked ? 'cursor-not-allowed opacity-50' : ''}`}
                 >
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${resident ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>

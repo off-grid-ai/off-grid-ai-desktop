@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeResidency, DEFAULT_RESIDENCY, MODALITIES } from '../runtime-residency';
+import { normalizeResidency, DEFAULT_RESIDENCY, MODALITIES, isResidencyLocked } from '../runtime-residency';
 
 describe('normalizeResidency', () => {
   it('returns the defaults for empty/garbage input', () => {
@@ -23,5 +23,22 @@ describe('normalizeResidency', () => {
     expect(r.llm).toBe('resident'); // invalid -> default
     expect(r.tts).toBe('resident'); // valid override kept
     expect(Object.keys(r).sort()).toEqual([...MODALITIES].sort());
+  });
+
+  it('forces locked modalities (chat model) resident even if persisted on-demand', () => {
+    // A stale/hand-edited on-demand for the LLM must never take effect — screen
+    // replay distills through it continuously, so on-demand would thrash-reload it.
+    const r = normalizeResidency({ llm: 'on-demand', image: 'on-demand' });
+    expect(r.llm).toBe('resident');   // locked -> coerced back
+    expect(r.image).toBe('on-demand'); // unlocked -> honored
+  });
+});
+
+describe('isResidencyLocked', () => {
+  it('locks the chat model and leaves the rest user-controlled', () => {
+    expect(isResidencyLocked('llm')).toBe(true);
+    expect(isResidencyLocked('image')).toBe(false);
+    expect(isResidencyLocked('stt')).toBe(false);
+    expect(isResidencyLocked('tts')).toBe(false);
   });
 });
