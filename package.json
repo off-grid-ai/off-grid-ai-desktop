@@ -29,7 +29,8 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
-    "test:e2e": "electron-vite build && playwright test"
+    "test:e2e": "electron-vite build && playwright test",
+    "smoke": "bash scripts/smoke-api.sh"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
