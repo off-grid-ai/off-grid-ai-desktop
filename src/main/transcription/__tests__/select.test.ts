@@ -7,28 +7,46 @@ const svc = (available: boolean, tag: string): TranscriptionService => ({
   transcribe: async () => ({ text: tag }),
 });
 
+const three = (w: boolean, p: boolean, r: boolean) => ({
+  whisper: svc(w, 'w'),
+  parakeet: svc(p, 'p'),
+  whisperResident: svc(r, 'r'),
+});
+
 describe('pickTranscription', () => {
   it('uses whisper by default', () => {
-    const r = pickTranscription('whisper', { whisper: svc(true, 'w'), parakeet: svc(true, 'p') });
+    const r = pickTranscription('whisper', three(true, true, true));
     expect(r.engine).toBe('whisper');
     expect(r.fellBack).toBe(false);
   });
 
   it('uses Parakeet when requested and available', () => {
-    const r = pickTranscription('parakeet', { whisper: svc(true, 'w'), parakeet: svc(true, 'p') });
+    const r = pickTranscription('parakeet', three(true, true, false));
     expect(r.engine).toBe('parakeet');
     expect(r.fellBack).toBe(false);
   });
 
   it('falls back to whisper when Parakeet is requested but not installed', () => {
-    const r = pickTranscription('parakeet', { whisper: svc(true, 'w'), parakeet: svc(false, 'p') });
+    const r = pickTranscription('parakeet', three(true, false, false));
+    expect(r.engine).toBe('whisper');
+    expect(r.fellBack).toBe(true);
+  });
+
+  it('uses the resident whisper-server when requested and available', () => {
+    const r = pickTranscription('whisper-resident', three(true, false, true));
+    expect(r.engine).toBe('whisper-resident');
+    expect(r.fellBack).toBe(false);
+  });
+
+  it('degrades to one-shot whisper when whisper-resident is requested but not built', () => {
+    const r = pickTranscription('whisper-resident', three(true, false, false));
     expect(r.engine).toBe('whisper');
     expect(r.fellBack).toBe(true);
   });
 
   it('never falls back for a whisper request even if whisper reports unavailable', () => {
     // whisper is the terminal fallback; selection doesn't second-guess it here.
-    const r = pickTranscription('whisper', { whisper: svc(false, 'w'), parakeet: svc(true, 'p') });
+    const r = pickTranscription('whisper', three(false, true, true));
     expect(r.engine).toBe('whisper');
     expect(r.fellBack).toBe(false);
   });

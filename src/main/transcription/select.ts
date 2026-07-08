@@ -1,35 +1,53 @@
-// Transcription engine selection. Whisper is the default; Parakeet is opt-in and only
-// used when its runtime is actually installed — otherwise we fall back to whisper so a
-// missing/not-yet-staged Parakeet binary never breaks dictation or file transcription.
+// Transcription engine selection. Whisper (one-shot whisper-cli) is the default and
+// the terminal fallback. Two opt-in engines degrade to it when their runtime isn't
+// installed, so a missing/not-yet-staged binary never breaks dictation or file
+// transcription:
+//   - 'parakeet'         — higher-accuracy sherpa-onnx model (opt-in in dictation).
+//   - 'whisper-resident' — the resident whisper-server (model stays warm) for live
+//                          interim, so ticks don't reload the model each call.
+// Everything that turns audio into text depends on this seam, never on a concrete
+// engine module: adding an engine is a new entry here + a new TranscriptionService.
 import type { TranscriptionService } from './types';
 import { transcriptionService as whisper } from './whisper-cli';
 import { parakeetTranscription as parakeet } from './parakeet-cli';
+import { whisperServerTranscription as whisperResident } from './whisper-server';
 import { getActiveModal } from '../active-models';
 import { modelsByKind } from '@offgrid/models';
 
-export type TranscriptionEngine = 'whisper' | 'parakeet';
+export type TranscriptionEngine = 'whisper' | 'parakeet' | 'whisper-resident';
+
+interface Services {
+  whisper: TranscriptionService;
+  parakeet: TranscriptionService;
+  whisperResident: TranscriptionService;
+}
 
 /**
  * Pick the engine to use. Pure: takes the candidate services so the fallback logic is
- * testable without touching disk. Parakeet is honored only when available; anything
- * else (including 'parakeet' when not installed) resolves to whisper.
+ * testable without touching disk. An opt-in engine is honored only when available;
+ * anything else (including an opt-in engine whose runtime isn't installed) resolves to
+ * the one-shot whisper.
  */
 export function pickTranscription(
   engine: TranscriptionEngine,
-  services: { whisper: TranscriptionService; parakeet: TranscriptionService },
+  services: Services,
 ): { service: TranscriptionService; engine: TranscriptionEngine; fellBack: boolean } {
   if (engine === 'parakeet') {
-    if (services.parakeet.isAvailable()) {
-      return { service: services.parakeet, engine: 'parakeet', fellBack: false };
-    }
+    if (services.parakeet.isAvailable()) return { service: services.parakeet, engine: 'parakeet', fellBack: false };
+    return { service: services.whisper, engine: 'whisper', fellBack: true };
+  }
+  if (engine === 'whisper-resident') {
+    if (services.whisperResident.isAvailable()) return { service: services.whisperResident, engine: 'whisper-resident', fellBack: false };
     return { service: services.whisper, engine: 'whisper', fellBack: true };
   }
   return { service: services.whisper, engine: 'whisper', fellBack: false };
 }
 
+const ALL: Services = { whisper, parakeet, whisperResident };
+
 /** Resolve the real singleton for an engine, with the whisper fallback wired in. */
 export function getTranscription(engine: TranscriptionEngine = 'whisper'): TranscriptionService {
-  return pickTranscription(engine, { whisper, parakeet }).service;
+  return pickTranscription(engine, ALL).service;
 }
 
 /**
@@ -37,7 +55,8 @@ export function getTranscription(engine: TranscriptionEngine = 'whisper'): Trans
  * value + catalog entries so it's testable. Core call sites (voice:transcribe, RAG audio)
  * have no pro dictation settings to read, so the active model's catalog `engine` field is
  * the single source of truth for which engine they should use. The active value may be a
- * catalog id or a primary filename — match either.
+ * catalog id or a primary filename — match either. (whisper-resident is a runtime choice,
+ * not a catalog model, so it never comes from here.)
  */
 export function engineForActiveModel(
   active: string | null,
@@ -63,10 +82,15 @@ export function getActiveTranscription(): TranscriptionService {
  *  source of truth for labeling a recording so provenance matches what really ran
  *  (e.g. a Parakeet request labels 'whisper' when Parakeet isn't installed). */
 export function effectiveEngine(engine: TranscriptionEngine): TranscriptionEngine {
-  return pickTranscription(engine, { whisper, parakeet }).engine;
+  return pickTranscription(engine, ALL).engine;
 }
 
 /** Is the Parakeet runtime installed (binary + model present)? */
 export function parakeetAvailable(): boolean {
   return parakeet.isAvailable();
+}
+
+/** Is the resident whisper-server runtime installed (binary + a model present)? */
+export function residentWhisperAvailable(): boolean {
+  return whisperResident.isAvailable();
 }
