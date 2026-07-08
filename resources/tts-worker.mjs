@@ -44,6 +44,15 @@ function encodeWavPcm16(float32, sampleRate) {
   return buf;
 }
 
+async function synthToFile(tts, text, voice, outPath) {
+  const clean = (text || '').trim().slice(0, 2000);
+  if (!clean) throw new Error('no text');
+  const audio = await tts.generate(clean, { voice: voice || DEFAULT_VOICE });
+  const samples = audio.audio || audio.data;
+  const sr = audio.sampling_rate || audio.sampleRate || 24000;
+  fs.writeFileSync(outPath, encodeWavPcm16(samples, sr));
+}
+
 async function main() {
   const mode = process.argv[2];
   const { KokoroTTS } = await import('kokoro-js');
@@ -52,7 +61,7 @@ async function main() {
   if (mode === 'voices') {
     const voices = Object.keys(tts.voices || {});
     process.stdout.write(JSON.stringify(voices));
-    return;
+    return { persist: false };
   }
 
   if (mode === 'speak') {
@@ -62,15 +71,36 @@ async function main() {
     let text = '';
     process.stdin.setEncoding('utf8');
     for await (const chunk of process.stdin) text += chunk;
-    text = text.trim().slice(0, 2000);
-    if (!text) throw new Error('no text on stdin');
-    const audio = await tts.generate(text, { voice });
-    const samples = audio.audio || audio.data;
-    const sr = audio.sampling_rate || audio.sampleRate || 24000;
-    process.stderr.write(`[tts-worker] samples=${samples ? samples.length : 0} sampleRate=${sr} -> 16-bit PCM\n`);
-    const wav = encodeWavPcm16(samples, sr);
-    fs.writeFileSync(outPath, wav);
-    return;
+    await synthToFile(tts, text, voice, outPath);
+    return { persist: false };
+  }
+
+  if (mode === 'serve') {
+    // RESIDENT mode: the model stays loaded; the main process streams one JSON
+    // request per line on stdin ({ id, text, voice, out }) and we reply with one
+    // JSON line per request ({ id, ok } or { id, error }). Stays alive until the
+    // parent kills us (the queue's evict), so the ~330MB model is warm across calls.
+    process.stdout.write(JSON.stringify({ ready: true }) + '\n');
+    let buf = '';
+    process.stdin.setEncoding('utf8');
+    for await (const chunk of process.stdin) {
+      buf += chunk;
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        let req;
+        try { req = JSON.parse(line); } catch { continue; }
+        try {
+          await synthToFile(tts, req.text, req.voice, req.out);
+          process.stdout.write(JSON.stringify({ id: req.id, ok: true }) + '\n');
+        } catch (e) {
+          process.stdout.write(JSON.stringify({ id: req.id, error: String(e && e.message ? e.message : e) }) + '\n');
+        }
+      }
+    }
+    return { persist: true }; // stdin closed -> parent is done with us
   }
 
   throw new Error(`unknown mode: ${String(mode)}`);

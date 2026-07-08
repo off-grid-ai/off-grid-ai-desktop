@@ -345,6 +345,10 @@ app.whenReady().then(() => {
       modalityQueue.setTier1CoexistsWithTier2(getSetting('modalityTier1CoexistsWithTier2', true));
       llm.init().catch(err => console.error("Failed to init LLM:", err));
   });
+  // Every other engine joins the SAME residency seam (runtime-manager), lazily so
+  // module load never blocks window creation. Registration only stores hooks — it
+  // doesn't spawn anything until the engine is actually used.
+  import('./tts').then(({ ttsRuntime }) => registerRuntime(ttsRuntime)).catch(() => {});
 
   createWindow()
 
