@@ -47,6 +47,12 @@ Each is a DRY/SOLID dedup meant to change NO behavior. Listed so you can spot-ch
 - **Relative timestamps** (D3 — `timeAgo` shared in `src/renderer/src/lib/time.ts`). Output format unchanged. Verify: chat list and Projects list relative times read the same as before ("just now", "5m ago", "3h ago", "2d ago", then a short date).
 - **Pro CRM helpers** (D1 extractJson + D4 today/hasColumn/notify, in the `pro` repo). Behavior-preserving per every call site; agent reported NO runtime-visible change. Low-risk, but if you exercise CRM/meetings/dictation LLM-extraction flows, confirm they still parse results and notifications still fire (skills notification body still truncates at 240 chars; proactive unchanged).
 
+### Logic extraction (pure decision logic pulled out of I/O shells — behavior verbatim)
+These moved pure logic into testable modules; the shell just imports and calls it. Smoke the paths:
+- **Gateway request handling** (`model-server/*`): image generation with a size/aspect param, a vision request with a remote-URL image (still inlined to the model), async requests (`?async=true` -> 202 + poll), and an error response (e.g. no model installed -> correct error envelope). Chat message sanitization for Gemma still consolidates system messages.
+- **LLM streaming** (`llm/sse-stream`, the highest-value path - this is the original-bug area): a chat with Thinking on streams token-by-token AND shows the reasoning bubble; content and reasoning stay separated; stop mid-stream keeps the partial. Payload shape unchanged (images, thinking flag).
+- **Search ranking** (`search-ranking`): memory search returns sensibly ordered results (recency + relevance), citations resolve.
+
 ### NOT landed (recorded honestly)
 - **D8 (pro clipboard TypeIcon dedup)** - the agent's work was lost (worktree auto-pruned before commit). No regression: the existing duplicated icon code remains and behaves as before. Re-do later; nothing to test.
 - **D3 notification copy** - deliberately NOT applied. Notification timestamps keep their existing verbose format ("3 minutes ago"); the compact-format change was dropped to avoid a silent UX change.
