@@ -1,3 +1,4 @@
+"use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -501,6 +502,43 @@ var CATALOG = [
     description: "Highest accuracy (large); needs more RAM",
     minRamGb: 8,
     files: [{ name: "ggml-large-v3.bin", url: resolve("ggerganov/whisper.cpp", "ggml-large-v3.bin"), role: "primary", sizeBytes: 3095e6 }]
+  },
+  // --- transcription (Parakeet, NVIDIA NeMo) — sherpa-onnx offline transducer (ONNX).
+  // A model is 4 files (encoder/decoder/joiner/tokens); on-disk names are slug-prefixed
+  // so multiple Parakeet models coexist in the flat models dir without colliding. Higher
+  // accuracy than whisper; served by the bundled sherpa-onnx CLI (engine: 'parakeet'). ---
+  {
+    id: "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+    name: "Parakeet TDT 0.6B v2",
+    kind: "transcription",
+    engine: "parakeet",
+    org: "nvidia",
+    description: "High-accuracy English STT (int8) - tops the open ASR leaderboard",
+    minRamGb: 4,
+    tags: ["Accurate", "English"],
+    files: [
+      { name: "parakeet-v2.encoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "encoder.int8.onnx"), role: "primary", sizeBytes: 652e6 },
+      { name: "parakeet-v2.decoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "decoder.int8.onnx"), role: "aux", sizeBytes: 726e4 },
+      { name: "parakeet-v2.joiner.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "joiner.int8.onnx"), role: "aux", sizeBytes: 174e4 },
+      { name: "parakeet-v2.tokens.txt", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "tokens.txt"), role: "tokenizer", sizeBytes: 9600 }
+    ]
+  },
+  {
+    id: "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
+    name: "Parakeet TDT 0.6B v3",
+    kind: "transcription",
+    engine: "parakeet",
+    org: "nvidia",
+    description: "Multilingual STT (int8) - 25 European languages",
+    minRamGb: 4,
+    isNew: true,
+    tags: ["Accurate", "Multilingual"],
+    files: [
+      { name: "parakeet-v3.encoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "encoder.int8.onnx"), role: "primary", sizeBytes: 652e6 },
+      { name: "parakeet-v3.decoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "decoder.int8.onnx"), role: "aux", sizeBytes: 726e4 },
+      { name: "parakeet-v3.joiner.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "joiner.int8.onnx"), role: "aux", sizeBytes: 174e4 },
+      { name: "parakeet-v3.tokens.txt", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "tokens.txt"), role: "tokenizer", sizeBytes: 9600 }
+    ]
   }
 ];
 function modelsByKind(kind) {
@@ -526,8 +564,7 @@ var ModelDownloader = class {
     return this.store.isInstalled(modelId);
   }
   cancel(modelId) {
-    var _a;
-    (_a = this.aborts.get(modelId)) == null ? void 0 : _a.abort();
+    this.aborts.get(modelId)?.abort();
   }
   emit(p) {
     for (const l of this.listeners) l(p);
@@ -843,8 +880,8 @@ async function getModelFiles(repoId, opts = {}) {
     return {
       fileName: baseName(f.rfilename),
       quant,
-      quality: (info == null ? void 0 : info.quality) ?? "Unknown",
-      recommended: (info == null ? void 0 : info.recommended) ?? false,
+      quality: info?.quality ?? "Unknown",
+      recommended: info?.recommended ?? false,
       sizeBytes: f.size ?? 0,
       downloadUrl: url(f.rfilename),
       mmproj: matchMmproj(f.rfilename)
@@ -930,18 +967,17 @@ function openAICompatibleProvider(cfg) {
       return (data.data ?? []).map((m) => ({ id: m.id, name: m.id }));
     },
     async *chat(messages, opts) {
-      var _a, _b, _c;
       const res = await f(`${cfg.endpoint}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders(cfg.apiKey) },
         body: JSON.stringify({
-          model: opts == null ? void 0 : opts.model,
+          model: opts?.model,
           messages,
           stream: true,
-          temperature: opts == null ? void 0 : opts.temperature,
-          max_tokens: opts == null ? void 0 : opts.maxTokens
+          temperature: opts?.temperature,
+          max_tokens: opts?.maxTokens
         }),
-        signal: opts == null ? void 0 : opts.signal
+        signal: opts?.signal
       });
       if (!res.ok || !res.body) throw new Error(`chat failed: HTTP ${res.status}`);
       for await (const line of lines(res.body)) {
@@ -951,7 +987,7 @@ function openAICompatibleProvider(cfg) {
         if (data === "[DONE]") return;
         try {
           const j = JSON.parse(data);
-          const c = (_c = (_b = (_a = j.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.delta) == null ? void 0 : _c.content;
+          const c = j.choices?.[0]?.delta?.content;
           if (c) yield c;
         } catch {
         }
@@ -971,12 +1007,11 @@ function ollamaProvider(cfg) {
       return (data.models ?? []).map((m) => ({ id: m.name, name: m.name }));
     },
     async *chat(messages, opts) {
-      var _a;
       const res = await f(`${cfg.endpoint}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: opts == null ? void 0 : opts.model, messages, stream: true }),
-        signal: opts == null ? void 0 : opts.signal
+        body: JSON.stringify({ model: opts?.model, messages, stream: true }),
+        signal: opts?.signal
       });
       if (!res.ok || !res.body) throw new Error(`chat failed: HTTP ${res.status}`);
       for await (const line of lines(res.body)) {
@@ -984,7 +1019,7 @@ function ollamaProvider(cfg) {
         if (!t) continue;
         try {
           const j = JSON.parse(t);
-          if ((_a = j.message) == null ? void 0 : _a.content) yield j.message.content;
+          if (j.message?.content) yield j.message.content;
           if (j.done) return;
         } catch {
         }

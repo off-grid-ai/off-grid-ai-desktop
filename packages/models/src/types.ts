@@ -44,6 +44,9 @@ export interface ModelEntry {
   /** Which on-device runtime serves this model. Default 'sd-cli' (stable-diffusion.cpp).
    *  'mflux' = the bundled MLX runtime (Apple-Silicon-only; fetches its own weights). */
   runtime?: 'sd-cli' | 'mflux';
+  /** For transcription models: which STT engine serves it. Default 'whisper' when
+   *  omitted. 'parakeet' models are multi-file ONNX sets run by the sherpa-onnx CLI. */
+  engine?: 'whisper' | 'parakeet';
   /** Release date (ISO yyyy-mm-dd), from the source repo's createdAt. Shown on the
    *  card and used to surface only recent ("post-Jan-2026") small models. */
   releaseDate?: string;

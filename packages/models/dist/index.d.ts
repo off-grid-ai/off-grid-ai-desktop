@@ -1,5 +1,5 @@
-import { M as ModelEntry, a as ModelKind, b as ModelRecommendationTier, D as DownloadBridge, c as ModelStore, d as DownloadProgress } from './types-C3JiELTS.js';
-export { e as DownloadStatus, I as ImageGenMode, f as ImageGenProvider, g as ImageGenRequest, h as ImageGenResult, i as ModelFile, s as supportsMode, v as validateImageGenRequest } from './types-C3JiELTS.js';
+import { M as ModelEntry, a as ModelKind, b as ModelRecommendationTier, D as DownloadBridge, c as ModelStore, d as DownloadProgress } from './types-Dbo7SGxu.js';
+export { e as DownloadStatus, I as ImageGenMode, f as ImageGenProvider, g as ImageGenRequest, h as ImageGenResult, i as ModelFile, s as supportsMode, v as validateImageGenRequest } from './types-Dbo7SGxu.js';
 
 declare const RECOMMENDATION_TIERS: ModelRecommendationTier[];
 declare function recommendForRam(ramGb: number): ModelRecommendationTier;
