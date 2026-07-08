@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { encodeWav } from '../wav';
+import { encodeWav, decodeWavPcm16 } from '../wav';
 
 describe('encodeWav', () => {
   it('writes a valid 44-byte RIFF/WAVE header for mono 16-bit PCM', () => {
@@ -29,5 +29,24 @@ describe('encodeWav', () => {
     const dv = new DataView(wav.buffer);
     expect(dv.getInt16(44, true)).toBe(0x7fff);
     expect(dv.getInt16(46, true)).toBe(-0x8000);
+  });
+});
+
+describe('decodeWavPcm16', () => {
+  it('round-trips samples written by encodeWav (used to VAD-gate ffmpeg output)', () => {
+    const samples = new Float32Array([0, 0.25, -0.5, 0.75, -1]);
+    const decoded = decodeWavPcm16(encodeWav(samples, 16000));
+    expect(decoded.length).toBe(samples.length);
+    // 16-bit quantization → allow a tiny tolerance.
+    for (let i = 0; i < samples.length; i++) expect(decoded[i]).toBeCloseTo(samples[i], 3);
+  });
+
+  it('returns empty for a header-only or truncated buffer (no crash, no phantom samples)', () => {
+    expect(decodeWavPcm16(new Uint8Array(44)).length).toBe(0);
+    expect(decodeWavPcm16(new Uint8Array(10)).length).toBe(0);
+  });
+
+  it('reads only whole samples when the data chunk has a trailing odd byte', () => {
+    expect(decodeWavPcm16(new Uint8Array(44 + 5)).length).toBe(2); // 5 bytes → 2 full int16
   });
 });

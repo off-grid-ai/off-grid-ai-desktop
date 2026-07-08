@@ -40,3 +40,21 @@ export function encodeWav(samples: Float32Array, sampleRate: number): Uint8Array
   }
   return new Uint8Array(buffer);
 }
+
+/** Decode a 16-bit PCM WAV byte buffer back to Float32 samples in [-1, 1]. Reads
+ *  the data chunk after the 44-byte canonical header (which is exactly what ffmpeg
+ *  writes with `-f wav -ar 16000 -ac 1`, and what encodeWav produces). Used to run
+ *  the speech-ratio VAD gate on a decoded recording without a second ffmpeg pass. */
+export function decodeWavPcm16(bytes: Uint8Array): Float32Array {
+  if (bytes.length <= 44) return new Float32Array(0);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const n = (bytes.length - 44) >> 1; // 2 bytes per sample
+  const out = new Float32Array(n);
+  let offset = 44;
+  for (let i = 0; i < n; i++) {
+    const s = view.getInt16(offset, true);
+    out[i] = s < 0 ? s / 0x8000 : s / 0x7fff;
+    offset += 2;
+  }
+  return out;
+}
