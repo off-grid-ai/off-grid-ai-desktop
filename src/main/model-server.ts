@@ -36,6 +36,13 @@ import { handleMcpRequest } from './mcp-server';
 import { llm, type LlmSettings } from './llm';
 import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports';
 import { retryWithDeadline } from './lib/retry';
+import { resolveDims } from './model-server/dimensions';
+import { classifyRef, decodeDataUrl, stripFileScheme, mimeFromExt, extForMime, toDataUrl } from './model-server/data-url';
+import { errBody, errMeta } from './model-server/errors';
+import { isAsync, matchPollRoute } from './model-server/async-request';
+import { sanitizeChatMessages } from './model-server/chat-messages';
+import { parseMultipart } from './model-server/multipart';
+import { tagLlmEntries, modelEntry, ollamaMirror } from './model-server/models-list';
 
 const UPSTREAM_HOST = '127.0.0.1';
 const UPSTREAM_PORT = LLAMA_SERVER_PORT; // bundled llama-server (see llm.ts)
@@ -46,10 +53,6 @@ let server: http.Server | null = null;
 function json(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
-}
-
-function errBody(message: string, type = 'invalid_request_error') {
-  return { error: { message, type } };
 }
 
 // ─── Async requests & polling ────────────────────────────────────────────────
@@ -90,14 +93,6 @@ function createRequest(id: string, kind: string, collection: string): ApiRequest
   return r;
 }
 
-function errMeta(e: unknown): { status: number; type: string; message: string } {
-  const status = (e as { status?: number } | undefined)?.status ?? 500;
-  const message = e instanceof Error ? e.message : String(e);
-  const type =
-    status === 501 ? 'not_installed' : status === 502 ? 'upstream_error' : status === 400 ? 'invalid_request_error' : 'server_error';
-  return { status, type, message };
-}
-
 /** Move a request through running → completed/failed around the work promise. */
 function settle<T>(r: ApiRequest, work: Promise<T>): Promise<T> {
   r.status = 'running';
@@ -117,18 +112,6 @@ function settle<T>(r: ApiRequest, work: Promise<T>): Promise<T> {
       throw e;
     }
   );
-}
-
-/** Did the caller ask for async handling? */
-function isAsync(req: http.IncomingMessage, payload?: Record<string, unknown>, fields?: Record<string, string>): boolean {
-  const q = (req.url || '').split('?')[1] || '';
-  if (/(^|&)async=(1|true|yes)(&|$)/i.test(q)) return true;
-  const h = String(req.headers['x-async'] || '').toLowerCase();
-  if (h === 'true' || h === '1') return true;
-  if (/respond-async/i.test(String(req.headers['prefer'] || ''))) return true;
-  if (payload && payload.async === true) return true;
-  if (fields && /^(1|true|yes)$/i.test(fields.async || '')) return true;
-  return false;
 }
 
 /** 202 Accepted with the request resource + Location for polling. */
@@ -165,17 +148,6 @@ function handlePoll(res: http.ServerResponse, id: string): void {
   if (r.status === 'failed') body.error = r.error;
   json(res, 200, body);
 }
-
-// Collections whose `<collection>/{id}` GET path resolves to a request resource.
-const POLL_COLLECTIONS = [
-  '/v1/images',
-  '/v1/images/generations',
-  '/v1/images/edits',
-  '/v1/chat/completions',
-  '/v1/embeddings',
-  '/v1/audio/speech',
-  '/v1/audio/transcriptions',
-];
 
 // Proxy a request to the local llama-server (response streaming preserved).
 // If `bodyOverride` is supplied, that buffer is sent as the request body (used
@@ -228,15 +200,11 @@ function proxyToLlama(
 // for local files" convention so the same payloads work against this gateway.
 function fetchImage(ref: string): Promise<{ data: Buffer; mime: string }> {
   const url = ref.trim();
-  if (url.startsWith('data:')) {
-    const comma = url.indexOf(',');
-    const mime = /data:([^;,]+)/.exec(url)?.[1] || 'image/png';
-    const meta = url.slice(5, comma);
-    const raw = url.slice(comma + 1);
-    const data = meta.includes('base64') ? Buffer.from(raw, 'base64') : Buffer.from(decodeURIComponent(raw));
-    return Promise.resolve({ data, mime });
+  const kind = classifyRef(url);
+  if (kind === 'data') {
+    return Promise.resolve(decodeDataUrl(url));
   }
-  if (url.startsWith('http://') || url.startsWith('https://')) {
+  if (kind === 'http') {
     const client = url.startsWith('https://') ? https : http;
     return new Promise((resolve, reject) => {
       const r = client.get(url, (resp) => {
@@ -261,44 +229,9 @@ function fetchImage(ref: string): Promise<{ data: Buffer; mime: string }> {
       r.on('error', reject);
     });
   }
-  const p = url.startsWith('file://') ? url.slice(7) : url;
-  const ext = path.extname(p).slice(1).toLowerCase();
-  const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+  const p = stripFileScheme(url);
+  const mime = mimeFromExt(path.extname(p).slice(1));
   return fs.promises.readFile(p).then((data) => ({ data, mime }));
-}
-
-function toDataUrl(data: Buffer, mime: string): string {
-  return `data:${mime};base64,${data.toString('base64')}`;
-}
-
-// Round to a multiple of 64 (diffusion models require it), clamped sane.
-function round64(n: number): number {
-  return Math.max(256, Math.min(2048, Math.round(n / 64) * 64));
-}
-
-// Resolve output dimensions from any of: explicit width/height, an OpenAI
-// "WIDTHxHEIGHT" size, or an OpenRouter aspect_ratio + resolution pair.
-function resolveDims(p: {
-  width?: unknown;
-  height?: unknown;
-  size?: unknown;
-  aspect_ratio?: unknown;
-  resolution?: unknown;
-}): { width?: number; height?: number } {
-  if (typeof p.width === 'number' && typeof p.height === 'number') return { width: p.width, height: p.height };
-  const fromSize = parseSize(p.size);
-  if (fromSize.width && fromSize.height) return fromSize;
-  if (typeof p.aspect_ratio === 'string') {
-    const m = /^(\d+)\s*[:x×]\s*(\d+)$/.exec(p.aspect_ratio.trim());
-    if (m) {
-      const ar = parseInt(m[1], 10) / parseInt(m[2], 10);
-      const res = String(p.resolution ?? '1K').toUpperCase();
-      const base = res === '2K' ? 1536 : res === '512' ? 512 : 1024; // long edge
-      const [w, h] = ar >= 1 ? [base, base / ar] : [base * ar, base];
-      return { width: round64(w), height: round64(h) };
-    }
-  }
-  return {};
 }
 
 function readBody(req: http.IncomingMessage, cap: number): Promise<Buffer> {
@@ -325,129 +258,8 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
   return JSON.parse(body.toString('utf8'));
 }
 
-// Minimal multipart/form-data parser — pulls out uploaded file(s) + text fields
-// (avoids adding a dependency for the upload endpoints). Keeps every file part
-// keyed by its form field name so img2img can grab `image` specifically.
-function parseMultipart(
-  body: Buffer,
-  contentType: string
-): { files: Record<string, { filename: string; data: Buffer }>; fields: Record<string, string> } {
-  const out: { files: Record<string, { filename: string; data: Buffer }>; fields: Record<string, string> } = {
-    files: {},
-    fields: {},
-  };
-  const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
-  if (!m) return out;
-  const boundary = (m[1] || m[2]).trim();
-  const delim = Buffer.from('--' + boundary);
-  const headSep = Buffer.from('\r\n\r\n');
-  let pos = body.indexOf(delim);
-  while (pos !== -1) {
-    let partStart = pos + delim.length;
-    if (body[partStart] === 0x2d && body[partStart + 1] === 0x2d) break; // closing "--"
-    partStart += 2; // skip CRLF after boundary
-    const next = body.indexOf(delim, partStart);
-    if (next === -1) break;
-    const part = body.slice(partStart, next - 2); // drop trailing CRLF
-    const sep = part.indexOf(headSep);
-    if (sep !== -1) {
-      const headers = part.slice(0, sep).toString('utf8');
-      const content = part.slice(sep + headSep.length);
-      const fileM = /filename="([^"]*)"/i.exec(headers);
-      const nameM = /name="([^"]*)"/i.exec(headers);
-      const field = nameM ? nameM[1] : '';
-      if (fileM && fileM[1]) {
-        out.files[field || fileM[1]] = { filename: fileM[1], data: content };
-      } else if (field) {
-        out.fields[field] = content.toString('utf8');
-      }
-    }
-    pos = next;
-  }
-  return out;
-}
-
-/** Parse an OpenAI "WIDTHxHEIGHT" size string. */
-function parseSize(size: unknown): { width?: number; height?: number } {
-  if (typeof size !== 'string') return {};
-  const m = /^(\d+)\s*[x×]\s*(\d+)$/i.exec(size.trim());
-  if (!m) return {};
-  return { width: parseInt(m[1], 10), height: parseInt(m[2], 10) };
-}
-
-// ─── Chat message sanitization ───────────────────────────────────────────────
-// Some models (Gemma 4) enforce strict message ordering via their Jinja chat
-// template: system messages MUST be at the very beginning. Clients like Claude
-// Code intersperse system messages mid-conversation (tool context, updates),
-// which makes the template raise "System message must be at the beginning".
-// Fix: pull ALL system messages out, merge their content, and place a single
-// system message at position 0. Non-system messages keep their original order.
-/** Extract text from any system message content shape, preserving all readable parts. */
-function extractSystemText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  return (content as { type?: string; text?: string; content?: unknown }[])
-    .map((p) => {
-      if (p.type === 'text' && p.text) return p.text;
-      // tool_result / tool_use blocks may carry nested text — include them so
-      // the merged system message retains all tool context, not just plain text.
-      if (typeof p.content === 'string') return p.content;
-      return '';
-    })
-    .filter(Boolean)
-    .join('\n');
-}
-
-function sanitizeChatMessages(body: unknown): boolean {
-  if (!body || typeof body !== 'object') return false;
-  const b = body as { messages?: unknown[] };
-  if (!Array.isArray(b.messages) || b.messages.length === 0) return false;
-
-  // Nothing to fix if there are no out-of-position system messages.
-  // A single system message already at index 0 is valid.
-  const firstIsSystem = (b.messages[0] as { role?: string }).role === 'system';
-  const hasOutOfPosition = b.messages.slice(firstIsSystem ? 1 : 0).some(
-    (m) => (m as { role?: string }).role === 'system',
-  );
-  if (!hasOutOfPosition) return false;
-
-  // Collect all system message text, preserving original content of any first
-  // system message at position 0 (keep its full content object, not just text).
-  const extraParts: string[] = [];
-  const rest: unknown[] = [];
-  let leadSystem: unknown = null;
-
-  for (let i = 0; i < b.messages.length; i++) {
-    const m = b.messages[i] as { role?: string; content?: unknown };
-    if (m.role === 'system') {
-      if (i === 0) {
-        leadSystem = m; // keep the lead system message as-is
-      } else {
-        const text = extractSystemText(m.content);
-        if (text.trim()) extraParts.push(text.trim());
-      }
-    } else {
-      rest.push(m);
-    }
-  }
-
-  if (leadSystem) {
-    // Append any out-of-position system content to the leading system message.
-    if (extraParts.length) {
-      const lead = leadSystem as { role: string; content: unknown };
-      const base = extractSystemText(lead.content);
-      lead.content = [base, ...extraParts].filter(Boolean).join('\n\n');
-    }
-    b.messages = [leadSystem, ...rest];
-  } else {
-    // No leading system message — create one from the merged parts.
-    b.messages = [
-      { role: 'system', content: extraParts.join('\n\n') },
-      ...rest,
-    ];
-  }
-  return true;
-}
+// Chat message sanitization (Gemma system-message ordering) lives in
+// ./model-server/chat-messages (sanitizeChatMessages), imported above.
 
 // ─── Text(+image) → text (chat, proxied) ─────────────────────────────────────
 // Walk an OpenAI chat body and replace any remote/file image_url with an inlined
@@ -654,13 +466,10 @@ async function handleModelsList(res: http.ServerResponse): Promise<void> {
   const upstream = await fetchUpstreamModels();
   const upData = Array.isArray(upstream.data) ? (upstream.data as Record<string, unknown>[]) : [];
   // Tag the LLM entries chat vs vision from their advertised capabilities.
-  const text: Record<string, unknown>[] = upData.map((m) => {
-    const caps = Array.isArray(m.capabilities) ? (m.capabilities as string[]) : [];
-    return { ...m, kind: caps.includes('multimodal') || caps.includes('vision') ? 'vision' : 'chat' };
-  });
+  const text: Record<string, unknown>[] = tagLlmEntries(upData);
 
   const tag = (id: string, kind: string, extra: Record<string, unknown> = {}): Record<string, unknown> =>
-    ({ id, object: 'model', created: now, owned_by: 'off-grid', kind, ...extra });
+    modelEntry(id, kind, now, extra);
 
   // Active image model (chosen pick, else the resolver default).
   const imgId = activeImageModel();
@@ -679,9 +488,7 @@ async function handleModelsList(res: http.ServerResponse): Promise<void> {
   const data: Record<string, unknown>[] = [...text, ...images, ...speech, ...transcription];
   // Mirror into the ollama-style `models` array some clients read, so both shapes
   // stay in sync.
-  const models = data.map((m) => ({
-    name: m.id, model: m.id, type: 'model', kind: m.kind,
-  }));
+  const models = ollamaMirror(data);
   json(res, 200, { object: 'list', data, models });
 }
 
@@ -866,7 +673,7 @@ async function handleImagesUnified(req: http.IncomingMessage, res: http.ServerRe
   try {
     if (refUrl) {
       const { data, mime } = await fetchImage(refUrl);
-      const ext = mime.includes('jpeg') ? '.jpg' : mime.includes('webp') ? '.webp' : '.png';
+      const ext = extForMime(mime);
       tmp = path.join(os.tmpdir(), `offgrid-imgref-${process.pid}-${data.length}${ext}`);
       await fs.promises.writeFile(tmp, data);
       params.initImage = tmp;
@@ -961,11 +768,9 @@ export function startModelServer(port = GATEWAY_PORT): void {
     // RESTful polling: GET the request resource. Canonical /v1/requests/{id}, or
     // the per-collection resource (e.g. /v1/images/{id}, /v1/audio/speech/{id}).
     if (method === 'GET') {
-      const slash = url.lastIndexOf('/');
-      const prefix = url.slice(0, slash);
-      const id = url.slice(slash + 1);
+      const { id, isPollCollection } = matchPollRoute(url);
       if (url.startsWith('/v1/requests/') && id) return handlePoll(res, id);
-      if (id && POLL_COLLECTIONS.includes(prefix) && requests.has(id)) return handlePoll(res, id);
+      if (id && isPollCollection && requests.has(id)) return handlePoll(res, id);
     }
 
     if (url === '/' || url === '/health') {
