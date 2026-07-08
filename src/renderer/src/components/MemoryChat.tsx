@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { shouldQueue, enqueue, dequeue, queuedCount } from '@renderer/lib/chat-queue';
+import { shouldQueue, enqueue, dequeue, queuedCount, clearQueue } from '@renderer/lib/chat-queue';
 import { waitingLabel } from '@renderer/lib/chat-labels';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -393,6 +393,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   // Map streamId → convId so the onRagStream handler can route tokens to the right
   // conversation regardless of which tab is active when the event fires.
   const streamConvRef = useRef<Map<string, string>>(new Map());
+  // Conversations the user hit "stop" on. The in-flight send checks this at each of
+  // its awaits and bails (no error bubble, no persisted junk) instead of finalizing a
+  // turn the user abandoned. Cleared when the conversation's send settles.
+  const cancelledRef = useRef<Set<string>>(new Set());
 
   const markdownComponents: Components = {
     p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>,
@@ -707,7 +711,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     }
 
     // From here this send belongs to `convId` — lock + target THAT conversation, so
-    // switching tabs mid-generation never misroutes it.
+    // switching tabs mid-generation never misroutes it. Clear any stale stop flag so a
+    // conversation the user previously stopped can generate again.
+    cancelledRef.current.delete(convId);
     markGenerating(convId, true);
     if (!regen) {
       const userMessage: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: trimmed, attachments: atts.map(a => ({ name: a.name, kind: a.kind, text: a.text, path: a.path })), audioUrl: opts?.voiceClip?.url, audioDuration: opts?.voiceClip?.duration };
@@ -817,6 +823,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       // are routed to the approval queue.
       if ((toolsOn || connectorsOn) && !activeProjectId) {
         const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn, conversationId: convId, images: imagePaths });
+        // User stopped while the tools ran — drop the result silently (the tools path
+        // has no mid-flight abort, so this is the earliest we can bail).
+        if (cancelledRef.current.has(convId)) return;
         // Persist the citation sources (and tool calls) so they survive a reload.
         const toolCtx = (tr?.unified?.length || tr?.toolCalls?.length)
           ? { unified: tr?.unified ?? [], toolCalls: (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result })) }
@@ -835,6 +844,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         return;
       }
 
+      // User stopped during the pre-stream window (persisting the turn, waiting for the
+      // model) — don't open a stream at all.
+      if (cancelledRef.current.has(convId)) return;
+
       // Placeholder message that fills in live as tokens/reasoning stream in
       // (matched by streamId in the onRagStream subscription).
       const streamId = `a-${Date.now()}`;
@@ -842,6 +855,20 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       streamConvRef.current.set(streamId, convId!);
       setConvMessages(convId, prev => [...prev, { id: streamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
       const result = await window.api.ragChat(modelQuery, 'All', history, activeProjectId, convId, noMemory && !activeProjectId, streamId, thinkingEnabled, imagePaths);
+
+      // Stopped mid-stream: the abort keeps whatever streamed so far. Finalize the
+      // partial text if any arrived; otherwise drop the empty placeholder. Never write
+      // the "No response returned." filler or a fresh bubble for a cancelled turn.
+      if (cancelledRef.current.has(convId)) {
+        const partial = (result.answer || '').trim();
+        if (partial) {
+          setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: partial, context: result.context, streaming: false } : m)));
+          try { await window.api.addRagMessage(convId, 'assistant', partial, result.context); } catch { /* ignore */ }
+        } else {
+          setConvMessages(convId, prev => prev.filter(m => m.id !== streamId));
+        }
+        return;
+      }
       const assistantContent = result.answer || 'No response returned.';
 
       // The model decided this is an image request — replace the streamed turn
@@ -880,6 +907,13 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         }
       }
     } catch (e) {
+      // User stopped: no error bubble — drop the empty placeholder (any partial text
+      // was already finalized on the cancel path above).
+      if (cancelledRef.current.has(convId)) {
+        const sid = activeStreamId;
+        if (sid) setConvMessages(convId, prev => prev.filter(m => !(m.id === sid && !m.content && !m.reasoning)));
+        return;
+      }
       console.error('RAG chat failed', e);
       const errorContent = 'Sorry, something went wrong while generating a response.';
       // Update the streaming placeholder to show the error — never append a second bubble.
@@ -893,6 +927,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         await window.api.addRagMessage(convId, 'assistant', errorContent);
       } catch (_) { /* ignore */ }
     } finally {
+      cancelledRef.current.delete(convId);
       markGenerating(convId, false);
       setLoading(false);
       await loadConversations();
@@ -910,6 +945,28 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     if (item === undefined) return;
     setTimeout(() => { void sendMessage(item.text || ' ', { atts: item.atts, conversationId: convId }); }, 30);
   };
+
+  // Stop the in-flight generation for a conversation: abort the model stream (main
+  // keeps whatever streamed so far) or the image job, drop any queued follow-ups, and
+  // return the UI to idle now. The in-flight sendMessage sees cancelledRef and bails at
+  // its next await; this handles both the pre-stream ("Searching your memory…") window
+  // and a live token stream.
+  const stopGeneration = useCallback((cid: string | null): void => {
+    const convId = cid ?? activeConversationId;
+    if (!convId) return;
+    cancelledRef.current.add(convId);
+    const streamingId = (messagesByConv[convId] ?? []).find(m => m.streaming)?.id;
+    if (streamingId) window.api.cancelRag?.(streamingId);
+    window.api.cancelImageGen?.();
+    if (queuedRef.current[convId]?.length) {
+      queuedRef.current = clearQueue(queuedRef.current, convId);
+      setQueuedByConv({ ...queuedRef.current });
+    }
+    markGenerating(convId, false);
+    setLoading(false);
+    setGeneratingImage(false);
+    setImgProgress(null);
+  }, [activeConversationId, messagesByConv, markGenerating]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Slash skill autocomplete: while typing "/name" (before any space), Tab —
@@ -2355,14 +2412,18 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                       <TooltipContent>{recording ? 'Stop recording' : 'Record voice'}</TooltipContent>
                     </Tooltip>
                     )}
-                    {messages.some(m => m.streaming) && (
+                    {/* Stop shows for the WHOLE generating window — the pre-stream
+                        "Searching your memory…" phase as well as a live token stream —
+                        so an in-flight turn is always cancellable. Image gen has its own
+                        labeled Stop just below, so skip this icon in that mode. */}
+                    {!!activeConversationId && generatingConvs.has(activeConversationId) && !(loading && (mode === 'image' || generatingImage)) && (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
                             type="button"
                             variant="outline"
                             size="icon"
-                            onClick={() => { const s = messages.find(m => m.streaming); if (s) window.api.cancelRag?.(s.id); }}
+                            onClick={() => stopGeneration(activeConversationId)}
                             className="size-8 rounded-full border-red-500/50 text-red-400 hover:bg-red-500/10"
                           >
                             <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
@@ -2372,7 +2433,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                       </Tooltip>
                     )}
                     {loading && (mode === 'image' || generatingImage) ? (
-                      <Button type="button" variant="outline" onClick={() => window.api.cancelImageGen?.()} className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10">
+                      <Button type="button" variant="outline" onClick={() => stopGeneration(activeConversationId)} className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10">
                         <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
                         Stop
                       </Button>
