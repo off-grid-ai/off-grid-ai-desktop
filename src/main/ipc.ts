@@ -182,17 +182,36 @@ async function streamAnswer(
     images: string[] = [],
 ): Promise<string> {
     const { llm } = await import('./llm');
+    const { modalityQueue } = await import('./modality-queue/queue');
+
+    // Non-stream fallback (no streamId/sender): a single blocking chat turn.
     if (!streamId || !event?.sender) {
-        return (await llm.chat(prompt, images, 300000, 2048, { disableThinking: !thinking })).trim();
+        // Interactive chat is foreground work - Tier 2, a peer of image gen. During
+        // image gen the LLM is evicted so this waits anyway (consistent); background
+        // screen-replay (Tier 3) defers to it. Chat runs ON the 'llm' engine, so it
+        // evicts nothing (evicting 'llm' would evict itself). run()'s finally releases
+        // the slot even if fn throws, so we let errors propagate from inside.
+        return modalityQueue.run({ tier: 2, label: 'chat' }, async () =>
+            (await llm.chat(prompt, images, 300000, 2048, { disableThinking: !thinking })).trim(),
+        );
     }
+
     const sender = event.sender;
+    // Register the abort controller BEFORE queuing so a rag:cancel that arrives while
+    // this turn is still WAITING in the queue is honored - the stream then starts with
+    // an already-aborted signal (and resolves immediately) rather than running in full.
     const controller = new AbortController();
     streamControllers.set(streamId, controller);
     try {
-        const answer = await llm.chatStream(prompt, images, (text, kind) => {
-            try { sender.send('rag:stream', { streamId, type: kind, text }); } catch { /* window gone */ }
-        }, { thinking, signal: controller.signal });
-        return answer.trim();
+        // Interactive streaming chat = Tier 2 (see above). Await the full stream inside
+        // the run() callback so the queue slot is held for the whole generation; the
+        // cancel path aborts via the controller registered above.
+        return await modalityQueue.run({ tier: 2, label: 'chat' }, async () => {
+            const answer = await llm.chatStream(prompt, images, (text, kind) => {
+                try { sender.send('rag:stream', { streamId, type: kind, text }); } catch { /* window gone */ }
+            }, { thinking, signal: controller.signal });
+            return answer.trim();
+        });
     } finally {
         streamControllers.delete(streamId);
     }
