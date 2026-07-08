@@ -8,6 +8,7 @@ import * as http from "http";
 import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit } from "./runtime-env";
 import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from "./model-sizing";
 import { classifyLlamaError } from "./llama-error";
+import type { ManagedRuntime } from "./runtime-manager";
 
 export type { KvCacheType, PerformanceMode };
 
@@ -778,6 +779,17 @@ export class LLMService {
    *  the meantime. Pairs with pause() as the on-demand counterpart of resume(). */
   releasePause() {
     this.paused = false;
+  }
+
+  /** This engine as a ManagedRuntime for the shared residency seam (runtime-manager),
+   *  so the chat model is managed identically to image/STT/TTS — one code path. */
+  get runtime(): ManagedRuntime {
+    return {
+      modality: 'llm',
+      evict: () => { try { this.pause(); } catch { /* ignore */ } },
+      warm: () => { this.resume(); },
+      release: () => { this.releasePause(); },
+    };
   }
 
   isReady() {

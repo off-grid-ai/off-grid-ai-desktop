@@ -22,7 +22,7 @@ import { setupLicenseIpc } from './license-ipc'
 import { nativeImage } from 'electron'
 import { purgeLegacyChatImports, getSetting } from './database'
 import { modalityQueue } from './modality-queue/queue'
-import { getResidencyMode } from './runtime-residency'
+import { registerRuntime } from './runtime-manager'
 
 // Pin one canonical userData dir ("Off Grid AI Desktop") regardless of package
 // name, and migrate data from the legacy split dirs ("My Memories" had the
@@ -335,20 +335,11 @@ app.whenReady().then(() => {
   // 3. Initialize LLM (Async)
   // We don't await this to avoid blocking window creation
   import('./llm').then(({ llm }) => {
-      // Register the chat engine as evictable so the ModalityQueue can free it
-      // before a heavy tier-2 job (image gen) runs — the generalization of the old
-      // inline llm.pause() guard. pause() frees the server AND blocks the capture
-      // pipeline from respawning it while the image model is resident. Re-warm is
-      // MODE-AWARE: resident = reload now (low-latency next chat); on-demand = just
-      // release the pause block and let it lazily respawn on the next chat (frees
-      // its RAM meanwhile).
-      modalityQueue.registerEvictable('llm', {
-        evict: () => { try { llm.pause(); } catch { /* ignore */ } },
-        warm: () => {
-          if (getResidencyMode('llm') === 'resident') llm.resume();
-          else llm.releasePause();
-        },
-      });
+      // Register the chat engine through the shared residency seam (runtime-manager),
+      // exactly like every other engine — the queue evicts it before a competing
+      // heavy job and re-warms it mode-aware (resident = reload; on-demand = release
+      // the pause block so it lazily respawns on next use, freeing RAM meanwhile).
+      registerRuntime(llm.runtime);
       // Apply persisted queue settings (defaults: enabled, tier-1 coexists).
       modalityQueue.setEnabled(getSetting('modalityQueueEnabled', true));
       modalityQueue.setTier1CoexistsWithTier2(getSetting('modalityTier1CoexistsWithTier2', true));
