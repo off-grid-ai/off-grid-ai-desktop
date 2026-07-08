@@ -81,3 +81,27 @@ re-quantize) and wiring it as the "Fast" image model, keeping full animagine as 
    and a "Fast VAE" toggle in image settings that sets `fastVae`.
 3. Benchmark an f16 animagine GGUF for per-step (only if a file is produced).
 4. Validate taesd decode fidelity at a proper step count (20) vs the full VAE.
+
+## Bake attempt — status (blocked on a format handoff, NOT on the concept)
+
+Tried to bake SDXL-Lightning into animagine to ship a few-step q8 Fast model:
+
+- **sd.cpp's runtime LoRA for SDXL is broken.** LCM *and* Lightning both report
+  `2364/2364 tensors applied` but produce corrupted (banded) output — proven across
+  q8 AND f16-GGUF, Metal AND CPU, with/without flash-attn. Same models with no LoRA
+  are clean. So a runtime LoRA is a dead end here; distillation must be baked into the
+  weights.
+- **The merge works:** diffusers `fuse_lora` correctly bakes Lightning into animagine.
+- **Blocker = merged weights → sd.cpp-loadable GGUF.** Both routes failed:
+  (a) diffusers→`convert_diffusers_to_original_sdxl.py` single-file → sd.cpp rejects
+  the tensor layout (`... not in model metadata`); (b) sd.cpp `-M convert` on the
+  diffusers folder writes a GGUF but then fails `get sd version from file` on load
+  (even on the build that wrote it).
+- **Next step (highest confidence):** kohya-ss `sdxl_merge_lora.py` merges into the
+  ORIGINAL single-file checkpoint (preserves exact tensor keys the working q8 uses) →
+  sd.cpp converts that → loadable. Needs re-downloading the f16 base (~6.9GB, deleted
+  to reclaim disk). Kept: `loras/{sdxl-lightning-8step,lcm-lora-sdxl}.safetensors`,
+  `taesdxl.safetensors`.
+- **Parallel bet:** MLX-for-SDXL spike — MLX (MIT, already bundled as mflux) may be
+  faster AND apply LoRAs correctly, sidestepping both the slow kernels and the sd.cpp
+  LoRA bug. Verdict pending.
