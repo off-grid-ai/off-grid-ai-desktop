@@ -13,6 +13,7 @@ import { getActiveModal } from './active-models';
 import { binRoots, dataDir, modelsDir } from './runtime-env';
 import { sdServer } from './sd-server';
 import { standardModelDefaults, taesdFilename } from '../shared/image-defaults';
+import { defaultImageModelFilename } from './image-default';
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {
@@ -294,6 +295,12 @@ function resolveModel(preferred?: string): string | null {
     if (fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
     if (sd.includes(chosen)) return path.join(dir, chosen); // mlx/virtual id
   }
+  // Smart default: DreamShaper XL v2 Turbo (the versatile default), RAM-aware —
+  // a fresh user on <=16GB gets the Light (Q4) quant, >16GB gets the full (Q8).
+  // Only when the user hasn't picked (getActiveModal above). Falls through to the
+  // generic heuristic below when no DreamShaper quant is installed.
+  const dreamshaper = defaultImageModelFilename(sd, os.totalmem() / 1e9);
+  if (dreamshaper) return path.join(dir, dreamshaper);
   // Preference: Juggernaut XL v9 (default photoreal) > Z-Image-Turbo >
   // SDXL-Lightning > SDXL > SD 2.1 > anything else.
   const juggernaut = sd.find((f) => /juggernaut/i.test(f));
