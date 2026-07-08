@@ -529,10 +529,11 @@ export async function generateImage(
     sdServer.setEvictionHook(() => { try { llm.resume(); } catch { /* ignore */ } });
     try { llm.pause(); } catch { /* ignore */ }
     await new Promise((r) => setTimeout(r, 2500));
-    // taesd defaults ON for distilled models (sub-second decode, quality parity
-    // with the full VAE once the KARRAS schedule is used); off for full models
-    // (preserve full-VAE fidelity). Caller can force either way via params.fastVae.
-    const taesd = (params.fastVae ?? d.fewStep) ? resolveTaesd(base) : null;
+    // taesd is OFF by default: it softens fine detail (and BLANKS at 1024 — the
+    // tiny decoder overflows), so the approved quality recipe uses the full VAE.
+    // At 512 the full VAE decodes in ~6s. taesd stays strictly opt-in (fastVae)
+    // for a fast low-res draft/preview where softness is acceptable.
+    const taesd = params.fastVae ? resolveTaesd(base) : null;
     try {
       await sdServer.ensureUp({ modelPath: model, diffusionFa: true, taesdPath: taesd ?? undefined, threads: Math.max(1, os.cpus().length - 2) });
       const { png, seed: usedSeed } = await sdServer.generate(
@@ -614,7 +615,7 @@ export async function generateImage(
     // single-source-of-truth helper). Distilled few-step models need ~8 steps,
     // cfg 2 and the KARRAS schedule for crisp output; full checkpoints need ~28
     // steps + real CFG on the engine-default schedule.
-    const { defaultSize, defaultSteps, defaultCfg, sampler, scheduler, fewStep, isXL } = standardModelDefaults(base);
+    const { defaultSize, defaultSteps, defaultCfg, sampler, scheduler, isXL } = standardModelDefaults(base);
     // Full checkpoint → load with -m. UNET-only quant → load the diffusion model
     // separately and supply SDXL CLIP-L/CLIP-G + VAE; if those companions aren't
     // installed, fail with a clear message instead of the cryptic sd.cpp abort.
@@ -661,10 +662,10 @@ export async function generateImage(
     // pass — exactly what our freeze-safe 768 thumbnail batch skipped.
     const effW = params.width ?? defaultSize;
     const effH = params.height ?? defaultSize;
-    // TAESD decode: defaults ON for distilled models (fast, quality parity under
-    // KARRAS), OFF for full models (keep full-VAE fidelity); caller can override.
-    // When present it makes VAE-tiling moot (taesd is already cheap), so prefer it.
-    const cliTaesd = (params.fastVae ?? fewStep) ? resolveTaesd(base) : null;
+    // TAESD decode: OFF by default (it softens detail and blanks at 1024); the
+    // quality recipe uses the full VAE. Strictly opt-in via fastVae for a fast
+    // low-res draft. When present it makes VAE-tiling moot, so prefer it.
+    const cliTaesd = params.fastVae ? resolveTaesd(base) : null;
     if (cliTaesd) args.push('--taesd', cliTaesd);
     else if (isXL && Math.max(effW, effH) > 768) args.push('--vae-tiling');
     args.push('-n', params.negativePrompt?.trim() || DEFAULT_NEGATIVE);

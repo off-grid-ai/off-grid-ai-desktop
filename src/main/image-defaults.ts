@@ -41,8 +41,10 @@ export function standardModelDefaults(baseName: string): StandardModelDefaults {
   const isV2 = /v2-1|v2\.1/i.test(base);
   const fewStep = isLightning || isTurbo;
   if (fewStep) {
-    // Proven crisp+fast config: 8 steps, cfg 2, dpm++2m, KARRAS, 512².
-    return { defaultSize: 512, defaultSteps: 8, defaultCfg: 2, sampler: 'dpm++2m', scheduler: 'karras', fewStep, isXL };
+    // Approved config: 10 steps, cfg 2, dpm++2m, KARRAS, 512², FULL VAE (taesd
+    // blanks at high res; 512 full-VAE decodes in ~6s). ~30s warm on an M4 at
+    // good quality. (1024 is crisper but ~90s — offered as a separate quality tier.)
+    return { defaultSize: 512, defaultSteps: 10, defaultCfg: 2, sampler: 'dpm++2m', scheduler: 'karras', fewStep, isXL };
   }
   // Full (non-distilled) checkpoints: many steps, real CFG, engine-default schedule.
   const defaultSize = isXL ? 1024 : isV2 ? 768 : 512;

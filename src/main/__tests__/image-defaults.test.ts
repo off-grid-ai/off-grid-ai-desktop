@@ -22,21 +22,21 @@ describe('standardModelDefaults', () => {
     expect(d.scheduler).toBe('discrete');
   });
 
-  it('gives distilled Lightning the crisp fast config: 512, 8 steps, cfg 2, dpm++2m, KARRAS', () => {
+  it('gives distilled Lightning the approved fast config: 512, 10 steps, cfg 2, dpm++2m, KARRAS', () => {
     const d = standardModelDefaults('sdxl-lightning-4step.gguf');
     expect(d.fewStep).toBe(true);
     expect(d.defaultSize).toBe(512);
-    expect(d.defaultSteps).toBe(8); // 8 is the crisp floor; 4 smears even the right model
+    expect(d.defaultSteps).toBe(10);
     expect(d.defaultCfg).toBe(2);
     expect(d.sampler).toBe('dpm++2m');
     expect(d.scheduler).toBe('karras');
   });
 
-  it('treats dreamshaper turbo as the crisp fast config (512 / 8 / karras)', () => {
+  it('treats dreamshaper turbo as the approved fast config (512 / 10 / karras)', () => {
     const d = standardModelDefaults('dreamshaper-xl-v2-turbo-Q8_0.gguf');
     expect(d.fewStep).toBe(true);
     expect(d.defaultSize).toBe(512);
-    expect(d.defaultSteps).toBe(8);
+    expect(d.defaultSteps).toBe(10);
     expect(d.scheduler).toBe('karras');
   });
 
