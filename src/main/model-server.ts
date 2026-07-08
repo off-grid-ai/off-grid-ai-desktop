@@ -35,6 +35,7 @@ import { docsText, docsHtml, openApiSpec } from './api-docs';
 import { handleMcpRequest } from './mcp-server';
 import { llm, type LlmSettings } from './llm';
 import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports';
+import { retryWithDeadline } from './lib/retry';
 
 const UPSTREAM_HOST = '127.0.0.1';
 const UPSTREAM_PORT = LLAMA_SERVER_PORT; // bundled llama-server (see llm.ts)
@@ -184,7 +185,8 @@ const POLL_COLLECTIONS = [
 // When a buffer is supplied the request is replayable, so on a connection error
 // (llama-server briefly down while it reloads after image generation) we wait and
 // retry until `retryUntil` rather than failing the caller with a 502. Piped
-// (streamed) requests can't be replayed, so they fail fast.
+// (streamed) requests can't be replayed, so they fail fast. The wait-and-retry
+// loop is the shared `retryWithDeadline` helper.
 function proxyToLlama(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -196,25 +198,29 @@ function proxyToLlama(
     headers['content-length'] = String(bodyOverride.length);
     delete headers['transfer-encoding'];
   }
-  const proxyReq = http.request(
-    { hostname: UPSTREAM_HOST, port: UPSTREAM_PORT, path: req.url, method: req.method, headers },
-    (proxyRes) => {
-      res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
-      proxyRes.pipe(res);
-    }
-  );
-  proxyReq.on('error', () => {
-    if (bodyOverride && Date.now() < retryUntil) {
-      setTimeout(() => proxyToLlama(req, res, bodyOverride, retryUntil), 1000);
-    } else {
-      json(res, 502, errBody('Local model not ready (llama-server unavailable).', 'upstream_error'));
-    }
+  // One attempt: resolves once the upstream response is piped through, rejects
+  // on a connection error (the only transient failure this proxy retries).
+  const attempt = (): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      const proxyReq = http.request(
+        { hostname: UPSTREAM_HOST, port: UPSTREAM_PORT, path: req.url, method: req.method, headers },
+        (proxyRes) => {
+          res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+          proxyRes.pipe(res);
+          resolve();
+        }
+      );
+      proxyReq.on('error', reject);
+      if (bodyOverride) {
+        proxyReq.end(bodyOverride);
+      } else {
+        req.pipe(proxyReq);
+      }
+    });
+  // Piped requests aren't replayable, so they fail fast (replayable=false).
+  retryWithDeadline(attempt, { deadlineMs: retryUntil, replayable: !!bodyOverride }).catch(() => {
+    json(res, 502, errBody('Local model not ready (llama-server unavailable).', 'upstream_error'));
   });
-  if (bodyOverride) {
-    proxyReq.end(bodyOverride);
-  } else {
-    req.pipe(proxyReq);
-  }
 }
 
 // Fetch an image reference into a Buffer. Accepts data: URLs, http(s):// URLs,
@@ -501,45 +507,59 @@ function jsonWithId(res: http.ServerResponse, rid: string, result: unknown): voi
 }
 
 // Non-streaming chat call to llama-server returning parsed JSON (used for async
-// chat). Retries through a brief reload window like the streaming proxy does.
+// chat). Retries through a brief reload window like the streaming proxy does,
+// via the shared `retryWithDeadline` helper. Only a connection error is
+// transient; an HTTP >= 400 answer (or a parse failure) is the engine's real
+// reply and is never retried - so those attempt-rejections are tagged fatal.
 function callLlamaJson(bodyObj: Record<string, unknown>, retryUntil: number): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const payload = Buffer.from(JSON.stringify({ ...bodyObj, stream: false }));
-    const upstream = http.request(
-      {
-        hostname: UPSTREAM_HOST,
-        port: UPSTREAM_PORT,
-        path: '/v1/chat/completions',
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'content-length': String(payload.length) },
-      },
-      (resp) => {
-        const chunks: Buffer[] = [];
-        resp.on('data', (c: Buffer) => chunks.push(c));
-        resp.on('end', () => {
-          try {
-            const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-            if ((resp.statusCode || 0) >= 400) {
-              const err = new Error(parsed?.error?.message || 'upstream error') as Error & { status?: number };
-              err.status = resp.statusCode;
-              reject(err);
-            } else resolve(parsed);
-          } catch (e) {
-            reject(e);
-          }
-        });
-      }
-    );
-    upstream.on('error', () => {
-      if (Date.now() < retryUntil) {
-        setTimeout(() => callLlamaJson(bodyObj, retryUntil).then(resolve, reject), 1000);
-      } else {
-        const err = new Error('Local model not ready (llama-server unavailable).') as Error & { status?: number };
-        err.status = 502;
-        reject(err);
-      }
+  const payload = Buffer.from(JSON.stringify({ ...bodyObj, stream: false }));
+  // One attempt. A connection ('error') rejection is left un-tagged (transient);
+  // an HTTP-error or parse rejection is tagged `fatal` so it is not replayed.
+  const attempt = (): Promise<unknown> =>
+    new Promise((resolve, reject) => {
+      const upstream = http.request(
+        {
+          hostname: UPSTREAM_HOST,
+          port: UPSTREAM_PORT,
+          path: '/v1/chat/completions',
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'content-length': String(payload.length) },
+        },
+        (resp) => {
+          const chunks: Buffer[] = [];
+          resp.on('data', (c: Buffer) => chunks.push(c));
+          resp.on('end', () => {
+            try {
+              const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+              if ((resp.statusCode || 0) >= 400) {
+                const err = new Error(parsed?.error?.message || 'upstream error') as Error & {
+                  status?: number;
+                  fatal?: boolean;
+                };
+                err.status = resp.statusCode;
+                err.fatal = true;
+                reject(err);
+              } else resolve(parsed);
+            } catch (e) {
+              (e as { fatal?: boolean }).fatal = true;
+              reject(e);
+            }
+          });
+        }
+      );
+      upstream.on('error', reject);
+      upstream.end(payload);
     });
-    upstream.end(payload);
+  return retryWithDeadline(attempt, {
+    deadlineMs: retryUntil,
+    isTransient: (err) => !(err as { fatal?: boolean })?.fatal,
+  }).catch((err) => {
+    // A transient failure that outlived the deadline surfaces as the 502 the
+    // caller previously saw; fatal errors keep their own status.
+    if ((err as { fatal?: boolean })?.fatal) throw err;
+    const e = new Error('Local model not ready (llama-server unavailable).') as Error & { status?: number };
+    e.status = 502;
+    throw e;
   });
 }
 
