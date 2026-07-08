@@ -7,31 +7,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Microphone, Square } from '@phosphor-icons/react';
 import { voice } from '@renderer/lib/voiceApi';
 
-// Inline AudioWorklet: downsamples each input frame from the device's native rate
-// to a FIXED 16 kHz and posts Float32 PCM back to the main thread. Resampling here,
-// using the worklet's authoritative global 'sampleRate', makes the pipeline immune
-// to whatever rate the mic/headphones run at — streamed PCM (live interim) AND the
-// saved recording are always real 16 kHz, never mislabeled/stretched. Linear
-// interpolation with a fractional read position carried across blocks (no clicks).
+// Inline AudioWorklet: posts each input frame (Float32) at the device's NATIVE
+// rate back to the main thread. We deliberately do NOT downsample here — naive
+// in-worklet decimation has no anti-aliasing filter and shreds ASR accuracy. Main
+// resamples to 16 kHz with ffmpeg (proper anti-alias filter). The renderer reports
+// the honest ctx.sampleRate, so nothing is mislabeled/stretched.
 const WORKLET_SRC = `
 class PCMWorklet extends AudioWorkletProcessor {
-  constructor() { super(); this._ratio = sampleRate / 16000; this._pos = 0; }
   process(inputs) {
     const ch = inputs[0] && inputs[0][0];
-    if (ch && ch.length) {
-      const ratio = this._ratio;
-      if (ratio === 1) { this.port.postMessage(ch.slice(0)); return true; }
-      const out = [];
-      let pos = this._pos;
-      while (pos < ch.length) {
-        const i = Math.floor(pos), frac = pos - i;
-        const a = ch[i], b = i + 1 < ch.length ? ch[i + 1] : a;
-        out.push(a + (b - a) * frac);
-        pos += ratio;
-      }
-      this._pos = pos - ch.length;
-      if (out.length) this.port.postMessage(Float32Array.from(out));
-    }
+    if (ch && ch.length) this.port.postMessage(ch.slice(0));
     return true;
   }
 }
@@ -88,9 +73,9 @@ export function DictationOverlay(): React.JSX.Element | null {
 
       const src = ctx.createMediaStreamSource(stream);
       const node = new AudioWorkletNode(ctx, 'pcm-worklet');
-      // The worklet emits 16 kHz regardless of ctx.sampleRate, so the rate reported
-      // to main is the fixed TARGET_RATE — never the (possibly-lying) device rate.
-      const rate = TARGET_RATE;
+      // Report the HONEST native context rate (forced-16k removed, so it no longer
+      // lies). Main ffmpeg-resamples to 16k with a proper anti-alias filter.
+      const rate = ctx.sampleRate;
       rateRef.current = rate;
       node.port.onmessage = (e: MessageEvent<Float32Array>) => {
         const frame = e.data;
