@@ -15,22 +15,12 @@ import os from 'os'
 import path from 'path'
 import { binRoots, modelsDir } from '../runtime-env'
 import { getActiveModal } from '../active-models'
-import { modelsByKind } from '@offgrid/models'
 import { ffmpegBin } from './whisper-cli'
+import { existing } from './bin-resolution'
+import { modelsByEngine } from './select'
 import type { TranscriptionService, Transcript, TranscribeOptions } from './types'
 
 const execFileAsync = promisify(execFile)
-
-function existing(paths: string[]): string | null {
-  for (const p of paths) {
-    try {
-      if (fs.existsSync(p)) return p
-    } catch {
-      /* ignore */
-    }
-  }
-  return null
-}
 
 /** Resolve the bundled sherpa-onnx offline CLI across dev / packaged layouts. The CI
  *  stager preserves the prebuilt's bin/ + lib/ structure (so its @rpath finds the
@@ -110,7 +100,9 @@ export function activeMatchesEntry(
  *  the user selected as active (matched by catalog id OR primary filename). */
 function downloadedCatalogModel(): ParakeetModel | null {
   const dir = modelsDir()
-  const entries = modelsByKind('transcription').filter((m) => m.engine === 'parakeet')
+  // Partition the catalog by engine in ONE place (select.modelsByEngine), not a local
+  // `m.engine === 'parakeet'` filter duplicated against whisper-cli's classification.
+  const entries = modelsByEngine('parakeet')
   if (!entries.length) return null
   const active = getActiveModal('transcription')
   const ordered = active
