@@ -8,6 +8,8 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { modalityQueue } from './modality-queue/queue';
+import { getResidencyMode } from './runtime-residency';
+import type { ManagedRuntime } from './runtime-manager';
 import { isMfluxModelId, mfluxAvailable, getMfluxModel, runMflux, cancelMflux, MFLUX_MODELS } from './mflux';
 import { getActiveModal } from './active-models';
 import { binRoots, dataDir, modelsDir } from './runtime-env';
@@ -535,6 +537,46 @@ async function runImageGen(
   const base = path.basename(model);
   const isZImage = /z[-_]?image/i.test(base);
 
+  // --- RESIDENT fast path (opt-in) --------------------------------------------
+  // When the user sets image residency to 'resident', a plain full-checkpoint
+  // txt2img (no LoRA, no init image, not Z-Image, not Core ML) runs on the warm
+  // sd-server: it keeps the model loaded across images (~45s cold -> ~7s warm on
+  // M4), same steps/quality. This was previously removed for causing memory
+  // contention on 16GB — now SAFE because the ModalityQueue evicts the LLM before
+  // image gen (evicts:['llm']) AND evicts this server when another modality needs
+  // the RAM (image is registered as a ManagedRuntime). Default is 'on-demand',
+  // which skips this entirely and uses the one-shot sd-cli path below (unchanged).
+  const residentImage = getResidencyMode('image') === 'resident';
+  const eligibleForServer = residentImage && !coreml && !isZImage && !loras.length && !params.initImage && ggufIsFullCheckpoint(model);
+  if (eligibleForServer) {
+    const { defaultSize, defaultSteps, defaultCfg, sampler, scheduler } = standardModelDefaults(base);
+    const taesd = params.fastVae ? resolveTaesd(base) : undefined;
+    running = true;
+    cancelled = false;
+    try {
+      await sdServer.ensureUp({ modelPath: model, diffusionFa: true, taesdPath: taesd ?? undefined });
+      const { png, seed: usedSeed } = await sdServer.generate(
+        {
+          prompt: params.prompt,
+          negativePrompt: params.negativePrompt?.trim() || DEFAULT_NEGATIVE,
+          width: params.width ?? defaultSize,
+          height: params.height ?? defaultSize,
+          steps: params.steps ?? defaultSteps,
+          cfgScale: params.cfgScale ?? defaultCfg,
+          sampleMethod: sampler,
+          scheduler,
+          seed,
+        },
+        (p) => onProgress?.({ step: p.step, total: p.total, secPerStep: 0 }),
+      );
+      await fs.promises.writeFile(outPath, png);
+      return { dataUrl: `data:image/png;base64,${png.toString('base64')}`, path: outPath, seed: usedSeed, model: base };
+    } finally {
+      running = false;
+      currentChild = null;
+    }
+  }
+
   // --- Persistent sd-server fast path -----------------------------------------
   // A plain full-pipeline checkpoint doing txt2img (no LoRA, no init image) runs
   // on the RESIDENT sd-server, which keeps the model loaded across images: the
@@ -750,3 +792,15 @@ async function runImageGen(
     // (covers both this sd-cli path and the mflux path).
   }
 }
+
+/** Image generation as a ManagedRuntime for the shared residency seam. Only the
+ *  RESIDENT sd-server holds memory between images; evict stops it so another
+ *  modality can reclaim the RAM. warm/release are no-ops — the server lazily
+ *  re-spawns on the next eligible resident generation (ensureUp), and the one-shot
+ *  sd-cli/mflux paths hold nothing between jobs. */
+export const imageRuntime: ManagedRuntime = {
+  modality: 'image',
+  evict: () => { sdServer.stop(); },
+  warm: () => { /* lazily re-spawned by ensureUp on the next resident generation */ },
+  release: () => { sdServer.stop(); },
+};

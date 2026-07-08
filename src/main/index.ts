@@ -349,6 +349,7 @@ app.whenReady().then(() => {
   // module load never blocks window creation. Registration only stores hooks — it
   // doesn't spawn anything until the engine is actually used.
   import('./tts').then(({ ttsRuntime }) => registerRuntime(ttsRuntime)).catch(() => {});
+  import('./imagegen').then(({ imageRuntime }) => registerRuntime(imageRuntime)).catch(() => {});
 
   createWindow()
 
