@@ -253,6 +253,13 @@ export function ModelsScreen() {
 
   const tabs = [...kinds.filter((k) => k !== 'vision'), 'storage'];
 
+  // Live download summary for the Storage tab label: how many are downloading vs
+  // failed (across all kinds). Derived from the per-model progress map.
+  const storageCounts = {
+    downloading: Object.values(progress).filter((p) => p.status === 'downloading').length,
+    failed: Object.values(progress).filter((p) => p.status === 'failed').length,
+  };
+
   // RAM fit label for a model
   const ramFit = (m: { files?: ModelFile[] }): 'ok' | 'tight' | 'risky' => {
     if (!ramGb) return 'ok';
@@ -401,7 +408,20 @@ export function ModelsScreen() {
         {tabs.map((k) => (
           <button key={k} onClick={() => setActiveKind(k)}
             className={`flex items-center gap-1.5 px-3 py-2 text-[10px] uppercase tracking-wider transition-colors duration-150 ${activeKind === k ? 'border-b-2 border-green-500 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}>
-            {k === 'storage' ? <><IconDatabase className="h-3 w-3" /> Storage</> : KIND_LABELS[k] ?? k}
+            {k === 'storage'
+              ? <><IconDatabase className="h-3 w-3" /> Storage
+                  {/* Live counts: total installed, in-progress downloads, failures.
+                      (There is no separate "queued" state — downloads run
+                      concurrently, each starting on click.) */}
+                  <span className="ml-1 font-normal normal-case tracking-normal text-neutral-600">{installed.length}</span>
+                  {storageCounts.downloading > 0 && (
+                    <span className="rounded-sm bg-green-500/15 px-1 text-[8px] text-green-500">{storageCounts.downloading}↓</span>
+                  )}
+                  {storageCounts.failed > 0 && (
+                    <span className="rounded-sm bg-red-500/15 px-1 text-[8px] text-red-400">{storageCounts.failed}✕</span>
+                  )}
+                </>
+              : KIND_LABELS[k] ?? k}
           </button>
         ))}
         {ramGb && activeKind !== 'storage' && (
