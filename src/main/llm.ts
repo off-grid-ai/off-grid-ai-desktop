@@ -284,7 +284,16 @@ export class LLMService {
   }
 
   async init(): Promise<void> {
-    if (this.paused) return; // don't respawn while paused for image generation
+    if (this.paused) {
+      // A chat/tool turn needs the LLM NOW, but it's paused for a resident image
+      // server (unified memory can't hold both). Ask the image server to evict
+      // on-demand — freeing its memory and flipping `paused` off via its eviction
+      // hook — instead of making the caller wait out the ~60s idle timer. Then
+      // clear the pause ourselves as a safety net so init NEVER silently no-ops
+      // and leaves chat without a server (the bug this replaces).
+      try { this.resumeFromPauseHook?.(); } catch { /* ignore */ }
+      this.paused = false;
+    }
     if (this.initialized) return;
     // Coalesce concurrent inits into one spawn.
     if (this.initPromise) return this.initPromise;
@@ -745,6 +754,12 @@ export class LLMService {
         this.initialized = false;
     }
   }
+
+  /** Set by the image runtime (imagegen.ts): how to evict a resident image server
+   *  when a chat/tool turn needs the LLM back while it's paused. Kept as a hook so
+   *  this module never imports the image runtime (layering). */
+  private resumeFromPauseHook: (() => void) | null = null;
+  setResumeFromPauseHook(fn: () => void) { this.resumeFromPauseHook = fn; }
 
   /** Pause for image generation: free the server and block respawns until resumed. */
   pause() {

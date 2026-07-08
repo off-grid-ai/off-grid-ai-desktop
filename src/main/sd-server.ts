@@ -105,6 +105,9 @@ export interface JobOutcome {
   error?: string;
   /** Progress in [0,1] while running, if the server reported it. */
   progress?: number;
+  /** The seed the server actually used, when it reports one (so a random -1
+   *  request can still be reproduced). Undefined if the server doesn't surface it. */
+  seed?: number;
 }
 
 /** Interpret a /sdcpp/v1/jobs/<id> status body into a terminal/partial outcome.
@@ -121,7 +124,11 @@ export function parseJobResult(job: unknown): JobOutcome {
     const first = (images.find((x) => x && typeof x === 'object') ?? {}) as Record<string, unknown>;
     const b64 = typeof first.b64_json === 'string' ? first.b64_json : undefined;
     if (!b64) return { done: true, ok: false, error: 'server reported success but returned no image' };
-    return { done: true, ok: true, pngBase64: b64, progress };
+    // Surface the seed the server actually used (on the job, its result, or the
+    // image entry) so a random (-1) request stays reproducible. Undefined if absent.
+    const seedRaw = j.seed ?? result.seed ?? first.seed;
+    const seed = typeof seedRaw === 'number' ? seedRaw : undefined;
+    return { done: true, ok: true, pngBase64: b64, progress, seed };
   }
   if (terminalFail) {
     const err = typeof j.error === 'string' && j.error ? j.error : `job ${status}`;
@@ -257,19 +264,35 @@ export class SdServerService {
       if (!pollUrl) throw new Error('sd-server did not return a job to poll.');
       this.currentJobId = job.id ?? null;
 
+      // Watchdog: abort if the job makes no progress for too long, so a hung
+      // server can't wedge generation forever (the poll loop would otherwise spin
+      // indefinitely). Reset the deadline whenever progress advances; a 1024²
+      // image can legitimately take minutes, so the window is generous.
+      const STALL_MS = 180_000;
+      let lastAdvanceAt = Date.now();
+      let lastProgress = -1;
       for (;;) {
         await new Promise((r) => setTimeout(r, 150));
         const res = await fetch(`${this.base()}${pollUrl}`);
         if (!res.ok) throw new Error(`job poll failed (HTTP ${res.status}).`);
         const status = await res.json();
         const outcome = parseJobResult(status);
+        if (typeof outcome.progress === 'number' && outcome.progress > lastProgress) {
+          lastProgress = outcome.progress;
+          lastAdvanceAt = Date.now();
+        }
         if (onProgress && typeof outcome.progress === 'number') {
           onProgress({ step: Math.min(total, Math.round(outcome.progress * total)), total });
         }
-        if (!outcome.done) continue;
+        if (!outcome.done) {
+          if (Date.now() - lastAdvanceAt > STALL_MS) throw new Error('image generation stalled (no progress) — aborting.');
+          continue;
+        }
         if (!outcome.ok) throw new Error(outcome.error ?? 'image generation failed.');
         const png = Buffer.from(outcome.pngBase64!, 'base64');
-        return { png, seed: req.seed ?? -1 };
+        // Prefer the server-reported seed (for a reproducible -1 request); fall
+        // back to the requested seed.
+        return { png, seed: outcome.seed ?? req.seed ?? -1 };
       }
     } finally {
       this.currentJobId = null;
@@ -326,12 +349,17 @@ export class SdServerService {
   }
 
   private killOrphanOnPort(): void {
+    // Only ever kill an orphan of OUR OWN bundled binary — match the full path,
+    // not the bare name, so a user's separately-run sd-server (or any unrelated
+    // process that happens to hold the port) is left untouched.
+    const ownBin = this.findBinary();
+    if (!ownBin) return;
     try {
       const pids = execSync(`lsof -ti tcp:${this.port}`, { encoding: 'utf-8' }).trim().split('\n').filter(Boolean);
       for (const pid of pids) {
         let cmd = '';
         try { cmd = execSync(`ps -p ${pid} -o command=`, { encoding: 'utf-8' }).trim(); } catch { continue; }
-        if (!/sd-server/i.test(cmd)) continue; // only our own orphan, never a foreign process
+        if (!cmd.includes(ownBin)) continue; // our bundled binary only, never a foreign process
         try { process.kill(Number(pid), 'SIGKILL'); } catch { /* gone */ }
       }
     } catch { /* nothing on the port */ }

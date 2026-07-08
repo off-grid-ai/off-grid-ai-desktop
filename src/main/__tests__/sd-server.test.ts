@@ -97,6 +97,15 @@ describe('parseJobResult', () => {
     expect(out).toMatchObject({ done: true, ok: false, error: 'out of memory' });
   });
 
+  it('surfaces the resolved seed when the server reports one (reproducible -1)', () => {
+    // seed may live on the job, the result, or the image entry.
+    expect(parseJobResult({ status: 'completed', seed: 123, result: { images: [{ b64_json: 'QQ' }] } }).seed).toBe(123);
+    expect(parseJobResult({ status: 'completed', result: { seed: 456, images: [{ b64_json: 'QQ' }] } }).seed).toBe(456);
+    expect(parseJobResult({ status: 'completed', result: { images: [{ b64_json: 'QQ', seed: 789 }] } }).seed).toBe(789);
+    // absent -> undefined (caller falls back to the requested seed)
+    expect(parseJobResult({ status: 'completed', result: { images: [{ b64_json: 'QQ' }] } }).seed).toBeUndefined();
+  });
+
   it('treats queued/running as not-done and forwards progress', () => {
     expect(parseJobResult({ status: 'queued', queue_position: 0 }).done).toBe(false);
     expect(parseJobResult({ status: 'running', progress: 0.5 })).toMatchObject({ done: false, progress: 0.5 });

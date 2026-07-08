@@ -527,6 +527,11 @@ export async function generateImage(
     // the server's idle-eviction hook (below) once image generation goes quiet —
     // NOT after each image — so a burst of images stays warm.
     sdServer.setEvictionHook(() => { try { llm.resume(); } catch { /* ignore */ } });
+    // Symmetric wiring: if a chat/tool turn needs the LLM while it's paused for
+    // this resident server, tear the server down on-demand (frees memory) rather
+    // than making chat wait out the idle timer. stop() fires the eviction hook
+    // above, which resumes the LLM.
+    llm.setResumeFromPauseHook(() => { try { sdServer.stop(); } catch { /* ignore */ } });
     try { llm.pause(); } catch { /* ignore */ }
     await new Promise((r) => setTimeout(r, 2500));
     // taesd is OFF by default: it softens fine detail (and BLANKS at 1024 — the
