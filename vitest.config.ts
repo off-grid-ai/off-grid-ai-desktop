@@ -31,9 +31,9 @@ export default defineConfig({
         // measured coverage of the tested surface so the pre-push hook blocks REGRESSIONS
         // today without bricking pushes, and ratchets UP as tests are added. Raise these
         // toward 85 as coverage climbs; never lower them.
-        statements: 53,
-        branches: 49,
-        functions: 50,
+        statements: 54,
+        branches: 50,
+        functions: 51,
         lines: 55,
       },
     },
