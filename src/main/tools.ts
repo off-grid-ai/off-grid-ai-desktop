@@ -10,8 +10,9 @@ import fs from 'fs';
 import { llm } from './llm';
 import { getSetting, saveSetting } from './database';
 import { buildUserContent } from './tool-content';
+import { LLAMA_SERVER_PORT } from '../shared/ports';
 
-const PORT = 8439;
+const PORT = LLAMA_SERVER_PORT;
 
 // Per-tool enable/disable, persisted as a list of disabled tool names.
 function disabledSet(): Set<string> {

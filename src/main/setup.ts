@@ -11,6 +11,7 @@ import * as http from 'http';
 import { llm } from './llm';
 import { decideChatStatus } from './chat-health';
 import { getActiveModel, downloadModel, listInstalled, setActiveModel, setActiveModalChoice } from './models-manager';
+import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports';
 
 export type ComponentStatus = 'ready' | 'starting' | 'down' | 'not_installed';
 
@@ -41,8 +42,7 @@ export interface SetupProgress {
 }
 export type SetupProgressCb = (p: SetupProgress) => void;
 
-const LLAMA_PORT = 8439;
-const GATEWAY_PORT = 7878;
+const LLAMA_PORT = LLAMA_SERVER_PORT;
 
 /** GET a localhost endpoint, parse JSON, with a short timeout. null on any failure. */
 function pingJson(port: number, path = '/health', timeoutMs = 1500): Promise<unknown | null> {

@@ -34,9 +34,10 @@ import { embeddings } from './embeddings';
 import { docsText, docsHtml, openApiSpec } from './api-docs';
 import { handleMcpRequest } from './mcp-server';
 import { llm, type LlmSettings } from './llm';
+import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports';
 
 const UPSTREAM_HOST = '127.0.0.1';
-const UPSTREAM_PORT = 8439; // bundled llama-server (see llm.ts)
+const UPSTREAM_PORT = LLAMA_SERVER_PORT; // bundled llama-server (see llm.ts)
 const MAX_UPLOAD = 200 * 1024 * 1024; // 200MB upload cap (audio / init image)
 
 let server: http.Server | null = null;
@@ -916,7 +917,7 @@ async function handleImageEdit(req: http.IncomingMessage, res: http.ServerRespon
 
 // ─── Server ──────────────────────────────────────────────────────────────────
 /** Start the unified local model gateway. Bound to loopback (local-only). */
-export function startModelServer(port = 7878): void {
+export function startModelServer(port = GATEWAY_PORT): void {
   if (server) return;
 
   server = http.createServer((req, res) => {

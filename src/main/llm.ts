@@ -9,6 +9,8 @@ import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit } from "./r
 import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from "./model-sizing";
 import { classifyLlamaError } from "./llama-error";
 import type { ManagedRuntime } from "./runtime-manager";
+import { LLAMA_SERVER_PORT } from "../shared/ports";
+import { DEFAULT_CTX_SIZE } from "../shared/llm-defaults";
 
 export type { KvCacheType, PerformanceMode };
 
@@ -48,7 +50,7 @@ export class LLMService {
   private server: ChildProcess | null = null;
   // Off the contested 8080 (collides with other local dev servers) onto a
   // less-trafficked port so the model server reliably binds.
-  private port = 8439;
+  private port = LLAMA_SERVER_PORT;
   // Single-flight init guard: concurrent chat() calls (e.g. the capture
   // extractor firing rapidly) must share ONE spawn, not each launch a server.
   private initPromise: Promise<void> | null = null;
@@ -67,7 +69,7 @@ export class LLMService {
   // User-tunable inference settings (persisted). Context window needs a server
   // respawn to take effect (it's a launch arg); temperature is per-request.
   private temperature = 0.7;
-  private ctxSize = 16384; // modest default — context is a ceiling, not a fill-RAM target (KV cache is the bulk of memory). Raise it or use Extreme for more.
+  private ctxSize = DEFAULT_CTX_SIZE; // modest default — context is a ceiling, not a fill-RAM target (KV cache is the bulk of memory). Raise it or use Extreme for more.
   // ONE local gemma server, but many callers (capture distill, day-plan, the
   // secretary, action extraction…). Concurrent requests contend and time out.
   // Serialize them so each gets the server to itself; the per-call timeout sits

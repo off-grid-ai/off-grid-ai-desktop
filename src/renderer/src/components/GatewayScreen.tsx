@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { IconServer2, IconCopy, IconCheck, IconExternalLink } from '@tabler/icons-react';
+import { GATEWAY_PORT } from '@offgrid/core/shared/ports';
 
 // Explains the local OpenAI-compatible gateway with copyable quick-start snippets
 // and a link to the interactive playground the gateway serves. Core feature.
-const PORT = 7878;
+const PORT = GATEWAY_PORT;
 const BASE = `http://127.0.0.1:${PORT}`;
 
 const ENDPOINTS: { label: string; method: string; path: string; note: string }[] = [
