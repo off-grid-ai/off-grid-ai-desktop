@@ -89,7 +89,10 @@ export function getTranscription(engine: TranscriptionEngine = 'whisper'): Trans
  */
 export function engineForActiveModel(
   active: string | null,
-  entries: Array<{ id: string; engine?: TranscriptionEngine; files: Array<{ name: string }> }>,
+  // engine is the raw catalog field (a free string, only 'parakeet' is meaningful) - not the
+  // resolved TranscriptionEngine union. catalogEngine() narrows it. Typed to match what the
+  // live catalog (modelsByKind('transcription')) actually provides.
+  entries: Array<{ id: string; engine?: string; files: Array<{ name: string }> }>,
 ): TranscriptionEngine {
   if (!active) return 'whisper';
   const entry = entries.find((e) => e.id === active || e.files.some((f) => f.name === active));
