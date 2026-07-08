@@ -53,3 +53,6 @@ scripts/dictation-hotkey/dictation-hotkey
 
 # Local demo profile — synthetic-data run target for `npm run demo` (never real userData)
 .demo-profile/
+
+# Test coverage output
+coverage/
