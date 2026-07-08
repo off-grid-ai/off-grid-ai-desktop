@@ -308,12 +308,30 @@ export const CATALOG: ModelEntry[] = [
     kind: 'image',
     tags: ['Versatile', 'Fast'],
     org: 'Lykon',
-    description: 'The all-rounder — photoreal, art, fantasy, 3D. Off Grid GGUF build of Lykon/dreamshaper-xl-v2-turbo.',
+    description: 'The all-rounder — photoreal, art, fantasy, 3D. Off Grid GGUF build of Lykon/dreamshaper-xl-v2-turbo. Full Q8 quant (best quality); best on 24GB+ RAM.',
     minRamGb: 8,
     quant: 'Q8_0',
     releaseDate: '2024-02-07',
     imageModes: ['txt2img', 'img2img'],
     files: [{ name: 'dreamshaper-xl-v2-turbo-Q8_0.gguf', url: resolve('offgrid-ai/dreamshaper-xl-v2-turbo-GGUF', 'dreamshaper-xl-v2-turbo-Q8_0.gguf'), role: 'primary', sizeBytes: 4180000000 }],
+  },
+  {
+    // Lighter Q4_K quant of the same distilled turbo model — ~35% less memory
+    // (~3.08GB peak vs ~4.7GB), so it runs on a 16GB Mac without pegging unified
+    // memory. Same repo, distinct id + filename so download/active-tracking treat
+    // it as a separate installable model. Tagged 'Light' → the RAM-aware default +
+    // "Recommended" badge pick it on machines with <= 16GB RAM.
+    id: 'offgrid-ai/dreamshaper-xl-v2-turbo-GGUF-Q4',
+    name: 'DreamShaper XL v2 Turbo (Light)',
+    kind: 'image',
+    tags: ['Versatile', 'Fast', 'Light'],
+    org: 'Lykon',
+    description: 'The all-rounder — photoreal, art, fantasy, 3D. Q4 quant: ~35% less memory than the full model, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of Lykon/dreamshaper-xl-v2-turbo.',
+    minRamGb: 8,
+    quant: 'Q4_K',
+    releaseDate: '2024-02-07',
+    imageModes: ['txt2img', 'img2img'],
+    files: [{ name: 'dreamshaper-xl-v2-turbo-Q4_K.gguf', url: resolve('offgrid-ai/dreamshaper-xl-v2-turbo-GGUF', 'dreamshaper-xl-v2-turbo-Q4_K.gguf'), role: 'primary', sizeBytes: 2800000000 }],
   },
   {
     id: 'offgrid-ai/juggernaut-xl-v9-GGUF',

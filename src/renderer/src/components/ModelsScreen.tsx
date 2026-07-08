@@ -13,6 +13,7 @@ import {
   IconExternalLink,
   IconEye,
   IconDatabase,
+  IconStarFilled,
 } from '@tabler/icons-react';
 import { StoragePanel } from './setup/StoragePanel';
 import {
@@ -24,6 +25,7 @@ import {
   determineCredibility,
   hasActiveFilters,
   initialFilterState,
+  recommendedImageModelId,
   type FilterState,
   type Credibility,
 } from '@offgrid/models';
@@ -94,10 +96,11 @@ function fmtReleaseDate(iso?: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
 
-function featureRank(m: { id?: string; credibility?: string; tags?: string[] }): number {
-  // Distilled few-step models (tagged "Fast" in the catalog) render in ~30s vs
-  // ~100s for the non-distilled ones, so surface them first. Then our own org's
-  // models, then everything else.
+function featureRank(m: { id?: string; credibility?: string; tags?: string[] }, recommendedId?: string | null): number {
+  // The model recommended for THIS machine's RAM sorts to the very top (above a
+  // plain 'Fast' pick). Then distilled few-step models (tagged "Fast") render in
+  // ~30s vs ~100s, so surface them next. Then our own org's models, then the rest.
+  if (recommendedId && m.id === recommendedId) return -1;
   if (m.tags?.some((t) => /^fast/i.test(t))) return 0;
   if (m.credibility !== 'offgrid') return 2;
   return 1;
@@ -227,6 +230,10 @@ export function ModelsScreen() {
 
   const list = models.filter((m) => m.kind === activeKind || (activeKind === 'text' && m.kind === 'vision'));
 
+  // The image model recommended for this machine's RAM (Light Q4 on <=16GB, full
+  // Q8 above) — one pure rule, reused for both the badge and the top-of-list sort.
+  const recommendedImageId = recommendedImageModelId(models, ramGb);
+
   const displayed = filterAndSort(
     hfResults.map((r) => ({ id: r.id, name: r.name, org: r.org, downloads: r.downloads, likes: r.likes, lastModified: r.lastModified, credibility: r.credibility as Credibility | undefined, params: parseParamCount(r.name) ?? parseParamCount(r.id) })),
     filterState
@@ -241,7 +248,7 @@ export function ModelsScreen() {
     .sort((a, b) => {
       // Active first, then other installed, then available — within each tier keep feature rank.
       const rank = (x: { id: string }) => (isActive(x.id) ? 0 : installed.includes(x.id) ? 1 : 2);
-      return rank(a) - rank(b) || featureRank(a) - featureRank(b);
+      return rank(a) - rank(b) || featureRank(a, recommendedImageId) - featureRank(b, recommendedImageId);
     });
 
   const tabs = [...kinds.filter((k) => k !== 'vision'), 'storage'];
@@ -264,6 +271,9 @@ export function ModelsScreen() {
     const meta = [m.org, m.params ? `${m.params}B` : null, size, fmtReleaseDate(m.releaseDate)].filter(Boolean).join(' · ');
     const fit = isHf ? 'ok' : ramFit(m);
     const tags = (m.tags ?? []).filter((t) => !/tight|risky|fit/i.test(t));
+    // The single image pick best-suited to THIS machine's RAM (Light on <=16GB,
+    // full above) — a prominent filled-emerald badge, distinct from the outlined tags.
+    const recommended = !isHf && !!recommendedImageId && m.id === recommendedImageId;
 
     return (
       <div key={m.id}
@@ -292,14 +302,31 @@ export function ModelsScreen() {
         </div>
 
         {/* Badges row */}
-        {(tags.length > 0 || fit !== 'ok') && (
+        {(recommended || tags.length > 0 || fit !== 'ok') && (
           <div className="flex flex-wrap items-center gap-1">
+            {recommended && (
+              // Prominent FILLED emerald badge — the pick for this machine's RAM,
+              // set apart from the outlined capability tags below.
+              <span className="flex shrink-0 items-center gap-0.5 rounded-sm bg-green-500 px-1.5 py-px text-[8px] font-semibold uppercase tracking-wide text-black">
+                <IconStarFilled className="h-2 w-2" /> Recommended for you
+              </span>
+            )}
             {tags.map((t) => {
               // "Fast" = distilled few-step model (~30s vs ~100s) — highlight in
               // the emerald brand accent so it reads as the recommended quick pick.
+              // "Light" = a smaller/lower-memory quant — amber outline so it reads
+              // as the memory-friendly variant (distinct from the emerald "Fast").
               const isFast = /^fast/i.test(t);
+              const isLight = /^light$/i.test(t);
+              const cls = isFast
+                ? 'border border-green-500/60 text-green-500'
+                : isLight
+                  ? 'border border-emerald-300/50 text-emerald-300'
+                  : /challenger/i.test(t)
+                    ? 'text-amber-400'
+                    : 'bg-neutral-800 text-neutral-500';
               return (
-                <span key={t} className={`rounded-sm px-1 py-px text-[8px] uppercase tracking-wide ${isFast ? 'border border-green-500/60 text-green-500' : /challenger/i.test(t) ? 'text-amber-400' : 'bg-neutral-800 text-neutral-500'}`}>{t}</span>
+                <span key={t} className={`rounded-sm px-1 py-px text-[8px] uppercase tracking-wide ${cls}`}>{t}</span>
               );
             })}
             {fit !== 'ok' && (

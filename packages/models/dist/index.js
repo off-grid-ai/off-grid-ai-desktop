@@ -23,6 +23,7 @@ __export(index_exports, {
   CATALOG: () => CATALOG,
   CREDIBILITY_LABELS: () => CREDIBILITY_LABELS,
   CREDIBILITY_OPTIONS: () => CREDIBILITY_OPTIONS,
+  LIGHT_MODEL_RAM_CEILING_GB: () => LIGHT_MODEL_RAM_CEILING_GB,
   MODEL_KINDS: () => MODEL_KINDS,
   MODEL_TYPE_OPTIONS: () => MODEL_TYPE_OPTIONS,
   ModelDownloader: () => ModelDownloader,
@@ -51,6 +52,7 @@ __export(index_exports, {
   openAICompatibleProvider: () => openAICompatibleProvider,
   parseParamCount: () => parseParamCount,
   recommendForRam: () => recommendForRam,
+  recommendedImageModelId: () => recommendedImageModelId,
   resolveHuggingFaceModel: () => resolveHuggingFaceModel,
   searchHuggingFace: () => searchHuggingFace,
   supportsMode: () => supportsMode,
@@ -254,6 +256,10 @@ var CATALOG = [
     id: "leejet/Z-Image-Turbo-GGUF",
     name: "Z-Image Turbo (2026)",
     kind: "image",
+    // NOT tagged 'Fast': despite the "Turbo" name this is a FLUX-class diffusion
+    // transformer (DiT + Qwen3-4B text encoder + FLUX VAE) — heavy and slow on
+    // Apple Silicon via ggml, not a few-step SDXL distill. 'Fast' is reserved for
+    // models verified fast on-device (dreamshaper-turbo, realvis-lightning).
     tags: ["Recommended", "2026", "Top quality"],
     org: "Alibaba Tongyi",
     description: "Flagship 2026 model \u2014 1024px in ~8 steps, top quality-per-byte, strong bilingual text. Apache-2.0. (diffusion + Qwen3 encoder + VAE)",
@@ -351,12 +357,30 @@ var CATALOG = [
     kind: "image",
     tags: ["Versatile", "Fast"],
     org: "Lykon",
-    description: "The all-rounder \u2014 photoreal, art, fantasy, 3D. Off Grid GGUF build of Lykon/dreamshaper-xl-v2-turbo.",
+    description: "The all-rounder \u2014 photoreal, art, fantasy, 3D. Off Grid GGUF build of Lykon/dreamshaper-xl-v2-turbo. Full Q8 quant (best quality); best on 24GB+ RAM.",
     minRamGb: 8,
     quant: "Q8_0",
     releaseDate: "2024-02-07",
     imageModes: ["txt2img", "img2img"],
     files: [{ name: "dreamshaper-xl-v2-turbo-Q8_0.gguf", url: resolve("offgrid-ai/dreamshaper-xl-v2-turbo-GGUF", "dreamshaper-xl-v2-turbo-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
+  },
+  {
+    // Lighter Q4_K quant of the same distilled turbo model — ~35% less memory
+    // (~3.08GB peak vs ~4.7GB), so it runs on a 16GB Mac without pegging unified
+    // memory. Same repo, distinct id + filename so download/active-tracking treat
+    // it as a separate installable model. Tagged 'Light' → the RAM-aware default +
+    // "Recommended" badge pick it on machines with <= 16GB RAM.
+    id: "offgrid-ai/dreamshaper-xl-v2-turbo-GGUF-Q4",
+    name: "DreamShaper XL v2 Turbo (Light)",
+    kind: "image",
+    tags: ["Versatile", "Fast", "Light"],
+    org: "Lykon",
+    description: "The all-rounder \u2014 photoreal, art, fantasy, 3D. Q4 quant: ~35% less memory than the full model, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of Lykon/dreamshaper-xl-v2-turbo.",
+    minRamGb: 8,
+    quant: "Q4_K",
+    releaseDate: "2024-02-07",
+    imageModes: ["txt2img", "img2img"],
+    files: [{ name: "dreamshaper-xl-v2-turbo-Q4_K.gguf", url: resolve("offgrid-ai/dreamshaper-xl-v2-turbo-GGUF", "dreamshaper-xl-v2-turbo-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
   },
   {
     id: "offgrid-ai/juggernaut-xl-v9-GGUF",
@@ -1065,11 +1089,29 @@ function validateImageGenRequest(provider, req) {
   if (!req.prompt.trim()) return "prompt is required";
   return null;
 }
+
+// src/recommend-image.ts
+var LIGHT_MODEL_RAM_CEILING_GB = 16;
+var hasLightTag = (m) => (m.tags ?? []).some((t) => /^light$/i.test(t));
+var familyKey = (m) => m.id.replace(/-Q\d[\w]*$/i, "");
+function recommendedImageModelId(models, ramGb) {
+  if (!ramGb || !Number.isFinite(ramGb)) return null;
+  const images = models.filter((m) => m.kind === "image");
+  if (!images.length) return null;
+  const light = images.filter(hasLightTag);
+  const lightFamilies = new Set(light.map(familyKey));
+  const fullOfLightFamily = images.filter((m) => !hasLightTag(m) && lightFamilies.has(familyKey(m)));
+  if (ramGb <= LIGHT_MODEL_RAM_CEILING_GB) {
+    return (light[0] ?? images[0]).id;
+  }
+  return (fullOfLightFamily[0] ?? images.find((m) => !hasLightTag(m)) ?? images[0]).id;
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   CATALOG,
   CREDIBILITY_LABELS,
   CREDIBILITY_OPTIONS,
+  LIGHT_MODEL_RAM_CEILING_GB,
   MODEL_KINDS,
   MODEL_TYPE_OPTIONS,
   ModelDownloader,
@@ -1098,6 +1140,7 @@ function validateImageGenRequest(provider, req) {
   openAICompatibleProvider,
   parseParamCount,
   recommendForRam,
+  recommendedImageModelId,
   resolveHuggingFaceModel,
   searchHuggingFace,
   supportsMode,

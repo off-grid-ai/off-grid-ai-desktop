@@ -27,3 +27,5 @@ export * from './providers';
 export * from './filters';
 export { supportsMode, validateImageGenRequest } from './imagegen';
 export type { ImageGenMode, ImageGenRequest, ImageGenResult, ImageGenProvider } from './imagegen';
+export { recommendedImageModelId, LIGHT_MODEL_RAM_CEILING_GB } from './recommend-image';
+export type { RecommendableModel } from './recommend-image';
