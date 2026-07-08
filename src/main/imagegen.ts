@@ -521,56 +521,13 @@ export async function generateImage(
   // reload. Special stacks stay on one-shot sd-cli below: Z-Image (3-file stack),
   // Core ML (ANE), UNET-only checkpoints needing separate CLIP+VAE, img2img, and
   // LoRA (sd.cpp can't merge a LoRA into quantized weights anyway).
-  if (!coreml && !isZImage && !params.initImage && loras.length === 0 && ggufIsFullCheckpoint(model)) {
-    const d = standardModelDefaults(base);
-    const width = params.width ?? d.defaultSize;
-    const height = params.height ?? d.defaultSize;
-    running = true;
-    cancelled = false;
-    // Same unified-memory dance as the one-shot path: free the LLM, let the OS
-    // reclaim its pages, then load the image model. The LLM is warmed back up by
-    // the server's idle-eviction hook (below) once image generation goes quiet —
-    // NOT after each image — so a burst of images stays warm.
-    sdServer.setEvictionHook(() => { try { llm.resume(); } catch { /* ignore */ } });
-    // Symmetric wiring: if a chat/tool turn needs the LLM while it's paused for
-    // this resident server, tear the server down on-demand (frees memory) rather
-    // than making chat wait out the idle timer. stop() fires the eviction hook
-    // above, which resumes the LLM.
-    llm.setResumeFromPauseHook(() => { try { sdServer.stop(); } catch { /* ignore */ } });
-    try { llm.pause(); } catch { /* ignore */ }
-    await new Promise((r) => setTimeout(r, 2500));
-    // taesd is OFF by default: it softens fine detail (and BLANKS at 1024 — the
-    // tiny decoder overflows), so the approved quality recipe uses the full VAE.
-    // At 512 the full VAE decodes in ~6s. taesd stays strictly opt-in (fastVae)
-    // for a fast low-res draft/preview where softness is acceptable.
-    const taesd = params.fastVae ? resolveTaesd(base) : null;
-    try {
-      await sdServer.ensureUp({ modelPath: model, diffusionFa: true, taesdPath: taesd ?? undefined, threads: Math.max(1, os.cpus().length - 2) });
-      const { png, seed: usedSeed } = await sdServer.generate(
-        {
-          prompt: params.prompt,
-          negativePrompt: params.negativePrompt?.trim() || DEFAULT_NEGATIVE,
-          width,
-          height,
-          steps: params.steps ?? d.defaultSteps,
-          seed,
-          cfgScale: params.cfgScale ?? d.defaultCfg,
-          sampleMethod: d.sampler,
-          scheduler: d.scheduler,
-        },
-        (p) => onProgress?.({ step: p.step, total: p.total, secPerStep: 0, phase: 'sampling' }),
-      );
-      fs.writeFileSync(outPath, png);
-      return { dataUrl: `data:image/png;base64,${png.toString('base64')}`, path: outPath, seed: usedSeed, model: base };
-    } catch (e) {
-      // On failure, tear the server down (frees memory + warms the LLM via the
-      // eviction hook) so a crash doesn't leave chat starved indefinitely.
-      sdServer.stop();
-      throw e;
-    } finally {
-      running = false;
-    }
-  }
+  // NOTE: a persistent sd-server fast path once lived here but is removed — it kept
+  // ~4GB of image weights resident alongside the ~5GB chat model, causing memory
+  // contention -> hangs + corrupted output on 16GB machines, and was never verified
+  // end-to-end in-app. All full-checkpoint txt2img goes through the one-shot sd-cli
+  // path below: it loads the model, generates with the karras/defaults, and FREES it
+  // on exit (no resident pressure). sdServer.cancelCurrent() above stays a harmless
+  // no-op. Re-introduce a resident server only if proven safe on 16GB + good output.
 
   const threads = String(Math.max(1, os.cpus().length - 2));
   // Live preview: write a rough partial image every step ('proj' needs no extra
