@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow, app, clipboard } from 'electron';
 import { getDB, getChatSessions, upsertChatSummary, getMemoriesForSession, getMemoryRecordsForSession, getMasterMemory, updateMasterMemory, getAllChatSummaries, upsertEntity, addEntityFact, updateEntitySummary, getEntities, getEntityDetails, upsertEntitySession, rebuildEntityEdgesForSession, getEntityGraph, rebuildEntityEdgesForAllSessions, deleteEntity, deleteMemory, getEntitiesForSession, getDashboardStats, getUserProfile, saveUserProfile, UserProfile, createRagConversation, getRagConversations, getRagConversation, deleteRagConversation, addRagMessage, getRagMessages, updateRagConversationTitle, searchRagConversationIds, getSettings, saveSetting, getSetting } from './database';
 import { embeddings } from './embeddings';
+import { getResidency, setResidencyMode, type Modality, type ResidencyMode } from './runtime-residency';
 import { getPermissionStatus, requestAccessibilityPermission, requestScreenRecordingPermission, openAccessibilitySettings, openScreenRecordingSettings } from './permissions';
 import { getPrompt, getAllPromptDefs, resetPrompt, getPromptTemplate } from './prompts';
 // import { llm } from './llm'; // Moved to dynamic import to support ESM
@@ -181,17 +182,36 @@ async function streamAnswer(
     images: string[] = [],
 ): Promise<string> {
     const { llm } = await import('./llm');
+    const { modalityQueue } = await import('./modality-queue/queue');
+
+    // Non-stream fallback (no streamId/sender): a single blocking chat turn.
     if (!streamId || !event?.sender) {
-        return (await llm.chat(prompt, images, 300000, 2048, { disableThinking: !thinking })).trim();
+        // Interactive chat is foreground work - Tier 2, a peer of image gen. During
+        // image gen the LLM is evicted so this waits anyway (consistent); background
+        // screen-replay (Tier 3) defers to it. Chat runs ON the 'llm' engine, so it
+        // evicts nothing (evicting 'llm' would evict itself). run()'s finally releases
+        // the slot even if fn throws, so we let errors propagate from inside.
+        return modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, async () =>
+            (await llm.chat(prompt, images, 300000, 2048, { disableThinking: !thinking })).trim(),
+        );
     }
+
     const sender = event.sender;
+    // Register the abort controller BEFORE queuing so a rag:cancel that arrives while
+    // this turn is still WAITING in the queue is honored - the stream then starts with
+    // an already-aborted signal (and resolves immediately) rather than running in full.
     const controller = new AbortController();
     streamControllers.set(streamId, controller);
     try {
-        const answer = await llm.chatStream(prompt, images, (text, kind) => {
-            try { sender.send('rag:stream', { streamId, type: kind, text }); } catch { /* window gone */ }
-        }, { thinking, signal: controller.signal });
-        return answer.trim();
+        // Interactive streaming chat = Tier 2 (see above). Await the full stream inside
+        // the run() callback so the queue slot is held for the whole generation; the
+        // cancel path aborts via the controller registered above.
+        return await modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, async () => {
+            const answer = await llm.chatStream(prompt, images, (text, kind) => {
+                try { sender.send('rag:stream', { streamId, type: kind, text }); } catch { /* window gone */ }
+            }, { thinking, signal: controller.signal });
+            return answer.trim();
+        });
     } finally {
         streamControllers.delete(streamId);
     }
@@ -1108,6 +1128,11 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       return true;
   });
 
+  // Per-modality runtime residency (on-demand vs in-memory/resident). The full map
+  // drives the queue's mode-aware re-warm and each engine's job path.
+  ipcMain.handle('runtime:residency:get', () => getResidency());
+  ipcMain.handle('runtime:residency:set', (_e, modality: Modality, mode: ResidencyMode) => setResidencyMode(modality, mode));
+
   // Fleet console IPC (console:*) is a pro feature — registered by pro's
   // activateMain, not here, so the open build doesn't ship it.
 
@@ -1641,12 +1666,15 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       return synthesize(text, chosen);
   });
 
-  // --- Voice input (STT via bundled whisper) ------------------------------
+  // --- Voice input (STT via the active engine: whisper default / Parakeet opt-in) ---
   ipcMain.handle('voice:transcribe', async (_e, audio: ArrayBuffer | Uint8Array, ext = 'webm') => {
       const fs = await import('fs');
       const path = await import('path');
       const os = await import('os');
-      const { transcriptionService } = await import('./transcription/whisper-cli');
+      // Route through the active-model-implied engine so a Parakeet selection is honored
+      // (falls back to whisper when Parakeet isn't installed).
+      const { getActiveTranscription } = await import('./transcription/select');
+      const transcriptionService = getActiveTranscription();
       // Respect a Uint8Array's view bounds (byteOffset/length) — Buffer.from on the
       // backing ArrayBuffer would copy the WHOLE buffer, corrupting a sliced view.
       const buf = ArrayBuffer.isView(audio)

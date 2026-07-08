@@ -7,10 +7,15 @@ import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { llm } from './llm';
+import { modalityQueue } from './modality-queue/queue';
+import { getResidencyMode } from './runtime-residency';
+import type { ManagedRuntime } from './runtime-manager';
 import { isMfluxModelId, mfluxAvailable, getMfluxModel, runMflux, cancelMflux, MFLUX_MODELS } from './mflux';
 import { getActiveModal } from './active-models';
 import { binRoots, dataDir, modelsDir } from './runtime-env';
+import { sdServer } from './sd-server';
+import { standardModelDefaults, taesdFilename } from '../shared/image-defaults';
+import { defaultImageModelFilename } from './image-default';
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {
@@ -208,6 +213,14 @@ export async function downloadLora(
   return dest;
 }
 
+/** Resolve the TAESD decoder for a model's family, if the file is installed.
+ *  Returns null (so callers just skip taesd) when it isn't — the feature is a
+ *  no-op until the tiny decoder is downloaded into the models dir. */
+export function resolveTaesd(base: string): string | null {
+  const p = path.join(modelsDir(), taesdFilename(base));
+  return fs.existsSync(p) ? p : null;
+}
+
 /** Find a companion file (text encoder / vae) in the models dir by pattern. */
 function findInModels(re: RegExp): string | null {
   try {
@@ -284,6 +297,12 @@ function resolveModel(preferred?: string): string | null {
     if (fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
     if (sd.includes(chosen)) return path.join(dir, chosen); // mlx/virtual id
   }
+  // Smart default: DreamShaper XL v2 Turbo (the versatile default), RAM-aware —
+  // a fresh user on <=16GB gets the Light (Q4) quant, >16GB gets the full (Q8).
+  // Only when the user hasn't picked (getActiveModal above). Falls through to the
+  // generic heuristic below when no DreamShaper quant is installed.
+  const dreamshaper = defaultImageModelFilename(sd, os.totalmem() / 1e9);
+  if (dreamshaper) return path.join(dir, dreamshaper);
   // Preference: Juggernaut XL v9 (default photoreal) > Z-Image-Turbo >
   // SDXL-Lightning > SDXL > SD 2.1 > anything else.
   const juggernaut = sd.find((f) => /juggernaut/i.test(f));
@@ -300,12 +319,17 @@ const DEFAULT_NEGATIVE =
   'blurry, low quality, low resolution, jpeg artifacts, deformed, disfigured, bad anatomy, extra limbs, watermark, text, signature, grainy, oversaturated';
 
 /** Whether image generation is usable right now (binary + at least one model). */
-export function imageGenStatus(): { available: boolean; models: string[]; reason?: string } {
+export function imageGenStatus(): { available: boolean; models: string[]; active: string | null; reason?: string } {
   const models = listImageModels();
+  // The model an incoming request would actually load (the user's active pick,
+  // else the resolver default) — so the composer can default its picker to it and
+  // match the Active-models panel, instead of guessing from a name heuristic (which
+  // used to land on the parked Core ML model).
+  const active = activeImageModel();
   // Available if EITHER runtime is usable: sd-cli (with a model) or MLX/mflux.
-  if (!findSdCli() && !mfluxAvailable()) return { available: false, models, reason: 'no image runtime found' };
-  if (!models.length) return { available: false, models, reason: 'no image model installed' };
-  return { available: true, models };
+  if (!findSdCli() && !mfluxAvailable()) return { available: false, models, active, reason: 'no image runtime found' };
+  if (!models.length) return { available: false, models, active, reason: 'no image model installed' };
+  return { available: true, models, active };
 }
 
 export interface ImageGenParams {
@@ -323,6 +347,10 @@ export interface ImageGenParams {
   strength?: number;
   /** LoRA adapters to apply: name (filename w/o ext) + weight (e.g. 0.8). */
   loras?: { name: string; weight: number }[];
+  /** Use the TAESD tiny decoder instead of the full VAE — a large speed win on
+   *  the VAE decode (multi-second -> sub-second on Metal at ≥768px), at a small
+   *  cost in decode fidelity. No-op if the matching taesd file isn't installed. */
+  fastVae?: boolean;
 }
 
 export interface ImageGenOutput {
@@ -349,15 +377,32 @@ let cancelled = false;
 /** Kill an in-progress generation. Returns true if one was running. */
 export function cancelImageGen(): boolean {
   cancelMflux(); // no-op if mflux isn't the active runtime
+  void sdServer.cancelCurrent(); // cancels the in-flight job on the resident server (no-op if idle)
   if (currentChild) {
     cancelled = true;
     currentChild.kill('SIGKILL');
     return true;
   }
-  return running; // mflux gen has no currentChild but sets running
+  return running; // mflux/persistent-server gen has no currentChild but sets running
 }
 
+/**
+ * Public entry: run image generation through the ModalityQueue so the image model
+ * can't be resident alongside the chat model on unified memory. `evicts: ['llm']`
+ * frees the llama-server before generation starts — the exact guard the old inline
+ * llm.pause() did, now owned by the queue (see modality-queue/queue.ts). When the
+ * queue is disabled it just runs immediately (prior concurrent behavior).
+ */
 export async function generateImage(
+  params: ImageGenParams,
+  onProgress?: (p: ImageGenProgress & { preview?: string }) => void,
+): Promise<ImageGenOutput> {
+  // The queue evicts 'llm' before this runs AND re-warms it (mode-aware) when the
+  // job finishes — so the image path no longer touches llm.pause/resume itself.
+  return modalityQueue.run({ tier: 2, label: 'image', evicts: ['llm'] }, () => runImageGen(params, onProgress));
+}
+
+async function runImageGen(
   params: ImageGenParams,
   onProgress?: (p: ImageGenProgress & { preview?: string }) => void,
 ): Promise<ImageGenOutput> {
@@ -365,9 +410,9 @@ export async function generateImage(
   if (!params.prompt?.trim()) throw new Error('A prompt is required.');
 
   // --- MLX / mflux runtime branch (FLUX / Z-Image with native LoRA) ----------
-  // Self-contained: reuses the single-flight guard + llm.pause()/resume() (so
-  // the LLM and image model never coexist on Apple Silicon unified memory), then
-  // delegates the spawn to the mflux module. Returns before the sd-cli path.
+  // Self-contained: reuses the single-flight guard; the LLM is already evicted by the
+  // queue (evicts: ['llm']) before we get here, then delegates the spawn to the mflux
+  // module. Returns before the sd-cli path.
   if (isMfluxModelId(params.model)) {
     const def = getMfluxModel(params.model)!;
     const outDir = path.join(dataDir(), 'generated-images');
@@ -375,7 +420,7 @@ export async function generateImage(
     const outPath = path.join(outDir, `img-${String(Date.now())}.png`);
     running = true;
     cancelled = false;
-    try { llm.pause(); } catch { /* ignore */ }
+    // Give the OS a moment to reclaim the freed LLM pages before the image load spike.
     await new Promise((r) => setTimeout(r, 2500));
     try {
       await runMflux(
@@ -404,7 +449,7 @@ export async function generateImage(
     } finally {
       running = false;
       currentChild = null;
-      llm.resume();
+      // LLM warm-back-up happens once in the generateImage() wrapper's finally.
     }
   }
 
@@ -491,6 +536,64 @@ export async function generateImage(
 
   const base = path.basename(model);
   const isZImage = /z[-_]?image/i.test(base);
+
+  // --- RESIDENT fast path (opt-in) --------------------------------------------
+  // When the user sets image residency to 'resident', a plain full-checkpoint
+  // txt2img (no LoRA, no init image, not Z-Image, not Core ML) runs on the warm
+  // sd-server: it keeps the model loaded across images (~45s cold -> ~7s warm on
+  // M4), same steps/quality. This was previously removed for causing memory
+  // contention on 16GB — now SAFE because the ModalityQueue evicts the LLM before
+  // image gen (evicts:['llm']) AND evicts this server when another modality needs
+  // the RAM (image is registered as a ManagedRuntime). Default is 'on-demand',
+  // which skips this entirely and uses the one-shot sd-cli path below (unchanged).
+  const residentImage = getResidencyMode('image') === 'resident';
+  const eligibleForServer = residentImage && !coreml && !isZImage && !loras.length && !params.initImage && ggufIsFullCheckpoint(model);
+  if (eligibleForServer) {
+    const { defaultSize, defaultSteps, defaultCfg, sampler, scheduler } = standardModelDefaults(base);
+    const taesd = params.fastVae ? resolveTaesd(base) : undefined;
+    running = true;
+    cancelled = false;
+    try {
+      await sdServer.ensureUp({ modelPath: model, diffusionFa: true, taesdPath: taesd ?? undefined });
+      const { png, seed: usedSeed } = await sdServer.generate(
+        {
+          prompt: params.prompt,
+          negativePrompt: params.negativePrompt?.trim() || DEFAULT_NEGATIVE,
+          width: params.width ?? defaultSize,
+          height: params.height ?? defaultSize,
+          steps: params.steps ?? defaultSteps,
+          cfgScale: params.cfgScale ?? defaultCfg,
+          sampleMethod: sampler,
+          scheduler,
+          seed,
+        },
+        (p) => onProgress?.({ step: p.step, total: p.total, secPerStep: 0 }),
+      );
+      await fs.promises.writeFile(outPath, png);
+      return { dataUrl: `data:image/png;base64,${png.toString('base64')}`, path: outPath, seed: usedSeed, model: base };
+    } finally {
+      running = false;
+      currentChild = null;
+    }
+  }
+
+  // --- Persistent sd-server fast path -----------------------------------------
+  // A plain full-pipeline checkpoint doing txt2img (no LoRA, no init image) runs
+  // on the RESIDENT sd-server, which keeps the model loaded across images: the
+  // first image pays the ~13s Metal shader warmup + model load, but every image
+  // after skips BOTH (measured ~45s cold -> ~7s warm on an M4). The step count /
+  // resolution / quality are UNCHANGED — this only removes per-image warmup and
+  // reload. Special stacks stay on one-shot sd-cli below: Z-Image (3-file stack),
+  // Core ML (ANE), UNET-only checkpoints needing separate CLIP+VAE, img2img, and
+  // LoRA (sd.cpp can't merge a LoRA into quantized weights anyway).
+  // NOTE: a persistent sd-server fast path once lived here but is removed — it kept
+  // ~4GB of image weights resident alongside the ~5GB chat model, causing memory
+  // contention -> hangs + corrupted output on 16GB machines, and was never verified
+  // end-to-end in-app. All full-checkpoint txt2img goes through the one-shot sd-cli
+  // path below: it loads the model, generates with the karras/defaults, and FREES it
+  // on exit (no resident pressure). sdServer.cancelCurrent() above stays a harmless
+  // no-op. Re-introduce a resident server only if proven safe on 16GB + good output.
+
   const threads = String(Math.max(1, os.cpus().length - 2));
   // Live preview: write a rough partial image every step ('proj' needs no extra
   // model) so the UI can show the image forming step-by-step.
@@ -540,19 +643,11 @@ export async function generateImage(
       ...previewArgs,
     ];
   } else {
-    // Per-model defaults. Distilled few-step models (SDXL-Lightning, *-Turbo)
-    // need very low steps, cfg≈1 and euler — ~7× faster at near-SDXL quality.
-    const isLightning = /lightning/i.test(base);
-    const isTurbo = /turbo/i.test(base);
-    const isXL = /sdxl|xl/i.test(base) || isLightning;
-    const isV2 = /v2-1|v2\.1/i.test(base);
-    const fewStep = isLightning || isTurbo;
-    const nameStepMatch = base.match(/(\d+)\s*step/i);
-    // SDXL-Lightning's sweet spot is 768 (what our style thumbnails use): great
-    // quality, fast, and freeze-safe — full 1024 forces a slow tiled VAE decode.
-    // Full (non-distilled) XL stays at 1024 where the extra detail pays off.
-    const defaultSize = isTurbo ? 512 : isLightning ? 768 : isXL ? 1024 : isV2 ? 768 : 512;
-    const defaultSteps = isTurbo ? 4 : isLightning ? (nameStepMatch ? parseInt(nameStepMatch[1], 10) : 4) : 28;
+    // Per-model defaults (shared with the persistent-server path above via the
+    // single-source-of-truth helper). Distilled few-step models need ~8 steps,
+    // cfg 2 and the KARRAS schedule for crisp output; full checkpoints need ~28
+    // steps + real CFG on the engine-default schedule.
+    const { defaultSize, defaultSteps, defaultCfg, sampler, scheduler, isXL } = standardModelDefaults(base);
     // Full checkpoint → load with -m. UNET-only quant → load the diffusion model
     // separately and supply SDXL CLIP-L/CLIP-G + VAE; if those companions aren't
     // installed, fail with a clear message instead of the cryptic sd.cpp abort.
@@ -586,8 +681,9 @@ export async function generateImage(
       '-W', String(params.width ?? defaultSize),
       '-H', String(params.height ?? defaultSize),
       '--steps', String(params.steps ?? defaultSteps),
-      '--cfg-scale', String(params.cfgScale ?? (fewStep ? 1.0 : 7)),
-      '--sampling-method', fewStep ? 'euler' : 'dpm++2m',
+      '--cfg-scale', String(params.cfgScale ?? defaultCfg),
+      '--sampling-method', sampler,
+      '--scheduler', scheduler,
       '--diffusion-fa',
       '-t', threads,
       '-s', String(seed),
@@ -598,7 +694,12 @@ export async function generateImage(
     // pass — exactly what our freeze-safe 768 thumbnail batch skipped.
     const effW = params.width ?? defaultSize;
     const effH = params.height ?? defaultSize;
-    if (isXL && Math.max(effW, effH) > 768) args.push('--vae-tiling');
+    // TAESD decode: OFF by default (it softens detail and blanks at 1024); the
+    // quality recipe uses the full VAE. Strictly opt-in via fastVae for a fast
+    // low-res draft. When present it makes VAE-tiling moot, so prefer it.
+    const cliTaesd = params.fastVae ? resolveTaesd(base) : null;
+    if (cliTaesd) args.push('--taesd', cliTaesd);
+    else if (isXL && Math.max(effW, effH) > 768) args.push('--vae-tiling');
     args.push('-n', params.negativePrompt?.trim() || DEFAULT_NEGATIVE);
     // img2img (not supported by Z-Image gen-only turbo).
     if (params.initImage) {
@@ -615,11 +716,9 @@ export async function generateImage(
   cancelled = false;
   // CRITICAL on Apple Silicon (unified memory): the LLM (gemma) and the image
   // model can't both be resident — together they overflow RAM and the whole
-  // system swaps/hangs. Free the LLM first, then give the OS a moment to
-  // actually reclaim its pages before we load the (large) image model.
-  // pause() frees the server AND blocks the capture pipeline from respawning it
-  // mid-generation (which would put both models in memory and freeze the box).
-  try { llm.pause(); } catch { /* ignore */ }
+  // system swaps/hangs. The ModalityQueue has already evicted the LLM (evicts:
+  // ['llm']) AND blocks the capture pipeline from respawning it while this heavy
+  // tier-2 job holds the slot.
   // Give the OS time to actually reclaim the freed LLM pages before the image
   // model's load spike — otherwise the brief overlap causes a short stutter.
   await new Promise((r) => setTimeout(r, 2500));
@@ -689,7 +788,19 @@ export async function generateImage(
     running = false;
     currentChild = null;
     fs.promises.unlink(previewPath).catch(() => {});
-    // Resume the LLM (unblock respawns + warm it back up) now that gen is done.
-    llm.resume();
+    // LLM warm-back-up happens once in the generateImage() wrapper's finally
+    // (covers both this sd-cli path and the mflux path).
   }
 }
+
+/** Image generation as a ManagedRuntime for the shared residency seam. Only the
+ *  RESIDENT sd-server holds memory between images; evict stops it so another
+ *  modality can reclaim the RAM. warm/release are no-ops — the server lazily
+ *  re-spawns on the next eligible resident generation (ensureUp), and the one-shot
+ *  sd-cli/mflux paths hold nothing between jobs. */
+export const imageRuntime: ManagedRuntime = {
+  modality: 'image',
+  evict: () => { sdServer.stop(); },
+  warm: () => { /* lazily re-spawned by ensureUp on the next resident generation */ },
+  release: () => { sdServer.stop(); },
+};

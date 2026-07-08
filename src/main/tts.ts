@@ -8,12 +8,14 @@
 // ORT runtime AND means the model is only resident while speaking, then freed —
 // swap-in / swap-out rather than a permanent ~330MB resident session.
 
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { getActiveModal } from './active-models';
-import { resourceFile, appRoot } from './runtime-env';
+import { resourceFile, appRoot, onHostQuit } from './runtime-env';
+import { getResidencyMode } from './runtime-residency';
+import type { ManagedRuntime } from './runtime-manager';
 
 const DEFAULT_VOICE = 'af_heart';
 
@@ -54,6 +56,114 @@ function isTeardownNoise(err: string): boolean {
 
 let busy = false;
 
+// ---- resident mode: a persistent worker that keeps Kokoro warm ----------------
+// In 'resident' mode we spawn ONE long-lived worker ('serve') that loads the model
+// once and answers many synth requests over stdin/stdout (NDJSON). evict() kills it
+// to free ~330MB; the queue re-warms it (resident) or leaves it dead (on-demand,
+// where each synth uses the one-shot path below instead).
+let serveChild: ChildProcess | null = null;
+let serveReady: Promise<void> | null = null;
+let serveStdout = '';
+let reqSeq = 0;
+const servePending = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
+// Free the ~330MB worker after this long idle even in resident mode - nothing in the
+// queue evicts 'tts' today (only image/chat declare evicts), so without this the
+// worker would live for the whole session. Mirrors sd-server / whisper-server idle-evict.
+const SERVE_IDLE_MS = 5 * 60_000;
+const SERVE_REQ_TIMEOUT_MS = 60_000; // a single synth shouldn't take longer; guards a hung worker
+let serveIdleTimer: ReturnType<typeof setTimeout> | null = null;
+function armIdleEvict(): void {
+  if (serveIdleTimer) clearTimeout(serveIdleTimer);
+  serveIdleTimer = setTimeout(() => stopServe(), SERVE_IDLE_MS);
+  serveIdleTimer.unref?.();
+}
+function clearIdleEvict(): void {
+  if (serveIdleTimer) { clearTimeout(serveIdleTimer); serveIdleTimer = null; }
+}
+
+function startServe(): Promise<void> {
+  if (serveReady) return serveReady;
+  serveReady = new Promise<void>((resolve, reject) => {
+    const child = spawn(process.execPath, [workerPath(), 'serve'], {
+      cwd: appRoot(),
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    });
+    serveChild = child;
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (d: string) => {
+      serveStdout += d;
+      let nl: number;
+      while ((nl = serveStdout.indexOf('\n')) >= 0) {
+        const line = serveStdout.slice(0, nl).trim();
+        serveStdout = serveStdout.slice(nl + 1);
+        if (!line) continue;
+        let msg: { ready?: boolean; id?: string; ok?: boolean; error?: string };
+        try { msg = JSON.parse(line); } catch { continue; }
+        if (msg.ready) { resolve(); continue; }
+        const p = msg.id != null ? servePending.get(msg.id) : undefined;
+        if (p && msg.id != null) {
+          servePending.delete(msg.id);
+          if (msg.ok) p.resolve(); else p.reject(new Error(msg.error || 'tts worker error'));
+        }
+      }
+    });
+    child.on('error', reject);
+    child.on('close', () => {
+      serveChild = null;
+      serveReady = null;
+      for (const p of servePending.values()) p.reject(new Error('tts worker exited'));
+      servePending.clear();
+    });
+  });
+  return serveReady;
+}
+
+function stopServe(): void {
+  clearIdleEvict();
+  const c = serveChild;
+  serveChild = null;
+  serveReady = null;
+  if (c) { try { c.kill('SIGKILL'); } catch { /* ignore */ } }
+}
+
+// Never leave the worker running past app quit.
+onHostQuit(() => stopServe());
+
+/** Synthesize on the resident worker (model stays warm across calls). Bounded by a
+ *  timeout so a hung worker rejects (and frees `busy`) instead of wedging TTS. */
+async function synthResident(text: string, voice: string, out: string): Promise<void> {
+  await startServe();
+  clearIdleEvict(); // busy now; re-arm when the request settles
+  const c = serveChild;
+  if (!c?.stdin) throw new Error('tts worker not running');
+  const id = String(++reqSeq);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        servePending.delete(id);
+        reject(new Error('tts worker timed out'));
+      }, SERVE_REQ_TIMEOUT_MS);
+      servePending.set(id, {
+        resolve: () => { clearTimeout(timer); resolve(); },
+        reject: (e) => { clearTimeout(timer); reject(e); },
+      });
+      c.stdin!.write(JSON.stringify({ id, text: text.slice(0, 2000), voice, out }) + '\n');
+    });
+  } finally {
+    armIdleEvict(); // idle again - free the model after SERVE_IDLE_MS
+  }
+}
+
+/** TTS as a ManagedRuntime for the shared residency seam — same interface as every
+ *  other engine. evict frees the resident worker; warm preloads it (resident); on-
+ *  demand release just ensures no worker lingers (each synth spawns one-shot). */
+export const ttsRuntime: ManagedRuntime = {
+  modality: 'tts',
+  evict: () => stopServe(),
+  warm: () => { void startServe().catch(() => {}); },
+  release: () => stopServe(),
+};
+
 /** Synthesize speech for `text`; returns a WAV data URL. */
 export async function synthesize(text: string, voice?: string): Promise<{ dataUrl: string }> {
   // Caller's voice wins; else the user-selected speech voice IF it's a real voice
@@ -68,8 +178,17 @@ export async function synthesize(text: string, voice?: string): Promise<{ dataUr
   const out = path.join(os.tmpdir(), `offgrid-tts-${process.pid}-${Date.now()}.wav`);
   console.log(`[tts] synth start: voice=${voice || DEFAULT_VOICE} chars=${t.length} worker=${(() => { try { return workerPath(); } catch { return '??'; } })()}`);
   const t0 = Date.now();
+  const resident = getResidencyMode('tts') === 'resident';
   try {
-    const { err, code } = await runWorker(['speak', out, voice || DEFAULT_VOICE], t);
+    // Resident: reuse the warm worker (fast, model stays loaded). On-demand: spawn
+    // a one-shot worker that frees the ~330MB model on exit. Same output either way.
+    let err = '';
+    if (resident) {
+      try { await synthResident(t, voice || DEFAULT_VOICE, out); }
+      catch (e) { err = (e as Error).message; }
+    } else {
+      ({ err } = await runWorker(['speak', out, voice || DEFAULT_VOICE], t));
+    }
     // Success = a real WAV on disk (>44-byte header), regardless of exit code.
     let wav: Buffer | null = null;
     let size = 0;
@@ -80,8 +199,8 @@ export async function synthesize(text: string, voice?: string): Promise<{ dataUr
     } catch {
       /* no file */
     }
-    console.log(`[tts] worker done in ${Date.now() - t0}ms exitCode=${String(code)} wavBytes=${size} stderr=${err.trim().slice(0, 300)}`);
-    if (!wav) throw new Error(err.trim() || `tts worker failed (exit ${String(code)})`);
+    console.log(`[tts] worker done in ${Date.now() - t0}ms mode=${resident ? 'resident' : 'on-demand'} wavBytes=${size} stderr=${err.trim().slice(0, 300)}`);
+    if (!wav) throw new Error(err.trim() || 'tts worker failed');
     console.log(`[tts] returning dataUrl (${wav.length} bytes)`);
     return { dataUrl: `data:audio/wav;base64,${wav.toString('base64')}` };
   } catch (e) {

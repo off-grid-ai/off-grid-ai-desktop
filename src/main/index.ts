@@ -20,7 +20,9 @@ import { loadProFeaturesMain } from './bootstrap/loadProFeaturesMain'
 import { initLicensing } from './licensing/license-service'
 import { setupLicenseIpc } from './license-ipc'
 import { nativeImage } from 'electron'
-import { purgeLegacyChatImports } from './database'
+import { purgeLegacyChatImports, getSetting } from './database'
+import { modalityQueue } from './modality-queue/queue'
+import { registerRuntime } from './runtime-manager'
 
 // Pin one canonical userData dir ("Off Grid AI Desktop") regardless of package
 // name, and migrate data from the legacy split dirs ("My Memories" had the
@@ -333,8 +335,22 @@ app.whenReady().then(() => {
   // 3. Initialize LLM (Async)
   // We don't await this to avoid blocking window creation
   import('./llm').then(({ llm }) => {
+      // Register the chat engine through the shared residency seam (runtime-manager),
+      // exactly like every other engine — the queue evicts it before a competing
+      // heavy job and re-warms it mode-aware (resident = reload; on-demand = release
+      // the pause block so it lazily respawns on next use, freeing RAM meanwhile).
+      registerRuntime(llm.runtime);
+      // Apply persisted queue settings (defaults: enabled, tier-1 coexists).
+      modalityQueue.setEnabled(getSetting('modalityQueueEnabled', true));
+      modalityQueue.setTier1CoexistsWithTier2(getSetting('modalityTier1CoexistsWithTier2', true));
       llm.init().catch(err => console.error("Failed to init LLM:", err));
   });
+  // Every other engine joins the SAME residency seam (runtime-manager), lazily so
+  // module load never blocks window creation. Registration only stores hooks — it
+  // doesn't spawn anything until the engine is actually used.
+  import('./tts').then(({ ttsRuntime }) => registerRuntime(ttsRuntime)).catch(() => {});
+  import('./imagegen').then(({ imageRuntime }) => registerRuntime(imageRuntime)).catch(() => {});
+  import('./transcription/select').then(({ sttRuntime }) => registerRuntime(sttRuntime)).catch(() => {});
 
   createWindow()
 

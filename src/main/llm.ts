@@ -8,6 +8,7 @@ import * as http from "http";
 import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit } from "./runtime-env";
 import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from "./model-sizing";
 import { classifyLlamaError } from "./llama-error";
+import type { ManagedRuntime } from "./runtime-manager";
 
 export type { KvCacheType, PerformanceMode };
 
@@ -284,7 +285,16 @@ export class LLMService {
   }
 
   async init(): Promise<void> {
-    if (this.paused) return; // don't respawn while paused for image generation
+    if (this.paused) {
+      // A chat/tool turn needs the LLM NOW, but it's paused for a resident image
+      // server (unified memory can't hold both). Ask the image server to evict
+      // on-demand — freeing its memory and flipping `paused` off via its eviction
+      // hook — instead of making the caller wait out the ~60s idle timer. Then
+      // clear the pause ourselves as a safety net so init NEVER silently no-ops
+      // and leaves chat without a server (the bug this replaces).
+      try { this.resumeFromPauseHook?.(); } catch { /* ignore */ }
+      this.paused = false;
+    }
     if (this.initialized) return;
     // Coalesce concurrent inits into one spawn.
     if (this.initPromise) return this.initPromise;
@@ -746,16 +756,40 @@ export class LLMService {
     }
   }
 
+  /** Set by the image runtime (imagegen.ts): how to evict a resident image server
+   *  when a chat/tool turn needs the LLM back while it's paused. Kept as a hook so
+   *  this module never imports the image runtime (layering). */
+  private resumeFromPauseHook: (() => void) | null = null;
+  setResumeFromPauseHook(fn: () => void) { this.resumeFromPauseHook = fn; }
+
   /** Pause for image generation: free the server and block respawns until resumed. */
   pause() {
     this.paused = true;
     this.stop();
   }
 
-  /** Resume after image generation and warm the server back up. */
+  /** Resume after image generation and warm the server back up (resident mode). */
   resume() {
     this.paused = false;
     this.init().catch(() => {});
+  }
+
+  /** Clear the pause block WITHOUT warming the server (on-demand mode). The server
+   *  stays down and lazily respawns on the next chat/tool turn, freeing its RAM in
+   *  the meantime. Pairs with pause() as the on-demand counterpart of resume(). */
+  releasePause() {
+    this.paused = false;
+  }
+
+  /** This engine as a ManagedRuntime for the shared residency seam (runtime-manager),
+   *  so the chat model is managed identically to image/STT/TTS — one code path. */
+  get runtime(): ManagedRuntime {
+    return {
+      modality: 'llm',
+      evict: () => { try { this.pause(); } catch { /* ignore */ } },
+      warm: () => { this.resume(); },
+      release: () => { this.releasePause(); },
+    };
   }
 
   isReady() {

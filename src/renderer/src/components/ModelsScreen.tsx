@@ -13,6 +13,7 @@ import {
   IconExternalLink,
   IconEye,
   IconDatabase,
+  IconStarFilled,
 } from '@tabler/icons-react';
 import { StoragePanel } from './setup/StoragePanel';
 import {
@@ -24,6 +25,7 @@ import {
   determineCredibility,
   hasActiveFilters,
   initialFilterState,
+  recommendedImageModelId,
   type FilterState,
   type Credibility,
 } from '@offgrid/models';
@@ -94,9 +96,14 @@ function fmtReleaseDate(iso?: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
 
-function featureRank(m: { id?: string; credibility?: string }): number {
+function featureRank(m: { id?: string; credibility?: string; tags?: string[] }, recommendedId?: string | null): number {
+  // The model recommended for THIS machine's RAM sorts to the very top (above a
+  // plain 'Fast' pick). Then distilled few-step models (tagged "Fast") render in
+  // ~30s vs ~100s, so surface them next. Then our own org's models, then the rest.
+  if (recommendedId && m.id === recommendedId) return -1;
+  if (m.tags?.some((t) => /^fast/i.test(t))) return 0;
   if (m.credibility !== 'offgrid') return 2;
-  return /realvis|juggernaut|dreamshaper/i.test(m.id || '') ? 0 : 1;
+  return 1;
 }
 
 const MODE_LABELS: Record<string, string> = { txt2img: 'Text→Image', img2img: 'Image→Image' };
@@ -223,6 +230,10 @@ export function ModelsScreen() {
 
   const list = models.filter((m) => m.kind === activeKind || (activeKind === 'text' && m.kind === 'vision'));
 
+  // The image model recommended for this machine's RAM (Light Q4 on <=16GB, full
+  // Q8 above) — one pure rule, reused for both the badge and the top-of-list sort.
+  const recommendedImageId = recommendedImageModelId(models, ramGb);
+
   const displayed = filterAndSort(
     hfResults.map((r) => ({ id: r.id, name: r.name, org: r.org, downloads: r.downloads, likes: r.likes, lastModified: r.lastModified, credibility: r.credibility as Credibility | undefined, params: parseParamCount(r.name) ?? parseParamCount(r.id) })),
     filterState
@@ -237,10 +248,17 @@ export function ModelsScreen() {
     .sort((a, b) => {
       // Active first, then other installed, then available — within each tier keep feature rank.
       const rank = (x: { id: string }) => (isActive(x.id) ? 0 : installed.includes(x.id) ? 1 : 2);
-      return rank(a) - rank(b) || featureRank(a) - featureRank(b);
+      return rank(a) - rank(b) || featureRank(a, recommendedImageId) - featureRank(b, recommendedImageId);
     });
 
   const tabs = [...kinds.filter((k) => k !== 'vision'), 'storage'];
+
+  // Live download summary for the Storage tab label: how many are downloading vs
+  // failed (across all kinds). Derived from the per-model progress map.
+  const storageCounts = {
+    downloading: Object.values(progress).filter((p) => p.status === 'downloading').length,
+    failed: Object.values(progress).filter((p) => p.status === 'failed').length,
+  };
 
   // RAM fit label for a model
   const ramFit = (m: { files?: ModelFile[] }): 'ok' | 'tight' | 'risky' => {
@@ -260,6 +278,9 @@ export function ModelsScreen() {
     const meta = [m.org, m.params ? `${m.params}B` : null, size, fmtReleaseDate(m.releaseDate)].filter(Boolean).join(' · ');
     const fit = isHf ? 'ok' : ramFit(m);
     const tags = (m.tags ?? []).filter((t) => !/tight|risky|fit/i.test(t));
+    // The single image pick best-suited to THIS machine's RAM (Light on <=16GB,
+    // full above) — a prominent filled-emerald badge, distinct from the outlined tags.
+    const recommended = !isHf && !!recommendedImageId && m.id === recommendedImageId;
 
     return (
       <div key={m.id}
@@ -288,11 +309,33 @@ export function ModelsScreen() {
         </div>
 
         {/* Badges row */}
-        {(tags.length > 0 || fit !== 'ok') && (
+        {(recommended || tags.length > 0 || fit !== 'ok') && (
           <div className="flex flex-wrap items-center gap-1">
-            {tags.map((t) => (
-              <span key={t} className={`rounded-sm px-1 py-px text-[8px] uppercase tracking-wide ${/challenger/i.test(t) ? 'text-amber-400' : 'bg-neutral-800 text-neutral-500'}`}>{t}</span>
-            ))}
+            {recommended && (
+              // Prominent FILLED emerald badge — the pick for this machine's RAM,
+              // set apart from the outlined capability tags below.
+              <span className="flex shrink-0 items-center gap-0.5 rounded-sm bg-green-500 px-1.5 py-px text-[8px] font-semibold uppercase tracking-wide text-black">
+                <IconStarFilled className="h-2 w-2" /> Recommended for you
+              </span>
+            )}
+            {tags.map((t) => {
+              // "Fast" = distilled few-step model (~30s vs ~100s) — highlight in
+              // the emerald brand accent so it reads as the recommended quick pick.
+              // "Light" = a smaller/lower-memory quant — amber outline so it reads
+              // as the memory-friendly variant (distinct from the emerald "Fast").
+              const isFast = /^fast/i.test(t);
+              const isLight = /^light$/i.test(t);
+              const cls = isFast
+                ? 'border border-green-500/60 text-green-500'
+                : isLight
+                  ? 'border border-emerald-300/50 text-emerald-300'
+                  : /challenger/i.test(t)
+                    ? 'text-amber-400'
+                    : 'bg-neutral-800 text-neutral-500';
+              return (
+                <span key={t} className={`rounded-sm px-1 py-px text-[8px] uppercase tracking-wide ${cls}`}>{t}</span>
+              );
+            })}
             {fit !== 'ok' && (
               <span className={`rounded-sm px-1.5 py-px text-[8px] uppercase tracking-wide ${fit === 'tight' ? 'border border-amber-400/60 text-amber-400' : 'border border-amber-400/60 bg-amber-400/10 text-amber-400'}`}>
                 {fit === 'tight' ? 'Tight on RAM' : 'May not fit'}
@@ -307,8 +350,10 @@ export function ModelsScreen() {
             <span className="flex items-center gap-1 text-[11px] text-green-500">
               <IconCircleCheck className="h-3.5 w-3.5" /> Active
             </span>
-          ) : isInstalled && !isHf ? (
+          ) : isInstalled ? (
             // Every installed model is activatable for its type — no kind branch.
+            // Includes a downloaded HF model (registered as installed), so its search
+            // card flips from Download to Use instead of resetting.
             <button onClick={() => useModel(m.id)} disabled={!!switching}
               className="flex items-center gap-1 rounded border border-neutral-700 px-2.5 py-1 text-[10px] text-neutral-300 transition-all duration-150 hover:border-green-500 hover:text-green-400 active:scale-95 disabled:opacity-40">
               {switching === m.id ? <><IconLoader2 className="h-3 w-3 animate-spin" /> Switching</> : 'Use'}
@@ -327,7 +372,7 @@ export function ModelsScreen() {
               <IconDownload className="h-3 w-3" /> Download
             </button>
           )}
-          {(isInstalled && !isHf) && (
+          {isInstalled && (
             <button onClick={() => removeModel(m.id, m.name)} disabled={deleting === m.id || active}
               title={active ? 'Switch to another model before deleting' : 'Delete from disk'}
               className="rounded p-1 text-neutral-700 transition-all duration-150 hover:text-red-400 active:scale-90 disabled:opacity-30 group-hover:text-neutral-500">
@@ -365,7 +410,20 @@ export function ModelsScreen() {
         {tabs.map((k) => (
           <button key={k} onClick={() => setActiveKind(k)}
             className={`flex items-center gap-1.5 px-3 py-2 text-[10px] uppercase tracking-wider transition-colors duration-150 ${activeKind === k ? 'border-b-2 border-green-500 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}>
-            {k === 'storage' ? <><IconDatabase className="h-3 w-3" /> Storage</> : KIND_LABELS[k] ?? k}
+            {k === 'storage'
+              ? <><IconDatabase className="h-3 w-3" /> Storage
+                  {/* Live counts: total installed, in-progress downloads, failures.
+                      (There is no separate "queued" state — downloads run
+                      concurrently, each starting on click.) */}
+                  <span className="ml-1 font-normal normal-case tracking-normal text-neutral-600">{installed.length}</span>
+                  {storageCounts.downloading > 0 && (
+                    <span className="rounded-sm bg-green-500/15 px-1 text-[8px] text-green-500">{storageCounts.downloading}↓</span>
+                  )}
+                  {storageCounts.failed > 0 && (
+                    <span className="rounded-sm bg-red-500/15 px-1 text-[8px] text-red-400">{storageCounts.failed}✕</span>
+                  )}
+                </>
+              : KIND_LABELS[k] ?? k}
           </button>
         ))}
         {ramGb && activeKind !== 'storage' && (

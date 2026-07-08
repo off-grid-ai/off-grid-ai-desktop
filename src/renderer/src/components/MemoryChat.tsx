@@ -9,6 +9,8 @@ import { VoiceBubble, stopAllVoicePlayback } from './VoiceBubble';
 import { SkillsPanel } from './SkillsPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { ModelPicker } from './ModelPicker';
+import { standardModelDefaults } from '@offgrid/core/shared/image-defaults';
+import { looksLikeImageRequest, cleanImagePrompt } from '@renderer/lib/image-intent';
 import { Button } from '@renderer/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from '@renderer/components/ui/dropdown-menu';
@@ -253,7 +255,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const [showImageOptions, setShowImageOptions] = useState(false);
   const [imageAvailable, setImageAvailable] = useState(false);
   const [imgSize, setImgSize] = useState(512);
-  const [imgSteps, setImgSteps] = useState(16);
+  const [imgSteps, setImgSteps] = useState(10);
   const [imgSeed, setImgSeed] = useState('');
   const [imgNegative, setImgNegative] = useState('');
   const [imgInit, setImgInit] = useState<string | null>(null);
@@ -264,6 +266,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const [styleThumbs, setStyleThumbs] = useState<Record<string, string>>({});
   const [genThumbsBusy, setGenThumbsBusy] = useState(false);
   const [imgProgress, setImgProgress] = useState<{ step: number; total: number; secPerStep: number; preview?: string; phase?: 'sampling' | 'decoding' } | null>(null);
+  // True while an image is generating (explicit image mode OR an auto-routed chat
+  // request like "draw a dog"), so the image progress/warm-up UI shows even when
+  // the global mode is still 'ask'.
+  const [generatingImage, setGeneratingImage] = useState(false);
   const [projects, setProjects] = useState<ProjectLite[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   // Captured-memory context is a Pro ("remembers") feature; core chats are plain
@@ -453,13 +459,18 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         try { setConvMessages(first.id, mapRagMessages(await window.api.getRagMessages(first.id))); } catch { setConvMessages(first.id, []); }
       }
     })();
-    window.api.imageGenStatus?.().then((s: { available: boolean; models?: string[] }) => {
+    window.api.imageGenStatus?.().then((s: { available: boolean; models?: string[]; active?: string | null }) => {
       setImageAvailable(!!s?.available);
       const models = s?.models || [];
       setImgModels(models);
-      // Default to the best fit: Z-Image Turbo (2026 flagship) > SDXL-Lightning > SDXL > 2.1 > rest.
-      const preferred = models.find(m => /z[-_]?image/i.test(m)) || models.find(m => /lightning/i.test(m)) || models.find(m => /sdxl|xl/i.test(m)) || models.find(m => /v2-1|v2\.1/i.test(m)) || models[0] || '';
-      setImgModel(prev => prev || preferred);
+      // Default the picker to the ACTIVE image model (what the Active-models panel
+      // shows, e.g. DreamShaper) so the composer never mismatches it. Fall back to a
+      // preference that skips the parked/slow Core ML dir (it would otherwise win on
+      // an "sdxl" name match and default the composer to a non-distilled model).
+      const usable = models.filter(m => !/coreml/i.test(m));
+      const preferred = usable.find(m => /dreamshaper/i.test(m)) || usable.find(m => /lightning|turbo/i.test(m)) || usable.find(m => /z[-_]?image/i.test(m)) || usable.find(m => /sdxl|xl/i.test(m)) || usable[0] || models[0] || '';
+      const active = s?.active || preferred;
+      setImgModel(prev => prev || active);
     }).catch(() => {});
     window.api.listProjects?.().then((p: ProjectLite[]) => setProjects(p || [])).catch(() => {});
     window.api.styleThumbs?.().then((t: Record<string, string>) => setStyleThumbs(t || {})).catch(() => {});
@@ -486,18 +497,15 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     }
   }, [genThumbsBusy, styleThumbs]);
 
-  // Match canvas + steps to the model. Few-step models (Lightning/Turbo) need
-  // very low steps; full models want their native resolution.
+  // Seed the size + steps controls with the model's sensible defaults (from the
+  // SINGLE shared source of truth the main process also uses — so the two layers
+  // can never drift; a stale copy of this logic once defaulted turbo models to 4
+  // steps -> rainbow artifacts). The user can then adjust Size/Steps directly.
   useEffect(() => {
     if (!imgModel) return;
-    const zimage = /z[-_]?image/i.test(imgModel);
-    const lightning = /lightning/i.test(imgModel);
-    const turbo = /turbo/i.test(imgModel) && !zimage;
-    setImgSize(turbo ? 512 : /sdxl|xl/i.test(imgModel) || lightning || zimage ? 1024 : /v2-1|v2\.1/i.test(imgModel) ? 768 : 512);
-    if (zimage) setImgSteps(8);
-    else if (turbo) setImgSteps(4);
-    else if (lightning) setImgSteps(parseInt(imgModel.match(/(\d+)\s*step/i)?.[1] || '4', 10));
-    else setImgSteps(/sdxl|xl/i.test(imgModel) ? 28 : 20);
+    const d = standardModelDefaults(imgModel);
+    setImgSize(d.defaultSize);
+    setImgSteps(d.defaultSteps);
   }, [imgModel]);
 
   const activeProjectName = projects.find(p => p.id === activeProjectId)?.name ?? null;
@@ -732,12 +740,20 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     }
 
     // Image-generation mode: render a prompt → image instead of a memory answer.
-    if (mode === 'image') {
+    // Also auto-route when the user clearly asks for an image in chat ("draw a
+    // dog") so they get a picture instead of the text model refusing. Intent
+    // detection only fires in chat mode when an image model is available.
+    const autoImage = mode !== 'image' && imageAvailable && looksLikeImageRequest(trimmed);
+    if (mode === 'image' || autoImage) {
       setImgProgress(null);
+      setGeneratingImage(true);
       try {
         const seedNum = imgSeed.trim() === '' ? -1 : parseInt(imgSeed, 10);
         const styleObj = STYLE_PRESETS.find(s => s.name === activeStyle);
-        const fullPrompt = styleObj ? `${trimmed}, ${styleObj.prompt}` : trimmed;
+        // In explicit image mode keep the exact prompt (+ any chosen style); on
+        // auto-route strip the "draw/generate an image of" phrasing to the subject.
+        const basePrompt = mode === 'image' ? trimmed : cleanImagePrompt(trimmed);
+        const fullPrompt = styleObj ? `${basePrompt}, ${styleObj.prompt}` : basePrompt;
         const img = await window.api.generateImage({
           prompt: fullPrompt,
           negativePrompt: imgNegative.trim() || undefined,
@@ -776,6 +792,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         markGenerating(convId, false);
         setLoading(false);
         setImgProgress(null);
+        setGeneratingImage(false);
         await loadConversations();
         drainQueue(convId);
       }
@@ -1908,7 +1925,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                 {!!activeConversationId && generatingConvs.has(activeConversationId) && !messages.some(m => m.streaming) ? (
                   <div className="mb-5 flex flex-col items-start">
                     <div className="mb-1 text-[10px] uppercase tracking-wider text-neutral-600">Off Grid</div>
-                    {mode === 'image' ? (
+                    {mode === 'image' || generatingImage ? (
                       <div className="rounded-md border border-neutral-800 bg-neutral-900/40 p-3">
                         {imgProgress?.preview ? (
                           <img src={imgProgress.preview} alt="forming" className="mb-2 w-56 rounded-md border border-neutral-800" />
@@ -1968,6 +1985,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   <label className="flex items-center gap-1.5">
                     Size
                     <select value={imgSize} onChange={e => setImgSize(Number(e.target.value))} className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500">
+                      <option value={256}>256</option>
                       <option value={512}>512</option>
                       <option value={640}>640</option>
                       <option value={768}>768</option>
@@ -1976,7 +1994,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   </label>
                   <label className="flex items-center gap-1.5">
                     Steps
-                    <input type="number" min={4} max={50} value={imgSteps} onChange={e => setImgSteps(Math.max(4, Math.min(50, Number(e.target.value) || 16)))} className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500" />
+                    <input type="number" min={4} max={50} value={imgSteps} onChange={e => setImgSteps(Math.max(4, Math.min(50, Number(e.target.value) || 16)))} className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
                   </label>
                   <label className="flex items-center gap-1.5">
                     Seed
@@ -2284,17 +2302,27 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                     </TooltipTrigger>
                     <TooltipContent>{thinkingEnabled ? 'Reasoning on — the model thinks step by step (slower)' : 'Reasoning off — direct answers (faster)'}</TooltipContent>
                   </Tooltip>
-                  {mode === 'image' && (
-                    <>
-                      {/* Active image-mode pill — click the × to drop back to chat. */}
-                      <Button type="button" variant="outline" size="sm" onClick={() => { setMode('ask'); setShowImageOptions(false); }} title="Back to chat" className="h-8 gap-1.5 rounded-full border-green-500 text-primary">
+                  {/* Image toggle — always available; turning it on makes the next
+                      prompt generate an image instead of a chat reply. */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { const on = mode !== 'image'; setMode(on ? 'image' : 'ask'); if (!on) setShowImageOptions(false); }}
+                        className={`h-8 gap-1.5 rounded-full ${mode === 'image' ? 'border-green-500 text-primary' : 'text-neutral-400'}`}
+                      >
                         <Sparkles className="h-3.5 w-3.5" /> Image
-                        <X className="h-3.5 w-3.5 opacity-70" />
+                        {mode === 'image' && <X className="h-3.5 w-3.5 opacity-70" />}
                       </Button>
-                      <Button type="button" variant="outline" size="sm" onClick={() => setShowImageOptions(o => !o)} className={`h-8 gap-1.5 rounded-full ${showImageOptions ? 'text-primary' : ''}`}>
-                        <SlidersHorizontal className="h-3.5 w-3.5" /> Image options
-                      </Button>
-                    </>
+                    </TooltipTrigger>
+                    <TooltipContent>{mode === 'image' ? 'Image mode on — your prompt generates an image (click to return to chat)' : 'Generate an image from your prompt'}</TooltipContent>
+                  </Tooltip>
+                  {mode === 'image' && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setShowImageOptions(o => !o)} className={`h-8 gap-1.5 rounded-full ${showImageOptions ? 'text-primary' : ''}`}>
+                      <SlidersHorizontal className="h-3.5 w-3.5" /> Image options
+                    </Button>
                   )}
                   {queuedCount(queuedByConv, activeConversationId) > 0 && (
                     <span className="flex h-8 items-center rounded-full border border-neutral-800 px-2.5 text-[11px] text-neutral-400">
@@ -2343,7 +2371,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                         <TooltipContent>Stop generating</TooltipContent>
                       </Tooltip>
                     )}
-                    {loading && mode === 'image' ? (
+                    {loading && (mode === 'image' || generatingImage) ? (
                       <Button type="button" variant="outline" onClick={() => window.api.cancelImageGen?.()} className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10">
                         <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
                         Stop

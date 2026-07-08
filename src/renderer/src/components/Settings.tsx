@@ -110,6 +110,71 @@ function ProactiveSection(): React.ReactElement {
 // Software update — current version, manual check, automatic-update toggle
 // ---------------------------------------------------------------------------
 
+// Runtime residency — per-engine on-demand vs in-memory (core infra). On a 16GB
+// Mac keeping a model warm trades RAM for latency; the queue evicts a warm model
+// when another engine needs the memory, so 'resident' is safe to opt into.
+const RESIDENCY_ROWS: { modality: 'llm' | 'image' | 'stt' | 'tts'; label: string; hint: string; locked?: boolean }[] = [
+  { modality: 'llm', label: 'Chat model', locked: true, hint: 'The local LLM (gemma). Kept in memory because screen replay distills captures through it continuously - on-demand would thrash-reload ~5GB. It is still freed momentarily during image generation, then reloaded.' },
+  { modality: 'image', label: 'Image generation', hint: 'Resident keeps the diffusion model warm (~45s cold to ~7s warm); on-demand frees it after each image.' },
+  { modality: 'stt', label: 'Dictation (speech-to-text)', hint: 'Resident keeps Whisper warm for fast live text; on-demand loads per recording. Parakeet always loads per use.' },
+  { modality: 'tts', label: 'Text-to-speech', hint: 'Resident keeps the voice model warm; on-demand frees ~330MB between phrases.' },
+];
+
+function RuntimeResidencySection(): React.ReactElement {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api = (window as any).api;
+  const [modes, setModes] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api.residencyGet?.().then((m: Record<string, string>) => setModes(m || {})).catch(() => {});
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
+  const toggle = (modality: string, locked?: boolean): void => {
+    if (locked) return; // locked modalities (chat model) stay in-memory — no toggle
+    const next = modes[modality] === 'resident' ? 'on-demand' : 'resident';
+    setModes((prev) => ({ ...prev, [modality]: next }));
+    api.residencySet?.(modality, next);
+  };
+  return (
+    <div>
+      <p className="text-neutral-500 text-sm mb-4">
+        Keep a model in memory for instant use, or load it on demand to free RAM. Only one heavy model runs at a
+        time - when another engine needs the memory, a resident model is evicted and reloaded on its next use, so
+        resident mode never hangs the machine. On-demand is the safe default on 16GB Macs.
+      </p>
+      <div className="flex flex-col divide-y divide-neutral-800">
+        {RESIDENCY_ROWS.map((row) => {
+          const resident = row.locked || modes[row.modality] === 'resident';
+          return (
+            <div key={row.modality} className="flex items-start justify-between gap-4 py-3 first:pt-0">
+              <div>
+                <div className="text-sm text-neutral-200">{row.label}</div>
+                <div className="text-xs text-neutral-600">{row.hint}</div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className={`text-[11px] tabular-nums ${resident ? 'text-emerald-400' : 'text-neutral-500'}`}>
+                  {row.locked ? 'in-memory (required)' : resident ? 'in-memory' : 'on-demand'}
+                </span>
+                <button
+                  onClick={() => toggle(row.modality, row.locked)}
+                  role="switch"
+                  aria-checked={resident}
+                  aria-disabled={row.locked}
+                  disabled={row.locked}
+                  title={row.locked ? 'Required in memory - screen replay depends on this model' : undefined}
+                  aria-label={`${row.label} residency`}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${resident ? 'bg-emerald-500' : 'bg-neutral-700'} ${row.locked ? 'cursor-not-allowed opacity-50' : ''}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${resident ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SoftwareUpdateSection(): React.ReactElement {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api = (window as any).api;
@@ -436,6 +501,11 @@ export function Settings() {
           {/* Data & privacy — one place to delete on-device data. */}
           <SettingsCard title="Data & privacy" summary="See and delete on-device data, per category or all at once." delay={0.42}>
             <DataPrivacyPanel />
+          </SettingsCard>
+
+          {/* Runtime residency — per-engine in-memory vs on-demand (core infra). */}
+          <SettingsCard title="Model memory" summary="Keep each engine warm for speed, or load on demand to free RAM." delay={0.44}>
+            <RuntimeResidencySection />
           </SettingsCard>
 
           {/* Software update — check for updates + automatic-update control (core). */}

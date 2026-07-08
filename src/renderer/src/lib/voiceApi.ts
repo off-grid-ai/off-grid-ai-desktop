@@ -33,7 +33,11 @@ export interface VoiceOverlayApi {
   getState(): Promise<DictationState>;
   toggle(): Promise<void>;
   getSettings(): Promise<DictationSettings>;
-  sendChunk(samples: Float32Array, sampleRate: number): Promise<void>;
+  /** Ship the complete recording (a MediaRecorder webm/opus blob) to main. */
+  sendAudio(bytes: ArrayBuffer, mimeType: string): Promise<void>;
+  /** Ship the growing recording-so-far for a live-interim pass; resolves with the
+   *  interim transcript text. Awaited by the caller, which self-paces the sends. */
+  sendInterimAudio(bytes: ArrayBuffer, mimeType: string): Promise<string>;
   on(event: 'begin' | 'end' | 'interim' | 'final' | 'state' | 'error', cb: (payload: unknown) => void): () => void;
 }
 
@@ -46,7 +50,8 @@ export function voice(): VoiceOverlayApi | undefined {
     getState: () => inv('voice:dictation:get-state') as Promise<DictationState>,
     toggle: () => inv('voice:dictation:toggle') as Promise<void>,
     getSettings: () => inv('voice:dictation:get-settings') as Promise<DictationSettings>,
-    sendChunk: (samples, sampleRate) => inv('voice:dictation:chunk', samples, sampleRate) as Promise<void>,
+    sendAudio: (bytes, mimeType) => inv('voice:dictation:audio', bytes, mimeType) as Promise<void>,
+    sendInterimAudio: (bytes, mimeType) => inv('voice:dictation:interim-audio', bytes, mimeType) as Promise<string>,
     on: (event, cb) => on(`voice:dictation:${event}`, (payload) => cb(payload)),
   };
 }
