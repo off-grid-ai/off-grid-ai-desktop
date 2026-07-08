@@ -7,12 +7,31 @@ import { useEffect, useRef, useState } from 'react';
 import { Microphone, Square } from '@phosphor-icons/react';
 import { voice } from '@renderer/lib/voiceApi';
 
-// Inline AudioWorklet: posts each input frame (Float32) back to the main thread.
+// Inline AudioWorklet: downsamples each input frame from the device's native rate
+// to a FIXED 16 kHz and posts Float32 PCM back to the main thread. Resampling here,
+// using the worklet's authoritative global 'sampleRate', makes the pipeline immune
+// to whatever rate the mic/headphones run at — streamed PCM (live interim) AND the
+// saved recording are always real 16 kHz, never mislabeled/stretched. Linear
+// interpolation with a fractional read position carried across blocks (no clicks).
 const WORKLET_SRC = `
 class PCMWorklet extends AudioWorkletProcessor {
+  constructor() { super(); this._ratio = sampleRate / 16000; this._pos = 0; }
   process(inputs) {
     const ch = inputs[0] && inputs[0][0];
-    if (ch && ch.length) this.port.postMessage(ch.slice(0));
+    if (ch && ch.length) {
+      const ratio = this._ratio;
+      if (ratio === 1) { this.port.postMessage(ch.slice(0)); return true; }
+      const out = [];
+      let pos = this._pos;
+      while (pos < ch.length) {
+        const i = Math.floor(pos), frac = pos - i;
+        const a = ch[i], b = i + 1 < ch.length ? ch[i + 1] : a;
+        out.push(a + (b - a) * frac);
+        pos += ratio;
+      }
+      this._pos = pos - ch.length;
+      if (out.length) this.port.postMessage(Float32Array.from(out));
+    }
     return true;
   }
 }
@@ -56,13 +75,10 @@ export function DictationOverlay(): React.JSX.Element | null {
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       streamRef.current = stream;
-      // Use the NATIVE context rate — do NOT force { sampleRate: 16000 }. In
-      // Electron/Chromium, forcing a non-native rate can make ctx.sampleRate
-      // report 16000 while the worklet is actually fed native-rate (e.g. 44.1kHz)
-      // frames, so the PCM gets mislabeled 16k downstream — the audio then plays
-      // ~2.75x too slow (stretched) and transcription hears garbled slow-motion.
-      // With the native rate reported honestly, the main process resamples to 16k
-      // via ffmpeg before transcription.
+      // Native context rate — do NOT force { sampleRate: 16000 } (Electron/Chromium
+      // can then report 16000 while delivering native-rate frames, the bug that
+      // stretched recordings 2-3x). The worklet downsamples whatever the device
+      // gives to a fixed 16 kHz, so we ALWAYS stream + label 16 kHz downstream.
       const ctx = new AudioContext();
       ctxRef.current = ctx;
       const blob = new Blob([WORKLET_SRC], { type: 'application/javascript' });
@@ -72,7 +88,9 @@ export function DictationOverlay(): React.JSX.Element | null {
 
       const src = ctx.createMediaStreamSource(stream);
       const node = new AudioWorkletNode(ctx, 'pcm-worklet');
-      const rate = ctx.sampleRate;
+      // The worklet emits 16 kHz regardless of ctx.sampleRate, so the rate reported
+      // to main is the fixed TARGET_RATE — never the (possibly-lying) device rate.
+      const rate = TARGET_RATE;
       rateRef.current = rate;
       node.port.onmessage = (e: MessageEvent<Float32Array>) => {
         const frame = e.data;
