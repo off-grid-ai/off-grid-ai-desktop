@@ -12,8 +12,14 @@ set -uo pipefail
 
 restore() {
   echo "[test:db] restoring the Electron ABI build of better-sqlite3-multiple-ciphers..."
-  npx electron-builder install-app-deps >/dev/null 2>&1 \
-    || echo "[test:db] WARNING: restore failed - run 'npx electron-builder install-app-deps' before launching the app."
+  # electron-rebuild reliably targets the installed Electron's ABI (install-app-deps can
+  # no-op from cache). Verify the app can actually load it; warn loudly if not.
+  npx electron-rebuild -f -w better-sqlite3-multiple-ciphers >/dev/null 2>&1 \
+    || npx electron-builder install-app-deps >/dev/null 2>&1 || true
+  ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/Electron.app/Contents/MacOS/Electron \
+    -e 'new (require("better-sqlite3-multiple-ciphers"))(":memory:")' >/dev/null 2>&1 \
+    && echo "[test:db] Electron ABI restored (app can load sqlite)." \
+    || echo "[test:db] WARNING: Electron cannot load sqlite - run 'npx electron-rebuild -f -w better-sqlite3-multiple-ciphers' before launching the app."
 }
 trap restore EXIT
 
@@ -21,4 +27,4 @@ echo "[test:db] rebuilding better-sqlite3-multiple-ciphers for node $(node -v)..
 npm rebuild better-sqlite3-multiple-ciphers >/dev/null 2>&1
 
 echo "[test:db] running DB integration tests..."
-npx vitest run "src/main/__tests__/database-integration.dbtest.ts" "src/main/__tests__/rag-store-integration.dbtest.ts" "$@"
+npx vitest run --config vitest.db.config.ts "$@"
