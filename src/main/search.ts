@@ -6,22 +6,19 @@
 import { getDB } from './database';
 import { embeddings } from './embeddings';
 import { addChunks, searchVectors, vectorCount, type VecChunk } from './vectors';
-import { recencyBoost, kindBoost, matchScore } from './search-ranking';
+import {
+  applyBoosts,
+  ftsExpr,
+  fuseHits,
+  queryTerms,
+  rankResults,
+  type RawHit,
+  type SearchKind,
+  type SearchResult,
+  type SearchSort,
+} from './search-ranking';
 
-export type SearchKind = 'screen' | 'meeting' | 'memory' | 'entity' | 'fact' | 'artifact' | 'chat' | 'doc';
-
-export interface SearchResult {
-  key: string;
-  kind: SearchKind;
-  refId: number;
-  title: string;
-  snippet: string;
-  surface: string;
-  url: string | null;
-  ts: number; // epoch ms
-  imagePath: string | null;
-  score: number;
-}
+export type { SearchKind, SearchResult, SearchSort } from './search-ranking';
 
 // ---------------------------------------------------------------------------
 // Backfill: embed the backlog into LanceDB (keys tracked in SQLite to skip work)
@@ -156,7 +153,7 @@ export function searchFacets(query: string): { source: string; count: number }[]
         .all(m) as { source: string; count: number }[])
     );
   }
-  const terms = (q.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).slice(0, 6);
+  const terms = queryTerms(q, 6);
   if (terms.length) {
     const chatWhere = terms.map(() => '(lower(rm.content) LIKE ? OR lower(rc.title) LIKE ?)').join(' AND ');
     const chat = db
@@ -180,21 +177,6 @@ export function searchFacets(query: string): { source: string; count: number }[]
 // ---------------------------------------------------------------------------
 // Query: keyword (FTS5) + semantic (LanceDB), fused with RRF
 // ---------------------------------------------------------------------------
-
-// Sanitize a free-text query into an FTS5 MATCH expression: each token becomes a
-// prefix-match term; punctuation is dropped so user input can't be a syntax error.
-function ftsExpr(query: string): string {
-  const terms = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).slice(0, 12);
-  return terms.map((t) => `"${t}"*`).join(' ');
-}
-
-const RRF_K = 60;
-function rrf(rank: number): number {
-  return 1 / (RRF_K + rank);
-}
-
-
-interface RawHit { key: string; kind: SearchKind; refId: number; title: string; snippet: string; surface: string; url: string | null; ts: number }
 
 // One FTS source → ranked raw hits (best first). `sql` must SELECT the RawHit columns.
 function ftsHits(sql: string, match: string, limit: number): RawHit[] {
@@ -267,7 +249,7 @@ function keywordHits(query: string, perSource: number): RawHit[][] {
 // title, one hit per conversation (newest first). The conversation id (TEXT) is
 // carried in `url` so the renderer can open that exact chat.
 function likeChatHits(query: string, limit: number): RawHit[] {
-  const terms = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).slice(0, 6);
+  const terms = queryTerms(query, 6);
   if (!terms.length) return [];
   const where = terms.map(() => '(lower(rm.content) LIKE ? OR lower(rc.title) LIKE ?)').join(' AND ');
   const args = terms.flatMap((t) => [`%${t}%`, `%${t}%`]);
@@ -285,7 +267,7 @@ function likeChatHits(query: string, limit: number): RawHit[] {
 // Knowledge-base documents (per project) — LIKE over chunk content, one hit per
 // document. The owning project_id is carried in `url` so the renderer can open it.
 function likeDocHits(query: string, limit: number): RawHit[] {
-  const terms = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).slice(0, 6);
+  const terms = queryTerms(query, 6);
   if (!terms.length) return [];
   const where = terms.map(() => '(lower(c.content) LIKE ? OR lower(d.name) LIKE ?)').join(' AND ');
   const args = terms.flatMap((t) => [`%${t}%`, `%${t}%`]);
@@ -301,7 +283,7 @@ function likeDocHits(query: string, limit: number): RawHit[] {
 }
 
 function likeMeetingHits(query: string, limit: number): RawHit[] {
-  const terms = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).slice(0, 6);
+  const terms = queryTerms(query, 6);
   if (!terms.length) return [];
   const where = terms.map(() => '(lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(transcript) LIKE ?)').join(' AND ');
   const args = terms.flatMap((t) => [`%${t}%`, `%${t}%`, `%${t}%`]);
@@ -317,7 +299,7 @@ function likeMeetingHits(query: string, limit: number): RawHit[] {
 
 // Frames have no FTS index; match raw OCR text on all tokens (AND), newest first.
 function likeFrameHits(query: string, limit: number): RawHit[] {
-  const terms = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).slice(0, 6);
+  const terms = queryTerms(query, 6);
   if (!terms.length) return [];
   const where = terms.map(() => 'lower(text) LIKE ?').join(' AND ');
   const args = terms.map((t) => `%${t}%`);
@@ -359,8 +341,6 @@ function thumbFor(hit: RawHit): string | null {
 // artifact viewer), so clicking one used to jump to a meaningless Replay moment.
 // Re-add an `artifactHits` source here once artifacts have an openable target.
 
-export type SearchSort = 'relevance' | 'recency' | 'match';
-
 export async function universalSearch(
   query: string,
   opts: { limit?: number; semantic?: boolean; sources?: string[]; sort?: SearchSort; excludeChatId?: string } = {}
@@ -370,7 +350,6 @@ export async function universalSearch(
   const limit = opts.limit ?? 30;
   // When filtering by source, cast a wider net per source so enough survive the filter.
   const perSource = opts.sources?.length ? 80 : Math.min(40, limit + 10);
-  const sourceSet = opts.sources?.length ? new Set(opts.sources.map((s) => s.toLowerCase())) : null;
 
   const lists = keywordHits(q, perSource);
   if (opts.semantic !== false) {
@@ -382,53 +361,20 @@ export async function universalSearch(
   }
 
   // Reciprocal-rank fusion across all lists, keyed by the unique chunk key.
-  const fused = new Map<string, SearchResult>();
-  for (const list of lists) {
-    list.forEach((hit, rank) => {
-      const existing = fused.get(hit.key);
-      if (existing) {
-        existing.score += rrf(rank);
-        return;
-      }
-      fused.set(hit.key, {
-        key: hit.key,
-        kind: hit.kind,
-        refId: hit.refId,
-        title: hit.title || hit.kind,
-        snippet: (hit.snippet || '').slice(0, 280),
-        surface: hit.surface || '',
-        url: hit.url,
-        ts: hit.ts || 0,
-        imagePath: null,
-        score: rrf(rank),
-      });
-    });
-  }
+  const fused = fuseHits(lists);
 
   // Add a recency bias so recent hits float up (this week first, then progressively
   // older), plus a small nudge for your own deliberate content (chats / KB docs) so
   // it isn't buried under thousands of ambient screen captures.
-  const now = Date.now();
-  for (const r of fused.values()) {
-    r.score += recencyBoost(r.ts, now);
-    r.score += kindBoost(r.kind);
-  }
-  let ordered = Array.from(fused.values());
-  if (sourceSet) ordered = ordered.filter((r) => sourceSet.has((r.surface || '').toLowerCase()));
-  // Don't let an answer cite the very conversation it's being asked in.
-  if (opts.excludeChatId) ordered = ordered.filter((r) => r.key !== `chat:${opts.excludeChatId}`);
-  // Sort: relevance = blended score (default); recency = newest first; match =
-  // strongest literal term overlap in title/snippet (ties broken by score).
-  const sort = opts.sort ?? 'relevance';
-  if (sort === 'recency') {
-    ordered.sort((a, b) => (b.ts || 0) - (a.ts || 0) || b.score - a.score);
-  } else if (sort === 'match') {
-    const terms = q.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
-    const m = (r: SearchResult): number => matchScore(`${r.title} ${r.snippet}`, terms);
-    ordered.sort((a, b) => m(b) - m(a) || b.score - a.score);
-  } else {
-    ordered.sort((a, b) => b.score - a.score);
-  }
+  applyBoosts(fused.values(), Date.now());
+
+  // Filter (source / current chat) then sort (relevance / recency / match).
+  const ordered = rankResults(Array.from(fused.values()), {
+    query: q,
+    sources: opts.sources,
+    excludeChatId: opts.excludeChatId,
+    sort: opts.sort,
+  });
   const ranked = ordered.slice(0, limit);
   for (const r of ranked) r.imagePath = thumbFor({ key: r.key, kind: r.kind, refId: r.refId } as RawHit);
   return ranked;

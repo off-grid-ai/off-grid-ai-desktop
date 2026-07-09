@@ -1,0 +1,26 @@
+#!/bin/sh
+# Pre-push coverage gate.
+#
+# Runs the test suite with coverage and enforces the thresholds in vitest.config.ts.
+# Those thresholds are a RATCHET FLOOR set just under current coverage: this blocks
+# regressions today without bricking pushes, and the floor rises toward the 85%
+# standard as tests are added (see CLAUDE.md "Coverage bar").
+#
+# Bypass in a genuine emergency with:  git push --no-verify
+
+echo "[pre-push] coverage gate — npm run test:coverage"
+if ! npm run --silent test:coverage; then
+  echo ""
+  echo "[pre-push] BLOCKED: coverage dropped below the floor (vitest.config.ts thresholds)."
+  echo "[pre-push] Add tests for the logic you changed, or investigate the drop. Do not lower the floor to pass."
+  exit 1
+fi
+echo "[pre-push] coverage gate passed."
+
+# Standing reminder (see CLAUDE.md "Pending hygiene adoption"). Non-blocking - just surfaces
+# the deferred gold-standard prettier + tight-eslint adoption before each push so it is not
+# forgotten. Remove this echo (and the CLAUDE.md section) once the adoption PR has landed.
+echo ""
+echo "[pre-push] TODO before merge: adopt the gold-standard prettier config (repo-wide reformat)"
+echo "           and tighten eslint (complexity / max-lines / max-params / no-shadow). Deferred"
+echo "           to its own PR - see CLAUDE.md 'Pending hygiene adoption'."

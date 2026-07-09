@@ -5,8 +5,20 @@
 import fs from 'fs';
 import path from 'path';
 import { llm } from './llm';
-import { getAllActiveModals, setActiveModal as setModal, modalityForKind, isModelActive, type Modality } from './active-models';
+import { getAllActiveModals, setActiveModal as setModal, type Modality } from './active-models';
 import { recordDownloaded, removeDownloaded, findDownloaded, installedDownloadedIds, downloadedProtectedNames, readDownloaded } from './downloaded-models';
+import {
+  mergeCatalog,
+  installedIds,
+  buildDiskEntry,
+  primaryFileName,
+  protectedNames,
+  scanModelDir,
+  modalityForModel,
+  isModalKind,
+  isChatLoadable,
+  type CatalogEntry,
+} from './models/catalog-logic';
 
 export interface DownloadProgress {
   modelId: string;
@@ -26,24 +38,28 @@ function activeModelFile(): string {
   return path.join(llm.getModelsDir(), 'active-model.json');
 }
 
+/** Size (bytes) of a file in the models dir; 0 when absent/unreadable. The single
+ *  FS probe injected into the pure catalog logic. */
+function fileSizeOf(dir: string, name: string): number {
+  try { return fs.statSync(path.join(dir, name)).size; } catch { return 0; }
+}
+
 export async function getCatalog(): Promise<{ kinds: readonly string[]; models: unknown[] }> {
   const { CATALOG, MODEL_KINDS } = await import('@offgrid/models');
   const dir = llm.getModelsDir();
-  // Surface imported local models at the top of the catalog so they're visible
-  // and activatable, tagged "Imported". Only include ones whose file still exists.
-  const locals = getLocalModels()
-    .filter((lm) => { try { return fs.statSync(path.join(dir, lm.primary)).size > 0; } catch { return false; } })
-    .map((lm) => ({
-      id: lm.id, name: lm.name, kind: lm.kind, org: 'Local', params: lm.params,
-      tags: ['Imported'], files: [{ name: lm.primary, url: '', sizeBytes: lm.sizeBytes }],
-    }));
-  // Free-form Hugging Face downloads whose files are all still present — surfaced
-  // so they're browsable + activatable like any installed model (tagged Downloaded).
-  const installedDl = new Set(installedDownloadedIds(dir));
-  const downloaded = readDownloaded(dir)
-    .filter((m) => installedDl.has(m.id))
-    .map((m) => ({ id: m.id, name: m.name, kind: m.kind, org: 'Hugging Face', tags: ['Downloaded'], files: m.files.map((name) => ({ name, url: '' })) }));
-  return { kinds: MODEL_KINDS, models: [...locals, ...downloaded, ...CATALOG] };
+  // Merge the three model sources (imported locals, tagged "Imported"; free-form
+  // HF downloads whose files are all present, tagged "Downloaded"; then the
+  // catalog) in that exact order - decision in catalog-logic, filesystem probe
+  // injected as a closure so it stays pure.
+  const present = (name: string): boolean => fileSizeOf(dir, name) > 0;
+  const models = mergeCatalog({
+    locals: getLocalModels(),
+    downloaded: readDownloaded(dir),
+    installedDownloadedIds: installedDownloadedIds(dir),
+    catalog: CATALOG as unknown as CatalogEntry[],
+    present,
+  });
+  return { kinds: MODEL_KINDS, models };
 }
 
 /** Catalog ids (plus imported local ids) whose files are fully present on disk. */
@@ -51,16 +67,13 @@ export async function listInstalled(): Promise<string[]> {
   const { CATALOG } = await import('@offgrid/models');
   const { isMfluxModelCached } = await import('./mflux');
   const dir = llm.getModelsDir();
-  const catalog = CATALOG.filter((m) => {
-    if (m.runtime === 'mflux') return isMfluxModelCached(m.id);
-    return m.files.length > 0 && m.files.every((f) => {
-      try { return fs.statSync(path.join(dir, f.name)).size > 0; } catch { return false; }
-    });
-  }).map((m) => m.id);
-  const locals = getLocalModels()
-    .filter((lm) => { try { return fs.statSync(path.join(dir, lm.primary)).size > 0; } catch { return false; } })
-    .map((lm) => lm.id);
-  return [...locals, ...installedDownloadedIds(dir), ...catalog];
+  return installedIds({
+    locals: getLocalModels(),
+    installedDownloadedIds: installedDownloadedIds(dir),
+    catalog: CATALOG as unknown as CatalogEntry[],
+    present: (name) => fileSizeOf(dir, name) > 0,
+    mfluxCached: (id) => isMfluxModelCached(id),
+  });
 }
 
 export async function searchModels(query: string, kind?: string): Promise<unknown[]> {
@@ -250,10 +263,10 @@ export async function setActiveModel(modelId: string): Promise<{ success: boolea
   const { CATALOG, resolveHuggingFaceModel } = await import('@offgrid/models');
   const entry = CATALOG.find((m) => m.id === modelId) ?? (await resolveHuggingFaceModel(modelId));
   if (!entry) return { success: false, error: 'unknown model' };
-  if (entry.kind !== 'text' && entry.kind !== 'vision') {
+  if (!isChatLoadable(entry.kind)) {
     return { success: false, error: `${entry.kind} models are not loadable as the chat LLM` };
   }
-  const primary = (entry.files.find((f) => f.role === 'primary') ?? entry.files[0])?.name;
+  const primary = primaryFileName(entry as unknown as CatalogEntry);
   const mmproj = entry.files.find((f) => f.role === 'mmproj')?.name ?? null;
   fs.writeFileSync(activeModelFile(), JSON.stringify({ id: modelId, primary, mmproj }, null, 2));
   llm.reloadModel();
@@ -293,12 +306,12 @@ export async function activateModel(modelId: string): Promise<{ success: boolean
     const { CATALOG, resolveHuggingFaceModel } = await import('@offgrid/models');
     kind = (CATALOG.find((m) => m.id === modelId) ?? (await resolveHuggingFaceModel(modelId)))?.kind;
   }
-  const modal = modalityForKind(kind);
+  const modal = modalityForModel(kind);
   return modal ? setActiveModalChoice(modal, modelId) : setActiveModel(modelId);
 }
 
 export async function setActiveModalChoice(kind: string, modelId: string | null): Promise<{ success: boolean; error?: string }> {
-  if (kind === 'image' || kind === 'speech' || kind === 'transcription') {
+  if (isModalKind(kind)) {
     let stored = modelId;
     // The image resolver loads by FILENAME, but the UI passes a catalog id — map it
     // to the entry's primary filename so an in-app pick (e.g. Juggernaut) takes effect.
@@ -306,7 +319,7 @@ export async function setActiveModalChoice(kind: string, modelId: string | null)
       try {
         const { CATALOG } = await import('@offgrid/models');
         const e = CATALOG.find((m) => m.id === modelId);
-        const fname = (e?.files?.find((f) => f.role === 'primary') ?? e?.files?.[0])?.name;
+        const fname = e ? primaryFileName(e as unknown as CatalogEntry) : undefined;
         if (fname) stored = fname;
       } catch { /* keep modelId as-is */ }
     }
@@ -420,18 +433,23 @@ export interface StorageInfo {
 export async function getStorageInfo(): Promise<StorageInfo> {
   const dir = llm.getModelsDir();
   const { CATALOG } = await import('@offgrid/models');
-  const known = new Set<string>();
-  CATALOG.forEach((m) => m.files?.forEach((f) => known.add(f.name)));
-  // Protect imported local models from being flagged/deleted as orphans.
-  localProtectedNames().forEach((n) => known.add(n));
-  // Protect free-form Hugging Face downloads too (else they show as "unused files").
-  downloadedProtectedNames(dir).forEach((n) => known.add(n));
-  // Protect the active selections' files from being flagged as orphans.
+  const catalog = CATALOG as unknown as CatalogEntry[];
+  // Protect catalog + imported-local + free-form-download files, plus the active
+  // chat selection's files, from being flagged/deleted as orphans.
+  let activePrimary: string | null = null;
+  let activeMmproj: string | null = null;
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(dir, 'active-model.json'), 'utf-8'));
-    if (cfg?.primary) known.add(cfg.primary);
-    if (cfg?.mmproj) known.add(cfg.mmproj);
+    activePrimary = cfg?.primary ?? null;
+    activeMmproj = cfg?.mmproj ?? null;
   } catch { /* none */ }
+  const known = protectedNames({
+    catalog,
+    localNames: localProtectedNames(),
+    downloadedNames: downloadedProtectedNames(dir),
+    activePrimary,
+    activeMmproj,
+  });
 
   const active = getActiveModel();
   // Per-modality active picks (image/speech/transcription) are stored as the
@@ -441,39 +459,21 @@ export async function getStorageInfo(): Promise<StorageInfo> {
   const modals = getAllActiveModals();
   const locals = getLocalModels();
   const installed = await listInstalled();
-  const sizeOf = (name: string): number => { try { return fs.statSync(path.join(dir, name)).size; } catch { return 0; } };
+  const sizeOf = (name: string): number => fileSizeOf(dir, name);
   const downloaded = readDownloaded(dir);
-  const models: ModelDiskEntry[] = installed.map((id) => {
-    const lm = id.startsWith('local:') ? locals.find((m) => m.id === id) : undefined;
-    if (lm) {
-      const bytes = [lm.primary, lm.mmproj].filter(Boolean).reduce((s, n) => s + sizeOf(n as string), 0);
-      return { id, name: lm.name, kind: 'local', bytes, active: isModelActive({ kind: 'local', id, activeChatId: active, modals }) };
-    }
-    // Free-form HF download: not in CATALOG, so read its files/kind from the registry.
-    const dl = downloaded.find((m) => m.id === id);
-    if (dl && !CATALOG.some((m) => m.id === id)) {
-      const bytes = dl.files.reduce((s, n) => s + sizeOf(n), 0);
-      const primary = dl.files[0];
-      return { id, name: dl.name, kind: dl.kind, bytes, active: isModelActive({ kind: dl.kind, id, primaryFile: primary, activeChatId: active, modals }) };
-    }
-    const e = CATALOG.find((m) => m.id === id);
-    const bytes = (e?.files ?? []).reduce((s, f) => s + sizeOf(f.name), 0);
-    const primary = (e?.files?.find((f) => f.role === 'primary') ?? e?.files?.[0])?.name;
-    const isActive = isModelActive({ kind: e?.kind, id, primaryFile: primary, activeChatId: active, modals });
-    return { id, name: e?.name ?? id, kind: e?.kind, bytes, active: isActive };
-  });
+  const catalogIds = new Set(catalog.map((m) => m.id));
+  const catalogById = (id: string): CatalogEntry | undefined => catalog.find((m) => m.id === id);
+  const models: ModelDiskEntry[] = installed.map((id) => buildDiskEntry({
+    id, locals, downloaded, catalogById, isCatalogId: (x) => catalogIds.has(x),
+    activeChatId: active, modals, sizeOf,
+  }));
 
-  let totalBytes = 0;
-  const orphans: { name: string; bytes: number }[] = [];
   let entries: string[] = [];
   try { entries = fs.readdirSync(dir); } catch { /* no dir yet */ }
-  for (const name of entries) {
-    if (!name.endsWith('.gguf') && !name.endsWith('.part')) continue;
-    let bytes = 0;
-    try { const st = fs.statSync(path.join(dir, name)); if (!st.isFile()) continue; bytes = st.size; } catch { continue; }
-    totalBytes += bytes;
-    if (!known.has(name.replace(/\.part$/, ''))) orphans.push({ name, bytes });
-  }
+  const statFile = (name: string): { isFile: boolean; size: number } | null => {
+    try { const st = fs.statSync(path.join(dir, name)); return { isFile: st.isFile(), size: st.size }; } catch { return null; }
+  };
+  const { totalBytes, orphans } = scanModelDir({ entries, known, statFile });
 
   let freeBytes = 0;
   try { const s = fs.statfsSync(dir); freeBytes = s.bavail * s.bsize; } catch { /* unknown */ }

@@ -237,7 +237,7 @@ try {
     // --- Agentic tool-calling (built-in tools) ---
     listTools: () => ipcRenderer.invoke('tools:list'),
     setToolEnabled: (name: string, enabled: boolean) => ipcRenderer.invoke('tools:set-enabled', name, enabled),
-    toolChat: (query: string, history?: { role: string; content: string }[], opts?: { connectors?: boolean; conversationId?: string; images?: string[] }) => ipcRenderer.invoke('tools:chat', query, history, opts),
+    toolChat: (query: string, history?: { role: string; content: string }[], opts?: { connectors?: boolean; conversationId?: string; images?: string[]; imageAvailable?: boolean; streamId?: string; thinking?: boolean }) => ipcRenderer.invoke('tools:chat', query, history, opts),
 
     // --- LLM inference settings ---
     getLlmSettings: () => ipcRenderer.invoke('llm:get-settings'),
@@ -245,7 +245,10 @@ try {
 
     // --- Canvas / artifacts sandbox runtime + library ---
     artifactRuntime: (kind: 'html' | 'svg' | 'mermaid' | 'react') => ipcRenderer.invoke('artifacts:runtime', kind),
-    saveArtifact: (a: { kind: 'html' | 'svg' | 'mermaid' | 'react'; code: string; title?: string; conversationId?: string; projectId?: string | null }) => ipcRenderer.invoke('artifacts:save', a),
+    // Kind union MUST match the renderer's `saveArtifact` contract in
+    // src/renderer/src/env.d.ts (text/image are real artifact kinds). Guarded by
+    // src/main/__tests__/ipc-type-parity.test.ts.
+    saveArtifact: (a: { kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'; code: string; title?: string; conversationId?: string; projectId?: string | null }) => ipcRenderer.invoke('artifacts:save', a),
     listArtifacts: (scope?: { conversationId?: string; projectId?: string | null }) => ipcRenderer.invoke('artifacts:list', scope),
     deleteArtifact: (id: string) => ipcRenderer.invoke('artifacts:delete', id),
 

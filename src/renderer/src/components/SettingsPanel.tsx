@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DEFAULT_CTX_SIZE } from '@offgrid/core/shared/llm-defaults';
 
 // Right-side Settings panel (same pattern as SkillsPanel/ArtifactCanvas).
 // Tabs: Model (inference params), Voice (Kokoro TTS), Tools (built-in, read-only),
@@ -18,7 +19,7 @@ const CTX_OPTIONS = [4096, 8192, 16384, 32768, 65536, 131072];
 // Defaults mirror the backend's LLMService field defaults (for "Reset to defaults").
 const DEFAULTS: LlmSettings = {
   temperature: 0.7, topP: 0.95, topK: 40, minP: 0.05, repeatPenalty: 1.1,
-  maxTokens: 2048, ctxSize: 65536, systemPrompt: '',
+  maxTokens: 2048, ctxSize: DEFAULT_CTX_SIZE, systemPrompt: '',
   kvCacheType: 'f16', flashAttn: false, gpuLayers: 99, threads: 0, batchSize: 512,
 };
 
@@ -148,7 +149,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   : 'Larger holds more history; changing it reloads the model.'
               }
             >
-              <select value={s.ctxSize ?? 32768} onChange={e => set({ ctxSize: Number(e.target.value) })} className="w-full rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-neutral-200 outline-none focus:border-green-500">
+              <select value={s.ctxSize ?? DEFAULT_CTX_SIZE} onChange={e => set({ ctxSize: Number(e.target.value) })} className="w-full rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-neutral-200 outline-none focus:border-green-500">
                 {CTX_OPTIONS.map(c => <option key={c} value={c}>{c >= 1024 ? `${c / 1024}K` : c} tokens{c === 65536 ? ' (default)' : c === 131072 ? ' (max — heavy)' : ''}</option>)}
               </select>
             </Row>

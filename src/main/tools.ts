@@ -11,8 +11,6 @@ import { llm } from './llm';
 import { getSetting, saveSetting } from './database';
 import { buildUserContent } from './tool-content';
 
-const PORT = 8439;
-
 // Per-tool enable/disable, persisted as a list of disabled tool names.
 function disabledSet(): Set<string> {
   try { return new Set(getSetting<string[]>('disabledTools', [])); } catch { return new Set(); }
@@ -204,11 +202,26 @@ const TOOLS: ToolDef[] = [
     parameters: { type: 'object', properties: {} },
     run: () => new Date().toString(),
   },
+  {
+    // generate_image is DEFERRED: this run() is never used to generate. The loop
+    // special-cases it (like search_memory) to record the requested prompt and return
+    // it, so the renderer generates AFTER the turn. Generating inline would evict the
+    // LLM from unified memory mid-loop and risk a nested modality-queue deadlock.
+    name: 'generate_image',
+    description: 'Generate an image on-device from a text prompt. Use when the user asks for a picture/photo/logo/art to be created.',
+    parameters: { type: 'object', properties: { prompt: { type: 'string', description: 'a detailed description of the image to create' } }, required: ['prompt'] },
+    run: () => 'Image generation started - it will appear in the chat.',
+  },
 ];
 
-function schemas(): unknown[] {
+// generate_image is gated on an image model being available and is never offered
+// otherwise; every other built-in obeys only the disabled-set.
+function schemas(imageAvailable: boolean): unknown[] {
   const off = disabledSet();
-  return TOOLS.filter((t) => !off.has(t.name)).map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
+  return TOOLS
+    .filter((t) => !off.has(t.name))
+    .filter((t) => t.name !== 'generate_image' || imageAvailable)
+    .map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
 }
 
 async function execute(name: string, args: Record<string, unknown>): Promise<string> {
@@ -248,13 +261,40 @@ export type ToolCall = { name: string; args: Record<string, unknown>; result: st
 // interactive citation cards (thumbnail + open-in-Replay), same as the RAG path.
 export type UnifiedSource = { key: string; kind: string; refId: number; title: string; snippet: string; surface: string; ts: number; imagePath: string | null };
 
-/** Run a chat turn with tool-calling. Returns the final answer + the calls made. */
+/**
+ * Run a chat turn with tool-calling. STREAMS by default (thinking -> tool-call activity
+ * -> answer) through the callbacks: `onDelta` gets reasoning/content deltas, `onStep`
+ * fires as each tool is about to run so the UI can show "Running web_search...". Omit the
+ * callbacks (e.g. the pro skills-engine caller) and it just buffers - the final answer is
+ * always the return value either way. Returns the final answer + the calls made.
+ */
 export async function toolChat(
   query: string,
   history: { role: string; content: string }[] = [],
-  opts: { connectors?: boolean; conversationId?: string; images?: string[] } = {},
-): Promise<{ answer: string; toolCalls: ToolCall[]; unified: UnifiedSource[] }> {
+  opts: {
+    connectors?: boolean;
+    conversationId?: string;
+    images?: string[];
+    imageAvailable?: boolean;
+    thinking?: boolean;
+    signal?: AbortSignal;
+    onDelta?: (text: string, kind: 'content' | 'reasoning') => void;
+    onStep?: (call: { name: string; args: Record<string, unknown> }) => void;
+  } = {},
+): Promise<{ answer: string; toolCalls: ToolCall[]; unified: UnifiedSource[]; imageRequest?: { prompt: string } }> {
   await llm.init(); // respects pause; ensures the server is up
+  const onDelta = opts.onDelta ?? ((): void => {});
+
+  // Offer generate_image only when an image model is available. The renderer passes
+  // this; fall back to the main-process check so a caller that omits it still gates
+  // correctly (single source of truth for "can we make an image right now").
+  let imageAvailable = opts.imageAvailable ?? false;
+  if (opts.imageAvailable === undefined) {
+    try {
+      const { activeImageModel } = await import('./imagegen');
+      imageAvailable = !!activeImageModel();
+    } catch { /* no image runtime -> stay false */ }
+  }
 
   // Opt-in: pull in tools from registered pro extensions (e.g. MCP connectors)
   // alongside the built-ins. Schemas are built once per turn; each extension
@@ -272,7 +312,7 @@ export async function toolChat(
       }
     } catch (err) { console.error('[tools] extension schemas', e.id, err); }
   }
-  const tools = extSchemas.length ? [...schemas(), ...extSchemas] : schemas();
+  const tools = extSchemas.length ? [...schemas(imageAvailable), ...extSchemas] : schemas(imageAvailable);
   const sys = 'You are Off Grid, a private on-device assistant. Use the provided tools when they help answer precisely. Keep answers concise.'
     + (hints.length ? ' ' + hints.join(' ') : '');
 
@@ -295,26 +335,27 @@ export async function toolChat(
   const toolCalls: ToolCall[] = [];
   const unified: UnifiedSource[] = [];
   const unifiedKeys = new Set<string>();
+  // Deferred image generation: the loop only RECORDS the requested prompt (last call
+  // wins). The renderer generates after the turn so we never evict the LLM mid-loop.
+  let imageRequest: { prompt: string } | undefined;
 
   for (let step = 0; step < 5; step++) {
-    const res = await fetch(`http://127.0.0.1:${PORT}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, tools, tool_choice: 'auto', temperature: 0.3, max_tokens: 1024 }),
+    // Stream this round: reasoning + any answer text flow through onDelta live; tool_calls
+    // are accumulated and returned. A tool-calling round streams thinking (and no content);
+    // the final round streams the answer. tool temperature stays 0.3 (was the blocking path).
+    const { content, toolCalls: calls } = await llm.streamChat(messages, onDelta, {
+      tools, toolChoice: 'auto', temperature: 0.3, maxTokens: 1024, thinking: opts.thinking, signal: opts.signal,
     });
-    if (!res.ok) throw new Error(`tool chat failed: ${res.status}`);
-    const data = await res.json();
-    const msg = data.choices?.[0]?.message;
-    if (!msg) throw new Error('no response');
-    messages.push(msg);
 
-    const calls = msg.tool_calls as { id: string; function: { name: string; arguments: string } }[] | undefined;
-    if (calls && calls.length) {
+    if (calls.length) {
+      // Re-add the assistant turn (with its tool_calls) so the model sees what it invoked.
+      messages.push({ role: 'assistant', content: content || null, tool_calls: calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })) });
       for (const c of calls) {
         let args: Record<string, unknown> = {};
-        try { args = JSON.parse(c.function.arguments || '{}'); } catch { /* keep empty */ }
+        try { args = JSON.parse(c.arguments || '{}'); } catch { /* keep empty */ }
+        opts.onStep?.({ name: c.name, args }); // surface the tool activity BEFORE running it
         let result: string;
-        if (c.function.name === 'search_memory') {
+        if (c.name === 'search_memory') {
           // Run memory search here (not via the generic tool) so we can both build
           // the model's text result AND surface the structured hits as interactive
           // citations — excluding the current conversation so it can't cite itself.
@@ -336,18 +377,27 @@ export async function toolChat(
           } catch (e) {
             result = 'Error searching memory: ' + (e as Error).message;
           }
+        } else if (c.name === 'generate_image') {
+          // Deferred: don't generate here (would evict the LLM mid-loop). Record the
+          // prompt (last call wins) and feed a placeholder back so the model can wrap up.
+          const prompt = String(args.prompt ?? '').trim();
+          if (prompt) imageRequest = { prompt };
+          result = prompt
+            ? 'Image generation started - it will appear in the chat.'
+            : 'Error: no image prompt provided.';
         } else {
-          const ext = exts.find((e) => e.canHandle(c.function.name));
-          result = ext ? await ext.execute(c.function.name, args) : await execute(c.function.name, args);
+          const ext = exts.find((e) => e.canHandle(c.name));
+          result = ext ? await ext.execute(c.name, args) : await execute(c.name, args);
         }
-        toolCalls.push({ name: c.function.name, args, result });
+        toolCalls.push({ name: c.name, args, result });
         messages.push({ role: 'tool', tool_call_id: c.id, content: result });
       }
       continue; // let the model use the results
     }
-    return { answer: (msg.content || '').trim(), toolCalls, unified };
+    // No tool calls this round: `content` is the final answer (already streamed via onDelta).
+    return { answer: content.trim(), toolCalls, unified, imageRequest };
   }
-  return { answer: 'Stopped after too many tool steps.', toolCalls, unified };
+  return { answer: 'Stopped after too many tool steps.', toolCalls, unified, imageRequest };
 }
 
 /** Names + descriptions + enabled state of all tools (for the settings UI). */

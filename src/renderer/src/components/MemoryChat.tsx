@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { shouldQueue, enqueue, dequeue, queuedCount } from '@renderer/lib/chat-queue';
+import { shouldQueue, enqueue, dequeue, queuedCount, clearQueue } from '@renderer/lib/chat-queue';
 import { waitingLabel } from '@renderer/lib/chat-labels';
+import { timeAgo } from '@renderer/lib/time';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -39,7 +40,7 @@ type ChatMessage = {
   toolCalls?: { name: string; result: string }[];
   reasoning?: string;
   streaming?: boolean;
-  activity?: { kind: string; counts?: Record<string, number> };
+  activity?: { kind: string; counts?: Record<string, number>; name?: string };
   attachments?: { name: string; kind: string; text?: string; path?: string }[];
   variants?: string[];      // regenerated answers (navigate with ‹ ›)
   variantIndex?: number;
@@ -70,8 +71,9 @@ const ASK_FENCE = /```ask\s*\n[\s\S]*?```/i;
 const ARTIFACT_FENCE = /```(?:html|svg|mermaid|jsx|tsx|react|image)\s*\n[\s\S]*?```/gi;
 
 // Human label for a live retrieval/activity step shown while the model works.
-function activityLabel(a?: { kind: string; counts?: Record<string, number> }): string {
+function activityLabel(a?: { kind: string; counts?: Record<string, number>; name?: string }): string {
   if (!a) return '';
+  if (a.kind === 'running_tool') return `Running ${a.name || 'tool'}…`;
   if (a.kind === 'reading') return `Reading the page${(a.counts?.urls ?? 0) > 1 ? 's' : ''}…`;
   if (a.kind === 'searching') return 'Searching your memory…';
   if (a.kind === 'memory') {
@@ -179,20 +181,6 @@ const STYLE_PRESETS: { name: string; prompt: string; preview: string; swatch: st
   { name: 'Fantasy art', prompt: 'epic fantasy concept art, dramatic, highly detailed', preview: 'a majestic dragon perched on a mountain peak', swatch: 'from-purple-800 via-indigo-700 to-amber-600' },
   { name: 'Studio portrait', prompt: 'studio portrait, soft key light, bokeh background', preview: 'a golden retriever dog', swatch: 'from-neutral-600 via-neutral-800 to-neutral-900' },
 ];
-
-function timeAgo(dateStr: string): string {
-  const date = new Date(dateStr + 'Z');
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
 
 const NEW_CHAT = '__new__'; // bucket key for a fresh, not-yet-saved conversation
 const EMPTY_MSGS: ChatMessage[] = [];
@@ -393,6 +381,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   // Map streamId → convId so the onRagStream handler can route tokens to the right
   // conversation regardless of which tab is active when the event fires.
   const streamConvRef = useRef<Map<string, string>>(new Map());
+  // Conversations the user hit "stop" on. The in-flight send checks this at each of
+  // its awaits and bails (no error bubble, no persisted junk) instead of finalizing a
+  // turn the user abandoned. Cleared when the conversation's send settles.
+  const cancelledRef = useRef<Set<string>>(new Set());
 
   const markdownComponents: Components = {
     p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>,
@@ -707,7 +699,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     }
 
     // From here this send belongs to `convId` — lock + target THAT conversation, so
-    // switching tabs mid-generation never misroutes it.
+    // switching tabs mid-generation never misroutes it. Clear any stale stop flag so a
+    // conversation the user previously stopped can generate again.
+    cancelledRef.current.delete(convId);
     markGenerating(convId, true);
     if (!regen) {
       const userMessage: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: trimmed, attachments: atts.map(a => ({ name: a.name, kind: a.kind, text: a.text, path: a.path })), audioUrl: opts?.voiceClip?.url, audioDuration: opts?.voiceClip?.duration };
@@ -813,27 +807,55 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       const history = base.slice(-20).map(m => ({ role: m.role, content: m.content }));
 
       // Agentic tools path (opt-in, non-project). The model calls built-in tools,
-      // plus (when Connectors is on) MCP connector tools — reads run inline, writes
-      // are routed to the approval queue.
+      // plus (when Connectors is on) MCP connector tools. STREAMS like the RAG path:
+      // a streamId placeholder fills in live - thinking, then each tool-call activity
+      // step, then the answer - and the stop button aborts it via rag:cancel.
       if ((toolsOn || connectorsOn) && !activeProjectId) {
-        const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn, conversationId: convId, images: imagePaths });
-        // Persist the citation sources (and tool calls) so they survive a reload.
-        const toolCtx = (tr?.unified?.length || tr?.toolCalls?.length)
-          ? { unified: tr?.unified ?? [], toolCalls: (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result })) }
-          : undefined;
-        const am: ChatMessage = {
-          id: `a-${Date.now()}`,
-          role: 'assistant',
-          content: tr?.answer || 'No response returned.',
-          toolCalls: (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result })),
-          // Surface search_memory's hits as interactive citation cards (same UI as RAG).
-          context: tr?.unified?.length ? { unified: tr.unified } : undefined,
-        };
-        setConvMessages(convId, prev => [...prev, am]);
-        if (voiceMode) setAutoPlayId(am.id);
-        try { await window.api.addRagMessage(convId, 'assistant', am.content, toolCtx); } catch (_) { /* ignore */ }
+        if (cancelledRef.current.has(convId)) return;
+        const toolStreamId = `a-${Date.now()}`;
+        activeStreamId = toolStreamId;
+        streamConvRef.current.set(toolStreamId, convId!);
+        setConvMessages(convId, prev => [...prev, { id: toolStreamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
+        const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn, conversationId: convId, images: imagePaths, imageAvailable, streamId: toolStreamId, thinking: thinkingEnabled });
+        const toolCalls = (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result }));
+        const context = tr?.unified?.length ? { unified: tr.unified } : undefined;
+        // Persist the citation sources + tool calls so they survive a reload.
+        const toolCtx = (tr?.unified?.length || toolCalls.length) ? { unified: tr?.unified ?? [], toolCalls } : undefined;
+        if (cancelledRef.current.has(convId)) {
+          const partial = (tr?.answer || '').trim();
+          if (partial) {
+            setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, content: partial, context, toolCalls, activity: undefined, streaming: false } : m)));
+            try { await window.api.addRagMessage(convId, 'assistant', partial, toolCtx); } catch { /* ignore */ }
+          } else {
+            setConvMessages(convId, prev => prev.filter(m => m.id !== toolStreamId));
+          }
+          return;
+        }
+        const answer = tr?.answer || 'No response returned.';
+        // Finalize the streamed placeholder in place (never append a second bubble).
+        setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, content: answer, context, toolCalls, activity: undefined, streaming: false } : m)));
+        if (voiceMode) setAutoPlayId(toolStreamId);
+        // Deferred image generation: the tool loop only RECORDS the prompt (it never
+        // generates inline, which would evict the LLM). Generate + attach here AFTER
+        // the text turn - same path as the ```image fence block below.
+        if (tr?.imageRequest?.prompt && window.api.generateImage && !cancelledRef.current.has(convId)) {
+          try {
+            const img = await window.api.generateImage({ prompt: tr.imageRequest.prompt, conversationId: convId, projectId: activeProjectId });
+            setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, image: img.dataUrl, imagePath: img.path } : m)));
+            try { await window.api.addRagMessage(convId, 'assistant', answer, { ...(toolCtx ?? {}), image: img.path }); } catch (_) { /* ignore */ }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (!/cancel/i.test(msg)) { try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtx); } catch (_) { /* ignore */ } }
+          }
+          return;
+        }
+        try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtx); } catch (_) { /* ignore */ }
         return;
       }
+
+      // User stopped during the pre-stream window (persisting the turn, waiting for the
+      // model) — don't open a stream at all.
+      if (cancelledRef.current.has(convId)) return;
 
       // Placeholder message that fills in live as tokens/reasoning stream in
       // (matched by streamId in the onRagStream subscription).
@@ -842,6 +864,20 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       streamConvRef.current.set(streamId, convId!);
       setConvMessages(convId, prev => [...prev, { id: streamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
       const result = await window.api.ragChat(modelQuery, 'All', history, activeProjectId, convId, noMemory && !activeProjectId, streamId, thinkingEnabled, imagePaths);
+
+      // Stopped mid-stream: the abort keeps whatever streamed so far. Finalize the
+      // partial text if any arrived; otherwise drop the empty placeholder. Never write
+      // the "No response returned." filler or a fresh bubble for a cancelled turn.
+      if (cancelledRef.current.has(convId)) {
+        const partial = (result.answer || '').trim();
+        if (partial) {
+          setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: partial, context: result.context, streaming: false } : m)));
+          try { await window.api.addRagMessage(convId, 'assistant', partial, result.context); } catch { /* ignore */ }
+        } else {
+          setConvMessages(convId, prev => prev.filter(m => m.id !== streamId));
+        }
+        return;
+      }
       const assistantContent = result.answer || 'No response returned.';
 
       // The model decided this is an image request — replace the streamed turn
@@ -880,6 +916,13 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         }
       }
     } catch (e) {
+      // User stopped: no error bubble — drop the empty placeholder (any partial text
+      // was already finalized on the cancel path above).
+      if (cancelledRef.current.has(convId)) {
+        const sid = activeStreamId;
+        if (sid) setConvMessages(convId, prev => prev.filter(m => !(m.id === sid && !m.content && !m.reasoning)));
+        return;
+      }
       console.error('RAG chat failed', e);
       const errorContent = 'Sorry, something went wrong while generating a response.';
       // Update the streaming placeholder to show the error — never append a second bubble.
@@ -893,6 +936,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         await window.api.addRagMessage(convId, 'assistant', errorContent);
       } catch (_) { /* ignore */ }
     } finally {
+      cancelledRef.current.delete(convId);
       markGenerating(convId, false);
       setLoading(false);
       await loadConversations();
@@ -910,6 +954,28 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     if (item === undefined) return;
     setTimeout(() => { void sendMessage(item.text || ' ', { atts: item.atts, conversationId: convId }); }, 30);
   };
+
+  // Stop the in-flight generation for a conversation: abort the model stream (main
+  // keeps whatever streamed so far) or the image job, drop any queued follow-ups, and
+  // return the UI to idle now. The in-flight sendMessage sees cancelledRef and bails at
+  // its next await; this handles both the pre-stream ("Searching your memory…") window
+  // and a live token stream.
+  const stopGeneration = useCallback((cid: string | null): void => {
+    const convId = cid ?? activeConversationId;
+    if (!convId) return;
+    cancelledRef.current.add(convId);
+    const streamingId = (messagesByConv[convId] ?? []).find(m => m.streaming)?.id;
+    if (streamingId) window.api.cancelRag?.(streamingId);
+    window.api.cancelImageGen?.();
+    if (queuedRef.current[convId]?.length) {
+      queuedRef.current = clearQueue(queuedRef.current, convId);
+      setQueuedByConv({ ...queuedRef.current });
+    }
+    markGenerating(convId, false);
+    setLoading(false);
+    setGeneratingImage(false);
+    setImgProgress(null);
+  }, [activeConversationId, messagesByConv, markGenerating]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Slash skill autocomplete: while typing "/name" (before any space), Tab —
@@ -1533,6 +1599,45 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                         </CollapsibleContent>
                       </Collapsible>
                     ) : null}
+                    {/* Live thinking + tool activity, ABOVE the answer bubble: reasoning
+                        first (Thinking…), then the current tool-call step (Running <tool>…). */}
+                    {message.role === 'assistant' && message.streaming ? (
+                      <div className="mb-1.5 flex flex-col gap-1.5">
+                        <span className="inline-flex gap-1 text-green-500">
+                          <span className="animate-bounce [animation-delay:-0.3s]">●</span>
+                          <span className="animate-bounce [animation-delay:-0.15s]">●</span>
+                          <span className="animate-bounce">●</span>
+                        </span>
+                        {message.reasoning && message.reasoning.trim() ? (
+                          <Collapsible defaultOpen className="max-w-[85%]">
+                            <CollapsibleTrigger className="group flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-neutral-300">
+                              <span>Thinking…</span>
+                              <svg className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="mt-1 whitespace-pre-wrap border-l-2 border-neutral-800 pl-3 text-xs leading-relaxed text-neutral-500">
+                              {message.reasoning}
+                            </CollapsibleContent>
+                          </Collapsible>
+                        ) : null}
+                        {activityLabel(message.activity) ? (
+                          <span className="text-[11px] text-neutral-500">{activityLabel(message.activity)}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {/* Tool calls as their own entry, between thinking and the answer bubble.
+                        search_memory is shown as interactive Source cards below, so skip its chip. */}
+                    {(() => {
+                      const chips = (message.toolCalls || []).filter((tc) => tc.name !== 'search_memory');
+                      return chips.length > 0 ? (
+                        <div className="mb-1.5 flex max-w-[85%] flex-wrap gap-1">
+                          {chips.map((tc, i) => (
+                            <span key={i} className="rounded-sm border border-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500" title={tc.result}>
+                              {tc.name} → {tc.result.length > 32 ? tc.result.slice(0, 32) + '…' : tc.result}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
                     <div
                       className={
                         message.role === 'assistant' && message.streaming && !message.content.trim()
@@ -1660,45 +1765,6 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                         />
                       ) : null}
                     </div>
-
-                    {message.role === 'assistant' && message.streaming ? (
-                      <div className="mt-1.5 flex flex-col gap-1.5">
-                        <span className="inline-flex gap-1 text-green-500">
-                          <span className="animate-bounce [animation-delay:-0.3s]">●</span>
-                          <span className="animate-bounce [animation-delay:-0.15s]">●</span>
-                          <span className="animate-bounce">●</span>
-                        </span>
-                        {activityLabel(message.activity) ? (
-                          <span className="text-[11px] text-neutral-500">{activityLabel(message.activity)}</span>
-                        ) : null}
-                        {message.reasoning && message.reasoning.trim() ? (
-                          <Collapsible defaultOpen className="max-w-[85%]">
-                            <CollapsibleTrigger className="group flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-neutral-300">
-                              <span>Thinking…</span>
-                              <svg className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent className="mt-1 whitespace-pre-wrap border-l-2 border-neutral-800 pl-3 text-xs leading-relaxed text-neutral-500">
-                              {message.reasoning}
-                            </CollapsibleContent>
-                          </Collapsible>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {(() => {
-                      // search_memory's output is already shown as interactive Source
-                      // cards below, so hide its raw (unclickable, redundant) chip.
-                      const chips = (message.toolCalls || []).filter((tc) => tc.name !== 'search_memory');
-                      return chips.length > 0 ? (
-                        <div className="mt-1.5 flex max-w-[85%] flex-wrap gap-1">
-                          {chips.map((tc, i) => (
-                            <span key={i} className="rounded-sm border border-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500" title={tc.result}>
-                              {tc.name} → {tc.result.length > 32 ? tc.result.slice(0, 32) + '…' : tc.result}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null;
-                    })()}
 
                     {message.role === 'user' ? (
                       <div className="mt-1.5 flex items-center gap-3">
@@ -2355,14 +2421,18 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                       <TooltipContent>{recording ? 'Stop recording' : 'Record voice'}</TooltipContent>
                     </Tooltip>
                     )}
-                    {messages.some(m => m.streaming) && (
+                    {/* Stop shows for the WHOLE generating window — the pre-stream
+                        "Searching your memory…" phase as well as a live token stream —
+                        so an in-flight turn is always cancellable. Image gen has its own
+                        labeled Stop just below, so skip this icon in that mode. */}
+                    {!!activeConversationId && generatingConvs.has(activeConversationId) && !(loading && (mode === 'image' || generatingImage)) && (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
                             type="button"
                             variant="outline"
                             size="icon"
-                            onClick={() => { const s = messages.find(m => m.streaming); if (s) window.api.cancelRag?.(s.id); }}
+                            onClick={() => stopGeneration(activeConversationId)}
                             className="size-8 rounded-full border-red-500/50 text-red-400 hover:bg-red-500/10"
                           >
                             <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
@@ -2372,7 +2442,8 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                       </Tooltip>
                     )}
                     {loading && (mode === 'image' || generatingImage) ? (
-                      <Button type="button" variant="outline" onClick={() => window.api.cancelImageGen?.()} className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10">
+                      <Button type="button" variant="outline" onClick={() => { stopGeneration(activeConversationId); window.api.cancelImageGen?.(); }} className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10">
+
                         <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
                         Stop
                       </Button>

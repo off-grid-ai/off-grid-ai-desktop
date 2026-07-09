@@ -9,22 +9,14 @@ import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit } from "./r
 import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from "./model-sizing";
 import { classifyLlamaError } from "./llama-error";
 import type { ManagedRuntime } from "./runtime-manager";
+import { LLAMA_SERVER_PORT } from "../shared/ports";
+import { DEFAULT_CTX_SIZE } from "../shared/llm-defaults";
+import { MODE_PRESETS, samplingPayload, launchArgsChanged } from "./llm/settings-math";
+import { buildMessages, imageMime, thinkingPayload, type DecodedImage } from "./llm/chat-payload";
+import { parseSseLine, createThinkSplitter, createToolCallAccumulator, type AssembledToolCall } from "./llm/sse-stream";
+import { modelRequestOptions, postCompletionOnce } from "./llm/http-post";
 
 export type { KvCacheType, PerformanceMode };
-
-// Friendly presets that decide how much of the machine the local model uses.
-// Conservative leaves lots of headroom (safest on small / busy machines);
-// Extreme pushes context/memory for max capability. The RAM clamp still applies
-// on top, so even Extreme can't overcommit into a freeze.
-// Context is a CEILING, not a fill-the-RAM target: a big context means a big KV
-// cache (the bulk of llama-server's memory), so defaults stay modest. Conservative
-// also quantizes the KV cache (q8_0) to roughly halve it. Users who want more can
-// raise context or pick Extreme.
-const MODE_PRESETS: Record<PerformanceMode, { ctxSize: number; kvCacheType: KvCacheType; flashAttn: boolean }> = {
-  conservative: { ctxSize: 8192, kvCacheType: "q8_0", flashAttn: true },
-  balanced: { ctxSize: 16384, kvCacheType: "f16", flashAttn: false },
-  extreme: { ctxSize: 65536, kvCacheType: "f16", flashAttn: false },
-};
 
 export interface LlmSettings {
   performanceMode?: PerformanceMode;
@@ -48,7 +40,7 @@ export class LLMService {
   private server: ChildProcess | null = null;
   // Off the contested 8080 (collides with other local dev servers) onto a
   // less-trafficked port so the model server reliably binds.
-  private port = 8439;
+  private port = LLAMA_SERVER_PORT;
   // Single-flight init guard: concurrent chat() calls (e.g. the capture
   // extractor firing rapidly) must share ONE spawn, not each launch a server.
   private initPromise: Promise<void> | null = null;
@@ -67,7 +59,7 @@ export class LLMService {
   // User-tunable inference settings (persisted). Context window needs a server
   // respawn to take effect (it's a launch arg); temperature is per-request.
   private temperature = 0.7;
-  private ctxSize = 16384; // modest default — context is a ceiling, not a fill-RAM target (KV cache is the bulk of memory). Raise it or use Extreme for more.
+  private ctxSize = DEFAULT_CTX_SIZE; // modest default — context is a ceiling, not a fill-RAM target (KV cache is the bulk of memory). Raise it or use Extreme for more.
   // ONE local gemma server, but many callers (capture distill, day-plan, the
   // secretary, action extraction…). Concurrent requests contend and time out.
   // Serialize them so each gets the server to itself; the per-call timeout sits
@@ -166,12 +158,22 @@ export class LLMService {
 
   /** Sampling params to merge into a request payload (only those the user set). */
   private samplingPayload(): Record<string, number> {
-    const p: Record<string, number> = {};
-    if (typeof this.topP === "number") p.top_p = this.topP;
-    if (typeof this.topK === "number") p.top_k = this.topK;
-    if (typeof this.minP === "number") p.min_p = this.minP;
-    if (typeof this.repeatPenalty === "number") p.repeat_penalty = this.repeatPenalty;
-    return p;
+    return samplingPayload({ topP: this.topP, topK: this.topK, minP: this.minP, repeatPenalty: this.repeatPenalty });
+  }
+
+  /** Read each image off disk and decode to base64 + mime (the one impure step of
+   *  payload building). A file that can't be read is logged and skipped so a broken
+   *  path never fails the whole request. */
+  private decodeImages(images: string[]): DecodedImage[] {
+    const out: DecodedImage[] = [];
+    for (const imgPath of images) {
+      try {
+        out.push({ base64: fs.readFileSync(imgPath).toString("base64"), mime: imageMime(imgPath) });
+      } catch (readErr) {
+        console.error(`[LLMService] Failed to read image ${imgPath}:`, readErr);
+      }
+    }
+    return out;
   }
 
   /** Update inference settings; respawns the server if any launch-time arg changed
@@ -187,13 +189,10 @@ export class LLMService {
       modeChanged = true;
     }
     // Launch-time args: changing any of these requires a server respawn.
-    const launchChanged = modeChanged ||
-      (typeof s.ctxSize === "number" && s.ctxSize !== this.ctxSize) ||
-      (s.kvCacheType !== undefined && s.kvCacheType !== this.kvCacheType) ||
-      (typeof s.flashAttn === "boolean" && s.flashAttn !== this.flashAttn) ||
-      (typeof s.gpuLayers === "number" && s.gpuLayers !== this.gpuLayers) ||
-      (typeof s.threads === "number" && s.threads !== this.threads) ||
-      (typeof s.batchSize === "number" && s.batchSize !== this.batchSize);
+    const launchChanged = launchArgsChanged(s, {
+      ctxSize: this.ctxSize, kvCacheType: this.kvCacheType, flashAttn: this.flashAttn,
+      gpuLayers: this.gpuLayers, threads: this.threads, batchSize: this.batchSize,
+    }, modeChanged);
     if (typeof s.temperature === "number") this.temperature = s.temperature;
     if (typeof s.ctxSize === "number") this.ctxSize = s.ctxSize;
     if (typeof s.topP === "number") this.topP = s.topP;
@@ -503,49 +502,11 @@ export class LLMService {
   }
 
   // Use Node http module instead of fetch to avoid undici's headersTimeout (300s)
-  // which kills long-running LLM requests before they can respond
+  // which kills long-running LLM requests before they can respond. Delegates to the
+  // electron-free postCompletionOnce so the fresh-connection contract lives in one place
+  // (see llm/http-post.ts) and is integration-tested against a real socket-closing server.
   private httpPost(body: string, timeoutMs: number): Promise<string> {
-    return new Promise((resolve, reject) => {
-      let timedOut = false;
-
-      const timer = setTimeout(() => {
-        timedOut = true;
-        req.destroy();
-        reject(new Error("LLM request timed out - try a shorter prompt"));
-      }, timeoutMs);
-
-      const req = http.request({
-        hostname: '127.0.0.1',
-        port: this.port,
-        path: '/v1/chat/completions',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body),
-        },
-      }, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          clearTimeout(timer);
-          if (timedOut) return;
-          if (res.statusCode !== 200) {
-            reject(new Error(`LLM Server Error: ${res.statusCode} ${data}`));
-            return;
-          }
-          resolve(data);
-        });
-      });
-
-      req.on('error', (e) => {
-        clearTimeout(timer);
-        if (timedOut) return;
-        reject(e);
-      });
-
-      req.write(body);
-      req.end();
-    });
+    return postCompletionOnce(this.port, body, timeoutMs);
   }
 
   async chat(
@@ -566,32 +527,8 @@ export class LLMService {
 
     return this.chatMutex.runExclusive(async () => {
     try {
-        const messages: any[] = [{
-            role: "user",
-            content: []
-        }];
-
-        messages[0].content.push({ type: "text", text: message });
-
-        for (const imgPath of images) {
-            try {
-                const imageBuffer = fs.readFileSync(imgPath);
-                const base64 = imageBuffer.toString("base64");
-                const mime = imgPath.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
-
-                messages[0].content.push({
-                    type: "image_url",
-                    image_url: {
-                        url: `data:${mime};base64,${base64}`
-                    }
-                });
-            } catch (readErr) {
-                console.error(`[LLMService] Failed to read image ${imgPath}:`, readErr);
-            }
-        }
-
+        const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (this.systemPrompt.trim()) messages.unshift({ role: "system", content: this.systemPrompt });
         const payload: any = {
             messages: messages,
             max_tokens: maxTokens,
@@ -647,20 +584,7 @@ export class LLMService {
       if (!this.initialized) throw new Error('LLM Service not ready');
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const content: any[] = [{ type: 'text', text: message }];
-    for (const imgPath of images) {
-      try {
-        const base64 = fs.readFileSync(imgPath).toString('base64');
-        const mime = imgPath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
-        content.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${base64}` } });
-      } catch (e) {
-        console.error(`[LLMService] Failed to read image ${imgPath}:`, e);
-      }
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const messages: any[] = [{ role: 'user', content }];
-    if (this.systemPrompt.trim()) messages.unshift({ role: 'system', content: this.systemPrompt });
+    const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {
       messages,
@@ -668,77 +592,116 @@ export class LLMService {
       temperature: opts.temperature ?? this.temperature,
       ...this.samplingPayload(),
       stream: true,
+      // Thinking control: when on, ask the template to emit reasoning and have
+      // llama.cpp split it into reasoning_content (deepseek-style); when off,
+      // suppress it so the token budget goes to the answer.
+      ...thinkingPayload(!!opts.thinking),
     };
-    // Thinking control: when on, ask the template to emit reasoning and have
-    // llama.cpp split it into reasoning_content (deepseek-style); when off,
-    // suppress it so the token budget goes to the answer.
-    if (opts.thinking) {
-      payload.chat_template_kwargs = { enable_thinking: true };
-      payload.reasoning_format = 'deepseek';
-    } else {
-      payload.chat_template_kwargs = { enable_thinking: false };
-    }
     const body = JSON.stringify(payload);
 
     return new Promise<string>((resolve, reject) => {
-      let full = '';
       let buf = '';
-      let inThink = false; // for models that inline <think>…</think> in content
       let timedOut = false;
       let aborted = false;
+      // Stateful <think>…</think> splitter: routes inline reasoning vs answer and
+      // accumulates the answer text across chunk boundaries (see sse-stream.ts).
+      const splitter = createThinkSplitter((ev) => onDelta(ev.text, ev.kind));
       const timer = setTimeout(() => { timedOut = true; req.destroy(); reject(new Error('LLM request timed out')); }, timeoutMs);
 
-      const emitContent = (text: string): void => {
-        // Split out inline <think> reasoning if the template uses it.
-        let rest = text;
-        while (rest) {
-          if (inThink) {
-            const end = rest.indexOf('</think>');
-            if (end === -1) { onDelta(rest, 'reasoning'); return; }
-            if (end > 0) onDelta(rest.slice(0, end), 'reasoning');
-            rest = rest.slice(end + 8);
-            inThink = false;
-          } else {
-            const start = rest.indexOf('<think>');
-            if (start === -1) { full += rest; onDelta(rest, 'content'); return; }
-            if (start > 0) { full += rest.slice(0, start); onDelta(rest.slice(0, start), 'content'); }
-            rest = rest.slice(start + 7);
-            inThink = true;
-          }
-        }
-      };
-
-      const req = http.request({
-        hostname: '127.0.0.1',
-        port: this.port,
-        path: '/v1/chat/completions',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-      }, (res) => {
+      // Fresh connection per request via the shared contract (llm/http-post.ts) — no keep-alive
+      // pool, so the tool loop's back-to-back requests never hit a half-closed socket (ECONNRESET).
+      const req = http.request(modelRequestOptions(this.port, Buffer.byteLength(body)), (res) => {
         if (res.statusCode !== 200) { clearTimeout(timer); reject(new Error(`LLM Server Error: ${res.statusCode}`)); res.resume(); return; }
         res.setEncoding('utf8');
         res.on('data', (chunk: string) => {
           buf += chunk;
           let nl: number;
           while ((nl = buf.indexOf('\n')) >= 0) {
-            const line = buf.slice(0, nl).trim();
+            const line = buf.slice(0, nl);
             buf = buf.slice(nl + 1);
-            if (!line.startsWith('data:')) continue;
-            const data = line.slice(5).trim();
-            if (data === '[DONE]') continue;
-            try {
-              const delta = JSON.parse(data).choices?.[0]?.delta;
-              if (delta?.reasoning_content) onDelta(delta.reasoning_content, 'reasoning');
-              if (delta?.content) emitContent(delta.content);
-            } catch { /* partial/ignorable line */ }
+            const delta = parseSseLine(line);
+            if (!delta) continue;
+            if (delta.reasoning_content) onDelta(delta.reasoning_content, 'reasoning');
+            if (delta.content) splitter.push(delta.content);
           }
         });
-        res.on('end', () => { clearTimeout(timer); if (!timedOut && !aborted) resolve(full); });
+        res.on('end', () => { clearTimeout(timer); if (!timedOut && !aborted) resolve(splitter.answer()); });
       });
       req.on('error', (e) => { clearTimeout(timer); if (!timedOut && !aborted) reject(e); });
       // Cooperative cancellation: stop the request and return whatever was generated so far.
       if (opts.signal) {
-        const onAbort = (): void => { aborted = true; clearTimeout(timer); try { req.destroy(); } catch { /* already gone */ } resolve(full); };
+        const onAbort = (): void => { aborted = true; clearTimeout(timer); try { req.destroy(); } catch { /* already gone */ } resolve(splitter.answer()); };
+        if (opts.signal.aborted) onAbort();
+        else opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
+      req.write(body);
+      req.end();
+    });
+  }
+
+  // Lower-level streaming turn over a RAW messages array with optional tool-calling.
+  // Powers the agentic tool loop (tools.ts): streams reasoning + answer via `onDelta`
+  // (same channels as chatStream) AND accumulates any tool_calls the model emits, so a
+  // tools turn streams thinking -> (the loop surfaces the tool step) -> the answer, all
+  // through one path. Returns the streamed answer text + the assembled tool calls for
+  // this round (empty when the model answered instead of calling a tool).
+  async streamChat(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    messages: any[],
+    onDelta: (text: string, kind: 'content' | 'reasoning') => void,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    opts: { temperature?: number; thinking?: boolean; signal?: AbortSignal; tools?: unknown[]; toolChoice?: string; maxTokens?: number } = {},
+    timeoutMs: number = 300000,
+  ): Promise<{ content: string; toolCalls: AssembledToolCall[] }> {
+    if (this.paused) throw new Error('LLM paused during image generation — deferred');
+    if (!this.initialized) {
+      await this.init();
+      if (!this.initialized) throw new Error('LLM Service not ready');
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload: any = {
+      messages,
+      max_tokens: opts.maxTokens ?? this.maxTokens,
+      temperature: opts.temperature ?? this.temperature,
+      ...this.samplingPayload(),
+      stream: true,
+      ...thinkingPayload(!!opts.thinking),
+    };
+    if (opts.tools && opts.tools.length) { payload.tools = opts.tools; payload.tool_choice = opts.toolChoice ?? 'auto'; }
+    const body = JSON.stringify(payload);
+
+    return new Promise<{ content: string; toolCalls: AssembledToolCall[] }>((resolve, reject) => {
+      let buf = '';
+      let timedOut = false;
+      let aborted = false;
+      const splitter = createThinkSplitter((ev) => onDelta(ev.text, ev.kind));
+      const tools = createToolCallAccumulator();
+      const done = (): { content: string; toolCalls: AssembledToolCall[] } => ({ content: splitter.answer(), toolCalls: tools.list() });
+      const timer = setTimeout(() => { timedOut = true; req.destroy(); reject(new Error('LLM request timed out')); }, timeoutMs);
+
+      // Fresh connection per request via the shared contract (llm/http-post.ts) — no keep-alive
+      // pool, so the tool loop's back-to-back requests never hit a half-closed socket (ECONNRESET).
+      const req = http.request(modelRequestOptions(this.port, Buffer.byteLength(body)), (res) => {
+        if (res.statusCode !== 200) { clearTimeout(timer); reject(new Error(`LLM Server Error: ${res.statusCode}`)); res.resume(); return; }
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => {
+          buf += chunk;
+          let nl: number;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl);
+            buf = buf.slice(nl + 1);
+            const delta = parseSseLine(line);
+            if (!delta) continue;
+            if (delta.reasoning_content) onDelta(delta.reasoning_content, 'reasoning');
+            if (delta.content) splitter.push(delta.content);
+            if (delta.tool_calls) tools.push(delta.tool_calls);
+          }
+        });
+        res.on('end', () => { clearTimeout(timer); if (!timedOut && !aborted) resolve(done()); });
+      });
+      req.on('error', (e) => { clearTimeout(timer); if (!timedOut && !aborted) reject(e); });
+      if (opts.signal) {
+        const onAbort = (): void => { aborted = true; clearTimeout(timer); try { req.destroy(); } catch { /* already gone */ } resolve(done()); };
         if (opts.signal.aborted) onAbort();
         else opts.signal.addEventListener('abort', onAbort, { once: true });
       }

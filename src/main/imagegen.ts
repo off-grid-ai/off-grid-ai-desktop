@@ -16,6 +16,11 @@ import { binRoots, dataDir, modelsDir } from './runtime-env';
 import { sdServer } from './sd-server';
 import { standardModelDefaults, taesdFilename } from '../shared/image-defaults';
 import { defaultImageModelFilename } from './image-default';
+import { hasMlmodelc, isZImageModel, isQuantizedModel } from './imagegen/runtime-detect';
+import { isImageModelFile } from './imagegen/model-filter';
+import { evaluateMemoryGuard } from './imagegen/memory-guard';
+import { buildCoreMLArgs, buildZImageArgs, buildStandardArgs, DEFAULT_NEGATIVE } from './imagegen/args';
+import { initialProgressState, reduceProgress } from './imagegen/progress';
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {
@@ -41,7 +46,7 @@ function isCoreMLModelDir(p: string): boolean {
   if (process.platform !== 'darwin') return false; // Core ML is macOS-only
   try {
     if (!fs.statSync(p).isDirectory()) return false;
-    return fs.readdirSync(p).some((f) => /\.mlmodelc$/i.test(f));
+    return hasMlmodelc(fs.readdirSync(p));
   } catch {
     return false;
   }
@@ -56,21 +61,8 @@ export function listImageModels(): string[] {
   } catch {
     return [];
   }
-  // Exclude LLM / companion / non-diffusion files so they don't show as pickable
-  // image models (gemma/qwen LLMs, the Z-Image Qwen3 encoder + FLUX ae VAE,
-  // whisper .bin, TTS .onnx, and standalone VAE/CLIP/T5 components).
-  const EXCLUDE = /qwen3-4b-instruct|gemma|^qwen[^-]|mmproj|^ae\.|ggml-|kokoro|lessac|en_us|^clip[_-]?[lg]\b|[-_.](vae|clip|t5xxl|text_encoder|tokenizer)\b/i;
-  const isImage = (f: string): boolean => {
-    if (EXCLUDE.test(f)) return false;
-    // Custom checkpoints (Civitai etc.) ship as a single .safetensors.
-    if (/\.safetensors$/i.test(f)) return true;
-    if (/\.gguf$/i.test(f)) {
-      return /(stable[-_]diffusion|sd[-_]?xl|sdxl|sd[-_]?1|sd[-_]?2|sd[-_]?3|lightning|turbo|flux|z[-_]?image|diffusion|pony|illustrious|animagine|juggernaut|realvis|dreamshaper|epicrealism|noob|absolute|chillout|counterfeit|anything)/i.test(f);
-    }
-    return false;
-  };
   const coreml = files.filter((f) => isCoreMLModelDir(path.join(dir, f)));
-  const checkpoints = files.filter(isImage);
+  const checkpoints = files.filter(isImageModelFile);
   // MLX (mflux) models are virtual ids (mlx/…), not files in the models dir.
   // Appended last so the sd-cli default (Z-Image) stays the preferred pick.
   // mflux fetches its own weights from HF on first use (cached in userData).
@@ -313,11 +305,6 @@ function resolveModel(preferred?: string): string | null {
   return path.join(dir, juggernaut ?? zimage ?? lightning ?? xl ?? v21 ?? sd[0]);
 }
 
-// A general-purpose negative prompt that meaningfully lifts quality when the
-// caller doesn't supply one. Kept conservative so it doesn't fight most prompts.
-const DEFAULT_NEGATIVE =
-  'blurry, low quality, low resolution, jpeg artifacts, deformed, disfigured, bad anatomy, extra limbs, watermark, text, signature, grainy, oversaturated';
-
 /** Whether image generation is usable right now (binary + at least one model). */
 export function imageGenStatus(): { available: boolean; models: string[]; active: string | null; reason?: string } {
   const models = listImageModels();
@@ -488,7 +475,6 @@ async function runImageGen(
   // Reserve scales with RAM so an 8GB machine isn't blocked outright (a flat
   // 7GB reserve would leave it ~1GB and reject everything).
   const totalGb = os.totalmem() / 1e9;
-  const reserveGb = totalGb <= 10 ? 4 : 6;
   const safeSizeGb = (p: string | null | undefined): number => {
     try { return p && fs.existsSync(p) ? fs.statSync(p).size / 1e9 : 0; } catch { return 0; }
   };
@@ -496,14 +482,18 @@ async function runImageGen(
   // FLUX VAE) all resident at once — the diffusion file alone wildly understates
   // its footprint. Count the encoder + VAE too, or the guard waves through a
   // combo that then overflows unified memory and freezes the box.
-  const zImageStack = /z[-_]?image/i.test(path.basename(model));
-  const zEncoderGb = zImageStack ? safeSizeGb(findInModels(/qwen3-4b-instruct.*\.gguf$/i)) : 0;
-  const zVaeGb = zImageStack ? safeSizeGb(findInModels(/^ae\.(safetensors|sft)$|^ae.*\.gguf$/i)) : 0;
-  const modelGb = coreml ? 0 : (safeSizeGb(model) + zEncoderGb + zVaeGb) * 1.4;
-  const budgetGb = totalGb - reserveGb;
-  if (modelGb > budgetGb) {
+  const zImageStack = isZImageModel(path.basename(model));
+  const guard = evaluateMemoryGuard({
+    totalGb,
+    modelSizeGb: safeSizeGb(model),
+    coreml,
+    zImageStack,
+    zEncoderGb: zImageStack ? safeSizeGb(findInModels(/qwen3-4b-instruct.*\.gguf$/i)) : 0,
+    zVaeGb: zImageStack ? safeSizeGb(findInModels(/^ae\.(safetensors|sft)$|^ae.*\.gguf$/i)) : 0,
+  });
+  if (guard.overBudget) {
     throw new Error(
-      `Not enough memory to run ${path.basename(model)} (~${modelGb.toFixed(1)}GB resident) on this ${totalGb.toFixed(0)}GB machine. ` +
+      `Not enough memory to run ${path.basename(model)} (~${guard.modelGb.toFixed(1)}GB resident) on this ${totalGb.toFixed(0)}GB machine. ` +
       `Pick a lighter image model (e.g. SDXL-Lightning or SD 1.5) in the image options.`
     );
   }
@@ -518,7 +508,7 @@ async function runImageGen(
     // save disk, and the LoRA merge then aborts the binary (Metal: unsupported
     // op CPY/ADD; CPU: GGML_ASSERT src1->type == F32). Fail with a clear message
     // instead of crash-aborting. Re-enable once an f16 base model ships.
-    if (/[._-]q\d/i.test(path.basename(model))) {
+    if (isQuantizedModel(path.basename(model))) {
       throw new Error(
         `LoRAs can't be applied to "${path.basename(model)}" — it's a quantized model, and the image engine can only merge a LoRA into a full-precision (f16) model. LoRA support needs a non-quantized base model (not yet shipped).`
       );
@@ -535,7 +525,7 @@ async function runImageGen(
   const previewPath = path.join(outDir, `preview-${stamp}.png`);
 
   const base = path.basename(model);
-  const isZImage = /z[-_]?image/i.test(base);
+  const isZImage = isZImageModel(base);
 
   // --- RESIDENT fast path (opt-in) --------------------------------------------
   // When the user sets image residency to 'resident', a plain full-checkpoint
@@ -601,53 +591,36 @@ async function runImageGen(
 
   let args: string[];
   if (coreml) {
-    // Core ML (ANE) helper — directory model, prompt → PNG. No preview file.
-    args = [
-      '--model', model,
-      '--prompt', params.prompt,
-      '--output', outPath,
-      '--steps', String(params.steps ?? 16),
-      '--seed', String(seed),
-    ];
-    if (params.negativePrompt?.trim()) args.push('--negative', params.negativePrompt.trim());
+    // Core ML (ANE) helper — directory model, prompt to PNG. No preview file.
+    args = buildCoreMLArgs({
+      model,
+      prompt: params.prompt,
+      outPath,
+      steps: params.steps,
+      seed,
+      negativePrompt: params.negativePrompt,
+    });
   } else if (isZImage) {
     // Z-Image is a separate stack: diffusion transformer + Qwen3-4B text encoder
-    // (--llm) + FLUX VAE (--vae). --offload-to-cpu keeps unified memory light.
-    // Distilled turbo model → cfg 1.0, ~8 steps, euler, no negative prompt.
+    // (--llm) + FLUX VAE (--vae). Resolve the companion files here (I/O); the
+    // pure builder assembles the flags with the turbo defaults.
     const llm = findInModels(/qwen3-4b-instruct.*\.gguf$/i);
     const vae = findInModels(/^ae\.(safetensors|sft)$|^ae.*\.gguf$/i);
     if (!llm) throw new Error('Z-Image text encoder (Qwen3-4B-Instruct) not found — download it from Models.');
     if (!vae) throw new Error('Z-Image VAE (ae.safetensors) not found — download it from Models.');
-    args = [
-      '-M', 'img_gen',
-      '--diffusion-model', model,
-      '--llm', llm,
-      '--vae', vae,
-      '-p', params.prompt,
-      '-o', outPath,
-      // Default 768 (not 1024): a diffusion transformer's cost scales ~with pixel
-      // count, so 768² is ~44% less compute/memory than 1024² — the difference
-      // between "slow but works" and thrashing unified memory into a freeze.
-      '-W', String(params.width ?? 768),
-      '-H', String(params.height ?? 768),
-      '--steps', String(params.steps ?? 8),
-      '--cfg-scale', String(params.cfgScale ?? 1.0),
-      '--sampling-method', 'euler',
-      // Keep weights + VAE off the Metal device between/at use so the resident
-      // footprint (DiT + 4B encoder + VAE) doesn't spike past unified memory.
-      '--offload-to-cpu',
-      '--vae-on-cpu',
-      '--diffusion-fa',
-      '-t', threads,
-      '-s', String(seed),
-      ...previewArgs,
-    ];
+    args = buildZImageArgs({
+      model, llm, vae,
+      prompt: params.prompt,
+      outPath,
+      width: params.width,
+      height: params.height,
+      steps: params.steps,
+      cfgScale: params.cfgScale,
+      seed,
+      threads,
+      previewArgs,
+    });
   } else {
-    // Per-model defaults (shared with the persistent-server path above via the
-    // single-source-of-truth helper). Distilled few-step models need ~8 steps,
-    // cfg 2 and the KARRAS schedule for crisp output; full checkpoints need ~28
-    // steps + real CFG on the engine-default schedule.
-    const { defaultSize, defaultSteps, defaultCfg, sampler, scheduler, isXL } = standardModelDefaults(base);
     // Full checkpoint → load with -m. UNET-only quant → load the diffusion model
     // separately and supply SDXL CLIP-L/CLIP-G + VAE; if those companions aren't
     // installed, fail with a clear message instead of the cryptic sd.cpp abort.
@@ -673,38 +646,28 @@ async function runImageGen(
         );
       }
     }
-    args = [
-      '-M', 'img_gen',
-      ...modelFlags,
-      '-p', params.prompt,
-      '-o', outPath,
-      '-W', String(params.width ?? defaultSize),
-      '-H', String(params.height ?? defaultSize),
-      '--steps', String(params.steps ?? defaultSteps),
-      '--cfg-scale', String(params.cfgScale ?? defaultCfg),
-      '--sampling-method', sampler,
-      '--scheduler', scheduler,
-      '--diffusion-fa',
-      '-t', threads,
-      '-s', String(seed),
-      ...previewArgs,
-    ];
-    // VAE-tiling only when the decode would actually spike memory (large XL
-    // images). At ≤768 it's unnecessary and just adds a slow second "decode"
-    // pass — exactly what our freeze-safe 768 thumbnail batch skipped.
-    const effW = params.width ?? defaultSize;
-    const effH = params.height ?? defaultSize;
-    // TAESD decode: OFF by default (it softens detail and blanks at 1024); the
-    // quality recipe uses the full VAE. Strictly opt-in via fastVae for a fast
-    // low-res draft. When present it makes VAE-tiling moot, so prefer it.
+    // Per-model defaults (steps/cfg/schedule/size) come from the shared
+    // standardModelDefaults inside the pure builder — single source of truth.
+    // TAESD decode is OFF by default; resolve it here (I/O) only when fastVae is
+    // set, and the builder decides taesd-vs-vae-tiling.
     const cliTaesd = params.fastVae ? resolveTaesd(base) : null;
-    if (cliTaesd) args.push('--taesd', cliTaesd);
-    else if (isXL && Math.max(effW, effH) > 768) args.push('--vae-tiling');
-    args.push('-n', params.negativePrompt?.trim() || DEFAULT_NEGATIVE);
-    // img2img (not supported by Z-Image gen-only turbo).
-    if (params.initImage) {
-      args.push('-i', params.initImage, '--strength', String(params.strength ?? 0.75));
-    }
+    args = buildStandardArgs({
+      base,
+      modelFlags,
+      prompt: params.prompt,
+      outPath,
+      width: params.width,
+      height: params.height,
+      steps: params.steps,
+      cfgScale: params.cfgScale,
+      seed,
+      threads,
+      previewArgs,
+      taesdPath: cliTaesd,
+      negativePrompt: params.negativePrompt,
+      initImage: params.initImage,
+      strength: params.strength,
+    });
   }
 
   // Point sd-cli at the LoRA folder so the <lora:NAME:weight> tags resolve.
@@ -728,35 +691,20 @@ async function runImageGen(
       const child = spawn(cli, args, { cwd: path.dirname(cli) });
       currentChild = child;
       let log = '';
-      let resolvedSeed = seed;
-      // Track the denoise→decode transition: once a sampling pass reaches its
-      // total, a fresh "1/N" sequence is the VAE decode, not a second generation.
-      let samplingDone = false;
-      let prevStep = 0;
-      let phase: 'sampling' | 'decoding' = 'sampling';
+      // Pure progress reducer owns the seed parse + the denoise->decode phase
+      // transition; the shell only handles the preview PNG read + the callback.
+      let progress = initialProgressState(seed);
       const capture = (d: Buffer): void => {
         const s = d.toString();
         log += s;
-        const m = s.match(/seed\s+(-?\d+)/i);
-        if (m) resolvedSeed = parseInt(m[1], 10);
-        // Sampling step lines look like "12/28 - 1.26s/it" (loading lines use
-        // MB/s, so the s/it anchor only matches real denoising steps).
-        if (onProgress) {
-          const stepRe = /(\d+)\/(\d+)\s*-\s*([\d.]+)s\/it/g;
-          let last: RegExpExecArray | null = null;
-          for (let mm = stepRe.exec(s); mm; mm = stepRe.exec(s)) last = mm;
-          if (last) {
-            const step = parseInt(last[1], 10);
-            const total = parseInt(last[2], 10);
-            if (!samplingDone) { if (step >= total) samplingDone = true; }
-            else if (step < prevStep) { phase = 'decoding'; }
-            prevStep = step;
-            let preview: string | undefined;
-            try {
-              if (fs.existsSync(previewPath)) preview = `data:image/png;base64,${fs.readFileSync(previewPath).toString('base64')}`;
-            } catch { /* preview not ready */ }
-            onProgress({ step, total, secPerStep: parseFloat(last[3]), preview, phase });
-          }
+        const { state, event } = reduceProgress(progress, s);
+        progress = state;
+        if (onProgress && event) {
+          let preview: string | undefined;
+          try {
+            if (fs.existsSync(previewPath)) preview = `data:image/png;base64,${fs.readFileSync(previewPath).toString('base64')}`;
+          } catch { /* preview not ready */ }
+          onProgress({ ...event, preview });
         }
       };
       child.stdout.on('data', capture);
@@ -767,7 +715,7 @@ async function runImageGen(
           reject(new Error('Image generation cancelled.'));
         } else if (code === 0) {
           // stash the resolved seed for the caller via closure
-          (params as ImageGenParams & { _seed?: number })._seed = resolvedSeed;
+          (params as ImageGenParams & { _seed?: number })._seed = progress.resolvedSeed;
           resolve();
         } else {
           reject(new Error(`Image generation failed (exit ${String(code)}): ${log.slice(-400)}`));

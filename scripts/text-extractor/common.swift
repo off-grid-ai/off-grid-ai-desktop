@@ -11,45 +11,9 @@ enum CaptureMode {
 
 var captureMode: CaptureMode = .generic
 
-/// Check if text looks like a timestamp
-func isTimestamp(_ text: String) -> Bool {
-    let pattern = "^\\d{1,2}:\\d{2}\\s?(AM|PM)?$"
-    return text.range(of: pattern, options: .regularExpression) != nil
-}
-
-/// Check if text looks like a URL or domain
-func isLikelyURL(_ text: String) -> Bool {
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    if trimmed.isEmpty { return false }
-    if trimmed.count < 4 || trimmed.count > 2048 { return false }
-    if trimmed.contains(" ") { return false }
-
-    let lower = trimmed.lowercased()
-    if lower.contains("claude.ai") { return true }
-    if lower.contains("chatgpt.com") { return true }
-    if lower.contains("chat.openai.com") { return true }
-    if lower.contains("gemini.google.com") { return true }
-    if lower.contains("bard.google.com") { return true }
-    if lower.hasPrefix("http://") || lower.hasPrefix("https://") { return true }
-
-    let pattern = "^[a-z0-9.-]+\\.[a-z]{2,}(/[^\\s]*)?$"
-    return lower.range(of: pattern, options: .regularExpression) != nil
-}
-
-func isClaudeURL(_ text: String) -> Bool {
-    let lower = text.lowercased()
-    return lower.contains("claude.ai")
-}
-
-func isGeminiURL(_ text: String) -> Bool {
-    let lower = text.lowercased()
-    return lower.contains("gemini.google.com") || lower.contains("bard.google.com")
-}
-
-func isChatGPTURL(_ text: String) -> Bool {
-    let lower = text.lowercased()
-    return lower.contains("chatgpt.com") || lower.contains("chat.openai.com")
-}
+// Pure string-heuristic classifiers (isTimestamp / isLikelyURL / isClaudeURL /
+// isGeminiURL / isChatGPTURL) live in classifiers.swift - framework-free and
+// unit-tested. They are compiled into this same binary via text-extractor.sh.
 
 /// Try to extract a URL-like string from an element
 func urlCandidate(from element: AXUIElement) -> String? {

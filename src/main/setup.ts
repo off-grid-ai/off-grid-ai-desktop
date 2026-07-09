@@ -11,6 +11,16 @@ import * as http from 'http';
 import { llm } from './llm';
 import { decideChatStatus } from './chat-health';
 import { getActiveModel, downloadModel, listInstalled, setActiveModel, setActiveModalChoice } from './models-manager';
+import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports';
+import type { RecMode } from './models/setup-types';
+import {
+  normalizeMode,
+  recommendBudgetFraction,
+  baselineExtras,
+  totalDownloadGb,
+  fitMessage,
+  type SetupItemKind,
+} from './models/setup-logic';
 
 export type ComponentStatus = 'ready' | 'starting' | 'down' | 'not_installed';
 
@@ -41,8 +51,7 @@ export interface SetupProgress {
 }
 export type SetupProgressCb = (p: SetupProgress) => void;
 
-const LLAMA_PORT = 8439;
-const GATEWAY_PORT = 7878;
+const LLAMA_PORT = LLAMA_SERVER_PORT;
 
 /** GET a localhost endpoint, parse JSON, with a short timeout. null on any failure. */
 function pingJson(port: number, path = '/health', timeoutMs = 1500): Promise<unknown | null> {
@@ -122,20 +131,21 @@ export async function getSystemHealth(): Promise<SystemHealth> {
 /** Choose the best chat/vision model that fits this machine's RAM. Prefers a
  *  vision model (so chat supports images) at the largest size the RAM tier
  *  allows; falls back to text, then to a safe small default. */
-export type RecMode = 'conservative' | 'balanced' | 'extreme';
+export type { RecMode } from './models/setup-types';
+
+/** Read performanceMode from settings, normalized to a RecMode (defaults balanced). */
+function settingsMode(): RecMode {
+  try { return normalizeMode((llm.getSettings() as { performanceMode?: string }).performanceMode); }
+  catch { return 'balanced'; }
+}
 
 export async function recommendChatModel(modeOverride?: RecMode): Promise<{ id: string; name: string } | null> {
   const { CATALOG, recommendForRam } = await import('@offgrid/models');
   const { chooseChatModel, recommendedParamCeiling, preferredModelIds, totalBytes } = await import('./model-sizing');
   const gb = ramGb();
   const tier = recommendForRam(gb);
-  let mode: RecMode = 'balanced';
-  if (modeOverride) mode = modeOverride;
-  else try {
-    const m = (llm.getSettings() as { performanceMode?: string }).performanceMode;
-    if (m === 'conservative' || m === 'extreme') mode = m;
-  } catch { /* default */ }
-  const frac = mode === 'conservative' ? 0.30 : mode === 'extreme' ? 0.55 : 0.38;
+  const mode: RecMode = modeOverride ?? settingsMode();
+  const frac = recommendBudgetFraction(mode);
   const budget = gb * frac * 1e9;
   // 1) Curated default for the tier (16GB → Gemma 4 E2B), if it fits the budget.
   for (const id of preferredModelIds(gb, mode)) {
@@ -167,13 +177,7 @@ export async function estimateModelFit(modelId: string): Promise<FitEstimate> {
     const weightsGb = (entry?.files?.reduce((s: number, f: { sizeBytes?: number }) => s + (f.sizeBytes ?? 0), 0) ?? 0) / 1e9;
     if (!weightsGb) return { level: 'ok', ramGb: gb, weightsGb: 0, message: '' };
     const level: FitEstimate['level'] = fitLevel(weightsGb, gb);
-    const message =
-      level === 'ok'
-        ? ''
-        : level === 'tight'
-          ? `This model's weights are ~${weightsGb.toFixed(1)} GB of your ${gb} GB. It'll run, but its context window will be reduced to stay within memory.`
-          : `This model's weights are ~${weightsGb.toFixed(1)} GB on a ${gb} GB machine — it may run slowly, use heavy swap, or fail to load. Context will be heavily reduced. Consider a smaller model.`;
-    return { level, ramGb: gb, weightsGb, message };
+    return { level, ramGb: gb, weightsGb, message: fitMessage(level, weightsGb, gb) };
   } catch {
     return { level: 'ok', ramGb: gb, weightsGb: 0, message: '' };
   }
@@ -191,26 +195,11 @@ export async function getRecommendation(mode?: RecMode): Promise<Recommendation 
   const sizeGb = (entry?.files?.reduce((s: number, f: { sizeBytes?: number }) => s + (f.sizeBytes ?? 0), 0) ?? 0) / 1e9;
   let installed = false;
   try { installed = (await listInstalled()).includes(pick.id); } catch { /* ignore */ }
-  const effMode: RecMode = mode ?? ((): RecMode => {
-    try { const m = (llm.getSettings() as { performanceMode?: string }).performanceMode; return m === 'conservative' || m === 'extreme' ? m : 'balanced'; } catch { return 'balanced'; }
-  })();
+  const effMode: RecMode = mode ?? settingsMode();
   return { id: pick.id, name: pick.name, sizeGb, ramGb: ramGb(), installed, mode: effMode };
 }
 
-// The non-chat models "Configure for me" also sets up. Binaries (whisper, sd-cli,
-// the TTS runtime) ship in the app; only these MODELS download. Image is heavy
-// (~4GB), so it's skipped in Conservative to keep that mode genuinely light.
-// Whisper has real size tiers, so it scales with the mode (tiny → base → small).
-// TTS (Kokoro 82M) is already tiny and the only quality option, so it stays fixed.
-const STT_MODEL_BY_MODE: Record<RecMode, string> = {
-  conservative: 'ggerganov/whisper.cpp/tiny',   // ~78MB
-  balanced: 'ggerganov/whisper.cpp/base',        // ~148MB
-  extreme: 'ggerganov/whisper.cpp/small',        // ~488MB
-};
-const TTS_MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';   // text-to-speech, ~82M
-const IMAGE_MODEL_ID = 'offgrid-ai/juggernaut-xl-v9-GGUF';    // image gen, ~4.35GB
-
-export type SetupItemKind = 'chat' | 'transcription' | 'voice' | 'image';
+export type { SetupItemKind } from './models/setup-logic';
 export interface SetupItem {
   kind: SetupItemKind;
   capability: string;   // user-facing: "Chat & vision", "Speech-to-text", …
@@ -227,9 +216,7 @@ export interface SetupPlan { mode: RecMode; ramGb: number; items: SetupItem[]; t
  *  preview — no downloads — so the UI can list everything before the user commits.
  *  autoConfigure() consumes the same plan, so the preview and the action never drift. */
 export async function getSetupPlan(mode?: RecMode): Promise<SetupPlan> {
-  const effMode: RecMode = mode ?? ((): RecMode => {
-    try { const m = (llm.getSettings() as { performanceMode?: string }).performanceMode; return m === 'conservative' || m === 'extreme' ? m : 'balanced'; } catch { return 'balanced'; }
-  })();
+  const effMode: RecMode = mode ?? settingsMode();
   const { CATALOG } = await import('@offgrid/models');
   let installed: string[] = [];
   try { installed = await listInstalled(); } catch { /* ignore */ }
@@ -242,13 +229,13 @@ export async function getSetupPlan(mode?: RecMode): Promise<SetupPlan> {
   const items: SetupItem[] = [];
   const chat = await recommendChatModel(effMode);
   if (chat) items.push({ kind: 'chat', capability: 'Chat & vision', id: chat.id, name: chat.name, sizeGb: sizeOf(chat.id), installed: installed.includes(chat.id), required: true });
-  const sttId = STT_MODEL_BY_MODE[effMode];
-  items.push({ kind: 'transcription', capability: 'Speech-to-text', id: sttId, name: nameOf(sttId, 'Whisper'), sizeGb: sizeOf(sttId), installed: installed.includes(sttId), required: false });
-  items.push({ kind: 'voice', capability: 'Text-to-speech', id: TTS_MODEL_ID, name: nameOf(TTS_MODEL_ID, 'Kokoro TTS'), sizeGb: sizeOf(TTS_MODEL_ID), installed: installed.includes(TTS_MODEL_ID), required: false });
-  if (effMode !== 'conservative') items.push({ kind: 'image', capability: 'Image generation', id: IMAGE_MODEL_ID, name: nameOf(IMAGE_MODEL_ID, 'Juggernaut XL v9'), sizeGb: sizeOf(IMAGE_MODEL_ID), installed: installed.includes(IMAGE_MODEL_ID), required: false });
+  // The non-chat baseline (STT, TTS, and image outside Conservative) - order + the
+  // per-mode STT tier come from the single source of truth in setup-logic.
+  for (const ex of baselineExtras(effMode)) {
+    items.push({ kind: ex.kind, capability: ex.capability, id: ex.id, name: nameOf(ex.id, ex.fallbackName), sizeGb: sizeOf(ex.id), installed: installed.includes(ex.id), required: false });
+  }
 
-  const totalDownloadGb = items.filter((i) => !i.installed).reduce((s, i) => s + i.sizeGb, 0);
-  return { mode: effMode, ramGb: ramGb(), items, totalDownloadGb };
+  return { mode: effMode, ramGb: ramGb(), items, totalDownloadGb: totalDownloadGb(items) };
 }
 
 /** "Configure for me": pick → download (if needed) → activate → start → verify. */

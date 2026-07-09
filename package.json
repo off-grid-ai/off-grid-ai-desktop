@@ -8,10 +8,12 @@
   "author": "Off Grid AI <hello@getoffgridai.co>",
   "homepage": "https://getoffgridai.co",
   "scripts": {
+    "prepare": "git config core.hooksPath scripts/hooks || true",
     "format": "prettier --write .",
     "lint": "eslint --cache .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
@@ -27,7 +29,10 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
-    "test:e2e": "electron-vite build && playwright test"
+    "test:e2e": "electron-vite build && playwright test",
+    "smoke": "bash scripts/smoke-api.sh",
+    "test:swift": "cd swift-tests/TextExtractorKit && swift test",
+    "test:db": "bash scripts/test-db.sh"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -105,6 +110,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.182.0",
     "@vitejs/plugin-react": "^5.1.1",
+    "@vitest/coverage-v8": "^4.1.10",
     "autoprefixer": "^10.4.23",
     "electron": "^39.2.6",
     "electron-builder": "^26.0.12",

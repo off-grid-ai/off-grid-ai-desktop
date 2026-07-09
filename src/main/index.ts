@@ -23,6 +23,11 @@ import { nativeImage } from 'electron'
 import { purgeLegacyChatImports, getSetting } from './database'
 import { modalityQueue } from './modality-queue/queue'
 import { registerRuntime } from './runtime-manager'
+import { guardConsoleStreams } from './stream-guards'
+
+// Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
+// must never crash main via an uncaught EPIPE. See stream-guards.ts.
+guardConsoleStreams([process.stdout, process.stderr])
 
 // Pin one canonical userData dir ("Off Grid AI Desktop") regardless of package
 // name, and migrate data from the legacy split dirs ("My Memories" had the

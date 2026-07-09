@@ -1,0 +1,1 @@
+../../../../scripts/text-extractor/classifiers.swift

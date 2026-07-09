@@ -25,3 +25,11 @@ export function dequeue<T>(byConv: Record<string, T[]>, convId: string): { item:
 export function queuedCount(byConv: Record<string, unknown[]>, convId: string | null): number {
   return convId ? (byConv[convId]?.length ?? 0) : 0;
 }
+
+/** Drop every queued send for a conversation (used when the user hits Stop) without
+ *  touching other conversations' queues. Immutable. */
+export function clearQueue<T>(byConv: Record<string, T[]>, convId: string): Record<string, T[]> {
+  if (!(convId in byConv)) return byConv;
+  const { [convId]: _dropped, ...rest } = byConv;
+  return rest;
+}

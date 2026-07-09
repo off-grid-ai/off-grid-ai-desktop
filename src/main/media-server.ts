@@ -17,6 +17,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { app } from 'electron';
 import { parseRange, isPathAllowed } from './media-range';
+import { MEDIA_PORT } from '../shared/ports';
 
 const MIME: Record<string, string> = {
   '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm',
@@ -25,8 +26,7 @@ const MIME: Record<string, string> = {
 };
 
 // Fixed loopback port so the renderer CSP (media-src) can allowlist it. Bound to
-// 127.0.0.1 only — not reachable off-device.
-const MEDIA_PORT = 7879;
+// 127.0.0.1 only — not reachable off-device. Canonical value in shared/ports.
 
 let server: http.Server | null = null;
 let token = '';

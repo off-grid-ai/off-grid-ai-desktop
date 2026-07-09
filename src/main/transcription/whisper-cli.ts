@@ -12,20 +12,11 @@ import path from 'path';
 import { getActiveModal } from '../active-models';
 import { binRoots, modelsDir } from '../runtime-env';
 import { modelsByKind } from '@offgrid/models';
+import { existing } from './bin-resolution';
+import { catalogEngine } from './classify';
 import type { TranscriptionService, Transcript, TranscribeOptions, Seg } from './types';
 
 const execFileAsync = promisify(execFile);
-
-function existing(paths: string[]): string | null {
-  for (const p of paths) {
-    try {
-      if (fs.existsSync(p)) return p;
-    } catch {
-      /* ignore */
-    }
-  }
-  return null;
-}
 
 /** Resolve the bundled whisper-cli across dev / packaged layouts. */
 export function whisperBin(): string | null {
@@ -58,7 +49,10 @@ function whisperModelFiles(): string[] {
 function activeWhisperFile(chosen: string): string | null {
   if (/ggml-.*\.bin$/i.test(chosen)) return chosen;
   const entry = modelsByKind('transcription').find((m) => m.id === chosen);
-  if (!entry || entry.engine === 'parakeet') return null;
+  // Only whisper entries feed the whisper model path — a Parakeet id (or no match)
+  // resolves to null so its ONNX files are never handed to whisper. Classification is
+  // the single source of truth in select.catalogEngine, not a local engine check.
+  if (!entry || catalogEngine(entry) !== 'whisper') return null;
   const primary = (entry.files.find((f) => f.role === 'primary') ?? entry.files[0])?.name;
   return primary && /ggml-.*\.bin$/i.test(primary) ? primary : null;
 }
