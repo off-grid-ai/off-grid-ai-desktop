@@ -10,14 +10,21 @@
 # (slower). Exits non-zero on the first failure so it works as a CI/pre-release gate.
 set -uo pipefail
 GW="${OFFGRID_GATEWAY_URL:-http://127.0.0.1:7878}"
+
+# Per-run temp files via mktemp (not fixed /tmp paths) - avoids a TOCTOU/symlink hijack on a
+# predictable name and lets concurrent runs coexist. Cleaned up on any exit.
+MODELS_JSON="$(mktemp -t smoke_models.XXXXXX)"
+STREAM_TXT="$(mktemp -t smoke_stream.XXXXXX)"
+trap 'rm -f "$MODELS_JSON" "$STREAM_TXT"' EXIT
+
 fail() { echo "  FAIL: $1"; exit 1; }
 ok() { echo "  ok: $1"; }
 
 echo "[smoke] gateway = $GW"
 
 # 0. Gateway reachable + model catalog (models-manager path)
-curl -s -m 5 "$GW/v1/models" >/tmp/smoke_models.json 2>&1 || fail "gateway not reachable - start the app first (npm run dev)"
-node -e 'const j=require("/tmp/smoke_models.json");if(!j.data||!j.data.length)process.exit(1);console.log("  models:",j.data.map(m=>m.id).join(", "))' \
+curl -s -m 5 "$GW/v1/models" >"$MODELS_JSON" 2>&1 || fail "gateway not reachable - start the app first (npm run dev)"
+MODELS_JSON="$MODELS_JSON" node -e 'const j=require(process.env.MODELS_JSON);if(!j.data||!j.data.length)process.exit(1);console.log("  models:",j.data.map(m=>m.id).join(", "))' \
   < /dev/null 2>/dev/null || fail "/v1/models returned no models"
 ok "/v1/models"
 
@@ -29,8 +36,8 @@ ok "chat non-stream"
 
 # 2. Chat stream (SSE proxy + retry refactor) - count content OR reasoning deltas
 curl -sN -m 120 "$GW/v1/chat/completions" -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"Count one to five."}],"max_tokens":48,"stream":true}' > /tmp/smoke_stream.txt 2>&1
-node -e 'const fs=require("fs");let n=0;for(const l of fs.readFileSync("/tmp/smoke_stream.txt","utf8").split("\n")){if(!l.startsWith("data:"))continue;const p=l.slice(5).trim();if(p==="[DONE]")continue;try{const d=JSON.parse(p).choices?.[0]?.delta||{};if(d.content||d.reasoning_content)n++;}catch(e){}}if(n<1)process.exit(1);console.log("  stream deltas:",n)' || fail "chat stream produced no deltas"
+  -d '{"messages":[{"role":"user","content":"Count one to five."}],"max_tokens":48,"stream":true}' > "$STREAM_TXT" 2>&1
+STREAM_TXT="$STREAM_TXT" node -e 'const fs=require("fs");let n=0;for(const l of fs.readFileSync(process.env.STREAM_TXT,"utf8").split("\n")){if(!l.startsWith("data:"))continue;const p=l.slice(5).trim();if(p==="[DONE]")continue;try{const d=JSON.parse(p).choices?.[0]?.delta||{};if(d.content||d.reasoning_content)n++;}catch(e){}}if(n<1)process.exit(1);console.log("  stream deltas:",n)' || fail "chat stream produced no deltas"
 ok "chat stream"
 
 # 3. Embeddings
