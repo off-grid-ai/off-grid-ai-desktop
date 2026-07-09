@@ -22,6 +22,22 @@ really a test of a third-party framework or engine we merely depend on:
   the engine as a dependency (skip if absent), not as the thing under test. The value is
   "our integration still works," not "does Vision/whisper/kokoro work."
 
+## Consolidated coverage (current)
+
+- **TS (Electron main + preload + renderer + pro), `npm run test:coverage`:** ~78% statements /
+  75% branches / 77% functions / 79% lines on the TESTABLE surface (ratchet floor 77/74/76/78,
+  climbing toward the 85% goal). ~1200 unit/integration tests.
+- **Swift, `npm run test:swift`:** 37 XCTest cases over the text-extractor pure classifiers.
+- **DB integration, `npm run test:db`:** 61 cases over `database.ts` + `rag/store.ts` against a
+  real temp SQLite. Kept OUT of the default gate because it needs `better-sqlite3` rebuilt for
+  the node ABI (the app builds it for Electron's ABI); the script rebuilds + restores. KNOWN GAP:
+  wire `test:db` into CI as an isolated step so database.ts coverage is enforced there.
+- The default coverage gate EXCLUDES (with a real alternative suite each): vendored/built
+  (`packages/**`, `**/dist/**`); native/DB/spawn shells (database.ts, rag/store.ts, imagegen.ts,
+  mflux.ts, sd-server.ts, model-server.ts, media-server.ts, whisper/parakeet/whisper-server) -
+  their pure logic is extracted + unit-covered, the husks are smoke/e2e/test:db-covered; and big
+  e2e-covered UI components (MemoryChat.tsx, VaultScreen.tsx).
+
 ## Test types
 - **unit (vitest)** - pure TS logic, no I/O. Fast, always-on. The ratchet floor.
 - **integration (vitest, real collaborators)** - run the real implementation against a temp

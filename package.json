@@ -31,7 +31,8 @@
     "build:linux": "electron-vite build && electron-builder --linux",
     "test:e2e": "electron-vite build && playwright test",
     "smoke": "bash scripts/smoke-api.sh",
-    "test:swift": "cd swift-tests/TextExtractorKit && swift test"
+    "test:swift": "cd swift-tests/TextExtractorKit && swift test",
+    "test:db": "bash scripts/test-db.sh"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

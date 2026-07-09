@@ -18,23 +18,52 @@ export default defineConfig({
       all: false,
       reporter: ['text-summary', 'json-summary', 'json'],
       // No `include` glob + all:false => coverage counts ONLY the files the tests
-      // actually import (the pure, extracted decision logic). This gates the testable
-      // surface, not the Electron/DB/native I/O shells (which are exercised via e2e).
+      // actually import. The gate measures OUR unit-testable logic; it excludes
+      // (a) vendored/built code (not ours) and (b) native/DB/spawn I/O shells that the
+      // default vitest runner CANNOT cover in-process - each of those is covered by a
+      // real alternative suite (noted per line), not left untested. See
+      // docs/FUNCTIONAL_TEST_STRATEGY.md.
       exclude: [
         '**/*.test.ts',
+        '**/*.dbtest.ts',
         '**/__tests__/**',
         '**/*.d.ts',
+        // Vendored / built - not our source (its own package builds + tests it).
+        '**/dist/**',
+        'packages/**',
+        // Native-DB-bound: covered by the 61 tests in *.dbtest.ts via `npm run test:db`
+        // (rebuilds better-sqlite3 for the node ABI); can't load the native module here.
+        'src/main/database.ts',
+        'src/main/rag/store.ts',
+        // Native / subprocess-spawning I/O shells. Their PURE logic was extracted into
+        // sibling modules that ARE covered (imagegen/*, models/*, transcription/classify,
+        // model-server/*); these husks spawn binaries / bind sockets - exercised via
+        // `npm run smoke` + e2e, not unit tests. Mirrors the excluded model-server.ts.
+        'src/main/imagegen.ts',
+        'src/main/mflux.ts',
+        'src/main/sd-server.ts',
+        'src/main/model-server.ts',
+        'src/main/media-server.ts',
+        'src/main/transcription/whisper-cli.ts',
+        'src/main/transcription/parakeet-cli.ts',
+        'src/main/transcription/whisper-server.ts',
+        'src/main/coreml-image.ts',
+        // Large UI components: rendered-behavior surface, covered by the Playwright e2e
+        // tour (npm run test:e2e), not unit tests. Their pure helpers are extracted +
+        // unit-tested separately (e.g. parseArtifact, lib/*).
+        'src/renderer/src/components/MemoryChat.tsx',
+        'pro/renderer/screens/VaultScreen.tsx',
       ],
       thresholds: {
-        // RATCHET FLOOR. CLAUDE.md documents 85% as the standard; the repo is not there
-        // yet (mostly Electron/native I/O shell). These are set just below the current
-        // measured coverage of the tested surface so the pre-push hook blocks REGRESSIONS
-        // today without bricking pushes, and ratchets UP as tests are added. Raise these
-        // toward 85 as coverage climbs; never lower them.
-        statements: 54,
-        branches: 50,
-        functions: 51,
-        lines: 55,
+        // RATCHET FLOOR on the testable surface (see exclude list above). Set just below
+        // current measured coverage so the pre-push hook blocks REGRESSIONS. 85% is the
+        // documented goal (CLAUDE.md); we are close now. Raise toward 85 as coverage
+        // climbs; never lower them. (Jumped from 54->77 when the coverage denominator was
+        // corrected to exclude vendored + native-shell code the default runner can't cover.)
+        statements: 77,
+        branches: 74,
+        functions: 76,
+        lines: 78,
       },
     },
   },
