@@ -26,6 +26,12 @@ describe('round64', () => {
     expect(round64(1024)).toBe(1024);
     expect(round64(512)).toBe(512);
   });
+
+  it('rejects non-finite input (NaN/Infinity clamp to the 256 floor, never leak NaN)', () => {
+    expect(round64(NaN)).toBe(256);
+    expect(round64(Infinity)).toBe(256);
+    expect(round64(-Infinity)).toBe(256);
+  });
 });
 
 describe('parseSize', () => {
@@ -55,8 +61,19 @@ describe('parseSize', () => {
 });
 
 describe('resolveDims', () => {
-  it('uses explicit numeric width/height as-is (no rounding)', () => {
-    expect(resolveDims({ width: 500, height: 700 })).toEqual({ width: 500, height: 700 });
+  it('rounds explicit numeric width/height to /64 (every branch is rounded)', () => {
+    // 500 -> 512, 700 -> 704 (700/64 = 10.9 -> 11 -> 704)
+    expect(resolveDims({ width: 500, height: 700 })).toEqual({ width: 512, height: 704 });
+  });
+
+  it('clamps out-of-range explicit width/height instead of passing raw values through', () => {
+    // Regression: the explicit width/height branch used to return raw values, so a caller could
+    // slip 10000 / 8 straight into image generation. Now clamped to 256-2048.
+    expect(resolveDims({ width: 10000, height: 8 })).toEqual({ width: 2048, height: 256 });
+  });
+
+  it('rejects NaN explicit width/height (clamps to the 256 floor, never leaks NaN)', () => {
+    expect(resolveDims({ width: NaN, height: NaN })).toEqual({ width: 256, height: 256 });
   });
 
   it('ignores explicit width/height when either is not a number', () => {
@@ -64,8 +81,13 @@ describe('resolveDims', () => {
     expect(resolveDims({ width: 500, height: '700', size: '256x256' })).toEqual({ width: 256, height: 256 });
   });
 
-  it('parses an OpenAI size string when width/height absent', () => {
+  it('parses an OpenAI size string when width/height absent (and rounds it)', () => {
     expect(resolveDims({ size: '768x512' })).toEqual({ width: 768, height: 512 });
+  });
+
+  it('rounds and clamps an out-of-range size string (the size branch is rounded too)', () => {
+    // Regression: the size-string branch used to return raw parsed values. 500 -> 512, 9000 -> 2048.
+    expect(resolveDims({ size: '500x9000' })).toEqual({ width: 512, height: 2048 });
   });
 
   it('derives square dims from a 1:1 aspect ratio at the default 1K resolution', () => {
@@ -100,10 +122,11 @@ describe('resolveDims', () => {
     expect(resolveDims({ size: 'nope', aspect_ratio: 'nope' })).toEqual({});
   });
 
-  it('prefers explicit dims over size over aspect_ratio', () => {
+  it('prefers explicit dims over size over aspect_ratio (still rounded/clamped)', () => {
+    // Explicit wins; 100 -> 256 (floor), 200 -> round64(200)=192 -> 256 (floor).
     expect(resolveDims({ width: 100, height: 200, size: '512x512', aspect_ratio: '1:1' })).toEqual({
-      width: 100,
-      height: 200,
+      width: 256,
+      height: 256,
     });
     expect(resolveDims({ size: '512x512', aspect_ratio: '1:1' })).toEqual({ width: 512, height: 512 });
   });

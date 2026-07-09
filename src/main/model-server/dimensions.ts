@@ -2,8 +2,11 @@
 // Extracted from model-server.ts so the branch logic (OpenAI size, OpenRouter
 // aspect_ratio + resolution, explicit width/height) is unit-testable.
 
-// Round to a multiple of 64 (diffusion models require it), clamped sane.
+// Round to a multiple of 64 (diffusion models require it), clamped sane. A non-finite input
+// (NaN/Infinity - e.g. a bad size string or a 0-denominator aspect ratio) clamps to the 256 floor
+// rather than leaking NaN downstream into image generation.
 export function round64(n: number): number {
+  if (!Number.isFinite(n)) return 256;
   return Math.max(256, Math.min(2048, Math.round(n / 64) * 64));
 }
 
@@ -16,7 +19,9 @@ export function parseSize(size: unknown): { width?: number; height?: number } {
 }
 
 // Resolve output dimensions from any of: explicit width/height, an OpenAI
-// "WIDTHxHEIGHT" size, or an OpenRouter aspect_ratio + resolution pair.
+// "WIDTHxHEIGHT" size, or an OpenRouter aspect_ratio + resolution pair. EVERY branch runs its
+// result through round64 (round to /64, clamp 256-2048, reject NaN) so no path can leak an
+// out-of-range or non-numeric dimension into image generation.
 export function resolveDims(p: {
   width?: unknown;
   height?: unknown;
@@ -24,9 +29,11 @@ export function resolveDims(p: {
   aspect_ratio?: unknown;
   resolution?: unknown;
 }): { width?: number; height?: number } {
-  if (typeof p.width === 'number' && typeof p.height === 'number') return { width: p.width, height: p.height };
+  if (typeof p.width === 'number' && typeof p.height === 'number') {
+    return { width: round64(p.width), height: round64(p.height) };
+  }
   const fromSize = parseSize(p.size);
-  if (fromSize.width && fromSize.height) return fromSize;
+  if (fromSize.width && fromSize.height) return { width: round64(fromSize.width), height: round64(fromSize.height) };
   if (typeof p.aspect_ratio === 'string') {
     const m = /^(\d+)\s*[:x×]\s*(\d+)$/.exec(p.aspect_ratio.trim());
     if (m) {
