@@ -816,7 +816,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         activeStreamId = toolStreamId;
         streamConvRef.current.set(toolStreamId, convId!);
         setConvMessages(convId, prev => [...prev, { id: toolStreamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
-        const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn, conversationId: convId, images: imagePaths, streamId: toolStreamId, thinking: thinkingEnabled });
+        const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn, conversationId: convId, images: imagePaths, imageAvailable, streamId: toolStreamId, thinking: thinkingEnabled });
         const toolCalls = (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result }));
         const context = tr?.unified?.length ? { unified: tr.unified } : undefined;
         // Persist the citation sources + tool calls so they survive a reload.
@@ -835,6 +835,20 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         // Finalize the streamed placeholder in place (never append a second bubble).
         setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, content: answer, context, toolCalls, activity: undefined, streaming: false } : m)));
         if (voiceMode) setAutoPlayId(toolStreamId);
+        // Deferred image generation: the tool loop only RECORDS the prompt (it never
+        // generates inline, which would evict the LLM). Generate + attach here AFTER
+        // the text turn - same path as the ```image fence block below.
+        if (tr?.imageRequest?.prompt && window.api.generateImage && !cancelledRef.current.has(convId)) {
+          try {
+            const img = await window.api.generateImage({ prompt: tr.imageRequest.prompt, conversationId: convId, projectId: activeProjectId });
+            setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, image: img.dataUrl, imagePath: img.path } : m)));
+            try { await window.api.addRagMessage(convId, 'assistant', answer, { ...(toolCtx ?? {}), image: img.path }); } catch (_) { /* ignore */ }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (!/cancel/i.test(msg)) { try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtx); } catch (_) { /* ignore */ } }
+          }
+          return;
+        }
         try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtx); } catch (_) { /* ignore */ }
         return;
       }

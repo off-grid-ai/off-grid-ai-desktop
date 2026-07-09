@@ -1571,7 +1571,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       const { setToolEnabled } = await import('./tools');
       setToolEnabled(name, enabled);
   });
-  ipcMain.handle('tools:chat', async (event, query: string, history?: { role: string; content: string }[], opts?: { connectors?: boolean; conversationId?: string; images?: string[]; streamId?: string; thinking?: boolean }) => {
+  ipcMain.handle('tools:chat', async (event, query: string, history?: { role: string; content: string }[], opts?: { connectors?: boolean; conversationId?: string; images?: string[]; imageAvailable?: boolean; streamId?: string; thinking?: boolean }) => {
       const { toolChat } = await import('./tools');
       const { modalityQueue } = await import('./modality-queue/queue');
       const streamId = opts?.streamId;

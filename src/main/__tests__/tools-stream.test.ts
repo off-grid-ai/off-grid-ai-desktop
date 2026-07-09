@@ -107,6 +107,59 @@ describe('toolChat streaming loop (C7)', () => {
     expect(r.answer).toBe('done');
   });
 
+  it('offers the generate_image schema only when an image model is available', async () => {
+    // imageAvailable: true -> the tool is offered.
+    streamChatMock.mockImplementationOnce(async () => ({ content: 'ok', toolCalls: [] }));
+    await toolChat('draw a cat', [], { imageAvailable: true });
+    const withImg = streamChatMock.mock.calls[0][2] as { tools: { function: { name: string } }[] };
+    expect(withImg.tools.map((t) => t.function.name)).toContain('generate_image');
+
+    // imageAvailable: false -> it is withheld (intent may misclassify, but no model to run).
+    streamChatMock.mockReset();
+    streamChatMock.mockImplementationOnce(async () => ({ content: 'ok', toolCalls: [] }));
+    await toolChat('draw a cat', [], { imageAvailable: false });
+    const withoutImg = streamChatMock.mock.calls[0][2] as { tools: { function: { name: string } }[] };
+    expect(withoutImg.tools.map((t) => t.function.name)).not.toContain('generate_image');
+  });
+
+  it('records the requested prompt as imageRequest, fires onStep, and still returns the final answer', async () => {
+    // Round 1: the model calls generate_image. Round 2: it wraps up with a text answer,
+    // which proves the placeholder tool result was fed back into context.
+    scriptToolThenAnswer('generate_image', '{"prompt":"a red bicycle on a beach"}', 'Here is your image.');
+    const steps: string[] = [];
+    const r = await toolChat('make a picture of a red bicycle', [], { imageAvailable: true, onStep: (c) => steps.push(c.name) });
+
+    expect(steps).toEqual(['generate_image']);                             // activity surfaced
+    expect(r.imageRequest).toEqual({ prompt: 'a red bicycle on a beach' }); // prompt captured
+    expect(r.toolCalls[0].name).toBe('generate_image');
+    expect(r.toolCalls[0].result).toMatch(/will appear in the chat/i);     // placeholder fed back
+    expect(r.answer).toBe('Here is your image.');                          // loop still finished
+    expect(streamChatMock).toHaveBeenCalledTimes(2);
+
+    // The second model round must include the tool result so the model could wrap up.
+    const round2 = streamChatMock.mock.calls[1][0] as { role: string }[];
+    expect(round2.some((m) => m.role === 'tool')).toBe(true);
+  });
+
+  it('last generate_image call wins when the model requests more than one', async () => {
+    streamChatMock.mockImplementationOnce(async () => ({
+      content: '', toolCalls: [
+        { id: 'c1', name: 'generate_image', arguments: '{"prompt":"first"}' },
+        { id: 'c2', name: 'generate_image', arguments: '{"prompt":"second"}' },
+      ],
+    }));
+    streamChatMock.mockImplementationOnce(async () => ({ content: 'done', toolCalls: [] }));
+    const r = await toolChat('two pictures', [], { imageAvailable: true });
+    expect(r.imageRequest).toEqual({ prompt: 'second' });
+  });
+
+  it('does not record an imageRequest when the prompt is empty', async () => {
+    scriptToolThenAnswer('generate_image', '{"prompt":"   "}', 'I could not tell what to draw.');
+    const r = await toolChat('draw', [], { imageAvailable: true });
+    expect(r.imageRequest).toBeUndefined();
+    expect(r.toolCalls[0].result).toMatch(/no image prompt/i);
+  });
+
   it('routes a connector/extension tool through the registered extension (connectors on)', async () => {
     const execute = vi.fn(async () => 'ext-result');
     registerToolExtension({
