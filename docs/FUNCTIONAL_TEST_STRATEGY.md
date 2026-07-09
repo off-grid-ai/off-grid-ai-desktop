@@ -6,6 +6,22 @@ unit tests + build. This doc tracks FUNCTIONAL tests (unit + integration) per pr
 including the native (Swift) code, so "does capture -> OCR -> memory -> chat actually work" has
 an answer that a test enforces. Bring in whatever framework a surface needs.
 
+## Governing rule: test OUR code, not third-party frameworks/engines
+
+We test the code WE own - our decision logic, our wiring, our request/response handling, our
+helpers - and the integration seams between them. We do NOT write tests whose pass/fail is
+really a test of a third-party framework or engine we merely depend on:
+
+- **Exclude vendored / third-party code entirely** (e.g. `**/.build/checkouts/**`,
+  `node_modules`, Apple's `ml-stable-diffusion`, `swift-argument-parser`, `whisper.cpp`,
+  `llama.cpp`, the kokoro onnx runtime). Not our code -> not our tests.
+- **A thin shim over a framework with no logic of our own is not worth a test** (coreml-sd is
+  ~50 lines of `main.swift` around Apple's StableDiffusion - testing it tests Apple's SD).
+- **An engine-backed integration test is allowed only when it exercises OUR wiring** - our
+  gateway routes (`model-server.ts`), our spawn/parse of a helper WE ship, our pipeline - with
+  the engine as a dependency (skip if absent), not as the thing under test. The value is
+  "our integration still works," not "does Vision/whisper/kokoro work."
+
 ## Test types
 - **unit (vitest)** - pure TS logic, no I/O. Fast, always-on. The ratchet floor.
 - **integration (vitest, real collaborators)** - run the real implementation against a temp
@@ -25,8 +41,8 @@ an answer that a test enforces. Bring in whatever framework a surface needs.
 | **Native OCR (Vision, `ocr.swift`)** | integration | vitest spawns the built binary on a rendered fixture | **DONE (`ocr-helper.integration.test.ts`)** |
 | Gateway `/v1` (chat stream, embeddings, image) | smoke | `npm run smoke` vs running app | DONE (manual/pre-release) |
 | STT (whisper-cli / parakeet) + TTS (kokoro) | integration | vitest: TTS->STT round-trip via the gateway; skip if gateway down | **DONE (`audio-engines.integration.test.ts`)** |
-| Image gen (sd-cli / mflux / coreml-sd) | integration | vitest spawns pipeline on a tiny model; heavy - local-gated | TODO (local only) |
-| coreml-sd Swift package | swift unit | add an XCTest target; extract arg/param/size logic | TODO |
+| Image gen (sd-cli / mflux) | integration | vitest: gateway `/v1/images/generations` on the installed model; heavy - local-gated, skip if no image model | TODO (local only) |
+| coreml-sd Swift package | - | **EXCLUDED - not our code.** ~50-line `main.swift` shim over Apple ml-stable-diffusion; testing it tests Apple's SD, not our logic. Covered indirectly by the gateway image-gen integration test when it is the active runtime. |
 | Accessibility watcher (`main.swift`) | integration | needs TCC (accessibility) - local-gated, spawn + assert JSON shape | TODO (local only) |
 | text-extractor / inspect_layout `.swift` | integration | spawn on a fixture; assert output shape | TODO |
 | Capture -> OCR -> memory ingest seam | integration | vitest: feed a fixture frame through the ingest path into a temp DB | TODO |
