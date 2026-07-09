@@ -34,23 +34,22 @@ export function guardConsoleStreams(streams: Array<NodeJS.EventEmitter | undefin
  *  starts the proxy attempt has already resolved, and re-settling here would be a double-settle.
  *  Returns the count guarded (for tests). */
 export function guardProxyStreams(
-  upstream: NodeJS.EventEmitter | undefined,
+  upstream: (NodeJS.EventEmitter & { destroy?: (err?: Error) => void }) | undefined,
   client: (NodeJS.EventEmitter & { destroy?: (err?: Error) => void }) | undefined
 ): number {
   let n = 0;
+  const destroy = (s?: { destroy?: (err?: Error) => void }): void => {
+    try { s?.destroy?.(); } catch { /* already destroyed */ }
+  };
   if (upstream && typeof upstream.on === 'function') {
-    upstream.on('error', () => {
-      // Upstream (llama-server) reset mid-stream: tear down the client response so the socket frees.
-      try {
-        client?.destroy?.();
-      } catch {
-        /* already destroyed */
-      }
-    });
+    // Upstream (llama-server) reset mid-stream: tear down the client response so its socket frees.
+    upstream.on('error', () => destroy(client));
     n++;
   }
   if (client && typeof client.on === 'function') {
-    client.on('error', () => { /* swallow: client disconnected mid-stream; nothing to send */ });
+    // Client disconnected mid-stream: stop reading from llama-server too, else proxyRes.pipe(res)
+    // keeps draining the upstream (wasted local inference + a held socket) after the client is gone.
+    client.on('error', () => destroy(upstream));
     n++;
   }
   return n;

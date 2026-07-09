@@ -49,12 +49,22 @@ describe('guardProxyStreams', () => {
     expect(client.destroy).toHaveBeenCalledTimes(1);
   });
 
-  it('makes a client disconnect non-fatal', () => {
-    const client = Object.assign(new EventEmitter(), { destroy: vi.fn() });
+  it('makes a client disconnect non-fatal AND tears down the upstream (stops reading llama-server)', () => {
+    const upstream = Object.assign(new EventEmitter(), { destroy: vi.fn() });
+    const client = new EventEmitter();
+    const guarded = guardProxyStreams(upstream, client);
+    expect(guarded).toBe(2);
+    // A client disconnect must not throw...
+    expect(() => client.emit('error', new Error('EPIPE'))).not.toThrow();
+    // ...and must destroy the upstream, else proxyRes.pipe(res) keeps draining llama-server
+    // after the client is gone (wasted local inference + a held socket).
+    expect(upstream.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a client disconnect with no upstream is still non-fatal', () => {
+    const client = new EventEmitter();
     guardProxyStreams(undefined, client);
     expect(() => client.emit('error', new Error('EPIPE'))).not.toThrow();
-    // A client-side error does not trigger a self-destroy (nothing to tear down on that path).
-    expect(client.destroy).not.toHaveBeenCalled();
   });
 
   it('tolerates a client with no destroy method (does not throw when tearing down)', () => {
