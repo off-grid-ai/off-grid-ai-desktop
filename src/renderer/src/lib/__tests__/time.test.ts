@@ -97,11 +97,19 @@ describe('timeAgo — input types', () => {
     expect(timeAgo(twoHoursAgoUtc)).toBe('2h ago');
   });
 
-  it('a string WITH its own "Z" would be mis-parsed — the raw contract expects no suffix', () => {
+  it('an already-zoned ISO string (from toISOString) parses correctly - no double "Z"', () => {
     freeze();
-    // Appending a second 'Z' produces an invalid date; guard documents the contract
-    // so a caller can't silently start passing already-zoned strings.
-    const doubled = new Date(NOW - 2 * HOUR).toISOString(); // ends in 'Z'
-    expect(Number.isNaN(new Date(doubled + 'Z').getTime())).toBe(true);
+    // ProjectsScreen passes new Date(a.created).toISOString(), which ends in 'Z'. toDate
+    // must NOT append a second 'Z' (that yields "Invalid Date"). Regression guard for the
+    // artifact-timestamp bug.
+    const zoned = new Date(NOW - 2 * HOUR).toISOString(); // ends in 'Z'
+    expect(timeAgo(zoned)).toBe('2h ago');
+  });
+
+  it('a string with a +/-HH:MM offset is respected, not double-zoned', () => {
+    freeze();
+    // 2h before NOW expressed with an explicit +00:00 offset must parse as-is.
+    const offset = new Date(NOW - 2 * HOUR).toISOString().replace('Z', '+00:00');
+    expect(timeAgo(offset)).toBe('2h ago');
   });
 });

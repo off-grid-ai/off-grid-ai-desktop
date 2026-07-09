@@ -29,8 +29,12 @@ describe('transcription module load-cycle guard', () => {
     expect(src).not.toMatch(/from ['"]\.\/select['"]/);
   });
 
-  it('select still re-exports the classifiers so existing importers keep working', () => {
-    // Importing select must not throw (this is the module whose `const ALL` crashed).
-    expect(async () => await import('../select')).not.toThrow();
+  it('select still re-exports the classifiers so existing importers keep working', async () => {
+    // Importing select must RESOLVE (this is the module whose `const ALL` crashed on
+    // load). A sync `expect(fn).not.toThrow()` can't catch a rejected dynamic import, so
+    // assert the promise resolves and the re-exports are present.
+    const mod = await import('../select');
+    expect(typeof mod.catalogEngine).toBe('function');
+    expect(typeof mod.modelsByEngine).toBe('function');
   });
 });

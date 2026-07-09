@@ -2,11 +2,14 @@
 // format shared by MemoryChat and ProjectsScreen. Pure + UI-free so it's unit-testable.
 //
 // String inputs are DB timestamps stored as UTC WITHOUT a zone suffix, so a bare 'Z'
-// is appended before parsing (matching the original per-component versions). Number
+// is appended before parsing (matching the original per-component versions). But a
+// string that ALREADY carries a zone (a trailing 'Z' or a +/-HH:MM offset, e.g. from
+// toISOString()) must NOT get a second 'Z' - that yields an invalid date. Number
 // (epoch ms) and Date inputs are used as-is.
+const HAS_TZ = /[zZ]$|[+-]\d{2}:?\d{2}$/;
 
 function toDate(input: string | number | Date): Date {
-  if (typeof input === 'string') return new Date(input + 'Z');
+  if (typeof input === 'string') return new Date(HAS_TZ.test(input) ? input : input + 'Z');
   return new Date(input);
 }
 
