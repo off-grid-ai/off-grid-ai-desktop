@@ -8,7 +8,9 @@
 # Kept OUT of the default `npm test` (those files are *.dbtest.ts, not *.test.ts) precisely
 # because of this ABI swap. Run it explicitly: `npm run test:db`. A CI job that runs it must
 # do so in an isolated step (the rebuild mutates node_modules).
-set -uo pipefail
+# -e: abort on any failure (e.g. `npm rebuild` failing) so we never run the tests against a stale
+# ABI. The EXIT trap below still fires on abort, so Electron's build is restored either way.
+set -euo pipefail
 
 restore() {
   echo "[test:db] restoring the Electron ABI build of better-sqlite3-multiple-ciphers..."

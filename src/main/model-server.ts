@@ -37,6 +37,7 @@ import { llm, type LlmSettings } from './llm';
 import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports';
 import { retryWithDeadline } from './lib/retry';
 import { resolveDims } from './model-server/dimensions';
+import { guardProxyStreams } from './stream-guards';
 import { classifyRef, decodeDataUrl, stripFileScheme, mimeFromExt, extForMime, toDataUrl } from './model-server/data-url';
 import { errBody, errMeta } from './model-server/errors';
 import { isAsync, matchPollRoute } from './model-server/async-request';
@@ -178,6 +179,11 @@ function proxyToLlama(
         { hostname: UPSTREAM_HOST, port: UPSTREAM_PORT, path: req.url, method: req.method, headers },
         (proxyRes) => {
           res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+          // Guard both ends BEFORE piping: a mid-stream reset from llama-server (or a client
+          // disconnect) emits 'error' on these streams, and with no listener that becomes an
+          // uncaught exception that crashes the main process. Does not re-settle this promise —
+          // it has already resolved once piping begins.
+          guardProxyStreams(proxyRes, res);
           proxyRes.pipe(res);
           resolve();
         }
