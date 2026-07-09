@@ -268,3 +268,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
         run: gh release edit "v$VERSION" --notes-file release-notes.md
+
+      # Announce every published release in Slack: the GitHub release link + the notes
+      # generated above. Fail-soft (scripts/notify-slack-release.mjs always exits 0), so a
+      # Slack outage never fails a release. Needs org/repo secret SLACK_WEBHOOK_URL (an
+      # Incoming Webhook, channel-bound). No secret => the step is a logged no-op.
+      - name: Announce release in Slack
+        if: success()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          PRODUCT: Off Grid AI Desktop
+          VERSION: ${{ needs.version.outputs.version }}
+          CHANNEL_LABEL: ${{ needs.version.outputs.channel }}
+          NOTES_FILE: release-notes.md
+          RELEASE_URL: https://github.com/off-grid-ai/off-grid-ai-desktop/releases/tag/v${{ needs.version.outputs.version }}
+        run: node scripts/notify-slack-release.mjs
