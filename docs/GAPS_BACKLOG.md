@@ -5,11 +5,46 @@ how to reproduce, and the fix direction. Close with evidence; never hide.
 
 ---
 
+## RESOLVED
+
+### Agentic `generate_image` tool errored (stale keep-alive socket in the tool loop) — FIXED
+
+**Status:** RESOLVED. Root cause was NOT eviction (the original hypothesis below was wrong)
+— it was a reused HTTP keep-alive socket. Fixed + regression-guarded.
+
+**Actual root cause (verified with in-process DIAG instrumentation):** the tool loop makes
+BACK-TO-BACK requests to llama-server. `llm.pause()`/`stop()` were never called (DIAG confirmed
+the engine stayed alive: `serverAlive=true, initialized=true` at the error). Round 0 (the
+`generate_image` call) succeeded; round 1's `streamChat` died with `read ECONNRESET`. Node's
+global HTTP agent pooled the round-0 socket; llama-server closes its socket after each response,
+so the pooled socket was half-closed and round 1's write reset. Single-shot chat never reused a
+socket, which is exactly why only the multi-round tool path broke.
+
+**Fix:** `src/main/llm.ts` — every `http.request` to the model now sets `agent: false` +
+`Connection: close` (a fresh connection per request, no keep-alive pool). Applied to all three
+request sites (both streaming methods + the non-streaming one).
+
+**Verified:** in-process repro against the real `window.api.toolChat` now returns
+`{ ok: true, toolCalls: ["generate_image"], imageRequest: { prompt: "a solid red circle on a
+white background" } }` with no ECONNRESET — warm and cold.
+
+**Regression guard:** `src/main/__tests__/llm-http-no-keepalive.test.ts` reads llm.ts and asserts
+every `http.request` site opts out of the pool (`agent: false` + `Connection: close`). Fails on
+`main` (0 of 3), passes after. (llm.ts can't be imported in a unit test — it pulls in electron —
+so the contract is guarded at the source, per the extract-prompt.test.ts pattern.)
+
+**Note on the earlier hypothesis (kept for honesty):** the first diagnosis blamed the modality
+queue evicting `llm` mid-loop (`imagegen.ts:389` `evicts:['llm']`). DIAG disproved it — pause was
+never called. The eviction machinery is fine; the bug was purely the socket pool.
+
+---
+
 ## OPEN
 
-### Agentic `generate_image` tool errors (llama-server evicted mid-tool-loop)
+### (historical hypothesis — see RESOLVED above) Agentic `generate_image` tool errors
 
-**Status:** open — real bug, reproduced deterministically.
+**Status:** superseded by the RESOLVED entry above (root cause was the keep-alive socket, not
+eviction). Kept below only as the investigation trail.
 
 **What:** The "image generation as an agentic tool" feature (the LLM calling `generate_image`
 in `toolChat`, meant to be the backstop when the intent classifier misses an image request)

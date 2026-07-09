@@ -517,9 +517,11 @@ export class LLMService {
         port: this.port,
         path: '/v1/chat/completions',
         method: 'POST',
+        agent: false, // fresh connection, no keep-alive pool (see streamChat — avoids stale-socket ECONNRESET)
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(body),
+          'Connection': 'close',
         },
       }, (res) => {
         let data = '';
@@ -650,7 +652,13 @@ export class LLMService {
         port: this.port,
         path: '/v1/chat/completions',
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        // A FRESH connection per request (no keep-alive pooling). The agentic tool loop
+        // makes back-to-back requests; llama-server closes its socket after each response,
+        // so a pooled/reused socket on the next round is already half-closed and the write
+        // fails with ECONNRESET. This is why single-shot chat worked but the multi-round
+        // tool loop always died. `agent: false` opts out of the global keep-alive pool.
+        agent: false,
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'Connection': 'close' },
       }, (res) => {
         if (res.statusCode !== 200) { clearTimeout(timer); reject(new Error(`LLM Server Error: ${res.statusCode}`)); res.resume(); return; }
         res.setEncoding('utf8');
@@ -725,7 +733,13 @@ export class LLMService {
         port: this.port,
         path: '/v1/chat/completions',
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        // A FRESH connection per request (no keep-alive pooling). The agentic tool loop
+        // makes back-to-back requests; llama-server closes its socket after each response,
+        // so a pooled/reused socket on the next round is already half-closed and the write
+        // fails with ECONNRESET. This is why single-shot chat worked but the multi-round
+        // tool loop always died. `agent: false` opts out of the global keep-alive pool.
+        agent: false,
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'Connection': 'close' },
       }, (res) => {
         if (res.statusCode !== 200) { clearTimeout(timer); reject(new Error(`LLM Server Error: ${res.statusCode}`)); res.resume(); return; }
         res.setEncoding('utf8');
