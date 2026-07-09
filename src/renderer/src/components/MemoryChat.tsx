@@ -1585,6 +1585,45 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                         </CollapsibleContent>
                       </Collapsible>
                     ) : null}
+                    {/* Live thinking + tool activity, ABOVE the answer bubble: reasoning
+                        first (Thinking…), then the current tool-call step (Running <tool>…). */}
+                    {message.role === 'assistant' && message.streaming ? (
+                      <div className="mb-1.5 flex flex-col gap-1.5">
+                        <span className="inline-flex gap-1 text-green-500">
+                          <span className="animate-bounce [animation-delay:-0.3s]">●</span>
+                          <span className="animate-bounce [animation-delay:-0.15s]">●</span>
+                          <span className="animate-bounce">●</span>
+                        </span>
+                        {message.reasoning && message.reasoning.trim() ? (
+                          <Collapsible defaultOpen className="max-w-[85%]">
+                            <CollapsibleTrigger className="group flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-neutral-300">
+                              <span>Thinking…</span>
+                              <svg className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="mt-1 whitespace-pre-wrap border-l-2 border-neutral-800 pl-3 text-xs leading-relaxed text-neutral-500">
+                              {message.reasoning}
+                            </CollapsibleContent>
+                          </Collapsible>
+                        ) : null}
+                        {activityLabel(message.activity) ? (
+                          <span className="text-[11px] text-neutral-500">{activityLabel(message.activity)}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {/* Tool calls as their own entry, between thinking and the answer bubble.
+                        search_memory is shown as interactive Source cards below, so skip its chip. */}
+                    {(() => {
+                      const chips = (message.toolCalls || []).filter((tc) => tc.name !== 'search_memory');
+                      return chips.length > 0 ? (
+                        <div className="mb-1.5 flex max-w-[85%] flex-wrap gap-1">
+                          {chips.map((tc, i) => (
+                            <span key={i} className="rounded-sm border border-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500" title={tc.result}>
+                              {tc.name} → {tc.result.length > 32 ? tc.result.slice(0, 32) + '…' : tc.result}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
                     <div
                       className={
                         message.role === 'assistant' && message.streaming && !message.content.trim()
@@ -1712,45 +1751,6 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                         />
                       ) : null}
                     </div>
-
-                    {message.role === 'assistant' && message.streaming ? (
-                      <div className="mt-1.5 flex flex-col gap-1.5">
-                        <span className="inline-flex gap-1 text-green-500">
-                          <span className="animate-bounce [animation-delay:-0.3s]">●</span>
-                          <span className="animate-bounce [animation-delay:-0.15s]">●</span>
-                          <span className="animate-bounce">●</span>
-                        </span>
-                        {activityLabel(message.activity) ? (
-                          <span className="text-[11px] text-neutral-500">{activityLabel(message.activity)}</span>
-                        ) : null}
-                        {message.reasoning && message.reasoning.trim() ? (
-                          <Collapsible defaultOpen className="max-w-[85%]">
-                            <CollapsibleTrigger className="group flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-neutral-300">
-                              <span>Thinking…</span>
-                              <svg className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent className="mt-1 whitespace-pre-wrap border-l-2 border-neutral-800 pl-3 text-xs leading-relaxed text-neutral-500">
-                              {message.reasoning}
-                            </CollapsibleContent>
-                          </Collapsible>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {(() => {
-                      // search_memory's output is already shown as interactive Source
-                      // cards below, so hide its raw (unclickable, redundant) chip.
-                      const chips = (message.toolCalls || []).filter((tc) => tc.name !== 'search_memory');
-                      return chips.length > 0 ? (
-                        <div className="mt-1.5 flex max-w-[85%] flex-wrap gap-1">
-                          {chips.map((tc, i) => (
-                            <span key={i} className="rounded-sm border border-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500" title={tc.result}>
-                              {tc.name} → {tc.result.length > 32 ? tc.result.slice(0, 32) + '…' : tc.result}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null;
-                    })()}
 
                     {message.role === 'user' ? (
                       <div className="mt-1.5 flex items-center gap-3">
