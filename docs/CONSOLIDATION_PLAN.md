@@ -25,6 +25,9 @@ NOT DONE (deferred, deliberate):
   - D1    extractJson dedup (10+ pro sites) - assigned agent hit a session limit, NOT done.
   - D4    pro/crm helper trio (today/hasColumn/notify) - same agent, NOT done.
   - F3, A2-A5, B1-B3, C1-C6, D2-D8 - Rounds 1-3, not started.
+  - C7 (toolChat/ragChat forked pipeline) - the fork that STARTED this effort; the original
+    audit missed it (it is a behavioral change, not mechanical dedup). Highest-value remaining
+    forked-pipeline. NOT done - needs its own PR. See C7 below.
 -->
 
 
@@ -182,6 +185,14 @@ Merges four findings into one config module:
 - **Pattern:** copy-pasted-helper + branch-on-concrete-type · **Severity:** high
 - **Locations:** `App.tsx:440-452`, `MemoryChat.tsx:432-438`, `MemoryChat.tsx:1859-1864`.
 - **Fix:** `useSearchHitHandler({onEntity,onMemory,onMeeting,onReplay})` in renderer nav utils; call from all three. **Drift risk:** one site adds screen-replay, another doesn't. Prerequisite helper for C3.
+
+### C7 — `toolChat` is a SECOND generation pipeline forked from `ragChat`/`streamAnswer` (MISSED BY THE ORIGINAL AUDIT)
+- **Pattern:** forked-pipeline · **Principle:** SRP/DRY · **Severity:** high · **Status:** NOT done (deferred - behavioral change)
+- **This is the fork that started the whole effort** (the "chat doesn't stream / no thinking bubble" bug). The audit scanned for behavior-preserving mechanical dedup and bucketed this as a "product fix," so it never became a plan item - a real gap. Recording it here as the canonical forked-pipeline.
+- **Locations:** `src/main/tools.ts` `toolChat()` runs its OWN blocking `fetch` loop to `/v1/chat/completions` (its own port const, `max_tokens:1024`, `temperature:0.3`, no streaming, no thinking) - parallel to `ipc.ts` `streamAnswer()` -> `llm.chatStream()` (streams tokens + reasoning over `rag:stream`, honors `thinking`, abortable). Renderer forks at `MemoryChat.tsx:811`: `if (toolsOn || connectorsOn) -> window.api.toolChat(...)` (blocking) else the streaming path.
+- **Symptom (live):** with Tools/Connectors ON, a turn does not stream, shows no thinking bubble, and can't be aborted by the stop button - because it never touches the streaming path.
+- **Fix (BEHAVIORAL - not verbatim):** give `llm.chatStream` an optional toolset (schemas + executor) and run the agentic tool loop INSIDE it, streaming every round through the same `onDelta`/`rag:stream`. `tools.ts` keeps only tool definitions + dispatch (SRP); `ragChat` routes the tools case through `streamAnswer` like every other flow; delete the renderer's separate `toolChat` branch + the `tools:chat` IPC. Note `pro/main/crm/skills-engine.ts` also calls `toolChat` - keep a thin non-streaming wrapper for it, or migrate it too.
+- **Why deferred from this PR:** every other consolidation item is behavior-preserving; this one changes what the tool path DOES (starts streaming + thinking), so it needs its own PR + on-device verification. It is the highest-value remaining forked-pipeline.
 
 ---
 
