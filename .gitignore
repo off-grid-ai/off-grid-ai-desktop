@@ -56,3 +56,4 @@ scripts/dictation-hotkey/dictation-hotkey
 
 # Test coverage output
 coverage/
+swift-tests/**/.build/
