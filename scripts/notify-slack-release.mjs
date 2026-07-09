@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+// Announce a published release to Slack. Called as the LAST step of each release workflow
+// (desktop + mobile android/ios) so a message lands in the release channel on every release.
+//
+// Single responsibility: read the already-generated release notes + a few env facts and post
+// one chat.postMessage. It NEVER fails the release — a missing token, an unreachable Slack, or a
+// non-ok response logs a warning and exits 0. The posting logic lives here once; each workflow
+// just sets env and runs it.
+//
+// Env:
+//   SLACK_BOT_TOKEN  (required — absent => no-op, exit 0)   bot needs chat:write + be in the channel
+//   SLACK_CHANNEL    (default C0AFARY80HJ)
+//   PRODUCT          e.g. "Off Grid AI Desktop"
+//   VERSION          e.g. "0.0.39-beta.63"
+//   CHANNEL_LABEL    "beta" | "stable" (optional, shown as a tag)
+//   NOTES_FILE       (default release-notes.md)
+//   RELEASE_URL      (optional; default derived from GITHUB_SERVER_URL/GITHUB_REPOSITORY + tag)
+import { readFileSync } from 'node:fs';
+
+const warn = (m) => console.warn(`[slack-release] ${m}`);
+
+const token = process.env.SLACK_BOT_TOKEN;
+if (!token) { warn('SLACK_BOT_TOKEN not set — skipping announcement (no-op).'); process.exit(0); }
+
+const channel = process.env.SLACK_CHANNEL || 'C0AFARY80HJ';
+const product = process.env.PRODUCT || 'Off Grid AI';
+const version = process.env.VERSION || '';
+const label = (process.env.CHANNEL_LABEL || '').trim();
+const notesFile = process.env.NOTES_FILE || 'release-notes.md';
+
+const server = process.env.GITHUB_SERVER_URL || 'https://github.com';
+const repo = process.env.GITHUB_REPOSITORY || '';
+const releaseUrl = process.env.RELEASE_URL || (repo && version ? `${server}/${repo}/releases/tag/v${version}` : '');
+
+let notes = '';
+try { notes = readFileSync(notesFile, 'utf8').trim(); } catch { /* notes optional */ }
+// Slack section text caps at 3000 chars; keep well under and never dump a wall.
+if (notes.length > 2600) { notes = `${notes.slice(0, 2600)}\n…`; }
+
+const tag = label ? `  \`${label}\`` : '';
+const header = `:package:  *${product}*  \`${version || 'release'}\`${tag}`;
+const linkLine = releaseUrl ? `<${releaseUrl}|Download / release page>` : '';
+const body = notes || '_No release notes generated for this build._';
+
+const blocks = [
+  { type: 'section', text: { type: 'mrkdwn', text: header } },
+  { type: 'section', text: { type: 'mrkdwn', text: body } },
+];
+if (linkLine) { blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: linkLine }] }); }
+
+try {
+  const res = await fetch('https://slack.com/api/chat.postMessage', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=utf-8', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ channel, text: `${product} ${version} released`, blocks, unfurl_links: false }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || !j.ok) { warn(`chat.postMessage not ok: HTTP ${res.status} ${j.error || ''}`); process.exit(0); }
+  console.log(`[slack-release] announced ${product} ${version} to ${channel} (ts=${j.ts})`);
+} catch (e) {
+  warn(`post failed: ${e?.message || e}`);
+}
+process.exit(0);
