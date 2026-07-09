@@ -271,13 +271,12 @@ jobs:
 
       # Announce every published release in Slack: the GitHub release link + the notes
       # generated above. Fail-soft (scripts/notify-slack-release.mjs always exits 0), so a
-      # Slack outage never fails a release. Needs org/repo secret SLACK_BOT_TOKEN (a bot with
-      # chat:write, invited to the channel). No token => the step is a logged no-op.
+      # Slack outage never fails a release. Needs org/repo secret SLACK_WEBHOOK_URL (an
+      # Incoming Webhook, channel-bound). No secret => the step is a logged no-op.
       - name: Announce release in Slack
         if: success()
         env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_CHANNEL: C0AFARY80HJ
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           PRODUCT: Off Grid AI Desktop
           VERSION: ${{ needs.version.outputs.version }}
           CHANNEL_LABEL: ${{ needs.version.outputs.channel }}
