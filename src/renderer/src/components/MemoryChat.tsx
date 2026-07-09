@@ -2442,7 +2442,8 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                       </Tooltip>
                     )}
                     {loading && (mode === 'image' || generatingImage) ? (
-                      <Button type="button" variant="outline" onClick={() => stopGeneration(activeConversationId)} className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10">
+                      <Button type="button" variant="outline" onClick={() => { stopGeneration(activeConversationId); window.api.cancelImageGen?.(); }} className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10">
+
                         <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
                         Stop
                       </Button>
