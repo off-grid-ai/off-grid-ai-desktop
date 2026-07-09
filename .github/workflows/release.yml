@@ -259,11 +259,12 @@ jobs:
             gh release create nightly --prerelease --title "Nightly (rolling)" \
               --notes "Rolling nightly build, auto-updated on every change. Pre-release — expect rough edges. Stable: https://github.com/off-grid-ai/off-grid-ai-desktop/releases/latest"
           gh release upload nightly dist/OffGrid-nightly.dmg --clobber
-      # electron-builder creates the GitHub release with empty notes; attach the
-      # notes generated above (mobile sets them at create time via --notes-file; the
-      # desktop release is created by electron-builder, so we set them after).
+      # electron-builder creates the GitHub release with empty notes; attach the notes
+      # generated above. Runs for BOTH channels (beta + stable) — the notes file and the
+      # v$VERSION tag exist for beta too, so beta/nightly releases get their changelog on
+      # the release page, not just stable.
       - name: Attach release notes
-        if: needs.version.outputs.channel == 'stable'
+        if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
