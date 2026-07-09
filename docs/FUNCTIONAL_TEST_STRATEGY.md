@@ -24,8 +24,7 @@ an answer that a test enforces. Bring in whatever framework a surface needs.
 | Streaming tool loop (C7) | integration-ish | vitest, faked model boundary | DONE (`tools-stream.test.ts`) |
 | **Native OCR (Vision, `ocr.swift`)** | integration | vitest spawns the built binary on a rendered fixture | **DONE (`ocr-helper.integration.test.ts`)** |
 | Gateway `/v1` (chat stream, embeddings, image) | smoke | `npm run smoke` vs running app | DONE (manual/pre-release) |
-| STT (whisper-cli / parakeet) | integration | vitest: TTS-synth a WAV -> transcribe -> assert text; skip if model absent | TODO |
-| TTS (kokoro) | integration | vitest: synth text -> assert non-empty WAV/PCM; skip if model absent | TODO |
+| STT (whisper-cli / parakeet) + TTS (kokoro) | integration | vitest: TTS->STT round-trip via the gateway; skip if gateway down | **DONE (`audio-engines.integration.test.ts`)** |
 | Image gen (sd-cli / mflux / coreml-sd) | integration | vitest spawns pipeline on a tiny model; heavy - local-gated | TODO (local only) |
 | coreml-sd Swift package | swift unit | add an XCTest target; extract arg/param/size logic | TODO |
 | Accessibility watcher (`main.swift`) | integration | needs TCC (accessibility) - local-gated, spawn + assert JSON shape | TODO (local only) |
