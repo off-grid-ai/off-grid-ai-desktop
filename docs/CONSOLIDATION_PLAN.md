@@ -194,6 +194,31 @@ Merges four findings into one config module:
 - **Fix (BEHAVIORAL - not verbatim):** give `llm.chatStream` an optional toolset (schemas + executor) and run the agentic tool loop INSIDE it, streaming every round through the same `onDelta`/`rag:stream`. `tools.ts` keeps only tool definitions + dispatch (SRP); `ragChat` routes the tools case through `streamAnswer` like every other flow; delete the renderer's separate `toolChat` branch + the `tools:chat` IPC. Note `pro/main/crm/skills-engine.ts` also calls `toolChat` - keep a thin non-streaming wrapper for it, or migrate it too.
 - **Why deferred from this PR:** every other consolidation item is behavior-preserving; this one changes what the tool path DOES (starts streaming + thinking), so it needs its own PR + on-device verification. It is the highest-value remaining forked-pipeline.
 
+### C8 — `rag:chat` runs TWO retrieval pipelines on the same query (found by the C7 follow-up sweep)
+- **Pattern:** forked-pipeline · **Principle:** DRY · **Severity:** high · **Status:** NOT done (behavioral)
+- **Locations:** `ipc.ts:771-802` (inline SQL vector search on memories, threshold >=0.2) + `ipc.ts:804-872` (inline FTS on messages/summaries/entities/facts) AND then `ipc.ts:904-905` `universalSearch()` (search.ts - hybrid FTS + LanceDB semantic + RRF fusion + recency boost) on the SAME query.
+- **Drift/risk:** the same memories/entities are retrieved twice with DIFFERENT ranking (BM25/cosine + threshold vs RRF, no threshold). The CONTEXT_BLOCK (from inline SQL) and the SOURCES cards (from universalSearch) can disagree; an item below the SQL 0.2 threshold is dropped from context but shown as a source. Project mode (`ipc.ts:737` `ragService.searchProject`) is yet a third retrieval path that misses the hybrid fusion.
+- **Fix:** make `universalSearch()` the single retrieval engine for all three chat modes; delete the inline SQL block; pass a `sources`/appName filter param. (Overlaps C4 - same handler.)
+
+### C9 — image-generation intent decided in 3 places that can disagree
+- **Pattern:** forked-pipeline + duplicated-decision-rule · **Principle:** DRY/SRP · **Severity:** medium · **Status:** NOT done (behavioral)
+- **Locations:** renderer regex `looksLikeImageRequest` (`src/renderer/src/lib/image-intent.ts`) auto-switches to image mode at `MemoryChat.tsx:746`; main LLM classifier `classifyIntent` (`ipc.ts:254-280`) decides `intent==='image'`; the model itself can emit a ` ```image ` fenced block parsed at `MemoryChat.tsx:863`. The ` ```image ` format is PRODUCED in `ipc.ts:668` and PARSED by a separate regex in the renderer (not via `parseArtifact`).
+- **Drift/risk:** renderer regex and main LLM can disagree on "is this an image request" (e.g. "make a dashboard" - regex no, LLM maybe); the fenced-block format has no single producer/parser definition.
+- **Fix:** one intent decision (renderer asks main via an intent IPC, or shares one rule module); define the ` ```image ` fence once and parse it through `parseArtifact`.
+
+### C10 — `maxTokens` default duplicated (same class as P0.3, but MECHANICAL/behavior-preserving)
+- **Pattern:** duplicate-config-or-type · **Principle:** DRY · **Severity:** low · **Status:** NOT done (cheap, safe)
+- **Locations:** `llm.ts` `private maxTokens = 2048` and `SettingsPanel.tsx` DEFAULTS `maxTokens: 2048`. Currently AGREE, but there is no shared constant (unlike ctxSize, which we already moved to `shared/llm-defaults.ts` as `DEFAULT_CTX_SIZE`).
+- **Fix:** add `DEFAULT_MAX_TOKENS = 2048` to `shared/llm-defaults.ts`, import in both. This one IS behavior-preserving - could fold into this PR or a trivial follow-up. (The audit also flagged tool-chat's `max_tokens:1024`/`temperature:0.3` magic numbers - fold those into the shared defaults too.)
+
+### C11 — summarization/entity extraction is 4+ independent LLM calls with independently-set strictness
+- **Pattern:** forked-pipeline · **Principle:** SRP · **Severity:** medium · **Status:** NOT done (behavioral)
+- **Locations:** `ipc.ts:371` (memory-eval, applies `memoryStrictness`), `ipc.ts:515` (session summary), `ipc.ts:426` (entity extraction, applies `entityStrictness`), `ipc.ts:488` (per-entity fact summary), plus `updateMasterMemoryIncremental`. Each is its own prompt + LLM call.
+- **Drift/risk:** memory-eval strictness and entity strictness are set independently and can disagree on what is worth keeping; no dedup across repeated summarizations. Not a correctness bug today, but a coherence/cost fork.
+- **Fix:** consider one `evaluateAndStructure(conversation)` pass returning {memories, summary, entities+facts} with one consistent strictness. Lower priority than C7/C8.
+
+**Dropped from the sweep (not real):** the `isGenerativeRequest` regex is a FALLBACK only when the LLM classifier throws (acceptable degradation, not a parallel path); `DEFAULT_CTX_SIZE` was flagged then confirmed as the CORRECT single-source pattern (already fixed, P0.3).
+
 ---
 
 ## Group D — copy-pasted-helper / forked shared packages
