@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
-import { guardConsoleStreams } from '../stream-guards';
+import { guardConsoleStreams, guardProxyStreams } from '../stream-guards';
 
 // Fails-before / passes-after: a Node EventEmitter throws on emit('error') when there is NO
 // 'error' listener. That is exactly why an EPIPE on stdout crashed the main process. The guard
@@ -26,5 +26,46 @@ describe('guardConsoleStreams', () => {
     expect(guardConsoleStreams([a, undefined, b, {} as never])).toBe(2);
     expect(() => a.emit('error', new Error('x'))).not.toThrow();
     expect(() => b.emit('error', new Error('y'))).not.toThrow();
+  });
+});
+
+// Regression for the proxyToLlama mid-stream crash: proxyRes.pipe(res) wired the pipe but neither
+// stream had an 'error' listener, so an upstream reset (llama-server aborting mid-stream) or a
+// client disconnect turned the unhandled 'error' event into an uncaught exception that took the
+// whole main process down. guardProxyStreams installs listeners on both ends.
+describe('guardProxyStreams', () => {
+  it('makes an upstream reset non-fatal and tears down the client response (would throw without the guard)', () => {
+    const upstream = new EventEmitter();
+    const client = Object.assign(new EventEmitter(), { destroy: vi.fn() });
+    const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+
+    // Sanity: before guarding, an upstream 'error' with no listener throws (the crash we saw).
+    expect(() => upstream.emit('error', reset)).toThrow(/ECONNRESET/);
+
+    // After guarding, the same emit is swallowed and the client response is destroyed to free it.
+    const guarded = guardProxyStreams(upstream, client);
+    expect(guarded).toBe(2);
+    expect(() => upstream.emit('error', reset)).not.toThrow();
+    expect(client.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes a client disconnect non-fatal', () => {
+    const client = Object.assign(new EventEmitter(), { destroy: vi.fn() });
+    guardProxyStreams(undefined, client);
+    expect(() => client.emit('error', new Error('EPIPE'))).not.toThrow();
+    // A client-side error does not trigger a self-destroy (nothing to tear down on that path).
+    expect(client.destroy).not.toHaveBeenCalled();
+  });
+
+  it('tolerates a client with no destroy method (does not throw when tearing down)', () => {
+    const upstream = new EventEmitter();
+    const client = new EventEmitter(); // no destroy()
+    expect(guardProxyStreams(upstream, client)).toBe(2);
+    expect(() => upstream.emit('error', new Error('reset'))).not.toThrow();
+  });
+
+  it('skips undefined streams and counts only the guarded ones', () => {
+    expect(guardProxyStreams(undefined, undefined)).toBe(0);
+    expect(guardProxyStreams(new EventEmitter(), undefined)).toBe(1);
   });
 });

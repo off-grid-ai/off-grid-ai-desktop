@@ -24,3 +24,34 @@ export function guardConsoleStreams(streams: Array<NodeJS.EventEmitter | undefin
   }
   return n;
 }
+
+/** Guard both ends of a proxied stream (upstream response + client response) against a mid-stream
+ *  reset. Piping `proxyRes` into `res` only wires the pipe; neither stream gets an 'error' listener,
+ *  so if llama-server aborts the connection or the client disconnects mid-stream, the unhandled
+ *  'error' event becomes an uncaught exception and crashes the whole main process (an EventEmitter
+ *  throws on 'error' only when there is NO listener). We swallow the error and destroy the client
+ *  response so its socket is released. This does NOT settle any outer promise — by the time piping
+ *  starts the proxy attempt has already resolved, and re-settling here would be a double-settle.
+ *  Returns the count guarded (for tests). */
+export function guardProxyStreams(
+  upstream: NodeJS.EventEmitter | undefined,
+  client: (NodeJS.EventEmitter & { destroy?: (err?: Error) => void }) | undefined
+): number {
+  let n = 0;
+  if (upstream && typeof upstream.on === 'function') {
+    upstream.on('error', () => {
+      // Upstream (llama-server) reset mid-stream: tear down the client response so the socket frees.
+      try {
+        client?.destroy?.();
+      } catch {
+        /* already destroyed */
+      }
+    });
+    n++;
+  }
+  if (client && typeof client.on === 'function') {
+    client.on('error', () => { /* swallow: client disconnected mid-stream; nothing to send */ });
+    n++;
+  }
+  return n;
+}
