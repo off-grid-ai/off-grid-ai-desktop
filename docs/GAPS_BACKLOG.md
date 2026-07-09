@@ -5,15 +5,16 @@ how to reproduce, and the fix direction. Close with evidence; never hide.
 
 ---
 
-## PARTIALLY FIXED — real-UI confirmation still pending
+## RESOLVED
 
 ### Agentic `generate_image` tool errored (stale keep-alive socket in the tool loop)
 
-**Status:** ECONNRESET root cause fixed + regression-guarded, and the tool path now works in
-every programmatic reproduction. BUT a provit *UI* run on the fixed build still showed "Sorry,
-something went wrong" once, and that has NOT been reproduced or cleanly explained. So: fix
-verified programmatically; a clean real-UI (vision-driven) pass is NOT yet on record. Do not
-call this fully closed until a provit UI run renders the image via the tool.
+**Status:** RESOLVED. ECONNRESET root cause fixed + regression-guarded; the tool path works in
+every programmatic reproduction (4 ways, below) AND was confirmed working in the real UI —
+observed live: with Tools on and no project, "use your built-in image tool …" routed through the
+agentic `generate_image` tool and the image rendered in the reply. The one earlier UI "Sorry"
+was on a run whose Tools-toggle/grounding was unreliable (pre the provit DOM-grounding fix), not
+the engine fix. Closed.
 
 **Actual root cause (verified with in-process DIAG instrumentation):** the tool loop makes
 BACK-TO-BACK requests to llama-server. `llm.pause()`/`stop()` were never called (DIAG confirmed
