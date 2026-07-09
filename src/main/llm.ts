@@ -14,6 +14,7 @@ import { DEFAULT_CTX_SIZE } from "../shared/llm-defaults";
 import { MODE_PRESETS, samplingPayload, launchArgsChanged } from "./llm/settings-math";
 import { buildMessages, imageMime, thinkingPayload, type DecodedImage } from "./llm/chat-payload";
 import { parseSseLine, createThinkSplitter, createToolCallAccumulator, type AssembledToolCall } from "./llm/sse-stream";
+import { modelRequestOptions, postCompletionOnce } from "./llm/http-post";
 
 export type { KvCacheType, PerformanceMode };
 
@@ -501,51 +502,11 @@ export class LLMService {
   }
 
   // Use Node http module instead of fetch to avoid undici's headersTimeout (300s)
-  // which kills long-running LLM requests before they can respond
+  // which kills long-running LLM requests before they can respond. Delegates to the
+  // electron-free postCompletionOnce so the fresh-connection contract lives in one place
+  // (see llm/http-post.ts) and is integration-tested against a real socket-closing server.
   private httpPost(body: string, timeoutMs: number): Promise<string> {
-    return new Promise((resolve, reject) => {
-      let timedOut = false;
-
-      const timer = setTimeout(() => {
-        timedOut = true;
-        req.destroy();
-        reject(new Error("LLM request timed out - try a shorter prompt"));
-      }, timeoutMs);
-
-      const req = http.request({
-        hostname: '127.0.0.1',
-        port: this.port,
-        path: '/v1/chat/completions',
-        method: 'POST',
-        agent: false, // fresh connection, no keep-alive pool (see streamChat — avoids stale-socket ECONNRESET)
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body),
-          'Connection': 'close',
-        },
-      }, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          clearTimeout(timer);
-          if (timedOut) return;
-          if (res.statusCode !== 200) {
-            reject(new Error(`LLM Server Error: ${res.statusCode} ${data}`));
-            return;
-          }
-          resolve(data);
-        });
-      });
-
-      req.on('error', (e) => {
-        clearTimeout(timer);
-        if (timedOut) return;
-        reject(e);
-      });
-
-      req.write(body);
-      req.end();
-    });
+    return postCompletionOnce(this.port, body, timeoutMs);
   }
 
   async chat(
@@ -647,19 +608,9 @@ export class LLMService {
       const splitter = createThinkSplitter((ev) => onDelta(ev.text, ev.kind));
       const timer = setTimeout(() => { timedOut = true; req.destroy(); reject(new Error('LLM request timed out')); }, timeoutMs);
 
-      const req = http.request({
-        hostname: '127.0.0.1',
-        port: this.port,
-        path: '/v1/chat/completions',
-        method: 'POST',
-        // A FRESH connection per request (no keep-alive pooling). The agentic tool loop
-        // makes back-to-back requests; llama-server closes its socket after each response,
-        // so a pooled/reused socket on the next round is already half-closed and the write
-        // fails with ECONNRESET. This is why single-shot chat worked but the multi-round
-        // tool loop always died. `agent: false` opts out of the global keep-alive pool.
-        agent: false,
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'Connection': 'close' },
-      }, (res) => {
+      // Fresh connection per request via the shared contract (llm/http-post.ts) — no keep-alive
+      // pool, so the tool loop's back-to-back requests never hit a half-closed socket (ECONNRESET).
+      const req = http.request(modelRequestOptions(this.port, Buffer.byteLength(body)), (res) => {
         if (res.statusCode !== 200) { clearTimeout(timer); reject(new Error(`LLM Server Error: ${res.statusCode}`)); res.resume(); return; }
         res.setEncoding('utf8');
         res.on('data', (chunk: string) => {
@@ -728,19 +679,9 @@ export class LLMService {
       const done = (): { content: string; toolCalls: AssembledToolCall[] } => ({ content: splitter.answer(), toolCalls: tools.list() });
       const timer = setTimeout(() => { timedOut = true; req.destroy(); reject(new Error('LLM request timed out')); }, timeoutMs);
 
-      const req = http.request({
-        hostname: '127.0.0.1',
-        port: this.port,
-        path: '/v1/chat/completions',
-        method: 'POST',
-        // A FRESH connection per request (no keep-alive pooling). The agentic tool loop
-        // makes back-to-back requests; llama-server closes its socket after each response,
-        // so a pooled/reused socket on the next round is already half-closed and the write
-        // fails with ECONNRESET. This is why single-shot chat worked but the multi-round
-        // tool loop always died. `agent: false` opts out of the global keep-alive pool.
-        agent: false,
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'Connection': 'close' },
-      }, (res) => {
+      // Fresh connection per request via the shared contract (llm/http-post.ts) — no keep-alive
+      // pool, so the tool loop's back-to-back requests never hit a half-closed socket (ECONNRESET).
+      const req = http.request(modelRequestOptions(this.port, Buffer.byteLength(body)), (res) => {
         if (res.statusCode !== 200) { clearTimeout(timer); reject(new Error(`LLM Server Error: ${res.statusCode}`)); res.resume(); return; }
         res.setEncoding('utf8');
         res.on('data', (chunk: string) => {
