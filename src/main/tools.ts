@@ -10,9 +10,6 @@ import fs from 'fs';
 import { llm } from './llm';
 import { getSetting, saveSetting } from './database';
 import { buildUserContent } from './tool-content';
-import { LLAMA_SERVER_PORT } from '../shared/ports';
-
-const PORT = LLAMA_SERVER_PORT;
 
 // Per-tool enable/disable, persisted as a list of disabled tool names.
 function disabledSet(): Set<string> {
@@ -249,13 +246,28 @@ export type ToolCall = { name: string; args: Record<string, unknown>; result: st
 // interactive citation cards (thumbnail + open-in-Replay), same as the RAG path.
 export type UnifiedSource = { key: string; kind: string; refId: number; title: string; snippet: string; surface: string; ts: number; imagePath: string | null };
 
-/** Run a chat turn with tool-calling. Returns the final answer + the calls made. */
+/**
+ * Run a chat turn with tool-calling. STREAMS by default (thinking -> tool-call activity
+ * -> answer) through the callbacks: `onDelta` gets reasoning/content deltas, `onStep`
+ * fires as each tool is about to run so the UI can show "Running web_search...". Omit the
+ * callbacks (e.g. the pro skills-engine caller) and it just buffers - the final answer is
+ * always the return value either way. Returns the final answer + the calls made.
+ */
 export async function toolChat(
   query: string,
   history: { role: string; content: string }[] = [],
-  opts: { connectors?: boolean; conversationId?: string; images?: string[] } = {},
+  opts: {
+    connectors?: boolean;
+    conversationId?: string;
+    images?: string[];
+    thinking?: boolean;
+    signal?: AbortSignal;
+    onDelta?: (text: string, kind: 'content' | 'reasoning') => void;
+    onStep?: (call: { name: string; args: Record<string, unknown> }) => void;
+  } = {},
 ): Promise<{ answer: string; toolCalls: ToolCall[]; unified: UnifiedSource[] }> {
   await llm.init(); // respects pause; ensures the server is up
+  const onDelta = opts.onDelta ?? ((): void => {});
 
   // Opt-in: pull in tools from registered pro extensions (e.g. MCP connectors)
   // alongside the built-ins. Schemas are built once per turn; each extension
@@ -298,24 +310,22 @@ export async function toolChat(
   const unifiedKeys = new Set<string>();
 
   for (let step = 0; step < 5; step++) {
-    const res = await fetch(`http://127.0.0.1:${PORT}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, tools, tool_choice: 'auto', temperature: 0.3, max_tokens: 1024 }),
+    // Stream this round: reasoning + any answer text flow through onDelta live; tool_calls
+    // are accumulated and returned. A tool-calling round streams thinking (and no content);
+    // the final round streams the answer. tool temperature stays 0.3 (was the blocking path).
+    const { content, toolCalls: calls } = await llm.streamChat(messages, onDelta, {
+      tools, toolChoice: 'auto', temperature: 0.3, maxTokens: 1024, thinking: opts.thinking, signal: opts.signal,
     });
-    if (!res.ok) throw new Error(`tool chat failed: ${res.status}`);
-    const data = await res.json();
-    const msg = data.choices?.[0]?.message;
-    if (!msg) throw new Error('no response');
-    messages.push(msg);
 
-    const calls = msg.tool_calls as { id: string; function: { name: string; arguments: string } }[] | undefined;
-    if (calls && calls.length) {
+    if (calls.length) {
+      // Re-add the assistant turn (with its tool_calls) so the model sees what it invoked.
+      messages.push({ role: 'assistant', content: content || null, tool_calls: calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })) });
       for (const c of calls) {
         let args: Record<string, unknown> = {};
-        try { args = JSON.parse(c.function.arguments || '{}'); } catch { /* keep empty */ }
+        try { args = JSON.parse(c.arguments || '{}'); } catch { /* keep empty */ }
+        opts.onStep?.({ name: c.name, args }); // surface the tool activity BEFORE running it
         let result: string;
-        if (c.function.name === 'search_memory') {
+        if (c.name === 'search_memory') {
           // Run memory search here (not via the generic tool) so we can both build
           // the model's text result AND surface the structured hits as interactive
           // citations — excluding the current conversation so it can't cite itself.
@@ -338,15 +348,16 @@ export async function toolChat(
             result = 'Error searching memory: ' + (e as Error).message;
           }
         } else {
-          const ext = exts.find((e) => e.canHandle(c.function.name));
-          result = ext ? await ext.execute(c.function.name, args) : await execute(c.function.name, args);
+          const ext = exts.find((e) => e.canHandle(c.name));
+          result = ext ? await ext.execute(c.name, args) : await execute(c.name, args);
         }
-        toolCalls.push({ name: c.function.name, args, result });
+        toolCalls.push({ name: c.name, args, result });
         messages.push({ role: 'tool', tool_call_id: c.id, content: result });
       }
       continue; // let the model use the results
     }
-    return { answer: (msg.content || '').trim(), toolCalls, unified };
+    // No tool calls this round: `content` is the final answer (already streamed via onDelta).
+    return { answer: content.trim(), toolCalls, unified };
   }
   return { answer: 'Stopped after too many tool steps.', toolCalls, unified };
 }

@@ -1571,9 +1571,32 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       const { setToolEnabled } = await import('./tools');
       setToolEnabled(name, enabled);
   });
-  ipcMain.handle('tools:chat', async (_e, query: string, history?: { role: string; content: string }[], opts?: { connectors?: boolean; conversationId?: string; images?: string[] }) => {
+  ipcMain.handle('tools:chat', async (event, query: string, history?: { role: string; content: string }[], opts?: { connectors?: boolean; conversationId?: string; images?: string[]; streamId?: string; thinking?: boolean }) => {
       const { toolChat } = await import('./tools');
-      return toolChat(query, history || [], opts || {});
+      const { modalityQueue } = await import('./modality-queue/queue');
+      const streamId = opts?.streamId;
+      const sender = event.sender;
+      // Non-stream fallback (no streamId): buffer, no live deltas (matches streamAnswer).
+      if (!streamId) {
+          return modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, () =>
+              toolChat(query, history || [], opts || {}));
+      }
+      // Streaming: same channel/queue/abort as streamAnswer, so a tools turn streams
+      // thinking -> tool-call activity -> answer, and the stop button (rag:cancel) aborts it.
+      const controller = new AbortController();
+      streamControllers.set(streamId, controller);
+      try {
+          return await modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, () =>
+              toolChat(query, history || [], {
+                  ...opts,
+                  thinking: opts?.thinking,
+                  signal: controller.signal,
+                  onDelta: (text, kind) => { try { sender.send('rag:stream', { streamId, type: kind, text }); } catch { /* window gone */ } },
+                  onStep: (call) => { try { sender.send('rag:stream', { streamId, type: 'step', step: { kind: 'running_tool', name: call.name } }); } catch { /* window gone */ } },
+              }));
+      } finally {
+          streamControllers.delete(streamId);
+      }
   });
 
   // --- LLM inference settings (temperature, context window) ---------------

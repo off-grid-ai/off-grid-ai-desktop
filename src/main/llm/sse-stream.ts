@@ -15,10 +15,57 @@ export interface StreamEvent {
   kind: DeltaKind;
 }
 
+/** One streamed tool-call delta fragment. The first fragment for a given `index`
+ *  carries `id` + `function.name`; subsequent fragments append `function.arguments`
+ *  (the JSON args arrive as a concatenated string across fragments). */
+export interface SseToolCallDelta {
+  index: number;
+  id?: string;
+  function?: { name?: string; arguments?: string };
+}
+
 /** Shape of a single streamed delta from the OpenAI-style chat-completions SSE. */
 export interface SseDelta {
   reasoning_content?: string;
   content?: string;
+  tool_calls?: SseToolCallDelta[];
+}
+
+/** A fully-assembled tool call (after accumulating its streamed fragments). */
+export interface AssembledToolCall {
+  id: string;
+  name: string;
+  arguments: string; // raw JSON string as sent by the model
+}
+
+/**
+ * Accumulate streamed tool_call fragments (see SseToolCallDelta) into whole calls.
+ * The model streams a tool call as: one fragment with {index, id, function.name} then
+ * N fragments with {index, function.arguments:"<piece>"} that concatenate into the JSON
+ * args. Keyed by `index` so parallel tool calls in one turn stay separate. Pure - feed
+ * it each delta's tool_calls, then read `list()` when the round ends.
+ */
+export function createToolCallAccumulator(): {
+  push: (deltas: SseToolCallDelta[] | undefined) => void;
+  list: () => AssembledToolCall[];
+} {
+  const byIndex = new Map<number, { id: string; name: string; args: string }>();
+  const push = (deltas: SseToolCallDelta[] | undefined): void => {
+    if (!deltas) return;
+    for (const d of deltas) {
+      const cur = byIndex.get(d.index) ?? { id: '', name: '', args: '' };
+      if (d.id) cur.id = d.id;
+      if (d.function?.name) cur.name = d.function.name;
+      if (d.function?.arguments) cur.args += d.function.arguments;
+      byIndex.set(d.index, cur);
+    }
+  };
+  const list = (): AssembledToolCall[] =>
+    [...byIndex.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, v]) => ({ id: v.id, name: v.name, arguments: v.args }))
+      .filter((c) => c.name); // drop any fragment that never got a name
+  return { push, list };
 }
 
 /**

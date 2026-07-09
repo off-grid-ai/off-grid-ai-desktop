@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseSseLine, createThinkSplitter, type StreamEvent } from '../sse-stream';
+import { parseSseLine, createThinkSplitter, createToolCallAccumulator, type StreamEvent } from '../sse-stream';
 
 describe('parseSseLine', () => {
   it('parses a normal content delta frame', () => {
@@ -142,5 +142,44 @@ describe('createThinkSplitter', () => {
     const { events, answer } = runSplit(['', 'hi', '']);
     expect(events).toEqual([{ text: 'hi', kind: 'content' }]);
     expect(answer).toBe('hi');
+  });
+});
+
+describe('createToolCallAccumulator - assembling streamed tool_calls', () => {
+  it('assembles one tool call from its streamed fragments (name + concatenated args)', () => {
+    const acc = createToolCallAccumulator();
+    // Mirrors the real gemma/llama-server stream: first frame has id+name, then args pieces.
+    acc.push([{ index: 0, id: 'call_1', type: 'function', function: { name: 'web_search', arguments: '{' } } as never]);
+    acc.push([{ index: 0, function: { arguments: '"query"' } }]);
+    acc.push([{ index: 0, function: { arguments: ':"tokyo"}' } }]);
+    expect(acc.list()).toEqual([{ id: 'call_1', name: 'web_search', arguments: '{"query":"tokyo"}' }]);
+    expect(JSON.parse(acc.list()[0].arguments)).toEqual({ query: 'tokyo' });
+  });
+
+  it('keeps parallel tool calls separate by index', () => {
+    const acc = createToolCallAccumulator();
+    acc.push([{ index: 0, id: 'a', function: { name: 'web_search', arguments: '{"q":1}' } }]);
+    acc.push([{ index: 1, id: 'b', function: { name: 'calculator', arguments: '{"e":"1+1"}' } }]);
+    acc.push([{ index: 0, function: { arguments: '' } }]);
+    const list = acc.list();
+    expect(list.map((c) => c.name)).toEqual(['web_search', 'calculator']);
+    expect(list[1]).toEqual({ id: 'b', name: 'calculator', arguments: '{"e":"1+1"}' });
+  });
+
+  it('is a no-op on undefined/empty and drops fragments that never got a name', () => {
+    const acc = createToolCallAccumulator();
+    acc.push(undefined);
+    acc.push([]);
+    expect(acc.list()).toEqual([]);
+    // A stray args-only fragment with no name is dropped (not a real call).
+    acc.push([{ index: 0, function: { arguments: '{}' } }]);
+    expect(acc.list()).toEqual([]);
+  });
+
+  it('sorts by index regardless of arrival order', () => {
+    const acc = createToolCallAccumulator();
+    acc.push([{ index: 2, id: 'c', function: { name: 'third', arguments: '{}' } }]);
+    acc.push([{ index: 0, id: 'a', function: { name: 'first', arguments: '{}' } }]);
+    expect(acc.list().map((c) => c.name)).toEqual(['first', 'third']);
   });
 });

@@ -40,7 +40,7 @@ type ChatMessage = {
   toolCalls?: { name: string; result: string }[];
   reasoning?: string;
   streaming?: boolean;
-  activity?: { kind: string; counts?: Record<string, number> };
+  activity?: { kind: string; counts?: Record<string, number>; name?: string };
   attachments?: { name: string; kind: string; text?: string; path?: string }[];
   variants?: string[];      // regenerated answers (navigate with ‹ ›)
   variantIndex?: number;
@@ -71,8 +71,9 @@ const ASK_FENCE = /```ask\s*\n[\s\S]*?```/i;
 const ARTIFACT_FENCE = /```(?:html|svg|mermaid|jsx|tsx|react|image)\s*\n[\s\S]*?```/gi;
 
 // Human label for a live retrieval/activity step shown while the model works.
-function activityLabel(a?: { kind: string; counts?: Record<string, number> }): string {
+function activityLabel(a?: { kind: string; counts?: Record<string, number>; name?: string }): string {
   if (!a) return '';
+  if (a.kind === 'running_tool') return `Running ${a.name || 'tool'}…`;
   if (a.kind === 'reading') return `Reading the page${(a.counts?.urls ?? 0) > 1 ? 's' : ''}…`;
   if (a.kind === 'searching') return 'Searching your memory…';
   if (a.kind === 'memory') {
@@ -806,28 +807,35 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       const history = base.slice(-20).map(m => ({ role: m.role, content: m.content }));
 
       // Agentic tools path (opt-in, non-project). The model calls built-in tools,
-      // plus (when Connectors is on) MCP connector tools — reads run inline, writes
-      // are routed to the approval queue.
+      // plus (when Connectors is on) MCP connector tools. STREAMS like the RAG path:
+      // a streamId placeholder fills in live - thinking, then each tool-call activity
+      // step, then the answer - and the stop button aborts it via rag:cancel.
       if ((toolsOn || connectorsOn) && !activeProjectId) {
-        const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn, conversationId: convId, images: imagePaths });
-        // User stopped while the tools ran — drop the result silently (the tools path
-        // has no mid-flight abort, so this is the earliest we can bail).
         if (cancelledRef.current.has(convId)) return;
-        // Persist the citation sources (and tool calls) so they survive a reload.
-        const toolCtx = (tr?.unified?.length || tr?.toolCalls?.length)
-          ? { unified: tr?.unified ?? [], toolCalls: (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result })) }
-          : undefined;
-        const am: ChatMessage = {
-          id: `a-${Date.now()}`,
-          role: 'assistant',
-          content: tr?.answer || 'No response returned.',
-          toolCalls: (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result })),
-          // Surface search_memory's hits as interactive citation cards (same UI as RAG).
-          context: tr?.unified?.length ? { unified: tr.unified } : undefined,
-        };
-        setConvMessages(convId, prev => [...prev, am]);
-        if (voiceMode) setAutoPlayId(am.id);
-        try { await window.api.addRagMessage(convId, 'assistant', am.content, toolCtx); } catch (_) { /* ignore */ }
+        const toolStreamId = `a-${Date.now()}`;
+        activeStreamId = toolStreamId;
+        streamConvRef.current.set(toolStreamId, convId!);
+        setConvMessages(convId, prev => [...prev, { id: toolStreamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
+        const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn, conversationId: convId, images: imagePaths, streamId: toolStreamId, thinking: thinkingEnabled });
+        const toolCalls = (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result }));
+        const context = tr?.unified?.length ? { unified: tr.unified } : undefined;
+        // Persist the citation sources + tool calls so they survive a reload.
+        const toolCtx = (tr?.unified?.length || toolCalls.length) ? { unified: tr?.unified ?? [], toolCalls } : undefined;
+        if (cancelledRef.current.has(convId)) {
+          const partial = (tr?.answer || '').trim();
+          if (partial) {
+            setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, content: partial, context, toolCalls, activity: undefined, streaming: false } : m)));
+            try { await window.api.addRagMessage(convId, 'assistant', partial, toolCtx); } catch { /* ignore */ }
+          } else {
+            setConvMessages(convId, prev => prev.filter(m => m.id !== toolStreamId));
+          }
+          return;
+        }
+        const answer = tr?.answer || 'No response returned.';
+        // Finalize the streamed placeholder in place (never append a second bubble).
+        setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, content: answer, context, toolCalls, activity: undefined, streaming: false } : m)));
+        if (voiceMode) setAutoPlayId(toolStreamId);
+        try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtx); } catch (_) { /* ignore */ }
         return;
       }
 

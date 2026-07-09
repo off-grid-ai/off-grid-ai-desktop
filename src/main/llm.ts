@@ -13,7 +13,7 @@ import { LLAMA_SERVER_PORT } from "../shared/ports";
 import { DEFAULT_CTX_SIZE } from "../shared/llm-defaults";
 import { MODE_PRESETS, samplingPayload, launchArgsChanged } from "./llm/settings-math";
 import { buildMessages, imageMime, thinkingPayload, type DecodedImage } from "./llm/chat-payload";
-import { parseSseLine, createThinkSplitter } from "./llm/sse-stream";
+import { parseSseLine, createThinkSplitter, createToolCallAccumulator, type AssembledToolCall } from "./llm/sse-stream";
 
 export type { KvCacheType, PerformanceMode };
 
@@ -672,6 +672,81 @@ export class LLMService {
       // Cooperative cancellation: stop the request and return whatever was generated so far.
       if (opts.signal) {
         const onAbort = (): void => { aborted = true; clearTimeout(timer); try { req.destroy(); } catch { /* already gone */ } resolve(splitter.answer()); };
+        if (opts.signal.aborted) onAbort();
+        else opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
+      req.write(body);
+      req.end();
+    });
+  }
+
+  // Lower-level streaming turn over a RAW messages array with optional tool-calling.
+  // Powers the agentic tool loop (tools.ts): streams reasoning + answer via `onDelta`
+  // (same channels as chatStream) AND accumulates any tool_calls the model emits, so a
+  // tools turn streams thinking -> (the loop surfaces the tool step) -> the answer, all
+  // through one path. Returns the streamed answer text + the assembled tool calls for
+  // this round (empty when the model answered instead of calling a tool).
+  async streamChat(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    messages: any[],
+    onDelta: (text: string, kind: 'content' | 'reasoning') => void,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    opts: { temperature?: number; thinking?: boolean; signal?: AbortSignal; tools?: unknown[]; toolChoice?: string; maxTokens?: number } = {},
+    timeoutMs: number = 300000,
+  ): Promise<{ content: string; toolCalls: AssembledToolCall[] }> {
+    if (this.paused) throw new Error('LLM paused during image generation — deferred');
+    if (!this.initialized) {
+      await this.init();
+      if (!this.initialized) throw new Error('LLM Service not ready');
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload: any = {
+      messages,
+      max_tokens: opts.maxTokens ?? this.maxTokens,
+      temperature: opts.temperature ?? this.temperature,
+      ...this.samplingPayload(),
+      stream: true,
+      ...thinkingPayload(!!opts.thinking),
+    };
+    if (opts.tools && opts.tools.length) { payload.tools = opts.tools; payload.tool_choice = opts.toolChoice ?? 'auto'; }
+    const body = JSON.stringify(payload);
+
+    return new Promise<{ content: string; toolCalls: AssembledToolCall[] }>((resolve, reject) => {
+      let buf = '';
+      let timedOut = false;
+      let aborted = false;
+      const splitter = createThinkSplitter((ev) => onDelta(ev.text, ev.kind));
+      const tools = createToolCallAccumulator();
+      const done = (): { content: string; toolCalls: AssembledToolCall[] } => ({ content: splitter.answer(), toolCalls: tools.list() });
+      const timer = setTimeout(() => { timedOut = true; req.destroy(); reject(new Error('LLM request timed out')); }, timeoutMs);
+
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port: this.port,
+        path: '/v1/chat/completions',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      }, (res) => {
+        if (res.statusCode !== 200) { clearTimeout(timer); reject(new Error(`LLM Server Error: ${res.statusCode}`)); res.resume(); return; }
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => {
+          buf += chunk;
+          let nl: number;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl);
+            buf = buf.slice(nl + 1);
+            const delta = parseSseLine(line);
+            if (!delta) continue;
+            if (delta.reasoning_content) onDelta(delta.reasoning_content, 'reasoning');
+            if (delta.content) splitter.push(delta.content);
+            if (delta.tool_calls) tools.push(delta.tool_calls);
+          }
+        });
+        res.on('end', () => { clearTimeout(timer); if (!timedOut && !aborted) resolve(done()); });
+      });
+      req.on('error', (e) => { clearTimeout(timer); if (!timedOut && !aborted) reject(e); });
+      if (opts.signal) {
+        const onAbort = (): void => { aborted = true; clearTimeout(timer); try { req.destroy(); } catch { /* already gone */ } resolve(done()); };
         if (opts.signal.aborted) onAbort();
         else opts.signal.addEventListener('abort', onAbort, { once: true });
       }
