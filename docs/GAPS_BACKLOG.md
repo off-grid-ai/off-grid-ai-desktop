@@ -5,12 +5,15 @@ how to reproduce, and the fix direction. Close with evidence; never hide.
 
 ---
 
-## RESOLVED
+## PARTIALLY FIXED — real-UI confirmation still pending
 
-### Agentic `generate_image` tool errored (stale keep-alive socket in the tool loop) — FIXED
+### Agentic `generate_image` tool errored (stale keep-alive socket in the tool loop)
 
-**Status:** RESOLVED. Root cause was NOT eviction (the original hypothesis below was wrong)
-— it was a reused HTTP keep-alive socket. Fixed + regression-guarded.
+**Status:** ECONNRESET root cause fixed + regression-guarded, and the tool path now works in
+every programmatic reproduction. BUT a provit *UI* run on the fixed build still showed "Sorry,
+something went wrong" once, and that has NOT been reproduced or cleanly explained. So: fix
+verified programmatically; a clean real-UI (vision-driven) pass is NOT yet on record. Do not
+call this fully closed until a provit UI run renders the image via the tool.
 
 **Actual root cause (verified with in-process DIAG instrumentation):** the tool loop makes
 BACK-TO-BACK requests to llama-server. `llm.pause()`/`stop()` were never called (DIAG confirmed
@@ -24,9 +27,16 @@ socket, which is exactly why only the multi-round tool path broke.
 `Connection: close` (a fresh connection per request, no keep-alive pool). Applied to all three
 request sites (both streaming methods + the non-streaming one).
 
-**Verified:** in-process repro against the real `window.api.toolChat` now returns
-`{ ok: true, toolCalls: ["generate_image"], imageRequest: { prompt: "a solid red circle on a
-white background" } }` with no ECONNRESET — warm and cold.
+**Verified (programmatic, 4 ways):** in-process against the real `window.api.toolChat` — non-
+streaming, streaming (with `streamId`), full UI-faithful (real `imageGenStatus()` → `toolChat`
+→ deferred `generateImage`, which wrote `img-*.png` to disk), and with a 44k-char / 7471-token
+history — ALL return `toolCalls: ["generate_image"]` + `imageRequest`, no ECONNRESET, warm and cold.
+
+**NOT yet verified:** a clean pass through the real vision-driven UI (provit). One provit UI run
+post-fix still showed "Sorry"; could not reproduce it programmatically. Leading suspicion:
+sustained background load during the long provit run (the `[layout] learn` task hammering the
+model with mmproj-500s) puts the engine/queue in a state my quick repros don't hit — UNCONFIRMED.
+A UI-drive attempt to reconcile failed on selectors (nothing sent), so it's still open.
 
 **Regression guard:** `src/main/__tests__/llm-http-no-keepalive.test.ts` reads llm.ts and asserts
 every `http.request` site opts out of the pool (`agent: false` + `Connection: close`). Fails on
