@@ -5,6 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import { llm } from './llm';
+import { isValidGgufFile } from './models/gguf';
 import { getAllActiveModals, setActiveModal as setModal, type Modality } from './active-models';
 import { recordDownloaded, removeDownloaded, findDownloaded, installedDownloadedIds, downloadedProtectedNames, readDownloaded } from './downloaded-models';
 import {
@@ -361,22 +362,11 @@ function localProtectedNames(): Set<string> {
 }
 
 /** A real GGUF starts with the "GGUF" magic and is more than a few bytes. */
-function isValidGguf(p: string): boolean {
-  try {
-    if (fs.statSync(p).size < 1024) return false;
-    const fd = fs.openSync(p, 'r');
-    const buf = Buffer.alloc(4);
-    fs.readSync(fd, buf, 0, 4, 0);
-    fs.closeSync(fd);
-    return buf.toString('ascii') === 'GGUF';
-  } catch { return false; }
-}
-
 /** Import a local .gguf: validate, stream-copy into the models dir (with progress),
  *  and register it so it shows up as an installed, activatable model. */
 export async function importLocalModel(srcPath: string, onProgress?: ProgressCb): Promise<{ success: boolean; error?: string; id?: string }> {
   if (!srcPath || !srcPath.toLowerCase().endsWith('.gguf')) return { success: false, error: 'Not a .gguf file' };
-  if (!isValidGguf(srcPath)) return { success: false, error: 'File is not a valid GGUF model (corrupt or wrong format)' };
+  if (!isValidGgufFile(srcPath, fs)) return { success: false, error: 'File is not a valid GGUF model (corrupt or wrong format)' };
 
   const dir = llm.getModelsDir();
   fs.mkdirSync(dir, { recursive: true });

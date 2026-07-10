@@ -13,6 +13,7 @@ import { LLAMA_SERVER_PORT } from "../shared/ports";
 import { DEFAULT_CTX_SIZE } from "../shared/llm-defaults";
 import { applyModePreset, samplingPayload, launchArgsChanged, buildLaunchArgs, type PresetField } from "./llm/settings-math";
 import { buildMessages, imageMime, thinkingPayload, type DecodedImage } from "./llm/chat-payload";
+import { isValidGgufFile } from "./models/gguf";
 import { parseSseLine, createThinkSplitter, createToolCallAccumulator, type AssembledToolCall } from "./llm/sse-stream";
 import { modelRequestOptions, postCompletionOnce } from "./llm/http-post";
 
@@ -320,16 +321,10 @@ export class LLMService {
 
   /** Cheap integrity check: a real GGUF starts with the "GGUF" magic and is more
    *  than a few bytes. Catches truncated/corrupt downloads before we hand the file
-   *  to llama-server (which would otherwise crash on load). */
+   *  to llama-server (which would otherwise crash on load). Delegates to the shared
+   *  models/gguf implementation (single source of truth with models-manager). */
   private validateGguf(p: string): boolean {
-    try {
-      if (fs.statSync(p).size < 1024) return false;
-      const fd = fs.openSync(p, "r");
-      const buf = Buffer.alloc(4);
-      fs.readSync(fd, buf, 0, 4, 0);
-      fs.closeSync(fd);
-      return buf.toString("ascii") === "GGUF";
-    } catch { return false; }
+    return isValidGgufFile(p, fs);
   }
 
   async init(): Promise<void> {
