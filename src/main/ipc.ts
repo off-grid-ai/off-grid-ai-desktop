@@ -159,7 +159,7 @@ async function streamAnswer(
     images: string[] = [],
 ): Promise<string> {
     const { llm } = await import('./llm');
-    const { modalityQueue } = await import('./modality-queue/queue');
+    const { modalityQueue, CHAT_JOB } = await import('./modality-queue/queue');
 
     // Non-stream fallback (no streamId/sender): a single blocking chat turn.
     if (!streamId || !event?.sender) {
@@ -168,7 +168,7 @@ async function streamAnswer(
         // screen-replay (Tier 3) defers to it. Chat runs ON the 'llm' engine, so it
         // evicts nothing (evicting 'llm' would evict itself). run()'s finally releases
         // the slot even if fn throws, so we let errors propagate from inside.
-        return modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, async () =>
+        return modalityQueue.run(CHAT_JOB, async () =>
             (await llm.chat(prompt, images, 300000, 2048, { disableThinking: !thinking })).trim(),
         );
     }
@@ -183,7 +183,7 @@ async function streamAnswer(
         // Interactive streaming chat = Tier 2 (see above). Await the full stream inside
         // the run() callback so the queue slot is held for the whole generation; the
         // cancel path aborts via the controller registered above.
-        return await modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, async () => {
+        return await modalityQueue.run(CHAT_JOB, async () => {
             const answer = await llm.chatStream(prompt, images, (text, kind) => {
                 try { sender.send('rag:stream', { streamId, type: kind, text }); } catch { /* window gone */ }
             }, { thinking, signal: controller.signal });
@@ -1521,12 +1521,12 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
   });
   ipcMain.handle('tools:chat', async (event, query: string, history?: { role: string; content: string }[], opts?: { connectors?: boolean; conversationId?: string; images?: string[]; imageAvailable?: boolean; streamId?: string; thinking?: boolean }) => {
       const { toolChat } = await import('./tools');
-      const { modalityQueue } = await import('./modality-queue/queue');
+      const { modalityQueue, CHAT_JOB } = await import('./modality-queue/queue');
       const streamId = opts?.streamId;
       const sender = event.sender;
       // Non-stream fallback (no streamId): buffer, no live deltas (matches streamAnswer).
       if (!streamId) {
-          return modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, () =>
+          return modalityQueue.run(CHAT_JOB, () =>
               toolChat(query, history || [], opts || {}));
       }
       // Streaming: same channel/queue/abort as streamAnswer, so a tools turn streams
@@ -1534,7 +1534,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       const controller = new AbortController();
       streamControllers.set(streamId, controller);
       try {
-          return await modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, () =>
+          return await modalityQueue.run(CHAT_JOB, () =>
               toolChat(query, history || [], {
                   ...opts,
                   thinking: opts?.thinking,

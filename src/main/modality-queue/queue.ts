@@ -35,6 +35,13 @@ export interface QueueRequest {
   evicts?: string[];
 }
 
+// The two standard heavy jobs, defined once instead of spelled out at every
+// call site (chat was inlined 4× in ipc.ts). A chat/tool turn evicts a resident
+// image server; image generation evicts the resident LLM — they can't co-reside
+// on unified memory. Frozen so a caller can't mutate the shared descriptor.
+export const CHAT_JOB: QueueRequest = Object.freeze({ tier: 2, label: 'chat', evicts: ['image'] });
+export const IMAGE_JOB: QueueRequest = Object.freeze({ tier: 2, label: 'image', evicts: ['llm'] });
+
 /** Snapshot of what's running + waiting, for a "queued" indicator in the UI. */
 export interface QueueState {
   running: { label: string; tier: Tier }[];

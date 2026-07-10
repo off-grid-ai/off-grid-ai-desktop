@@ -7,7 +7,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { modalityQueue } from './modality-queue/queue';
+import { modalityQueue, IMAGE_JOB } from './modality-queue/queue';
 import { getResidencyMode } from './runtime-residency';
 import type { ManagedRuntime } from './runtime-manager';
 import { isMfluxModelId, mfluxAvailable, getMfluxModel, runMflux, cancelMflux, MFLUX_MODELS } from './mflux';
@@ -386,7 +386,7 @@ export async function generateImage(
 ): Promise<ImageGenOutput> {
   // The queue evicts 'llm' before this runs AND re-warms it (mode-aware) when the
   // job finishes — so the image path no longer touches llm.pause/resume itself.
-  return modalityQueue.run({ tier: 2, label: 'image', evicts: ['llm'] }, () => runImageGen(params, onProgress));
+  return modalityQueue.run(IMAGE_JOB, () => runImageGen(params, onProgress));
 }
 
 async function runImageGen(
