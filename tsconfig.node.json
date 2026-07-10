@@ -8,6 +8,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "allowUnreachableCode": false,
+    // Index/record access is T|undefined — a guard/`!` at every array/record read.
+    // Kills the whole out-of-bounds bug class; makes the real guards no-unnecessary-
+    // condition stops flagging as "unnecessary". Whole tree guarded before enabling.
+    "noUncheckedIndexedAccess": true,
     "types": ["electron-vite/node"],
     "baseUrl": ".",
     "paths": {
