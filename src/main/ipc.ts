@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow, app, clipboard } from 'electron';
-import { getDB, getChatSessions, upsertChatSummary, getMemoriesForSession, getMemoryRecordsForSession, getMasterMemory, updateMasterMemory, getAllChatSummaries, upsertEntity, addEntityFact, updateEntitySummary, getEntities, getEntityDetails, upsertEntitySession, rebuildEntityEdgesForSession, getEntityGraph, rebuildEntityEdgesForAllSessions, deleteEntity, deleteMemory, getEntitiesForSession, getDashboardStats, getUserProfile, saveUserProfile, UserProfile, createRagConversation, getRagConversations, getRagConversation, deleteRagConversation, addRagMessage, getRagMessages, updateRagConversationTitle, searchRagConversationIds, getSettings, saveSetting, getSetting } from './database';
+import { getDB, getChatSessions, upsertChatSummary, getMemoriesForSession, getMemoryRecordsForSession, getMasterMemory, upsertEntity, addEntityFact, updateEntitySummary, getEntities, getEntityDetails, upsertEntitySession, rebuildEntityEdgesForSession, getEntityGraph, rebuildEntityEdgesForAllSessions, deleteEntity, deleteMemory, getEntitiesForSession, getDashboardStats, getUserProfile, saveUserProfile, UserProfile, createRagConversation, getRagConversations, getRagConversation, deleteRagConversation, addRagMessage, getRagMessages, updateRagConversationTitle, searchRagConversationIds, getSettings, saveSetting, getSetting } from './database';
 import { embeddings } from './embeddings';
 import { getResidency, setResidencyMode, type Modality, type ResidencyMode } from './runtime-residency';
 import { getPermissionStatus, requestAccessibilityPermission, requestScreenRecordingPermission, openAccessibilitySettings, openScreenRecordingSettings } from './permissions';
@@ -9,45 +9,10 @@ import { safeParseJson, tokenizeQuery, clipText, isGenerativeRequest, isTrivialM
 
 // Incrementally update master memory with a new conversation summary
 // This approach keeps context bounded by only processing current master + new summary
-async function updateMasterMemoryIncremental(newSummary: string): Promise<string | null> {
+async function updateMasterMemoryIncremental(_newSummary: string): Promise<string | null> {
     // Master memory (the consolidated "profile") is a retired My Memories feature —
     // no longer injected into chat. Don't regenerate it so it stays cleared.
     return null;
-    // eslint-disable-next-line no-unreachable
-    console.log('[IPC] Starting incremental master memory update...');
-    const currentMasterData = getMasterMemory();
-    const currentMaster: string = currentMasterData?.content ?? '';
-
-    // If no existing master memory, create initial one from just this summary
-    if (!currentMaster || currentMaster.trim().length === 0) {
-        console.log('[IPC] No existing master memory, creating from new summary only');
-        const prompt = getPrompt('masterMemory.initial', { SUMMARY: newSummary });
-
-        try {
-            const { llm } = await import('./llm');
-            const initialMaster = await llm.chat(prompt, [], 600000, 4096);
-            updateMasterMemory(initialMaster);
-            console.log('[IPC] Initial master memory created');
-            return initialMaster;
-        } catch (e) {
-            console.error('[IPC] Failed to create initial master memory:', e);
-            return null;
-        }
-    }
-
-    // Incremental update: merge new summary with existing master (no truncation - allow growth)
-    const prompt = getPrompt('masterMemory.incremental', { CURRENT_MASTER: currentMaster, NEW_SUMMARY: newSummary });
-
-    try {
-        const { llm } = await import('./llm');
-        const updatedMaster = await llm.chat(prompt, [], 600000, 4096);
-        updateMasterMemory(updatedMaster);
-        console.log('[IPC] Master memory updated incrementally');
-        return updatedMaster;
-    } catch (e) {
-        console.error('[IPC] Failed to update master memory incrementally:', e);
-        return null;
-    }
 }
 
 // Full regeneration using map-reduce:
@@ -57,85 +22,6 @@ async function updateMasterMemoryIncremental(newSummary: string): Promise<string
 async function regenerateMasterMemoryFull(): Promise<string | null> {
     // Retired feature — see updateMasterMemoryIncremental. Don't rebuild the profile.
     return null;
-    // eslint-disable-next-line no-unreachable
-    const summaries = getAllChatSummaries();
-    console.log(`[IPC] regenerateMasterMemoryFull called, found ${summaries.length} summaries`);
-
-    if (summaries.length === 0) {
-        console.log('[IPC] No summaries found — clearing master memory');
-        updateMasterMemory('');
-        return null;
-    }
-
-    const { llm } = await import('./llm');
-
-    const sendProgress = (current: number, total: number) => {
-        BrowserWindow.getAllWindows().forEach(win => {
-            win.webContents.send('master-memory:progress', { current, total });
-        });
-    };
-
-    // If few enough summaries, do it in one shot
-    const allText = summaries.map((s, i) => `[Session ${i + 1}]\n${s.summary}`).join('\n\n---\n\n');
-    if (allText.length < 60000) {
-        console.log(`[IPC] All summaries fit in one prompt (${allText.length} chars), single-shot`);
-        sendProgress(0, 1);
-        const prompt = getPrompt('masterMemory.batchFirst', { BATCH_TEXT: allText });
-        const master = await llm.chat(prompt, [], 600000, 4096);
-        updateMasterMemory(master);
-        sendProgress(1, 1);
-        console.log(`[IPC] Master memory regenerated single-shot (${master.length} chars)`);
-        return master;
-    }
-
-    // Map-reduce for large sets
-    // Phase 1: split into chunks of ~50K chars each, generate partial summaries
-    const CHUNK_MAX_CHARS = 50000;
-    const chunks: string[][] = [[]];
-    let currentChunkSize = 0;
-
-    for (const s of summaries) {
-        if (currentChunkSize + s.summary.length > CHUNK_MAX_CHARS && chunks[chunks.length - 1].length > 0) {
-            chunks.push([]);
-            currentChunkSize = 0;
-        }
-        chunks[chunks.length - 1].push(s.summary);
-        currentChunkSize += s.summary.length;
-    }
-
-    const totalSteps = chunks.length + 1; // chunks + 1 merge step
-    console.log(`[IPC] Map-reduce: ${chunks.length} chunks + 1 merge = ${totalSteps} steps`);
-    sendProgress(0, totalSteps);
-
-    const partials: string[] = [];
-
-    for (let i = 0; i < chunks.length; i++) {
-        const batchText = chunks[i].map((s, j) => `[Session ${j + 1}]\n${s}`).join('\n\n---\n\n');
-        const prompt = getPrompt('masterMemory.batchFirst', { BATCH_TEXT: batchText });
-        console.log(`[IPC] Phase 1 chunk ${i + 1}/${chunks.length}: ${batchText.length} chars input, prompt ${prompt.length} chars`);
-
-        try {
-            const partial = await llm.chat(prompt, [], 600000, 2048);
-            partials.push(partial);
-            console.log(`[IPC] Chunk ${i + 1} done: ${partial.length} chars output`);
-            sendProgress(i + 1, totalSteps);
-        } catch (e) {
-            console.error(`[IPC] Chunk ${i + 1} FAILED:`, e);
-            throw e;
-        }
-    }
-
-    // Phase 2: merge all partials into final master memory
-    console.log(`[IPC] Phase 2: merging ${partials.length} partial summaries...`);
-    const mergeInput = partials.map((p, i) => `[Part ${i + 1}]\n${p}`).join('\n\n---\n\n');
-    const mergePrompt = getPrompt('masterMemory.merge', { PARTIAL_SUMMARIES: mergeInput });
-    console.log(`[IPC] Merge prompt: ${mergePrompt.length} chars`);
-
-    const finalMaster = await llm.chat(mergePrompt, [], 600000, 4096);
-    updateMasterMemory(finalMaster);
-    sendProgress(totalSteps, totalSteps);
-    console.log(`[IPC] Master memory regenerated via map-reduce (${finalMaster.length} chars)`);
-    return finalMaster;
 }
 
 // Main entry point - full regeneration

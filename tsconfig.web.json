@@ -11,6 +11,10 @@
   "compilerOptions": {
     "composite": true,
     "jsx": "react-jsx",
+    // Dead-code gates at type-check time (see tsconfig.node.json).
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
     "baseUrl": ".",
     "paths": {
       "@renderer/*": [
