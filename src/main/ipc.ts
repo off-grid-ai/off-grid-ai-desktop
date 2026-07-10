@@ -4,7 +4,7 @@ import { embeddings } from './embeddings';
 import { getResidency, setResidencyMode, type Modality, type ResidencyMode } from './runtime-residency';
 import { getPermissionStatus, requestAccessibilityPermission, requestScreenRecordingPermission, openAccessibilitySettings, openScreenRecordingSettings } from './permissions';
 import { getPrompt, getAllPromptDefs, resetPrompt, getPromptTemplate } from './prompts';
-import { safeParseJson, tokenizeQuery, clipText, isGenerativeRequest, isTrivialMessage } from './ipc-query-logic';
+import { safeParseJson, tokenizeQuery, clipText, isGenerativeRequest, isTrivialMessage, appNameLikeClause } from './ipc-query-logic';
 // import { llm } from './llm'; // Moved to dynamic import to support ESM
 
 // Incrementally update master memory with a new conversation summary
@@ -491,11 +491,12 @@ export function setupIPC() {
     let query = 'SELECT * FROM memories ';
     const params: any[] = [];
     
-    if (appName && appName !== 'All') {
-        query += 'WHERE source_app LIKE ? ';
-        params.push(`%${appName}%`);
+    const memFilter = appNameLikeClause(appName, 'source_app');
+    if (memFilter) {
+        query += `WHERE ${memFilter.clause} `;
+        params.push(memFilter.param);
     }
-    
+
     query += 'ORDER BY created_at DESC LIMIT ?';
     params.push(limit);
     
@@ -724,9 +725,10 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
             FROM memories
             WHERE embedding IS NOT NULL AND embedding != '[]'
           `;
-          if (appName && appName !== 'All') {
-              memoryQuery += ` AND source_app LIKE ? `;
-              params.push(`%${appName}%`);
+          const vecFilter = appNameLikeClause(appName, 'source_app');
+          if (vecFilter) {
+              memoryQuery += ` AND ${vecFilter.clause} `;
+              params.push(vecFilter.param);
           }
           memoryQuery += ` ORDER BY score DESC LIMIT 12`;
           memories = db.prepare(memoryQuery).all(...params);
@@ -741,9 +743,10 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
             WHERE memory_fts MATCH ?
           `;
           params.push(query);
-          if (appName && appName !== 'All') {
-              fallbackQuery += ` AND memories.source_app LIKE ? `;
-              params.push(`%${appName}%`);
+          const ftsFilter = appNameLikeClause(appName, 'memories.source_app');
+          if (ftsFilter) {
+              fallbackQuery += ` AND ${ftsFilter.clause} `;
+              params.push(ftsFilter.param);
           }
           fallbackQuery += ` LIMIT 12`;
           memories = db.prepare(fallbackQuery).all(...params);
@@ -758,9 +761,10 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
                 JOIN conversations c ON c.id = m.conversation_id
                 WHERE message_fts MATCH ?
             `;
-            if (appName && appName !== 'All') {
-                    messageQuery += ` AND c.app_name LIKE ? `;
-                    messageParams.push(`%${appName}%`);
+            const msgFilter = appNameLikeClause(appName, 'c.app_name');
+            if (msgFilter) {
+                    messageQuery += ` AND ${msgFilter.clause} `;
+                    messageParams.push(msgFilter.param);
             }
             messageQuery += ` ORDER BY score ASC LIMIT 12`;
             const messages = db.prepare(messageQuery).all(...messageParams);
@@ -774,9 +778,10 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
                 JOIN conversations c ON c.id = cs.session_id
                 WHERE summary_fts MATCH ?
             `;
-            if (appName && appName !== 'All') {
-                    summaryQuery += ` AND c.app_name LIKE ? `;
-                    summaryParams.push(`%${appName}%`);
+            const sumFilter = appNameLikeClause(appName, 'c.app_name');
+            if (sumFilter) {
+                    summaryQuery += ` AND ${sumFilter.clause} `;
+                    summaryParams.push(sumFilter.param);
             }
             summaryQuery += ` ORDER BY score ASC LIMIT 8`;
             const summaries = db.prepare(summaryQuery).all(...summaryParams);
@@ -789,16 +794,17 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
                 JOIN entities e ON entity_fts.rowid = e.id
                 WHERE entity_fts MATCH ?
             `;
-            if (appName && appName !== 'All') {
+            const entFilter = appNameLikeClause(appName, 'c.app_name');
+            if (entFilter) {
                     entityQuery += `
                         AND e.id IN (
                             SELECT es.entity_id
                             FROM entity_sessions es
                             JOIN conversations c ON c.id = es.session_id
-                            WHERE c.app_name LIKE ?
+                            WHERE ${entFilter.clause}
                         )
                     `;
-                    entityParams.push(`%${appName}%`);
+                    entityParams.push(entFilter.param);
             }
             entityQuery += ` ORDER BY score ASC LIMIT 8`;
             const entities = db.prepare(entityQuery).all(...entityParams);
@@ -812,9 +818,10 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
                 JOIN entities e ON e.id = f.entity_id
                 WHERE entity_fact_fts MATCH ?
             `;
-            if (appName && appName !== 'All') {
-                    factQuery += ` AND f.source_session_id IN (SELECT id FROM conversations WHERE app_name LIKE ?) `;
-                    factParams.push(`%${appName}%`);
+            const factFilter = appNameLikeClause(appName, 'app_name');
+            if (factFilter) {
+                    factQuery += ` AND f.source_session_id IN (SELECT id FROM conversations WHERE ${factFilter.clause}) `;
+                    factParams.push(factFilter.param);
             }
             factQuery += ` ORDER BY score ASC LIMIT 8`;
             const entityFacts = db.prepare(factQuery).all(...factParams);

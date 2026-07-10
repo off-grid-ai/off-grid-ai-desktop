@@ -52,6 +52,20 @@ export function isGenerativeRequest(text: string): boolean {
     return hasNoun && hasVerb;
 }
 
+/**
+ * The `<column> LIKE ?` fragment + its bound param for an optional app-name
+ * filter, or null when no filter applies ('All' / empty = every app). Callers add
+ * their own connector (WHERE / AND). Single source for the appName gate that was
+ * inlined 4× across db:get-memories and the rag:chat vector / FTS-fallback /
+ * message queries (each with a different column, same guard + `%…%` wildcarding).
+ */
+export function appNameLikeClause(appName: string | undefined, column: string): { clause: string; param: string } | null {
+    if (!appName || appName === 'All') {
+        return null;
+    }
+    return { clause: `${column} LIKE ?`, param: `%${appName}%` };
+}
+
 /** A short pleasantry/acknowledgement ("hi", "ok", "thanks") — or empty — that
  *  shouldn't trigger memory extraction. Real messages return false. */
 export function isTrivialMessage(text: string): boolean {

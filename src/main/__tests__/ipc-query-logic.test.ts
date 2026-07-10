@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
   tokenizeQuery,
   isGenerativeRequest,
   clipText,
   safeParseJson,
   isTrivialMessage,
+  appNameLikeClause,
   STOPWORDS,
 } from '../ipc-query-logic';
 
@@ -118,5 +121,29 @@ describe('isTrivialMessage', () => {
 
   it('a long message is never trivial even if it starts like a pleasantry', () => {
     expect(isTrivialMessage('hello there, can you help me draft an email')).toBe(false);
+  });
+});
+
+describe('appNameLikeClause — single source for the optional app-name filter', () => {
+  it('returns null for "All" or an empty/absent app (no filter = every app)', () => {
+    expect(appNameLikeClause('All', 'source_app')).toBeNull();
+    expect(appNameLikeClause('', 'source_app')).toBeNull();
+    expect(appNameLikeClause(undefined, 'source_app')).toBeNull();
+  });
+
+  it('builds a LIKE clause + wildcarded param for a specific app', () => {
+    expect(appNameLikeClause('Slack', 'source_app')).toEqual({ clause: 'source_app LIKE ?', param: '%Slack%' });
+  });
+
+  it('uses the column the caller passes (the 4 rag:chat sites differ)', () => {
+    expect(appNameLikeClause('Gmail', 'memories.source_app')).toEqual({ clause: 'memories.source_app LIKE ?', param: '%Gmail%' });
+    expect(appNameLikeClause('Gmail', 'c.app_name')).toEqual({ clause: 'c.app_name LIKE ?', param: '%Gmail%' });
+  });
+
+  it('ipc.ts builds every app-name filter from this helper, not an inline guard', () => {
+    // ipc.ts is a coverage-excluded IPC shell; guard the contract by reading source.
+    const src = readFileSync(join(__dirname, '../ipc.ts'), 'utf8');
+    expect(src).not.toMatch(/appName !== 'All'\)\s*\{[^}]*LIKE \?/s); // no inline appName+LIKE guard
+    expect(src).toContain('appNameLikeClause');
   });
 });
