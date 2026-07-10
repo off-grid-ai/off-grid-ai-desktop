@@ -30,6 +30,6 @@ export function defaultImageModelFilename(installed: string[], ramGb: number): s
   if (!dreamshapers.length) return null;
   const light = dreamshapers.find(isLightQuant);
   const full = dreamshapers.find((f) => !isLightQuant(f));
-  if (ramGb <= DEFAULT_LIGHT_QUANT_RAM_CEILING_GB) return light ?? full ?? dreamshapers[0];
-  return full ?? light ?? dreamshapers[0];
+  if (ramGb <= DEFAULT_LIGHT_QUANT_RAM_CEILING_GB) return light ?? full ?? dreamshapers[0]!; // dreamshapers.length checked
+  return full ?? light ?? dreamshapers[0]!;
 }

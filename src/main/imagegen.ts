@@ -117,7 +117,7 @@ export function listStyleThumbs(): Record<string, string> {
   try {
     for (const f of fs.readdirSync(styleThumbDir())) {
       const m = f.match(/^(.+)\.png$/i);
-      if (m) out[m[1]] = path.join(styleThumbDir(), f);
+      if (m) out[m[1]!] = path.join(styleThumbDir(), f);
     }
   } catch { /* none yet */ }
   return out;
@@ -302,7 +302,7 @@ function resolveModel(preferred?: string): string | null {
   const lightning = sd.find((f) => /lightning/i.test(f));
   const xl = sd.find((f) => /sdxl|xl/i.test(f));
   const v21 = sd.find((f) => /v2-1|v2\.1/i.test(f));
-  return path.join(dir, juggernaut ?? zimage ?? lightning ?? xl ?? v21 ?? sd[0]);
+  return path.join(dir, juggernaut ?? zimage ?? lightning ?? xl ?? v21 ?? sd[0]!); // sd.length checked above
 }
 
 /** Whether image generation is usable right now (binary + at least one model). */

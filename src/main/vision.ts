@@ -42,7 +42,7 @@ class VisionService {
                 console.log('Vision: No screen sources available');
                 return null;
             }
-            let target = screens[0];
+            let target = screens[0]!; // screens.length checked above
             try {
                 // Pick the display the FOCUSED WINDOW is on (its center), NOT the
                 // cursor — on multi-monitor the cursor is often on a different screen
