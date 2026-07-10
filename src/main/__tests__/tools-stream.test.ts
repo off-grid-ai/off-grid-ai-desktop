@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 // C7 - the streaming agentic tool loop. We fake the two TRUE boundaries: the model
 // (llm.streamChat, a network/native call) and the settings DB. Everything else - the
@@ -12,8 +14,15 @@ const { streamChatMock, initMock } = vi.hoisted(() => ({
 vi.mock('../llm', () => ({ llm: { init: initMock, streamChat: streamChatMock } }));
 const { getSettingMock, saveSettingMock } = vi.hoisted(() => ({ getSettingMock: vi.fn(() => [] as string[]), saveSettingMock: vi.fn() }));
 vi.mock('../database', () => ({ getSetting: getSettingMock, saveSetting: saveSettingMock }));
+// search_memory's run() dynamically imports ./search — mock the search subsystem
+// (it needs the DB/vectors) so the loop's citation side-channel is exercised for real.
+const { searchMock } = vi.hoisted(() => ({ searchMock: vi.fn() }));
+vi.mock('../search', () => ({ universalSearch: searchMock }));
 
 import { toolChat, listTools, setToolEnabled, registerToolExtension, getToolExtensions, readUrlText } from '../tools';
+
+type Hit = { key: string; kind: string; refId: number; title: string; snippet: string; surface: string; ts: number; imagePath: string | null };
+const hit = (key: string, over: Partial<Hit> = {}): Hit => ({ key, kind: 'memory', refId: 1, title: key, snippet: 's', surface: 'Note', ts: 1, imagePath: null, ...over });
 
 // A tiny fake tool call helper: script one tool round then a final answer.
 function scriptToolThenAnswer(name: string, args: string, answer: string): void {
@@ -175,6 +184,50 @@ describe('toolChat streaming loop (C7)', () => {
     const r = await toolChat('do it', [], { connectors: true });
     expect(execute).toHaveBeenCalledWith('ext_tool', {});
     expect(r.toolCalls[0]).toMatchObject({ name: 'ext_tool', result: 'ext-result' });
+  });
+
+  // --- search_memory citation side-channel (the sources ToolResult carries) ------
+  it('surfaces search_memory hits as structured citations in r.unified, excluding the current chat', async () => {
+    searchMock.mockReset();
+    searchMock.mockResolvedValueOnce([hit('mem:1', { title: 'Q3 launch', snippet: 'shipped', surface: 'Note', ts: 1_700_000_000_000 })]);
+    scriptToolThenAnswer('search_memory', '{"query":"Q3 launch"}', 'You shipped the Q3 launch.');
+    const r = await toolChat('what about Q3', [], { conversationId: 'chat-current' });
+
+    // Terminal artifact: the citation cards the renderer renders from r.unified.
+    expect(r.unified).toHaveLength(1);
+    expect(r.unified[0]).toMatchObject({ key: 'mem:1', title: 'Q3 launch', surface: 'Note' });
+    expect(r.answer).toBe('You shipped the Q3 launch.');
+    // Self-citation exclusion preserved: the search was scoped away from this chat.
+    expect(searchMock).toHaveBeenCalledWith('Q3 launch', expect.objectContaining({ excludeChatId: 'chat-current' }));
+  });
+
+  it('dedups citations across multiple search_memory rounds by key (dynamic per-round hits)', async () => {
+    searchMock.mockReset();
+    searchMock
+      .mockResolvedValueOnce([hit('k1')])
+      .mockResolvedValueOnce([hit('k1'), hit('k2')]); // k1 repeats, k2 is new
+    streamChatMock.mockImplementationOnce(async () => ({ content: '', toolCalls: [{ id: 'c1', name: 'search_memory', arguments: '{"query":"a"}' }] }));
+    streamChatMock.mockImplementationOnce(async () => ({ content: '', toolCalls: [{ id: 'c2', name: 'search_memory', arguments: '{"query":"b"}' }] }));
+    streamChatMock.mockImplementationOnce(async () => ({ content: 'done', toolCalls: [] }));
+    const r = await toolChat('dig deeper', []);
+    // k1 appears once despite two rounds returning it; k2 added — loop-scoped dedup.
+    expect(r.unified.map((s) => s.key)).toEqual(['k1', 'k2']);
+  });
+
+  it('search_memory with no hits yields the empty-memory text and no citations', async () => {
+    searchMock.mockReset();
+    searchMock.mockResolvedValueOnce([]);
+    scriptToolThenAnswer('search_memory', '{"query":"nothing"}', 'I could not find anything.');
+    const r = await toolChat('anything?', []);
+    expect(r.unified).toEqual([]);
+    expect(r.toolCalls[0].result).toMatch(/nothing found in memory/i);
+  });
+
+  // --- DIP guard: the loop must not re-introduce per-tool-name branching ----------
+  it('dispatches every tool uniformly — no c.name special-casing in the loop', () => {
+    const src = readFileSync(join(__dirname, '../tools.ts'), 'utf8');
+    expect(src).not.toMatch(/c\.name === ['"]search_memory['"]/);
+    expect(src).not.toMatch(/c\.name === ['"]generate_image['"]/);
   });
 });
 

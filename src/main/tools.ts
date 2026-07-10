@@ -23,11 +23,29 @@ export function setToolEnabled(name: string, enabled: boolean): void {
   saveSetting('disabledTools', Array.from(set));
 }
 
+// Per-turn context a tool may need beyond its args. Injected by the loop so a tool
+// owns its full behavior instead of the loop special-casing it (e.g. search_memory
+// excludes the current conversation so it can't cite itself).
+export interface ToolContext {
+  conversationId?: string;
+}
+
+// A tool's structured result. Most tools just return text (a bare string, which the
+// loop normalizes to { text }); a tool may ALSO emit side channels — `sources`
+// (interactive citations, from search_memory) and `imageRequest` (the deferred
+// image prompt, from generate_image) — so the loop dispatches every tool uniformly
+// and no longer branches on the tool's name.
+export interface ToolResult {
+  text: string;
+  sources?: UnifiedSource[];
+  imageRequest?: { prompt: string };
+}
+
 type ToolDef = {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
-  run: (args: Record<string, unknown>) => Promise<string> | string;
+  run: (args: Record<string, unknown>, ctx: ToolContext) => Promise<string | ToolResult> | string | ToolResult;
 };
 
 // --- HTML helpers for the web tools live in ./tools-parsers (pure, unit-tested).
@@ -158,20 +176,28 @@ const TOOLS: ToolDef[] = [
       },
       required: ['query'],
     },
-    run: async (a) => {
+    // Owns BOTH the model's text result AND the structured hits surfaced as
+    // interactive citations. Excludes the current conversation (ctx) so it can't
+    // cite itself. The loop dedups the returned sources across rounds.
+    run: async (a, ctx): Promise<ToolResult> => {
       try {
         const { universalSearch } = await import('./search');
         const n = Math.min(20, Math.max(1, Number(a.limit) || 8));
-        const hits = await universalSearch(String(a.query ?? ''), { limit: n, semantic: true });
-        if (!hits.length) return 'Nothing found in memory for that.';
-        return hits
-          .map((h) => {
-            const when = h.ts ? ' · ' + new Date(h.ts).toISOString().slice(0, 16).replace('T', ' ') : '';
-            return `(${h.surface || h.kind}${when}) ${h.title ? h.title + ' — ' : ''}${h.snippet}`;
-          })
-          .join('\n');
+        const hits = await universalSearch(String(a.query ?? ''), { limit: n, semantic: true, excludeChatId: ctx.conversationId });
+        const sources: UnifiedSource[] = hits.map((h) => ({
+          key: h.key, kind: h.kind, refId: h.refId, title: h.title, snippet: h.snippet, surface: h.surface, ts: h.ts, imagePath: h.imagePath,
+        }));
+        const text = hits.length
+          ? hits
+              .map((h) => {
+                const when = h.ts ? ' · ' + new Date(h.ts).toISOString().slice(0, 16).replace('T', ' ') : '';
+                return `(${h.surface || h.kind}${when}) ${h.title ? h.title + ' — ' : ''}${h.snippet}`;
+              })
+              .join('\n')
+          : 'Nothing found in memory for that.';
+        return { text, sources };
       } catch (e) {
-        return 'Error searching memory: ' + (e as Error).message;
+        return { text: 'Error searching memory: ' + (e as Error).message };
       }
     },
   },
@@ -182,14 +208,19 @@ const TOOLS: ToolDef[] = [
     run: () => new Date().toString(),
   },
   {
-    // generate_image is DEFERRED: this run() is never used to generate. The loop
-    // special-cases it (like search_memory) to record the requested prompt and return
-    // it, so the renderer generates AFTER the turn. Generating inline would evict the
-    // LLM from unified memory mid-loop and risk a nested modality-queue deadlock.
+    // generate_image is DEFERRED: run() never generates. It records the requested
+    // prompt as `imageRequest` (the loop keeps the last one) so the renderer
+    // generates AFTER the turn — generating inline would evict the LLM from unified
+    // memory mid-loop and risk a nested modality-queue deadlock.
     name: 'generate_image',
     description: 'Generate an image on-device from a text prompt. Use when the user asks for a picture/photo/logo/art to be created.',
     parameters: { type: 'object', properties: { prompt: { type: 'string', description: 'a detailed description of the image to create' } }, required: ['prompt'] },
-    run: () => 'Image generation started - it will appear in the chat.',
+    run: (a): ToolResult => {
+      const prompt = String(a.prompt ?? '').trim();
+      return prompt
+        ? { text: 'Image generation started - it will appear in the chat.', imageRequest: { prompt } }
+        : { text: 'Error: no image prompt provided.' };
+    },
   },
 ];
 
@@ -203,10 +234,25 @@ function schemas(imageAvailable: boolean): unknown[] {
     .map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
 }
 
-async function execute(name: string, args: Record<string, unknown>): Promise<string> {
-  const tool = TOOLS.find((t) => t.name === name);
-  if (!tool) return `Error: unknown tool ${name}`;
-  try { return String(await tool.run(args)); } catch (e) { return `Error: ${(e as Error).message}`; }
+/** Normalize a tool's return (bare string or structured) to a ToolResult. */
+function asToolResult(r: string | ToolResult): ToolResult {
+  return typeof r === 'string' ? { text: r } : r;
+}
+
+/** Dispatch a tool call UNIFORMLY: a registered extension that owns the name wins,
+ *  else the matching built-in. Any throw becomes an error-text result (a single
+ *  tool failing never aborts the turn). No name-based special-casing — each tool
+ *  owns its own text + side channels (sources / imageRequest) via its ToolResult. */
+async function runTool(name: string, args: Record<string, unknown>, ctx: ToolContext, exts: ToolExtension[]): Promise<ToolResult> {
+  try {
+    const ext = exts.find((e) => e.canHandle(name));
+    if (ext) return { text: String(await ext.execute(name, args)) };
+    const tool = TOOLS.find((t) => t.name === name);
+    if (!tool) return { text: `Error: unknown tool ${name}` };
+    return asToolResult(await tool.run(args, ctx));
+  } catch (e) {
+    return { text: `Error: ${(e as Error).message}` };
+  }
 }
 
 // --- Tool extensions (open-core seam) --------------------------------------
@@ -336,43 +382,18 @@ export async function toolChat(
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(c.arguments || '{}'); } catch { /* keep empty */ }
         opts.onStep?.({ name: c.name, args }); // surface the tool activity BEFORE running it
-        let result: string;
-        if (c.name === 'search_memory') {
-          // Run memory search here (not via the generic tool) so we can both build
-          // the model's text result AND surface the structured hits as interactive
-          // citations — excluding the current conversation so it can't cite itself.
-          try {
-            const { universalSearch } = await import('./search');
-            const n = Math.min(20, Math.max(1, Number(args.limit) || 8));
-            const hits = await universalSearch(String(args.query ?? ''), { limit: n, semantic: true, excludeChatId: opts.conversationId });
-            for (const h of hits) {
-              if (unifiedKeys.has(h.key)) continue;
-              unifiedKeys.add(h.key);
-              unified.push({ key: h.key, kind: h.kind, refId: h.refId, title: h.title, snippet: h.snippet, surface: h.surface, ts: h.ts, imagePath: h.imagePath });
-            }
-            result = hits.length
-              ? hits.map((h) => {
-                  const when = h.ts ? ' · ' + new Date(h.ts).toISOString().slice(0, 16).replace('T', ' ') : '';
-                  return `(${h.surface || h.kind}${when}) ${h.title ? h.title + ' — ' : ''}${h.snippet}`;
-                }).join('\n')
-              : 'Nothing found in memory for that.';
-          } catch (e) {
-            result = 'Error searching memory: ' + (e as Error).message;
-          }
-        } else if (c.name === 'generate_image') {
-          // Deferred: don't generate here (would evict the LLM mid-loop). Record the
-          // prompt (last call wins) and feed a placeholder back so the model can wrap up.
-          const prompt = String(args.prompt ?? '').trim();
-          if (prompt) imageRequest = { prompt };
-          result = prompt
-            ? 'Image generation started - it will appear in the chat.'
-            : 'Error: no image prompt provided.';
-        } else {
-          const ext = exts.find((e) => e.canHandle(c.name));
-          result = ext ? await ext.execute(c.name, args) : await execute(c.name, args);
+        // Uniform dispatch — every tool owns its own result. Merge any structured
+        // side channels: sources are deduped into `unified` across rounds; the last
+        // non-empty imageRequest wins (deferred generation after the turn).
+        const res = await runTool(c.name, args, { conversationId: opts.conversationId }, exts);
+        for (const s of res.sources ?? []) {
+          if (unifiedKeys.has(s.key)) continue;
+          unifiedKeys.add(s.key);
+          unified.push(s);
         }
-        toolCalls.push({ name: c.name, args, result });
-        messages.push({ role: 'tool', tool_call_id: c.id, content: result });
+        if (res.imageRequest) imageRequest = res.imageRequest;
+        toolCalls.push({ name: c.name, args, result: res.text });
+        messages.push({ role: 'tool', tool_call_id: c.id, content: res.text });
       }
       continue; // let the model use the results
     }
