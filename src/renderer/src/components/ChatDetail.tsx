@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { cn } from '@renderer/lib/utils';
+import { parseSqliteUtc } from '@renderer/lib/time';
 import { BorderBeam } from './ui/border-beam';
 import { ProgressiveBlur } from './ui/progressive-blur';
 
@@ -57,10 +58,7 @@ const markdownComponents: any = {
 
 // Memory card - full version for expanded view
 function MemoryCardFull({ memory, onClick }: { memory: Memory; onClick: () => void }) {
-    const formatTime = (dateStr: string) => {
-        const iso = dateStr.replace(' ', 'T') + 'Z';
-        return new Date(iso).toLocaleString();
-    };
+    const formatTime = (dateStr: string) => parseSqliteUtc(dateStr).toLocaleString();
 
     return (
         <motion.div
@@ -113,10 +111,7 @@ function MemoryCard({ memory, onClick }: { memory: Memory; onClick: () => void }
 
 // Entity card - full version for expanded view
 function EntityCardFull({ entity, onClick }: { entity: Entity; onClick: () => void }) {
-    const formatTime = (dateStr: string) => {
-        const iso = dateStr.replace(' ', 'T') + 'Z';
-        return new Date(iso).toLocaleString();
-    };
+    const formatTime = (dateStr: string) => parseSqliteUtc(dateStr).toLocaleString();
 
     return (
         <motion.div

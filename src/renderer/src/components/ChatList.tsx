@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
+import { parseSqliteUtc } from '@renderer/lib/time';
 import { Modal, ModalBody, ModalContent, ModalTrigger } from './ui/animated-modal';
 import { Item, ItemActions, ItemContent, ItemGroup, ItemTitle } from './ui/item';
 import { BorderBeam } from './ui/border-beam';
@@ -319,12 +320,9 @@ export function ChatList({ onSelectSession }: ChatListProps) {
     );
 
     const formatTime = (dateStr: string) => {
-        // SQLite "YYYY-MM-DD HH:MM:SS" is UTC. Append 'Z' to treat as UTC.
-        // But need to be careful if it already has one.
-        // Or simpler: assume it is UTC and create Date.
-        // Note: ' ' space in SQL string needs to be T for ISO sometimes.
-        const iso = dateStr.replace(' ', 'T') + 'Z';
-        return new Date(iso).toLocaleString().substring(0, 16) + ' ' + new Date(iso).toLocaleString().substring(20, 22);
+        // SQLite "YYYY-MM-DD HH:MM:SS" is UTC — parsed via the shared lib/time helper.
+        const local = parseSqliteUtc(dateStr).toLocaleString();
+        return local.substring(0, 16) + ' ' + local.substring(20, 22);
     };
 
     return (

@@ -1,5 +1,23 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { timeAgo } from '../time';
+import { timeAgo, parseSqliteUtc } from '../time';
+
+describe('parseSqliteUtc — the shared SQLite-UTC parse (was inlined in ChatDetail/ChatList)', () => {
+  it('treats a bare SQLite timestamp as UTC (space -> T, Z appended)', () => {
+    const d = parseSqliteUtc('2024-01-02 03:04:05');
+    expect(d.toISOString()).toBe('2024-01-02T03:04:05.000Z');
+  });
+
+  it('matches the old inline `dateStr.replace(\' \', \'T\') + \'Z\'` exactly', () => {
+    const s = '2026-06-15 12:00:00';
+    expect(parseSqliteUtc(s).getTime()).toBe(new Date(s.replace(' ', 'T') + 'Z').getTime());
+  });
+
+  it('does not double a zone that is already present', () => {
+    expect(parseSqliteUtc('2024-01-02T03:04:05Z').toISOString()).toBe('2024-01-02T03:04:05.000Z');
+    const offset = parseSqliteUtc('2024-01-02T03:04:05+00:00');
+    expect(offset.toISOString()).toBe('2024-01-02T03:04:05.000Z');
+  });
+});
 
 // A fixed "now" so every bucket is deterministic. Chosen mid-month so the
 // week-plus absolute date can't underflow into the previous month.

@@ -8,8 +8,19 @@
 // (epoch ms) and Date inputs are used as-is.
 const HAS_TZ = /[zZ]$|[+-]\d{2}:?\d{2}$/;
 
+/**
+ * Parse a SQLite timestamp ('YYYY-MM-DD HH:MM:SS', stored in UTC with no zone)
+ * into a Date: the space becomes an ISO 'T' and a 'Z' is appended so it parses as
+ * UTC — unless the string already carries a zone (trailing Z or +/-HH:MM), then
+ * it's used as-is. Single source for the parse that was inlined across ChatDetail
+ * / ChatList (`dateStr.replace(' ', 'T') + 'Z'`).
+ */
+export function parseSqliteUtc(dateStr: string): Date {
+  return new Date(HAS_TZ.test(dateStr) ? dateStr : dateStr.replace(' ', 'T') + 'Z');
+}
+
 function toDate(input: string | number | Date): Date {
-  if (typeof input === 'string') return new Date(HAS_TZ.test(input) ? input : input + 'Z');
+  if (typeof input === 'string') return parseSqliteUtc(input);
   return new Date(input);
 }
 
