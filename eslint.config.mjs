@@ -16,14 +16,23 @@ import sonarjs from 'eslint-plugin-sonarjs'
 const sonarProWarn = {
   ...sonarjs.configs.recommended,
   name: 'sonarjs on pro (warn ratchet)',
+  // Product code only — test files are intentionally explicit/repetitive; linting
+  // them for duplicate-string / complexity is noise (SonarCloud separates test from
+  // main sources for the same reason). Not suppression — correct scoping.
   files: ['pro/**/*.{ts,tsx}'],
+  ignores: ['pro/**/*.{test,spec}.{ts,tsx}', 'pro/**/__tests__/**'],
   rules: {
     ...Object.fromEntries(Object.keys(sonarjs.configs.recommended.rules ?? {}).map((rule) => [rule, 'warn'])),
-    'sonarjs/arrow-function-convention': 'off', // style, not a defect
-    'sonarjs/file-header': 'off', // header policy
-    'sonarjs/shorthand-property-grouping': 'off', // style
+    // Pure style — not a defect:
+    'sonarjs/arrow-function-convention': 'off',
+    'sonarjs/file-header': 'off',
+    'sonarjs/shorthand-property-grouping': 'off',
+    'sonarjs/no-wildcard-import': 'off', // `import * as fs/http/path` is intentional here
     'sonarjs/void-use': 'off', // `void promise` is our intentional fire-and-forget idiom
-    'sonarjs/no-implicit-dependencies': 'off' // dependency-cruiser owns dep boundaries
+    // Owned by another gate / genuine false positives on this codebase:
+    'sonarjs/no-implicit-dependencies': 'off', // dependency-cruiser owns dep boundaries
+    'sonarjs/no-reference-error': 'off', // type-unaware; fires on the valid `NodeJS.Timeout` type — tsc is the real ref-error gate
+    'sonarjs/publicly-writable-directories': 'off' // os.tmpdir() scratch files are legitimate
   }
 }
 
