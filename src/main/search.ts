@@ -12,6 +12,8 @@ import {
   fuseHits,
   queryTerms,
   rankResults,
+  likeMatch,
+  LIKE_COLUMNS,
   type RawHit,
   type SearchKind,
   type SearchResult,
@@ -155,20 +157,20 @@ export function searchFacets(query: string): { source: string; count: number }[]
   }
   const terms = queryTerms(q, 6);
   if (terms.length) {
-    const chatWhere = terms.map(() => '(lower(rm.content) LIKE ? OR lower(rc.title) LIKE ?)').join(' AND ');
+    const chatM = likeMatch(LIKE_COLUMNS.chat, terms);
     const chat = db
-      .prepare(`SELECT COUNT(*) AS c FROM (SELECT rc.id FROM rag_messages rm JOIN rag_conversations rc ON rc.id=rm.conversation_id WHERE ${chatWhere} GROUP BY rc.id)`)
-      .get(...terms.flatMap((t) => [`%${t}%`, `%${t}%`])) as { c: number };
+      .prepare(`SELECT COUNT(*) AS c FROM (SELECT rc.id FROM rag_messages rm JOIN rag_conversations rc ON rc.id=rm.conversation_id WHERE ${chatM.where} GROUP BY rc.id)`)
+      .get(...chatM.args) as { c: number };
     if (chat.c) out.push({ source: 'Chat', count: chat.c });
-    const docWhere = terms.map(() => '(lower(c.content) LIKE ? OR lower(d.name) LIKE ?)').join(' AND ');
+    const docM = likeMatch(LIKE_COLUMNS.doc, terms);
     const kb = db
-      .prepare(`SELECT COUNT(*) AS c FROM (SELECT d.id FROM rag_chunks c JOIN rag_documents d ON d.id=c.doc_id WHERE ${docWhere} GROUP BY d.id)`)
-      .get(...terms.flatMap((t) => [`%${t}%`, `%${t}%`])) as { c: number };
+      .prepare(`SELECT COUNT(*) AS c FROM (SELECT d.id FROM rag_chunks c JOIN rag_documents d ON d.id=c.doc_id WHERE ${docM.where} GROUP BY d.id)`)
+      .get(...docM.args) as { c: number };
     if (kb.c) out.push({ source: 'Knowledge base', count: kb.c });
-    const mtgWhere = terms.map(() => '(lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(transcript) LIKE ?)').join(' AND ');
+    const mtgM = likeMatch(LIKE_COLUMNS.meeting, terms);
     const mtg = db
-      .prepare(`SELECT COUNT(*) AS c FROM meetings WHERE ${mtgWhere}`)
-      .get(...terms.flatMap((t) => [`%${t}%`, `%${t}%`, `%${t}%`])) as { c: number };
+      .prepare(`SELECT COUNT(*) AS c FROM meetings WHERE ${mtgM.where}`)
+      .get(...mtgM.args) as { c: number };
     if (mtg.c) out.push({ source: 'Meeting', count: mtg.c });
   }
   return out;
@@ -251,8 +253,7 @@ function keywordHits(query: string, perSource: number): RawHit[][] {
 function likeChatHits(query: string, limit: number): RawHit[] {
   const terms = queryTerms(query, 6);
   if (!terms.length) return [];
-  const where = terms.map(() => '(lower(rm.content) LIKE ? OR lower(rc.title) LIKE ?)').join(' AND ');
-  const args = terms.flatMap((t) => [`%${t}%`, `%${t}%`]);
+  const { where, args } = likeMatch(LIKE_COLUMNS.chat, terms);
   return getDB()
     .prepare(
       `SELECT 'chat:'||rc.id AS key, 'chat' AS kind, 0 AS refId, COALESCE(rc.title,'Chat') AS title,
@@ -269,8 +270,7 @@ function likeChatHits(query: string, limit: number): RawHit[] {
 function likeDocHits(query: string, limit: number): RawHit[] {
   const terms = queryTerms(query, 6);
   if (!terms.length) return [];
-  const where = terms.map(() => '(lower(c.content) LIKE ? OR lower(d.name) LIKE ?)').join(' AND ');
-  const args = terms.flatMap((t) => [`%${t}%`, `%${t}%`]);
+  const { where, args } = likeMatch(LIKE_COLUMNS.doc, terms);
   return getDB()
     .prepare(
       `SELECT 'doc:'||d.id AS key, 'doc' AS kind, d.id AS refId, d.name AS title,
@@ -285,8 +285,7 @@ function likeDocHits(query: string, limit: number): RawHit[] {
 function likeMeetingHits(query: string, limit: number): RawHit[] {
   const terms = queryTerms(query, 6);
   if (!terms.length) return [];
-  const where = terms.map(() => '(lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(transcript) LIKE ?)').join(' AND ');
-  const args = terms.flatMap((t) => [`%${t}%`, `%${t}%`, `%${t}%`]);
+  const { where, args } = likeMatch(LIKE_COLUMNS.meeting, terms);
   return getDB()
     .prepare(
       `SELECT 'mtg:'||id AS key, 'meeting' AS kind, id AS refId, COALESCE(title,'Meeting') AS title,
@@ -301,8 +300,7 @@ function likeMeetingHits(query: string, limit: number): RawHit[] {
 function likeFrameHits(query: string, limit: number): RawHit[] {
   const terms = queryTerms(query, 6);
   if (!terms.length) return [];
-  const where = terms.map(() => 'lower(text) LIKE ?').join(' AND ');
-  const args = terms.map((t) => `%${t}%`);
+  const { where, args } = likeMatch(LIKE_COLUMNS.frame, terms);
   return getDB()
     .prepare(
       `SELECT 'frame:'||id AS key, 'screen' AS kind, id AS refId, COALESCE(surface,'Screen') AS title,

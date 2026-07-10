@@ -16,6 +16,8 @@ import {
   fuseHits,
   applyBoosts,
   rankResults,
+  likeMatch,
+  LIKE_COLUMNS,
   type RawHit,
 } from '../search-ranking';
 
@@ -261,5 +263,40 @@ describe('rankResults — filter then sort', () => {
 
   it('empty input → empty output', () => {
     expect(rankResults([], { query: 'x' })).toEqual([]);
+  });
+});
+
+describe('likeMatch — shared LIKE WHERE + params (facet counts == results)', () => {
+  it('builds one OR-group per term over the columns, AND-ed together', () => {
+    const { where } = likeMatch(['a', 'b'], ['x', 'y']);
+    expect(where).toBe('(lower(a) LIKE ? OR lower(b) LIKE ?) AND (lower(a) LIKE ? OR lower(b) LIKE ?)');
+  });
+
+  it('binds columns.length lowercased-wildcard params per term, in order', () => {
+    const { args } = likeMatch(['a', 'b'], ['x', 'y']);
+    expect(args).toEqual(['%x%', '%x%', '%y%', '%y%']);
+  });
+
+  it('clause placeholder count always equals the params length (can never disagree)', () => {
+    for (const cols of Object.values(LIKE_COLUMNS)) {
+      const { where, args } = likeMatch(cols, ['foo', 'bar', 'baz']);
+      expect((where.match(/\?/g) || []).length).toBe(args.length);
+      expect(args.length).toBe(cols.length * 3);
+    }
+  });
+
+  it('handles a single-column source (frame) as a bare OR-group of one', () => {
+    expect(likeMatch(LIKE_COLUMNS.frame, ['q'])).toEqual({ where: '(lower(text) LIKE ?)', args: ['%q%'] });
+  });
+
+  it('empty terms yield an empty clause and no params', () => {
+    expect(likeMatch(['a'], [])).toEqual({ where: '', args: [] });
+  });
+
+  it('the column sets match the search.ts queries (facet + hit both build from these)', () => {
+    // Guard the single source: these are the columns the two divergent copies used.
+    expect(LIKE_COLUMNS.chat).toEqual(['rm.content', 'rc.title']);
+    expect(LIKE_COLUMNS.doc).toEqual(['c.content', 'd.name']);
+    expect(LIKE_COLUMNS.meeting).toEqual(['title', 'summary', 'transcript']);
   });
 });

@@ -48,6 +48,34 @@ export function ftsExpr(query: string): string {
     .join(' ');
 }
 
+/**
+ * Column sets for the no-FTS LIKE search of each source. THE SINGLE SOURCE OF
+ * TRUTH shared by the facet COUNT queries and the hit builders in search.ts — a
+ * source's facet count used to be able to diverge from its results because the
+ * WHERE clause was hand-written in both places. Add a column here and both update.
+ */
+export const LIKE_COLUMNS = {
+  chat: ['rm.content', 'rc.title'],
+  doc: ['c.content', 'd.name'],
+  meeting: ['title', 'summary', 'transcript'],
+  frame: ['text'],
+} as const;
+
+/**
+ * Build the term-AND-ed LIKE WHERE fragment AND its bound params for a column set:
+ * each term contributes one OR-group over the columns (`lower(col) LIKE ?`), the
+ * groups AND-ed together; params are lowercased `%term%` wildcards, columns.length
+ * per term. Returning both together guarantees the clause and the params always
+ * agree in count — the facet counter and the hit query call this identically.
+ */
+export function likeMatch(columns: readonly string[], terms: string[]): { where: string; args: string[] } {
+  const perTerm = '(' + columns.map((c) => `lower(${c}) LIKE ?`).join(' OR ') + ')';
+  return {
+    where: terms.map(() => perTerm).join(' AND '),
+    args: terms.flatMap((t) => columns.map(() => `%${t}%`)),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Reciprocal-rank fusion + result assembly (pure — takes already-fetched hits)
 // ---------------------------------------------------------------------------
