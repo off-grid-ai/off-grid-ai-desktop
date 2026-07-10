@@ -167,7 +167,7 @@ export class ModalityQueue {
 
       const idx = this.waiting.findIndex((w) => w.job.id === next.id);
       if (idx === -1) return; // shouldn't happen — selectNext picks from waiting
-      const waiter = this.waiting[idx];
+      const waiter = this.waiting[idx]!; // idx !== -1, so present
       this.waiting.splice(idx, 1);
       const entry: RunningEntry = { job: waiter.job, evicted: [] };
       this.running.set(waiter.job.id, entry);

@@ -78,7 +78,7 @@ export function whisperModel(): string | null {
     if (!files.length) return null;
     const multi = files.filter((f) => !/\.en\.bin$/i.test(f));
     const pool = multi.length ? multi : files;
-    const pick = [...pool].sort((a, b) => sizeRank(b) - sizeRank(a))[0];
+    const pick = [...pool].sort((a, b) => sizeRank(b) - sizeRank(a))[0]!; // pool non-empty (files.length checked)
     return path.join(dir, pick);
   } catch {
     return null; // transient fs/store error → "no model", not a thrown exception
@@ -99,7 +99,7 @@ export function smallWhisperModel(): string | null {
   if (!files.length) return null;
   const multi = files.filter((f) => !/\.en\.bin$/i.test(f));
   const pool = multi.length ? multi : files;
-  const pick = [...pool].sort((a, b) => sizeRank(a) - sizeRank(b))[0]; // smallest first
+  const pick = [...pool].sort((a, b) => sizeRank(a) - sizeRank(b))[0]!; // smallest first; pool non-empty (files.length checked)
   return path.join(dir, pick);
 }
 
@@ -178,9 +178,9 @@ function parseSegments(stdout: string): Seg[] {
   for (const line of stdout.split('\n')) {
     const m = re.exec(line);
     if (!m) continue;
-    const text = m[7].trim();
+    const text = m[7]!.trim();
     if (!text) continue;
-    out.push({ start: hms(m[1], m[2], m[3]), end: hms(m[4], m[5], m[6]), text });
+    out.push({ start: hms(m[1]!, m[2]!, m[3]!), end: hms(m[4]!, m[5]!, m[6]!), text });
   }
   return out;
 }
