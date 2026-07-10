@@ -7,6 +7,10 @@ import path from 'path';
 export const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'heic'];
 export const AUDIO_EXT = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac', 'aiff', 'aif'];
 export const VIDEO_EXT = ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'];
+// Document/text extensions the uploader surfaces in the picker. pdf/docx classify
+// to their own kinds; the rest classify as 'text'. Listed here so the file-picker
+// allowlist is derived from the same source the router uses.
+export const DOC_EXT = ['txt', 'md', 'markdown', 'csv', 'json', 'pdf', 'docx'];
 
 export type UploadKind = 'text' | 'pdf' | 'docx' | 'image' | 'audio' | 'video';
 
@@ -20,6 +24,15 @@ export function classifyUpload(name: string): UploadKind {
   if (ext === 'pdf') return 'pdf';
   if (ext === 'docx') return 'docx';
   return 'text';
+}
+
+/** Every extension the upload file-picker should allow, derived from the router's
+ *  own classify sets (+ doc/text) so the picker and the processor can never
+ *  disagree: a user cannot pick a file the router can't classify, and every
+ *  format the router handles is offered. Deduped; order: docs, audio, video,
+ *  image. */
+export function uploadPickerExtensions(): string[] {
+  return Array.from(new Set([...DOC_EXT, ...AUDIO_EXT, ...VIDEO_EXT, ...IMAGE_EXT]));
 }
 
 /** Sanitise a file name for use in a temp/persisted path: collapse any run of

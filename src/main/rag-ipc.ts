@@ -16,22 +16,16 @@ import {
   deleteThread,
   getThreadMessages,
 } from './rag';
+import { uploadPickerExtensions } from './files-classify';
 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-const DOC_FILTERS = [
-  {
-    name: 'Documents, audio & video',
-    extensions: [
-      'txt', 'md', 'markdown', 'csv', 'json', 'pdf', 'docx',
-      'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg',
-      'mp4', 'mov', 'mkv', 'webm', 'm4v',
-      'png', 'jpg', 'jpeg', 'webp',
-    ],
-  },
-];
+// Built from the router's classify sets (files-classify) so the picker allowlist
+// and the processor can never drift: it used to hardcode a subset that omitted
+// gif/bmp/heic/opus/aiff/avi the router actually handles.
+const DOC_FILTERS = [{ name: 'Documents, audio & video', extensions: uploadPickerExtensions() }];
 
 export function setupRagIPC(): void {
   // --- Projects -------------------------------------------------------------
