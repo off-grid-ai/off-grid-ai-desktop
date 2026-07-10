@@ -24,6 +24,7 @@ import { promisify } from 'util';
 import { execFile } from 'child_process';
 import { binRoots, isPackaged } from '../runtime-env';
 import { whisperModel, ffmpegBin } from './whisper-cli';
+import { decodeToWavArgs, DECODE_TIMEOUT_MS } from './ffmpeg-decode';
 import type { TranscriptionService, Transcript, TranscribeOptions } from './types';
 
 const execFileAsync = promisify(execFile);
@@ -320,7 +321,7 @@ export class WhisperServerTranscription implements TranscriptionService {
       if (!ff) throw new Error('ffmpeg is required to decode audio and was not found.');
       tmp = path.join(os.tmpdir(), `offgrid-stt-srv-${Date.now()}-${process.pid}.wav`);
       try {
-        await execFileAsync(ff, ['-y', '-i', input.path, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', tmp], { timeout: 10 * 60_000 });
+        await execFileAsync(ff, decodeToWavArgs(input.path, tmp), { timeout: DECODE_TIMEOUT_MS });
       } catch (e) {
         fs.promises.unlink(tmp).catch(() => {});
         throw e;

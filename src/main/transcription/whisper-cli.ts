@@ -14,6 +14,7 @@ import { binRoots, modelsDir } from '../runtime-env';
 import { modelsByKind } from '@offgrid/models';
 import { existing } from './bin-resolution';
 import { catalogEngine } from './classify';
+import { decodeToWavArgs, DECODE_TIMEOUT_MS } from './ffmpeg-decode';
 import type { TranscriptionService, Transcript, TranscribeOptions, Seg } from './types';
 
 const execFileAsync = promisify(execFile);
@@ -138,7 +139,7 @@ export class WhisperCliTranscription implements TranscriptionService {
       // 16 kHz mono PCM WAV; -vn drops any video track so A/V files work too.
       // Cap the decode so a malformed/streaming input can't hang the process forever.
       try {
-        await execFileAsync(ff, ['-y', '-i', input.path, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', tmp], { timeout: 10 * 60_000 });
+        await execFileAsync(ff, decodeToWavArgs(input.path, tmp), { timeout: DECODE_TIMEOUT_MS });
       } catch (e) {
         fs.promises.unlink(tmp).catch(() => {});
         throw e;
