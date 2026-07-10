@@ -11,7 +11,7 @@ import { classifyLlamaError } from "./llama-error";
 import type { ManagedRuntime } from "./runtime-manager";
 import { LLAMA_SERVER_PORT } from "../shared/ports";
 import { DEFAULT_CTX_SIZE } from "../shared/llm-defaults";
-import { MODE_PRESETS, samplingPayload, launchArgsChanged } from "./llm/settings-math";
+import { applyModePreset, samplingPayload, launchArgsChanged, buildLaunchArgs, type PresetField } from "./llm/settings-math";
 import { buildMessages, imageMime, thinkingPayload, type DecodedImage } from "./llm/chat-payload";
 import { parseSseLine, createThinkSplitter, createToolCallAccumulator, type AssembledToolCall } from "./llm/sse-stream";
 import { modelRequestOptions, postCompletionOnce } from "./llm/http-post";
@@ -78,6 +78,12 @@ export class LLMService {
   // Launch-time params (need a respawn). Defaults match prior hardcoded behavior.
   private kvCacheType: KvCacheType = "f16";
   private flashAttn = false;
+  // Which mode-preset-governed fields (ctxSize/kvCacheType/flashAttn) the user has
+  // explicitly pinned via a granular control. A mode preset only fills fields NOT in
+  // this set, so choosing/reapplying a performance mode never clobbers an explicit KV
+  // choice (the "q8_0 reverts to f16 on every restart" bug). Persisted alongside the
+  // values so a plain restart keeps the pin.
+  private userExplicit = new Set<PresetField>();
   private gpuLayers = 99;
   private threads: number | undefined;
   private batchSize: number | undefined;
@@ -113,6 +119,11 @@ export class LLMService {
       if (typeof s.threads === "number") this.threads = s.threads;
       if (typeof s.batchSize === "number") this.batchSize = s.batchSize;
       if (s.performanceMode === "conservative" || s.performanceMode === "balanced" || s.performanceMode === "extreme") this.performanceMode = s.performanceMode;
+      // Restore which preset fields the user pinned, so a plain restart keeps an
+      // explicit KV/ctx/flash-attn choice instead of letting the mode preset win.
+      if (Array.isArray(s.userExplicit)) {
+        for (const f of s.userExplicit) if (f === "ctxSize" || f === "kvCacheType" || f === "flashAttn") this.userExplicit.add(f);
+      }
     } catch { /* defaults */ }
   }
 
@@ -156,6 +167,33 @@ export class LLMService {
     } as LlmSettings & { effectiveCtxSize: number };
   }
 
+  /** The exact argv handed to `llama-server` for the CURRENT settings — the terminal
+   *  artifact of the whole settings→persist→reload path. Delegates to the pure
+   *  `buildLaunchArgs` (single source of truth) after applying the impure RAM clamp,
+   *  so `_doInit` and tests build args the same way. */
+  launchArgs(): string[] {
+    return buildLaunchArgs({
+      modelPath: this.modelPath,
+      mmProjPath: this.mmProjPath,
+      port: this.port,
+      effectiveCtxSize: this.safeCtxSize(this.ctxSize),
+      gpuLayers: this.gpuLayers,
+      flashAttn: this.flashAttn,
+      kvCacheType: this.kvCacheType,
+      threads: this.threads,
+      batchSize: this.batchSize,
+    });
+  }
+
+  /** Persist settings to disk. Writes the public settings PLUS the internal
+   *  `userExplicit` pin-set (which fields the user set granularly), so a plain restart
+   *  restores the pins and a mode preset can't reclobber an explicit KV/ctx choice. */
+  private persist(): void {
+    try {
+      fs.writeFileSync(this.settingsFile, JSON.stringify({ ...this.getSettings(), userExplicit: [...this.userExplicit] }));
+    } catch { /* ignore */ }
+  }
+
   /** Sampling params to merge into a request payload (only those the user set). */
   private samplingPayload(): Record<string, number> {
     return samplingPayload({ topP: this.topP, topK: this.topK, minP: this.minP, repeatPenalty: this.repeatPenalty });
@@ -179,13 +217,24 @@ export class LLMService {
   /** Update inference settings; respawns the server if any launch-time arg changed
    *  (context, KV-cache type, flash-attn, GPU layers, threads, batch). */
   async setSettings(s: LlmSettings): Promise<void> {
-    // A resource-usage mode change applies its preset first (explicit fields in the
-    // same patch still override it below). Always treated as a launch change.
+    // Granular launch-time fields the user sets in THIS patch become pinned: a mode
+    // preset (now or on a future restart / mode re-pick) must NOT clobber them. Pin
+    // BEFORE applying the preset so an explicit q8_0 in the same patch survives.
+    if (s.kvCacheType === "f16" || s.kvCacheType === "q8_0" || s.kvCacheType === "q4_0") this.userExplicit.add("kvCacheType");
+    if (typeof s.flashAttn === "boolean") this.userExplicit.add("flashAttn");
+    if (typeof s.ctxSize === "number") this.userExplicit.add("ctxSize");
+    // A resource-usage mode change applies its preset by MERGING: it fills only the
+    // preset fields the user has NOT pinned, so it can't wipe an explicit KV choice.
+    // Always treated as a launch change.
     let modeChanged = false;
     if ((s.performanceMode === "conservative" || s.performanceMode === "balanced" || s.performanceMode === "extreme") && s.performanceMode !== this.performanceMode) {
       this.performanceMode = s.performanceMode;
-      const p = MODE_PRESETS[s.performanceMode];
-      this.ctxSize = p.ctxSize; this.kvCacheType = p.kvCacheType; this.flashAttn = p.flashAttn;
+      const merged = applyModePreset(
+        { ctxSize: this.ctxSize, kvCacheType: this.kvCacheType, flashAttn: this.flashAttn },
+        s.performanceMode,
+        this.userExplicit,
+      );
+      this.ctxSize = merged.ctxSize; this.kvCacheType = merged.kvCacheType; this.flashAttn = merged.flashAttn;
       modeChanged = true;
     }
     // Launch-time args: changing any of these requires a server respawn.
@@ -208,7 +257,7 @@ export class LLMService {
     if (typeof s.batchSize === "number") this.batchSize = s.batchSize;
     // Quantized KV cache requires FlashAttention — auto-enable it so the pair is valid.
     if (this.kvCacheType !== "f16" && !this.flashAttn) this.flashAttn = true;
-    try { fs.writeFileSync(this.settingsFile, JSON.stringify(this.getSettings())); } catch { /* ignore */ }
+    this.persist();
     if (launchChanged && !this.paused) {
       this.stop();
       await this.init();
@@ -358,23 +407,7 @@ export class LLMService {
 
     const binDir = path.dirname(serverPath);
 
-    const args = ["-m", this.modelPath];
-    if (this.mmProjPath) args.push("--mmproj", this.mmProjPath);
-    args.push(
-      "--port", String(this.port),
-      "--host", "127.0.0.1",
-      "-c", String(this.safeCtxSize(this.ctxSize)),
-      "-ngl", String(this.gpuLayers)
-    );
-    // FlashAttention: faster + lower memory. Required for a quantized KV cache.
-    if (this.flashAttn || this.kvCacheType !== "f16") args.push("--flash-attn", "on");
-    // Quantized KV cache (q8_0/q4_0) shrinks the per-token memory footprint — the
-    // single biggest lever against memory-overcommit freezes on big contexts.
-    if (this.kvCacheType !== "f16") {
-      args.push("--cache-type-k", this.kvCacheType, "--cache-type-v", this.kvCacheType);
-    }
-    if (typeof this.threads === "number") args.push("-t", String(this.threads));
-    if (typeof this.batchSize === "number") args.push("-b", String(this.batchSize));
+    const args = this.launchArgs();
     // Kill any lingering server before spawning (defends against a crashed or
     // orphaned instance still holding the port / RAM).
     if (this.server) {
@@ -480,7 +513,7 @@ export class LLMService {
       if (reduced < this.ctxSize) {
         console.warn(`[LLMService] reducing context ${this.ctxSize} -> ${reduced} after repeated crashes`);
         this.ctxSize = reduced;
-        try { fs.writeFileSync(this.settingsFile, JSON.stringify(this.getSettings())); } catch { /* ignore */ }
+        this.persist();
       }
     }
     await new Promise((r) => setTimeout(r, 1000 * this.restartTimes.length));

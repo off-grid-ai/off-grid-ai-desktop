@@ -18,6 +18,42 @@ export const MODE_PRESETS: Record<PerformanceMode, { ctxSize: number; kvCacheTyp
   extreme: { ctxSize: 65536, kvCacheType: 'f16', flashAttn: false },
 };
 
+/** The launch-time fields a mode preset governs. These are the ones a user can ALSO
+ *  set granularly (KV control, context slider, flash-attn toggle), so the preset and
+ *  the granular control contend for the same keys. `userExplicit` records which the
+ *  user has pinned, so a preset never clobbers a pinned choice. */
+export type PresetField = 'ctxSize' | 'kvCacheType' | 'flashAttn';
+
+/** The launch-time state a mode preset merges into. */
+export interface PresetState {
+  ctxSize: number;
+  kvCacheType: KvCacheType;
+  flashAttn: boolean;
+}
+
+/** Apply a performance-mode preset by MERGING, not clobbering: a field the user has
+ *  explicitly pinned (`userExplicit`) keeps its current value; every other field takes
+ *  the preset value. This is the fix for the "explicit q8_0 reverts to f16 on every
+ *  restart / mode re-pick" bug — the mode preset and the granular KV control both own
+ *  kvCacheType/flashAttn/ctxSize, and before this the preset always won and persisted
+ *  the clobber. Pure: no side effects, returns a fresh state.
+ *
+ * Note the invariant restored by the caller (kept out here to keep this a pure merge):
+ * a quantized KV cache requires flash-attn. That coupling lives at the call site so
+ * this function stays a plain field-wise merge that's trivially testable. */
+export function applyModePreset(
+  current: PresetState,
+  mode: PerformanceMode,
+  userExplicit: ReadonlySet<PresetField>,
+): PresetState {
+  const p = MODE_PRESETS[mode];
+  return {
+    ctxSize: userExplicit.has('ctxSize') ? current.ctxSize : p.ctxSize,
+    kvCacheType: userExplicit.has('kvCacheType') ? current.kvCacheType : p.kvCacheType,
+    flashAttn: userExplicit.has('flashAttn') ? current.flashAttn : p.flashAttn,
+  };
+}
+
 /** The tunable inference state that the sampling/launch math reads. Matches the
  *  private fields on LLMService so it can pass `this` straight in. */
 export interface SamplingState {
@@ -47,6 +83,55 @@ export interface LaunchState {
   gpuLayers: number;
   threads: number | undefined;
   batchSize: number | undefined;
+}
+
+/** The fully-resolved launch inputs the arg-builder needs. `ctxSize` is already the
+ *  EFFECTIVE (RAM-clamped) value — the clamp itself is impure (reads host RAM + weight
+ *  file sizes) and stays in LLMService; everything here is a pure function of these
+ *  inputs so the terminal artifact (the args array handed to llama-server) is testable. */
+export interface LaunchArgsInput {
+  modelPath: string;
+  mmProjPath: string; // empty string = text-only (no --mmproj)
+  port: number;
+  effectiveCtxSize: number; // already RAM-clamped
+  gpuLayers: number;
+  flashAttn: boolean;
+  kvCacheType: KvCacheType;
+  threads: number | undefined;
+  batchSize: number | undefined;
+}
+
+/** Build the exact argv passed to `llama-server`. Pure: same inputs → same args, no I/O.
+ *  This is the single source of truth for launch args, so the KV-cache / flash-attn
+ *  coupling (a quantized KV cache forces `--flash-attn on` and sets both -k/-v cache
+ *  types) is asserted directly against what the engine actually receives. */
+export function buildLaunchArgs(i: LaunchArgsInput): string[] {
+  const args = ['-m', i.modelPath];
+  if (i.mmProjPath) {
+    args.push('--mmproj', i.mmProjPath);
+  }
+  args.push(
+    '--port', String(i.port),
+    '--host', '127.0.0.1',
+    '-c', String(i.effectiveCtxSize),
+    '-ngl', String(i.gpuLayers),
+  );
+  // FlashAttention: faster + lower memory. Required for a quantized KV cache.
+  if (i.flashAttn || i.kvCacheType !== 'f16') {
+    args.push('--flash-attn', 'on');
+  }
+  // Quantized KV cache (q8_0/q4_0) shrinks the per-token memory footprint — the single
+  // biggest lever against memory-overcommit freezes on big contexts.
+  if (i.kvCacheType !== 'f16') {
+    args.push('--cache-type-k', i.kvCacheType, '--cache-type-v', i.kvCacheType);
+  }
+  if (typeof i.threads === 'number') {
+    args.push('-t', String(i.threads));
+  }
+  if (typeof i.batchSize === 'number') {
+    args.push('-b', String(i.batchSize));
+  }
+  return args;
 }
 
 /** Whether a settings patch changes any LAUNCH-TIME arg (context, KV-cache type,
