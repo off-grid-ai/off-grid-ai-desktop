@@ -35,9 +35,13 @@ jobs:
         if: ${{ hashFiles('pro/tsconfig.json') != '' }}
         timeout-minutes: 6
         run: cd pro && npx tsc --noEmit -p tsconfig.json
-      - name: Test
+      # Runs the full vitest suite AND enforces the coverage ratchet floor
+      # (vitest.config.ts `thresholds`) — the same gate as the pre-push hook, so a
+      # coverage regression fails CI, not just local pushes. The pro/** threshold
+      # group applies only when pro was checked out above (guarded in the config).
+      - name: Test + coverage thresholds
         timeout-minutes: 10
-        run: npm test
+        run: npm run test:coverage
       # Advisory: lint is enforced locally; bounded + non-blocking here so an
       # eslint slowdown over the full tree (incl. checked-out pro/) can't wedge CI.
       - name: Lint

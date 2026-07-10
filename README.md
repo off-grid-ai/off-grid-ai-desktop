@@ -28,6 +28,18 @@
 </p>
 
 <p align="center">
+  <img alt="coverage statements 97%" src="https://img.shields.io/badge/coverage%3A%20statements-97%25-34D399" />
+  <img alt="coverage branches 92%" src="https://img.shields.io/badge/branches-92%25-34D399" />
+  <img alt="coverage functions 96%" src="https://img.shields.io/badge/functions-96%25-34D399" />
+  <img alt="coverage lines 98%" src="https://img.shields.io/badge/lines-98%25-34D399" />
+</p>
+
+<!-- Coverage measured by `npm run test:coverage` over the testable surface; the ratchet
+     floor (95/90/93/96) is enforced on pre-push AND in CI (.github/workflows/ci.yml).
+     Refresh these when the floor rises — coverage only ever climbs. -->
+
+
+<p align="center">
   <strong><a href="https://github.com/off-grid-ai/mobile">Off Grid AI Mobile</a></strong> — the same on-device AI, on your phone &nbsp;·&nbsp;
   <a href="https://github.com/off-grid-ai/mobile"><img alt="Off Grid AI Mobile GitHub stars" src="https://img.shields.io/github/stars/off-grid-ai/mobile?style=social" /></a>
   &nbsp;·&nbsp; 100k+ downloads

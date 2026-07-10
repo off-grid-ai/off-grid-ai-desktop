@@ -1,5 +1,12 @@
 import { resolve } from 'path';
+import { existsSync } from 'fs';
 import { defineConfig } from 'vitest/config';
+
+// The pro/ submodule is present in the working tree when you have access, absent
+// otherwise (and in a fork CI without the cross-repo token). Only enforce the
+// pro-specific threshold group when pro is actually checked out, so a core-only
+// run measures + gates core alone instead of erroring on an empty pro/** glob.
+const hasPro = existsSync(resolve(__dirname, 'pro/tsconfig.json'));
 
 // Unit + integration tests (fast, deterministic). The Playwright Electron E2E lives
 // in e2e/ and runs via `npm run test:e2e`, NOT here.
@@ -173,7 +180,9 @@ export default defineConfig({
         lines: 96,
         // pro/** carved into its own group (mobile pattern) so pro is separately regression-
         // guarded, not averaged into core. Just under pro's measured 96.9/91.0/94.8/98.3.
-        'pro/**': { statements: 95, branches: 89, functions: 93, lines: 97 },
+        // Only applied when pro is checked out (see hasPro) so a core-only CI run doesn't
+        // error on an empty glob.
+        ...(hasPro ? { 'pro/**': { statements: 95, branches: 89, functions: 93, lines: 97 } } : {}),
       },
     },
   },
