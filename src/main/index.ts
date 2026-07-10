@@ -217,7 +217,7 @@ app.whenReady().then(() => {
       const range = request.headers.get('Range');
       const m = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
       if (m && (m[1] || m[2])) {
-        const start = m[1] ? parseInt(m[1], 10) : Math.max(0, size - parseInt(m[2], 10));
+        const start = m[1] ? parseInt(m[1], 10) : Math.max(0, size - parseInt(m[2]!, 10));
         const end = m[1] && m[2] ? Math.min(parseInt(m[2], 10), size - 1) : size - 1;
         if (start >= size || start > end) {
           return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });

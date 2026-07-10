@@ -109,7 +109,7 @@ export function startMediaServer(): void {
     }
     let filePath: string;
     try {
-      const enc = url.slice(prefix.length).split('?')[0];
+      const enc = url.slice(prefix.length).split('?')[0]!;
       filePath = Buffer.from(decodeURIComponent(enc), 'base64url').toString('utf8');
     } catch {
       res.writeHead(400).end();

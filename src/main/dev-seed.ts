@@ -50,7 +50,7 @@ const REACT = `export default function Hero() {
 
 function extractCode(text: string): string | null {
   const m = /```[a-zA-Z]*\n([\s\S]*?)```/.exec(text);
-  return m ? m[1].trim() : null;
+  return m ? m[1]!.trim() : null;
 }
 
 async function gen(prompt: string): Promise<string | null> {

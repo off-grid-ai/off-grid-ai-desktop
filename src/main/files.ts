@@ -46,7 +46,7 @@ export async function processUpload(name: string, bytes: ArrayBuffer | Uint8Arra
       const caps: string[] = [];
       for (let i = 0; i < frames.length; i++) {
         try {
-          caps.push(`[~${i + 1}s] ${ex.captionImage ? await ex.captionImage(frames[i]) : ''}`);
+          caps.push(`[~${i + 1}s] ${ex.captionImage ? await ex.captionImage(frames[i]!) : ''}`);
         } catch {
           /* skip a bad frame */
         }

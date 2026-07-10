@@ -27,7 +27,7 @@ export interface ResolvedRange {
 export function parseRange(rangeHeader: string | null | undefined, size: number): ResolvedRange {
   const m = rangeHeader && /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
   if (!m || (!m[1] && !m[2])) return { start: 0, end: Math.max(0, size - 1), full: true, unsatisfiable: false };
-  const start = m[1] ? parseInt(m[1], 10) : Math.max(0, size - parseInt(m[2], 10));
+  const start = m[1] ? parseInt(m[1], 10) : Math.max(0, size - parseInt(m[2]!, 10));
   const end = m[1] && m[2] ? Math.min(parseInt(m[2], 10), size - 1) : size - 1;
   if (start >= size || start > end) return { start: 0, end: 0, full: false, unsatisfiable: true };
   return { start, end, full: false, unsatisfiable: false };

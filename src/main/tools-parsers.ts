@@ -32,6 +32,6 @@ export function htmlToText(html: string): string {
  *  ('//host/...') hrefs are made https. Non-redirect hrefs pass through. */
 export function decodeDdgHref(href: string): string {
   const m = /[?&]uddg=([^&]+)/.exec(href);
-  if (m) { try { return decodeURIComponent(m[1]); } catch { /* fall through */ } }
+  if (m) { try { return decodeURIComponent(m[1]!); } catch { /* fall through */ } }
   return href.startsWith('//') ? 'https:' + href : href;
 }

@@ -12,7 +12,7 @@ export function parseMultipart(
   };
   const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
   if (!m) return out;
-  const boundary = (m[1] || m[2]).trim();
+  const boundary = (m[1] || m[2])!.trim();
   const delim = Buffer.from('--' + boundary);
   const headSep = Buffer.from('\r\n\r\n');
   let pos = body.indexOf(delim);

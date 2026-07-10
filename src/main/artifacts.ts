@@ -15,7 +15,7 @@ function artifactsDir(): string {
   for (const r of roots) {
     if (fs.existsSync(r)) return r;
   }
-  return roots[0];
+  return roots[0]!;
 }
 
 function read(name: string): string {
@@ -68,7 +68,7 @@ function deriveTitle(kind: ArtifactKind, code: string): string {
     const t = /<title[^>]*>([^<]+)<\/title>/i.exec(code)?.[1] || /<h1[^>]*>([^<]+)<\/h1>/i.exec(code)?.[1];
     if (t) return t.trim().slice(0, 80);
   }
-  if (kind === 'mermaid') return code.split('\n')[0].replace(/^\s*%%.*/, '').trim().slice(0, 60) || 'Diagram';
+  if (kind === "mermaid") return code.split("\n")[0]!.replace(/^\s*%%.*/, '').trim().slice(0, 60) || 'Diagram';
   if (kind === 'react') {
     const fn = /function\s+([A-Za-z0-9_]+)/.exec(code)?.[1];
     if (fn && fn !== 'App') return fn;
