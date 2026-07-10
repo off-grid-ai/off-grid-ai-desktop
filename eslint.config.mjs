@@ -5,6 +5,33 @@ import eslintPluginReact from 'eslint-plugin-react'
 import eslintPluginReactHooks from 'eslint-plugin-react-hooks'
 import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
 import sonarjs from 'eslint-plugin-sonarjs'
+import tsESLint from 'typescript-eslint'
+
+// Typed dead-BRANCH gate: no-unnecessary-condition uses the type-checker to flag
+// conditions that are always truthy/falsy given the types — the exact AI pattern
+// (defensive `if (x && x.y)` after x is already non-null, dead `===` branches,
+// `x?.y` where x can't be null). Requires typed linting (projectService). WARN
+// ratchet — many are genuine dead branches to delete, but some are legit guards at
+// untyped boundaries (JSON.parse / IPC / external data) where the fix is to correct
+// the TYPE, not delete the guard — so it's a triage signal, never auto-fixed.
+// Scoped to the dirs the tsconfigs cover so projectService never errors on a stray file.
+const typedDeadBranchWarn = {
+  name: 'typed no-unnecessary-condition (warn ratchet)',
+  files: [
+    'src/main/**/*.ts',
+    'src/preload/**/*.ts',
+    'src/renderer/src/**/*.{ts,tsx}',
+    'pro/main/**/*.ts',
+    'pro/renderer/**/*.{ts,tsx}'
+  ],
+  ignores: ['**/*.{test,spec,dbtest}.{ts,tsx}', '**/__tests__/**', '**/*.d.ts'],
+  languageOptions: {
+    parser: tsESLint.parser,
+    parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname }
+  },
+  plugins: { '@typescript-eslint': tsESLint.plugin },
+  rules: { '@typescript-eslint/no-unnecessary-condition': 'warn' }
+}
 
 // Sonar-grade rules (bugs, cognitive complexity, duplicated branches, dead code)
 // scoped to pro/** ONLY. Core src is covered by SonarCloud Automatic Analysis, so
@@ -42,6 +69,7 @@ export default defineConfig(
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],
   sonarProWarn,
+  typedDeadBranchWarn,
   {
     settings: {
       react: {
