@@ -84,7 +84,7 @@ export class LLMService {
   // this set, so choosing/reapplying a performance mode never clobbers an explicit KV
   // choice (the "q8_0 reverts to f16 on every restart" bug). Persisted alongside the
   // values so a plain restart keeps the pin.
-  private userExplicit = new Set<PresetField>();
+  private readonly userExplicit = new Set<PresetField>();
   private gpuLayers = 99;
   private threads: number | undefined;
   private batchSize: number | undefined;
