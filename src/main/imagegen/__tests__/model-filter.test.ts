@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isImageModelFile } from '../model-filter';
+import { isImageModelFile, hasCheckpointExt, stripCheckpointExt, ensureCheckpointExt } from '../model-filter';
 
 describe('isImageModelFile', () => {
   it('accepts a known diffusion .gguf family', () => {
@@ -39,5 +39,28 @@ describe('isImageModelFile', () => {
   it('EXCLUDE wins even over a .safetensors that would otherwise pass', () => {
     // a clip .safetensors is excluded despite the .safetensors accept branch
     expect(isImageModelFile('clip_g.safetensors')).toBe(false);
+  });
+});
+
+describe('checkpoint-extension helpers (LoRA / checkpoint files)', () => {
+  it('hasCheckpointExt matches the four checkpoint extensions, case-insensitively', () => {
+    for (const ext of ['safetensors', 'ckpt', 'gguf', 'pt']) {
+      expect(hasCheckpointExt(`model.${ext}`)).toBe(true);
+      expect(hasCheckpointExt(`model.${ext.toUpperCase()}`)).toBe(true);
+    }
+    expect(hasCheckpointExt('model.bin')).toBe(false);
+    expect(hasCheckpointExt('model')).toBe(false);
+  });
+
+  it('stripCheckpointExt removes the extension for a display name', () => {
+    expect(stripCheckpointExt('dreamshaper.safetensors')).toBe('dreamshaper');
+    expect(stripCheckpointExt('flux.gguf')).toBe('flux');
+    expect(stripCheckpointExt('no-ext')).toBe('no-ext');
+  });
+
+  it('ensureCheckpointExt defaults a bare LoRA name to .safetensors, leaves an extension alone', () => {
+    expect(ensureCheckpointExt('mylora')).toBe('mylora.safetensors');
+    expect(ensureCheckpointExt('mylora.safetensors')).toBe('mylora.safetensors');
+    expect(ensureCheckpointExt('mylora.ckpt')).toBe('mylora.ckpt');
   });
 });

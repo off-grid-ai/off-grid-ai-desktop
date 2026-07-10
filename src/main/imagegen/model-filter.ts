@@ -20,3 +20,23 @@ export function isImageModelFile(f: string): boolean {
   if (/\.gguf$/i.test(f)) return DIFFUSION_FAMILY.test(f);
   return false;
 }
+
+// Model-checkpoint / LoRA file extensions. The same set was inlined three times in
+// imagegen (the LoRA lister's include + name-strip, and the LoRA-path builder);
+// defined once here so they can't drift.
+export const CHECKPOINT_EXT = /\.(safetensors|ckpt|gguf|pt)$/i;
+
+/** Whether a filename carries a model-checkpoint extension. */
+export function hasCheckpointExt(name: string): boolean {
+  return CHECKPOINT_EXT.test(name);
+}
+
+/** Filename with any model-checkpoint extension removed (for a display name). */
+export function stripCheckpointExt(name: string): string {
+  return name.replace(CHECKPOINT_EXT, '');
+}
+
+/** A LoRA reference guaranteed to carry an extension, defaulting to .safetensors. */
+export function ensureCheckpointExt(name: string): string {
+  return hasCheckpointExt(name) ? name : `${name}.safetensors`;
+}

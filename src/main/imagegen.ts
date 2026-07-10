@@ -17,7 +17,7 @@ import { sdServer } from './sd-server';
 import { standardModelDefaults, taesdFilename } from '../shared/image-defaults';
 import { defaultImageModelFilename } from './image-default';
 import { hasMlmodelc, isZImageModel, isQuantizedModel } from './imagegen/runtime-detect';
-import { isImageModelFile } from './imagegen/model-filter';
+import { isImageModelFile, hasCheckpointExt, stripCheckpointExt, ensureCheckpointExt } from './imagegen/model-filter';
 import { evaluateMemoryGuard } from './imagegen/memory-guard';
 import { buildCoreMLArgs, buildZImageArgs, buildStandardArgs, DEFAULT_NEGATIVE } from './imagegen/args';
 import { initialProgressState, reduceProgress } from './imagegen/progress';
@@ -157,8 +157,8 @@ export function listLoras(): LoraInfo[] {
   const out: LoraInfo[] = [];
   try {
     for (const f of fs.readdirSync(dir)) {
-      if (!/\.(safetensors|ckpt|gguf|pt)$/i.test(f)) continue;
-      const name = f.replace(/\.(safetensors|ckpt|gguf|pt)$/i, '');
+      if (!hasCheckpointExt(f)) continue;
+      const name = stripCheckpointExt(f);
       let sizeBytes = 0;
       try { sizeBytes = fs.statSync(path.join(dir, f)).size; } catch { /* ignore */ }
       out.push({ name, label: name.replace(/[_-]+/g, ' '), file: path.join(dir, f), sizeBytes });
@@ -423,7 +423,7 @@ async function runImageGen(
           // pass absolute paths and HF repo ids (contain '/') through unchanged.
           loras: (params.loras ?? []).map((l) => {
             if (path.isAbsolute(l.name) || l.name.includes('/')) return l;
-            const local = path.join(loraDir(), /\.(safetensors|ckpt|gguf|pt)$/i.test(l.name) ? l.name : `${l.name}.safetensors`);
+            const local = path.join(loraDir(), ensureCheckpointExt(l.name));
             return fs.existsSync(local) ? { ...l, name: local } : l;
           }),
         },
