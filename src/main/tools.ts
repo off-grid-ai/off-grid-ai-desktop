@@ -26,7 +26,7 @@ export function setToolEnabled(name: string, enabled: boolean): void {
 // Per-turn context a tool may need beyond its args. Injected by the loop so a tool
 // owns its full behavior instead of the loop special-casing it (e.g. search_memory
 // excludes the current conversation so it can't cite itself).
-export interface ToolContext {
+interface ToolContext {
   conversationId?: string;
 }
 
@@ -35,7 +35,7 @@ export interface ToolContext {
 // (interactive citations, from search_memory) and `imageRequest` (the deferred
 // image prompt, from generate_image) — so the loop dispatches every tool uniformly
 // and no longer branches on the tool's name.
-export interface ToolResult {
+interface ToolResult {
   text: string;
   sources?: UnifiedSource[];
   imageRequest?: { prompt: string };

@@ -1,6 +1,6 @@
 import { getSetting, deleteSetting } from './database';
 
-export interface PromptVariable {
+interface PromptVariable {
   name: string;
   description: string;
 }

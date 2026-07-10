@@ -15,7 +15,7 @@ import os from 'os';
 import path from 'path';
 import type { ExtractionBridges } from '@offgrid/rag';
 import { llm } from '../llm';
-import { whisperBin, whisperModel, ffmpegBin } from '../transcription/whisper-cli';
+import { whisperModel, ffmpegBin } from '../transcription/whisper-cli';
 import { getActiveTranscription } from '../transcription/select';
 
 const execFileAsync = promisify(execFile);
@@ -23,7 +23,7 @@ const execFileAsync = promisify(execFile);
 // Binary/model resolvers now live in ../transcription/whisper-cli (single source
 // of truth). Re-exported here so existing importers of '@offgrid/core/main/rag/
 // extractors' keep working.
-export { whisperBin, whisperModel, ffmpegBin };
+export {  whisperModel,  };
 
 const IMAGE_PROMPT =
   'Describe this image in detail and transcribe any visible text verbatim. Be thorough; this will be indexed for search.';

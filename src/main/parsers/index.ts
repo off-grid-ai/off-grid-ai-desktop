@@ -9,4 +9,4 @@ export { parseClaudeDesktopOutput } from './claude-desktop';
 export { parseClaudeWebOutput } from './claude-web';
 export { parseChatGPTOutput } from './chatgpt';
 export { parseGeminiOutput } from './gemini';
-export type { ParseResult } from './types';
+;

@@ -26,7 +26,7 @@ const execFileAsync = promisify(execFile)
 /** Resolve the bundled sherpa-onnx offline CLI across dev / packaged layouts. The CI
  *  stager preserves the prebuilt's bin/ + lib/ structure (so its @rpath finds the
  *  dylibs), hence bin/sherpa-onnx-offline; the flat path is a fallback. */
-export function parakeetBin(): string | null {
+function parakeetBin(): string | null {
   return existing([
     ...binRoots().map((r) => path.join(r, 'parakeet', 'bin', 'sherpa-onnx-offline')),
     ...binRoots().map((r) => path.join(r, 'parakeet', 'sherpa-onnx-offline')),
@@ -68,7 +68,7 @@ export function matchParakeetFiles(names: string[]): {
 /** Resolve the Parakeet model to use: the active/downloaded catalog model first, then a
  *  CI-bundled default. Honors the shared active-transcription slot when it names a
  *  Parakeet file; otherwise uses the first fully-downloaded Parakeet catalog entry. */
-export function parakeetModel(): ParakeetModel | null {
+function parakeetModel(): ParakeetModel | null {
   const fromCatalog = downloadedCatalogModel()
   if (fromCatalog) return fromCatalog
   // Bundled default (CI-staged) — fixed file names in resources/bin/parakeet/model.
@@ -176,7 +176,7 @@ function unescapeJson(s: string): string {
   return s.replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\\\/g, '\\')
 }
 
-export class ParakeetCliTranscription implements TranscriptionService {
+class ParakeetCliTranscription implements TranscriptionService {
   isAvailable(): boolean {
     return !!parakeetBin() && !!parakeetModel()
   }

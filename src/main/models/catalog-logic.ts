@@ -16,7 +16,7 @@ import { modalityForKind, isModelActive, type Modality } from '../active-models'
 // Minimal structural shapes so this module needs no runtime imports from
 // @offgrid/models (which is async-imported in the IO shell). Callers pass the
 // concrete objects; only these fields are read.
-export interface CatalogFile { name: string; url?: string; sizeBytes?: number; role?: string }
+interface CatalogFile { name: string; url?: string; sizeBytes?: number; role?: string }
 export interface CatalogEntry {
   id: string;
   name: string;

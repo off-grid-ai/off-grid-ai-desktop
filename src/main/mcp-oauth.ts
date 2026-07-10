@@ -133,13 +133,6 @@ export function hasOAuthTokens(connectorId: number): boolean {
   return !!getSecret(`connector:${connectorId}:oauth:tokens`);
 }
 
-export function clearOAuth(connectorId: number): void {
-  const base = `connector:${connectorId}:oauth:`;
-  deleteSecret(base + 'tokens');
-  deleteSecret(base + 'client');
-  deleteSecret(base + 'verifier');
-}
-
 const SUCCESS_HTML = (err: string | null): string =>
   `<!doctype html><html><head><meta charset="utf-8"><title>Off Grid AI Desktop</title><link rel="icon" type="image/png" href="/oglogo.png"></head><body style="font-family:Menlo,ui-monospace,monospace;background:#0a0a0a;color:#e5e5e5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><img src="/oglogo.png" alt="Off Grid" width="80" height="80" style="border-radius:18px;margin:0 auto 20px;display:block"><h2 style="color:#34D399;font-weight:500">${err ? 'Authorization failed' : 'Connected to Off Grid'}</h2><p style="color:#737373">You can close this tab and return to the app.</p></div></body></html>`;
 
@@ -204,7 +197,7 @@ export function ensureLoopback(): void {
 }
 
 /** Register interest in the code for an OAuth `state` (server already listening). */
-export function awaitOAuthCode(state: string, timeoutMs = 3 * 60 * 1000): Promise<string> {
+function awaitOAuthCode(state: string, timeoutMs = 3 * 60 * 1000): Promise<string> {
   ensureLoopback();
   return new Promise<string>((resolve, reject) => {
     const timer = setTimeout(() => {

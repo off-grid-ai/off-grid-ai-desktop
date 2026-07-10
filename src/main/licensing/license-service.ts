@@ -49,7 +49,7 @@ const EMPTY: ProLicense = { isPro: false, key: null, licenseId: null, expiry: nu
 export const REVOKED_CODES = ['EXPIRED', 'SUSPENDED', 'BANNED', 'OVERDUE', 'NOT_FOUND'];
 export const NEEDS_ACTIVATION = ['NO_MACHINE', 'NO_MACHINES', 'FINGERPRINT_SCOPE_MISMATCH'];
 
-export type ProTier = 'lifetime' | 'monthly';
+type ProTier = 'lifetime' | 'monthly';
 export interface ProLicenseInfo {
   isPro: boolean;
   tier: ProTier | null; // lifetime (no expiry) vs monthly (has expiry); null when not Pro
@@ -144,7 +144,9 @@ export function getProLicenseInfo(): ProLicenseInfo {
   return toInfo(cache);
 }
 
-/** Returns the cached entitlement immediately and revalidates in the background. */
+/** Returns the cached entitlement immediately and revalidates in the background.
+ *  @public — scaffolded paid-product entry point (revalidate-on-check); intentional,
+ *  wired when launch-time revalidation is enabled. Keeps revalidatePro reachable. */
 export function checkProStatus(): boolean {
   revalidatePro().catch(() => {});
   return isProActive(cache);
@@ -155,7 +157,7 @@ export function checkProStatus(): boolean {
  * the cached flag to false and locks the app. Network errors are swallowed so
  * offline users keep cached access.
  */
-export async function revalidatePro(): Promise<void> {
+async function revalidatePro(): Promise<void> {
   const lic = cache;
   if (!lic.key) return; // nothing to revalidate (empty cache)
   let fp: string;

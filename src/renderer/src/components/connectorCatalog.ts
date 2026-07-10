@@ -10,7 +10,7 @@
 //        'none'  — open endpoint, just connect
 // ready: false = endpoint/flow still being verified (shown as "preview")
 
-export interface CatalogSecret {
+interface CatalogSecret {
   key: string;
   label: string;
   placeholder?: string;

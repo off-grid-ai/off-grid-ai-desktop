@@ -11,7 +11,7 @@ import * as os from 'os';
 import { binRoots, dataDir } from './runtime-env';
 
 /** The bundled standalone python3 inside the mflux env, or null if not present. */
-export function findMfluxPython(): string | null {
+function findMfluxPython(): string | null {
   for (const r of binRoots()) {
     const p = path.join(r, 'mflux', 'bin', 'python3');
     if (fs.existsSync(p)) return p;
@@ -25,7 +25,7 @@ export function mfluxAvailable(): boolean {
 }
 
 /** Where mflux downloads/caches model weights (its HF_HOME). */
-export function mfluxCacheDir(): string {
+function mfluxCacheDir(): string {
   return path.join(dataDir(), 'mflux-cache');
 }
 
@@ -160,7 +160,7 @@ export interface MfluxProgress {
 }
 
 /** Build the argv for `python3 <args>` (the -m entry + flags). */
-export function buildMfluxArgs(params: MfluxGenParams, outPath: string): string[] {
+function buildMfluxArgs(params: MfluxGenParams, outPath: string): string[] {
   const def = getMfluxModel(params.model);
   if (!def) throw new Error(`Unknown MLX model: ${params.model}`);
   const args = [
@@ -191,7 +191,7 @@ export function buildMfluxArgs(params: MfluxGenParams, outPath: string): string[
 // tqdm progress lines look like " 50%|█████ | 2/4 [00:05<00:05,  1.20s/it]".
 const STEP_RE = /(\d+)\/(\d+)\s*\[[^\]]*?([\d.]+)s\/it/;
 
-export function parseMfluxProgress(s: string): { step: number; total: number; secPerStep: number } | null {
+function parseMfluxProgress(s: string): { step: number; total: number; secPerStep: number } | null {
   const m = STEP_RE.exec(s);
   if (m) return { step: parseInt(m[1], 10), total: parseInt(m[2], 10), secPerStep: parseFloat(m[3]) };
   return null;

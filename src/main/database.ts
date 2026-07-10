@@ -442,13 +442,6 @@ export function checkMessageExists(hash: string, conversationId: string): boolea
     return !!result;
 }
 
-// Deprecated: old check
-export function checkMemoryExists(_content: string, _sessionId: string): boolean {
-    // Forward to new check logic if we want, or keep it for legacy?
-    // We will use checkMessageExists for new flow.
-    return false; 
-}
-
 // === MASTER MEMORY ===
 
 export function getMasterMemory(): { content: string | null; updated_at: string | null } {

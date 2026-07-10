@@ -24,7 +24,7 @@ export function isImageModelFile(f: string): boolean {
 // Model-checkpoint / LoRA file extensions. The same set was inlined three times in
 // imagegen (the LoRA lister's include + name-strip, and the LoRA-path builder);
 // defined once here so they can't drift.
-export const CHECKPOINT_EXT = /\.(safetensors|ckpt|gguf|pt)$/i;
+const CHECKPOINT_EXT = /\.(safetensors|ckpt|gguf|pt)$/i;
 
 /** Whether a filename carries a model-checkpoint extension. */
 export function hasCheckpointExt(name: string): boolean {

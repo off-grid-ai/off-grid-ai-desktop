@@ -16,7 +16,7 @@ import { KEYGEN_API_BASE, KEYGEN_PRODUCT_ID } from './keygen-config';
 
 const JSON_API = 'application/vnd.api+json';
 
-export type ValidationCode =
+type ValidationCode =
   | 'VALID'
   | 'NO_MACHINE'
   | 'NO_MACHINES'

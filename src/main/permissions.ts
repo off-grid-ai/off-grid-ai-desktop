@@ -10,7 +10,7 @@ export interface PermissionStatus {
  * Check if the app has Accessibility permission on macOS.
  * This permission is required for the watcher to read window content.
  */
-export function checkAccessibilityPermission(prompt: boolean = false): boolean {
+function checkAccessibilityPermission(prompt: boolean = false): boolean {
   if (process.platform !== 'darwin') {
     return true; // Not applicable on other platforms
   }
@@ -21,7 +21,7 @@ export function checkAccessibilityPermission(prompt: boolean = false): boolean {
  * Check if the app has Screen Recording permission on macOS.
  * This permission is required for desktopCapturer to capture window screenshots.
  */
-export function checkScreenRecordingPermission(): boolean {
+function checkScreenRecordingPermission(): boolean {
   if (process.platform !== 'darwin') {
     return true; // Not applicable on other platforms
   }
@@ -95,14 +95,5 @@ export async function requestScreenRecordingPermission(): Promise<boolean> {
   } catch (e) {
     console.error('Failed to request screen recording permission:', e);
     return false;
-  }
-}
-
-/**
- * Open general Privacy & Security settings.
- */
-export function openPrivacySettings(): void {
-  if (process.platform === 'darwin') {
-    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy');
   }
 }

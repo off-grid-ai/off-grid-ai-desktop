@@ -34,7 +34,7 @@ export function readDownloaded(dir: string): DownloadedModel[] {
   }
 }
 
-export function writeDownloaded(dir: string, list: DownloadedModel[]): void {
+function writeDownloaded(dir: string, list: DownloadedModel[]): void {
   try {
     fs.writeFileSync(registryPath(dir), JSON.stringify(list, null, 2));
   } catch {

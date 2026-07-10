@@ -20,7 +20,7 @@ import type { TranscriptionService, Transcript, TranscribeOptions, Seg } from '.
 const execFileAsync = promisify(execFile);
 
 /** Resolve the bundled whisper-cli across dev / packaged layouts. */
-export function whisperBin(): string | null {
+function whisperBin(): string | null {
   return existing(binRoots().map((r) => path.join(r, 'whisper', 'whisper-cli')));
 }
 
@@ -112,7 +112,7 @@ function resolveModel(model?: string): string | null {
   return whisperModel();
 }
 
-export class WhisperCliTranscription implements TranscriptionService {
+class WhisperCliTranscription implements TranscriptionService {
   isAvailable(): boolean {
     // ffmpeg is only required when the caller passes non-WAV input; transcription of
     // pre-converted 16 kHz WAV (alreadyWav16k:true) succeeds without it. Report

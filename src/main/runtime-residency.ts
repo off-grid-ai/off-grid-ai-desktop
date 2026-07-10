@@ -26,7 +26,7 @@ export const MODALITIES: readonly Modality[] = ['llm', 'image', 'stt', 'tts'];
 // gen and the background distill would thrash-reload the ~5GB model. So it stays
 // in memory (the queue still evicts it MOMENTARILY during a competing heavy job,
 // then re-warms it — that's contention handling, not a user on-demand choice).
-export const LOCKED_RESIDENT: readonly Modality[] = ['llm'];
+const LOCKED_RESIDENT: readonly Modality[] = ['llm'];
 
 export function isResidencyLocked(m: Modality): boolean {
   return LOCKED_RESIDENT.includes(m);

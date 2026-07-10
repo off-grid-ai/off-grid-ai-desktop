@@ -112,7 +112,7 @@ export function parseInferenceResponse(body: unknown): { text: string } {
 }
 
 /** The resident whisper server. One instance (the exported `whisperServer`). */
-export class WhisperServerService {
+class WhisperServerService {
   private server: ChildProcess | null = null;
   private port = WHISPER_SERVER_PORT;
   private activeKey: string | null = null; // whisperContextKey of the loaded model, null when down
@@ -292,7 +292,7 @@ export const whisperServer = new WhisperServerService();
  *  WhisperCliTranscription (isAvailable / transcribe), so it drops in behind the
  *  select.ts seam. When the server binary isn't staged, isAvailable() is false and
  *  select.ts degrades to the one-shot whisper-cli - exactly like Parakeet does. */
-export class WhisperServerTranscription implements TranscriptionService {
+class WhisperServerTranscription implements TranscriptionService {
   constructor(private readonly svc: WhisperServerService = whisperServer) {}
 
   isAvailable(): boolean {

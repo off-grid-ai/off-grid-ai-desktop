@@ -3,9 +3,9 @@
 // The full API (recordings library, file transcription, settings) lives in
 // pro/renderer/components/voice/voiceApi.ts for the pro VoiceScreen.
 
-export type DictationState = 'idle' | 'recording' | 'transcribing';
+type DictationState = 'idle' | 'recording' | 'transcribing';
 
-export interface DictationSettings {
+interface DictationSettings {
   accelerator: string;
   keyCode: number;
   modifier: string;

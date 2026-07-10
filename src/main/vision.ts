@@ -2,7 +2,7 @@ import { desktopCapturer, app, screen } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 
-export class VisionService {
+class VisionService {
     private capturesDir: string;
 
     constructor() {

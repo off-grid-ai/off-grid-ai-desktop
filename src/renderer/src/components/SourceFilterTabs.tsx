@@ -1,7 +1,7 @@
 import { motion } from 'motion/react';
 import { cn } from '@renderer/lib/utils';
 
-export const SOURCES = ['All', 'Claude', 'Gemini', 'ChatGPT'] as const;
+const SOURCES = ['All', 'Claude', 'Gemini', 'ChatGPT'] as const;
 export type Source = (typeof SOURCES)[number];
 
 const COMING_SOON = ['Perplexity', 'Grok'] as const;

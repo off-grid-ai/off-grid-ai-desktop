@@ -21,7 +21,7 @@ import {
   type SearchSort,
 } from './search-ranking';
 
-export type { SearchKind, SearchResult, SearchSort } from './search-ranking';
+export type {  SearchResult, SearchSort } from './search-ranking';
 
 // ---------------------------------------------------------------------------
 // Backfill: embed the backlog into LanceDB (keys tracked in SQLite to skip work)
@@ -71,7 +71,7 @@ function pendingCount(): number {
 }
 
 /** Embed one batch of un-indexed items into LanceDB. Returns progress. */
-export async function indexBatch(limit = 48): Promise<{ indexed: number; remaining: number }> {
+async function indexBatch(limit = 48): Promise<{ indexed: number; remaining: number }> {
   ensureIndexTable();
   const db = getDB();
   const rows = db

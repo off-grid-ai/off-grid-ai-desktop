@@ -151,10 +151,3 @@ export function mediaUrlFor(absPath: string): string | null {
   const enc = Buffer.from(real, 'utf8').toString('base64url');
   return `http://127.0.0.1:${port}/m/${token}/${enc}`;
 }
-
-export function stopMediaServer(): void {
-  server?.close();
-  server = null;
-  port = 0;
-  listening = false;
-}

@@ -57,8 +57,3 @@ export function registerRuntime(rt: ManagedRuntime, deps: RegisterDeps = {}): vo
     warm: () => (warmActionForMode(readMode(rt.modality)) === 'warm' ? rt.warm() : rt.release()),
   });
 }
-
-/** The registered runtime for a modality (mainly for introspection/tests). */
-export function getRuntime(modality: Modality): ManagedRuntime | undefined {
-  return registry.get(modality);
-}

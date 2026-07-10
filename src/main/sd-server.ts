@@ -137,13 +137,13 @@ export function parseJobResult(job: unknown): JobOutcome {
   return { done: false, ok: false, progress };
 }
 
-export interface SdGenProgress {
+interface SdGenProgress {
   step: number;
   total: number;
 }
 
 /** The resident image server. One instance (the exported `sdServer`). */
-export class SdServerService {
+class SdServerService {
   private server: ChildProcess | null = null;
   private port = SD_SERVER_PORT;
   private activeKey: string | null = null; // contextKey of the loaded model, null when down

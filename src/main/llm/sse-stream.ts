@@ -8,7 +8,7 @@
 //      chunks (which may straddle a <think>...</think> tag across chunk boundaries)
 //      and emits {text, kind} events, tracking the reasoning/answer channel.
 
-export type DeltaKind = 'content' | 'reasoning';
+type DeltaKind = 'content' | 'reasoning';
 
 export interface StreamEvent {
   text: string;

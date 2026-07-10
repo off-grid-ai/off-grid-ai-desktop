@@ -10,7 +10,7 @@ import fs from 'fs';
 import { parseSkill, slugify, triggerToFrontmatter, type Skill, type SkillTrigger } from './skills-parse';
 
 // Re-export the pure types so existing importers of './skills' are unchanged.
-export type { Skill, SkillTrigger };
+export type { Skill,  };
 
 export function skillsDir(): string {
   return path.join(app.getPath('userData'), '.skills');

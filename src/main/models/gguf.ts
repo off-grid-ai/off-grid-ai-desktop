@@ -7,7 +7,7 @@
 // hand-kept copies that could drift.
 
 /** The GGUF file-format magic number, as the first four bytes. */
-export const GGUF_MAGIC = 'GGUF';
+const GGUF_MAGIC = 'GGUF';
 
 /** Minimum plausible size for a real model file; anything smaller is a stub or a
  *  truncated download. */

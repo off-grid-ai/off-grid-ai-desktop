@@ -62,5 +62,5 @@ export async function projectChat(params: {
   return { reply, sources };
 }
 
-export { desktopVectorStore } from './store';
+;
 export * from './store';

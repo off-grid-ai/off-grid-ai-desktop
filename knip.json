@@ -10,9 +10,11 @@
     "e2e/**/*.spec.ts",
     "scripts/**/*.{ts,mjs,cjs,js}",
     "src/**/*.{test,dbtest}.{ts,tsx}",
-    "pro/**/*.test.{ts,tsx}"
+    "pro/**/*.test.{ts,tsx}",
+    "src/renderer/src/components/ui/**/*.{ts,tsx}"
   ],
   "project": ["src/**/*.{ts,tsx}", "pro/**/*.{ts,tsx}"],
   "ignore": ["**/*.d.ts", "component-library-animations/**"],
+  "tags": ["-public"],
   "ignoreBinaries": ["swift", "osascript", "pkill", "xattr", "lsof", "ps", "sips", "afplay", "codesign"]
 }
