@@ -49,24 +49,33 @@ SRP (sequence AFTER seams): `agent.proposeActions` (53-252), `extract.extractObs
 The new *-helpers/-rank/-heuristics/-window siblings are clean pure seams; violations are in their callers.
 
 ## Progress (this branch pair — fix/honest-pro-coverage + test/pro-coverage-campaign)
-RESOLVED so far, each behavior-neutral + tested + coverage floor held (97/92/95/98):
+RESOLVED, each behavior-neutral + tested + coverage floor held (~97/92/96/98):
 - Core: all 4 real 🐞 bugs (above); `isValidGguf` shared (`models/gguf.ts`); artifact-kind +
-  model-kind label maps shared (`lib/artifact-labels.ts`, `lib/model-kind-labels.ts`).
-- Pro: `crm/text-sim.ts` (charSim/normalizedCharSim/numbersDiffer/nameSimThreshold/bestFuzzyMatch —
-  closed the charSim dup + twice-written fuzzy scan + threshold ladder); `PRIORITY_RANK` single
-  source (Actions ORDER BY generated via `priorityRankCaseSql`, no more TS-vs-SQL drift).
+  model-kind label maps (`lib/artifact-labels.ts`, `lib/model-kind-labels.ts`); `CHAT_JOB`/`IMAGE_JOB`
+  descriptors (`modality-queue/queue.ts`); transcription `ffmpeg-decode` (shared 16k-mono argv);
+  llm `streamCompletion` (one SSE transport for chatStream+streamChat, + real-server integration
+  test); ChatList markdown link cyan → emerald token; `parseSqliteUtc` (3 inlined UTC parses →
+  `lib/time.ts`); `parseSessionId` (`lib/session-id.ts`); whisper-server `findBinary` → shared
+  `existing()`; LoRA checkpoint-ext helpers (`imagegen/model-filter.ts`).
+- Pro: `crm/text-sim.ts` (charSim/normalizedCharSim/numbersDiffer/nameSimThreshold/bestFuzzyMatch);
+  `PRIORITY_RANK` single source (`priorityRankCaseSql`); `emitCrmChanged` owner (`crm/events.ts`) +
+  shared `norm`; `EMAIL_SURFACES`/`emailSurfaceSqlIn` (`crm/surfaces.ts`); shared `existing()`
+  bundled-binary resolver (`lib/bin-resolution.ts`).
 
-REMAINING (larger DIP interfaces + SRP god-file splits — each genuinely behavior-risk, best done
-one at a time with its own verification; NOT yet started):
-- Core DIP: `ImageRuntime` interface (imagegen 4-runtime cascade); `tools.ts` `ToolDef.run` dispatch;
-  imagegen.ts SRP split; llm.ts `streamCompletion` dedup (chatStream vs streamChat); transcription
-  `ffmpeg-decode` dedup (3×); search `likeMatcher`; models-manager mflux-branch fold.
-- Core lower DRY: markdownComponents 3× (incl. ChatList cyan → emerald token); ipc.ts `retrieveContext`
-  god-handler split; database.ts split (1339 lines); `CHAT_JOB` const; sessionId/UTC-parse dups;
-  ModelsScreen/StoragePanel `@tabler` → Phosphor (CLAUDE.md mandate).
-- Pro: `ConnectorIngestor` interface; `emitCrmChanged` single owner (+ `crm:changed` const);
-  `surfaceCapabilities` registry; residual `norm`/`dayKey`/`isMe` dups; dictation `SinkFactory`;
-  agent/extract/vault SRP splits.
+REMAINING — DEFERRED ON PURPOSE. Each rewrites an engine contract on a coverage-excluded I/O path
+(spawns binaries / hits the model server on single-owner ports) that CANNOT be verified live in a
+headless run. Per the merge gate ("nothing is done until verified live"), these must land as their
+own changes with real image-gen / agentic-loop / DB verification — NOT a blind sweep:
+- Core DIP/SRP: `ImageRuntime` interface (imagegen 4-runtime cascade + models-manager mflux fold);
+  `tools.ts` `ToolDef.run` uniform dispatch (search_memory/generate_image side-channels); imagegen.ts
+  SRP split; ipc.ts `retrieveContext` god-handler split; database.ts split (1339 lines); search
+  `likeMatcher`; ModelsScreen/StoragePanel `@tabler` → Phosphor.
+- Core correctness (needs live image-gen): Z-Image guard-vs-run regex (the memory guard sizes a
+  different match than the run loads).
+- Pro DIP/SRP: `ConnectorIngestor` interface; agent/extract/vault SRP splits; dictation `SinkFactory`.
+- NOT a real dup (leave): `isMe` (token-overlap, DB-sourced) vs `isSelfName` (substring-position,
+  injected list) are different matchers; markdownComponents maps are intentionally per-surface;
+  `dayKey` (string) vs `dayKeyOf` (epoch-sec number) are different functions.
 
 ## Scope note
 This is a DIAGNOSIS backlog. A SOLID/DRY refactor of this size is behavior-risk. The safe,
