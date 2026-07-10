@@ -9,10 +9,7 @@ import os from 'os';
 import fs from 'fs';
 import { app } from 'electron';
 import { desktopExtraction as ex } from './rag/extractors';
-
-const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'heic'];
-const AUDIO_EXT = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac', 'aiff', 'aif'];
-const VIDEO_EXT = ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'];
+import { IMAGE_EXT, AUDIO_EXT, VIDEO_EXT, sanitizeUploadName } from './files-classify';
 
 export interface ProcessedFile {
   name: string;
@@ -23,7 +20,7 @@ export interface ProcessedFile {
 
 export async function processUpload(name: string, bytes: ArrayBuffer | Uint8Array): Promise<ProcessedFile> {
   const ext = path.extname(name).slice(1).toLowerCase();
-  const safe = name.replace(/[^\w.-]+/g, '_');
+  const safe = sanitizeUploadName(name);
   const tmp = path.join(os.tmpdir(), `offgrid-upload-${Date.now()}-${safe}`);
   await fs.promises.writeFile(tmp, Buffer.from(bytes as ArrayBuffer));
   try {

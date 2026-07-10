@@ -10,6 +10,7 @@ import fs from 'fs';
 import { llm } from './llm';
 import { getSetting, saveSetting } from './database';
 import { buildUserContent } from './tool-content';
+import { stripTags, htmlToText, decodeDdgHref } from './tools-parsers';
 
 // Per-tool enable/disable, persisted as a list of disabled tool names.
 function disabledSet(): Set<string> {
@@ -28,23 +29,7 @@ type ToolDef = {
   run: (args: Record<string, unknown>) => Promise<string> | string;
 };
 
-// --- HTML helpers for the web tools (no deps, no analytics) -----------------
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
-}
-function stripTags(s: string): string {
-  return decodeEntities(s.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
-}
-function htmlToText(html: string): string {
-  const body = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<\/(p|div|li|h[1-6]|br|tr|section|article)>/gi, '\n');
-  return decodeEntities(body.replace(/<[^>]*>/g, ' ')).replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-}
+// --- HTML helpers for the web tools live in ./tools-parsers (pure, unit-tested).
 // Fetch a URL and return its readable text (shared by the read_url tool and the
 // deterministic "read this URL, then build" flow). Works for localhost too.
 export async function readUrlText(url: string): Promise<string> {
@@ -53,13 +38,6 @@ export async function readUrlText(url: string): Promise<string> {
   const res = await fetch(u, { headers: { 'User-Agent': 'Mozilla/5.0' } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return htmlToText(await res.text());
-}
-
-// DuckDuckGo wraps result links in a redirect: //duckduckgo.com/l/?uddg=<encoded>
-function decodeDdgHref(href: string): string {
-  const m = /[?&]uddg=([^&]+)/.exec(href);
-  if (m) { try { return decodeURIComponent(m[1]); } catch { /* fall through */ } }
-  return href.startsWith('//') ? 'https:' + href : href;
 }
 
 // --- Built-in tools --------------------------------------------------------

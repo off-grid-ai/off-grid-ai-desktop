@@ -20,18 +20,14 @@ import { generateImage, imageGenStatus } from './imagegen';
 import * as tts from './tts';
 import { embeddings } from './embeddings';
 import { desktopExtraction } from './rag/extractors';
+import { parseDataUrl } from './mcp-parse-data-url';
 
 // Write a data URL / http(s) URL / file path / bare path to a temp file and
 // return its path (for tools that take an image or audio input).
 async function materialize(ref: string, fallbackExt: string): Promise<string> {
   const url = ref.trim();
   if (url.startsWith('data:')) {
-    const comma = url.indexOf(',');
-    const meta = url.slice(5, comma);
-    const ext = /(\w+)\/(\w+)/.exec(meta)?.[2] || fallbackExt;
-    const data = meta.includes('base64')
-      ? Buffer.from(url.slice(comma + 1), 'base64')
-      : Buffer.from(decodeURIComponent(url.slice(comma + 1)));
+    const { data, ext } = parseDataUrl(url, fallbackExt);
     const p = path.join(os.tmpdir(), `offgrid-mcp-${process.pid}-${Date.now()}.${ext}`);
     await fs.promises.writeFile(p, data);
     return p;

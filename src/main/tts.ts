@@ -16,8 +16,7 @@ import { getActiveModal } from './active-models';
 import { resourceFile, appRoot, onHostQuit } from './runtime-env';
 import { getResidencyMode } from './runtime-residency';
 import type { ManagedRuntime } from './runtime-manager';
-
-const DEFAULT_VOICE = 'af_heart';
+import { DEFAULT_VOICE, chooseVoice, isTeardownNoise, parseServeLine } from './tts-logic';
 
 function workerPath(): string {
   const found = resourceFile('tts-worker.mjs');
@@ -47,11 +46,6 @@ function runWorker(args: string[], stdin?: string): Promise<{ out: string; err: 
       child.stdin.end();
     }
   });
-}
-
-// onnxruntime's harmless teardown crash — not a real failure if output exists.
-function isTeardownNoise(err: string): boolean {
-  return /mutex lock failed|Session already disposed|libc\+\+abi/i.test(err);
 }
 
 let busy = false;
@@ -94,11 +88,10 @@ function startServe(): Promise<void> {
       serveStdout += d;
       let nl: number;
       while ((nl = serveStdout.indexOf('\n')) >= 0) {
-        const line = serveStdout.slice(0, nl).trim();
+        const line = serveStdout.slice(0, nl);
         serveStdout = serveStdout.slice(nl + 1);
-        if (!line) continue;
-        let msg: { ready?: boolean; id?: string; ok?: boolean; error?: string };
-        try { msg = JSON.parse(line); } catch { continue; }
+        const msg = parseServeLine(line);
+        if (!msg) continue;
         if (msg.ready) { resolve(); continue; }
         const p = msg.id != null ? servePending.get(msg.id) : undefined;
         if (p && msg.id != null) {
@@ -170,7 +163,7 @@ export async function synthesize(text: string, voice?: string): Promise<{ dataUr
   // name (e.g. "af_heart") and not a model id; else default. Guarded so picking a
   // model in the UI can never feed the engine an invalid voice.
   const sel = getActiveModal('speech');
-  voice = voice || (sel && /^[a-z]{2}_[a-z]+$/i.test(sel) ? sel : null) || DEFAULT_VOICE;
+  voice = chooseVoice(voice, sel);
   const t = (text || '').trim();
   if (!t) throw new Error('Nothing to speak.');
   if (busy) throw new Error('Already generating speech — please wait.');

@@ -12,7 +12,9 @@ import { callHook } from '../bootstrap/hookRegistry';
 
 const MCP_PREFIX = 'mcp__';
 
-function isActionTool(tool: string): boolean {
+// A connector tool is a read (safe to run) if it starts with a known read verb;
+// anything else is treated as an action needing approval. Exported for testing.
+export function isActionTool(tool: string): boolean {
   return !/^(list|get|search|read|fetch|whoami|describe)[_-]/i.test(tool);
 }
 

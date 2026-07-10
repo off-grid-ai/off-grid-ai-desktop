@@ -10,6 +10,7 @@ import { llm } from '../llm';
 import { desktopVectorStore } from './store';
 import { desktopExtraction } from './extractors';
 import { appendThreadMessage, getThreadMessages, listProjects } from './store';
+import { buildProjectPrompt, formatHistory } from './prompt';
 
 const embeddingProvider: EmbeddingProvider = {
   dimension: 384,
@@ -44,20 +45,14 @@ export async function projectChat(params: {
   const search = await ragService.searchProject(projectId, message, { topK: 6, contextLength: 4096 });
   const context = formatForPrompt(search);
 
-  const history = getThreadMessages(threadId)
-    .slice(-8)
-    .map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`)
-    .join('\n');
+  const history = formatHistory(getThreadMessages(threadId));
 
-  const prompt = [
-    projectSystemPrompt(projectId),
+  const prompt = buildProjectPrompt({
+    system: projectSystemPrompt(projectId),
     context,
-    history ? `Conversation so far:\n${history}` : '',
-    `User: ${message}`,
-    'Assistant:',
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+    history,
+    message,
+  });
 
   appendThreadMessage(threadId, 'user', message);
   const reply = (await llm.chat(prompt, [], 300000, 2048)).trim();

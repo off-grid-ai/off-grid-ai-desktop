@@ -4,6 +4,7 @@
 import * as lancedb from '@lancedb/lancedb';
 import path from 'path';
 import { app } from 'electron';
+import { kindsPredicate, olderThanPredicate } from './vectors-predicates';
 
 export interface VecChunk {
   key: string; // unique `${kind}:${refId}`
@@ -70,10 +71,9 @@ export async function deleteByKinds(kinds: string[]): Promise<void> {
   if (!kinds.length) return;
   const tbl = await table();
   if (!tbl) return;
-  const list = kinds.map((k) => `'${String(k).replace(/'/g, "''")}'`).join(', ');
   // Let failures propagate: the privacy path must not report success when the
   // semantic index wasn't actually cleared.
-  await tbl.delete(`kind IN (${list})`);
+  await tbl.delete(kindsPredicate(kinds));
 }
 
 /** Like deleteByKinds, but only rows older than `cutoffMs` (epoch ms) — for
@@ -83,8 +83,7 @@ export async function deleteByKindsOlderThan(kinds: string[], cutoffMs: number):
   if (!kinds.length) return;
   const tbl = await table();
   if (!tbl) return;
-  const list = kinds.map((k) => `'${String(k).replace(/'/g, "''")}'`).join(', ');
-  await tbl.delete(`kind IN (${list}) AND ts < ${Math.floor(cutoffMs)}`);
+  await tbl.delete(olderThanPredicate(kinds, cutoffMs));
 }
 
 /** Drop the cached connection + table handles. Call after the lancedb dir is

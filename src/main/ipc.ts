@@ -4,6 +4,7 @@ import { embeddings } from './embeddings';
 import { getResidency, setResidencyMode, type Modality, type ResidencyMode } from './runtime-residency';
 import { getPermissionStatus, requestAccessibilityPermission, requestScreenRecordingPermission, openAccessibilitySettings, openScreenRecordingSettings } from './permissions';
 import { getPrompt, getAllPromptDefs, resetPrompt, getPromptTemplate } from './prompts';
+import { safeParseJson, tokenizeQuery, clipText, isGenerativeRequest, isTrivialMessage } from './ipc-query-logic';
 // import { llm } from './llm'; // Moved to dynamic import to support ESM
 
 // Incrementally update master memory with a new conversation summary
@@ -142,30 +143,6 @@ async function regenerateMasterMemory(): Promise<string | null> {
     return regenerateMasterMemoryFull();
 }
 
-function safeParseJson<T>(input: string, fallback: T): T {
-    try {
-        const clean = input.replace(/```json\n?|\n?```/g, '').trim();
-        return JSON.parse(clean) as T;
-    } catch {
-        return fallback;
-    }
-}
-
-const STOPWORDS = new Set([
-    'the', 'and', 'for', 'with', 'from', 'that', 'this', 'what', 'know', 'about', 'your', 'you', 'me', 'my', 'all', 'do',
-    'are', 'was', 'were', 'been', 'being', 'have', 'has', 'had', 'will', 'would', 'should', 'could', 'can', 'may', 'might'
-]);
-
-function tokenizeQuery(query: string, maxTokens: number = 6): string[] {
-    const tokens = query
-        .toLowerCase()
-        .split(/\s+/)
-        .map(t => t.replace(/[^a-z0-9_-]/g, ''))
-        .filter(t => t.length >= 3)
-        .filter(t => !STOPWORDS.has(t));
-    return Array.from(new Set(tokens)).slice(0, maxTokens);
-}
-
 // Generate the answer for a rag:chat turn. When a streamId + sender are present,
 // stream tokens/reasoning to the renderer over the 'rag:stream' channel as they
 // arrive (inline chain-of-thought); otherwise fall back to a single blocking call.
@@ -217,24 +194,6 @@ async function streamAnswer(
     }
 }
 
-function clipText(text: string, maxLength: number): string {
-    if (!text) return '';
-    if (text.length <= maxLength) return text;
-    return text.slice(0, Math.max(0, maxLength - 1)) + '…';
-}
-
-// Build/generate requests ("build a react app", "write an svg", "make a landing
-// page") don't benefit from memory retrieval — pulling in unrelated SOURCES makes
-// the model cite junk and second-guess itself. Detect them so we can answer with
-// the artifact instructions only and skip the search.
-function isGenerativeRequest(text: string): boolean {
-    const q = (text || '').trim().toLowerCase();
-    if (!q) return false;
-    const hasNoun = /\b(react|next\.?js|vue|svelte|html|css|svg|website|web ?app|web ?page|landing page|component|widget|diagram|chart|flowchart|mermaid|game|canvas|prototype|mock-?up|ui|app|script|function|snippet|webpage|playground|frontend|front-end|dashboard|form|interface|page|tool|visualization|visualisation|simulator|editor|viewer|demo|site)\b/.test(q);
-    const hasVerb = /\b(build|create|make|write|generate|code|implement|design|draw|render|scaffold|give me a|show me a)\b/.test(q);
-    return hasNoun && hasVerb;
-}
-
 type ChatIntent = { intent: 'build' | 'image' | 'chat'; urls: string[] };
 
 const INTENT_SCHEMA = {
@@ -278,17 +237,6 @@ async function classifyIntent(query: string, history?: { role: string; content: 
         console.warn('[intent] classifier failed, falling back to heuristic', (e as Error).message);
         return { intent: isGenerativeRequest(query) ? 'build' : 'chat', urls: regexUrls };
     }
-}
-
-function isTrivialMessage(text: string): boolean {
-    const normalized = (text || '').trim();
-    if (normalized.length === 0) return true;
-    if (normalized.length < 20) {
-        if (/^(hi|hello|hey|thanks|thank you|ok|okay|sure|yes|no|cool|great|nice|good|fine|bye|see ya|yep|nope)[!.]?$/i.test(normalized)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 async function insertMemoryRecord(params: {
