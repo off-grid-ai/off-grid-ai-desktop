@@ -16,9 +16,25 @@ jobs:
     timeout-minutes: 25 # backstop: a hung step fails fast instead of running for hours
     steps:
       - uses: actions/checkout@v4
-      - name: Check out pro (paid features) into ./pro
+      # Check out pro on the branch that MATCHES this PR/push (so a coordinated
+      # core+pro change is tested together). If pro has no such branch (most PRs),
+      # this step's checkout fails quietly and the fallback below pulls pro `main`.
+      # Without this, CI silently tested the core branch against pro `main`, so
+      # pro's new test files were absent while pro source was still measured →
+      # coverage cratered (60% vs 97% local). See PR #46.
+      - name: Check out pro (matching branch) into ./pro
+        id: pro_branch
         uses: actions/checkout@v4
         continue-on-error: true
+        with:
+          repository: off-grid-ai/desktop-pro
+          token: ${{ secrets.CI_CROSS_REPO_TOKEN }}
+          path: pro
+          ref: ${{ github.head_ref || github.ref_name }}
+      - name: Fall back to pro main if no matching branch
+        if: ${{ steps.pro_branch.outcome != 'success' || hashFiles('pro/tsconfig.json') == '' }}
+        continue-on-error: true
+        uses: actions/checkout@v4
         with:
           repository: off-grid-ai/desktop-pro
           token: ${{ secrets.CI_CROSS_REPO_TOKEN }}
