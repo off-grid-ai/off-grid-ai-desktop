@@ -74,11 +74,11 @@ const TOOLS: ToolDef[] = [
         const titles: { title: string; url: string }[] = [];
         const re = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
         let m: RegExpExecArray | null;
-        while ((m = re.exec(html)) && titles.length < 6) titles.push({ url: decodeDdgHref(m[1]), title: stripTags(m[2]) });
+        while ((m = re.exec(html)) && titles.length < 6) titles.push({ url: decodeDdgHref(m[1]!), title: stripTags(m[2]!) });
         const snippets: string[] = [];
         const sre = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
         let s: RegExpExecArray | null;
-        while ((s = sre.exec(html)) && snippets.length < 6) snippets.push(stripTags(s[1]));
+        while ((s = sre.exec(html)) && snippets.length < 6) snippets.push(stripTags(s[1]!));
         if (!titles.length) return 'No results found.';
         return titles.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${snippets[i] || ''}`).join('\n');
       } catch (e) { return 'Error: search failed — ' + (e as Error).message; }
@@ -101,9 +101,9 @@ const TOOLS: ToolDef[] = [
         const re = /<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
         let m: RegExpExecArray | null;
         while ((m = re.exec(html)) && out.length < 6) {
-          const url = m[1];
+          const url = m[1]!;
           if (/brave\.com|search\.brave|\/settings|javascript:/i.test(url)) continue;
-          const title = stripTags(m[2]);
+          const title = stripTags(m[2]!);
           if (!title || title.length < 3 || seen.has(url)) continue;
           seen.add(url);
           out.push({ title, url });
