@@ -38,7 +38,7 @@ class McpConnectorToolExtension implements ToolExtension {
             function: {
               name: fnName,
               description: `[${c.name}] ${t.description ?? t.name}`,
-              parameters: (t.inputSchema as Record<string, unknown>) ?? { type: 'object', properties: {} },
+              parameters: (t.inputSchema as Record<string, unknown> | undefined) ?? { type: 'object', properties: {} },
             },
           });
         }

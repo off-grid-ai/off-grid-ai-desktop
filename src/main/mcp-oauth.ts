@@ -18,8 +18,8 @@ let logoCache: Buffer | null = null;
 function logoBytes(): Buffer | null {
   if (logoCache) return logoCache;
   for (const c of [
-    path.join(process.resourcesPath ?? '', 'icon.png'),
-    path.join(app.getAppPath() ?? '', 'resources', 'icon.png'),
+    path.join(process.resourcesPath, 'icon.png'),
+    path.join(app.getAppPath(), 'resources', 'icon.png'),
     path.join(process.cwd(), 'resources', 'icon.png'),
   ]) {
     try {

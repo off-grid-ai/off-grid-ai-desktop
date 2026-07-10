@@ -487,6 +487,18 @@ export class LLMService {
     }
   }
 
+  /** Guard shared by every generation entry point: reject while paused, lazily
+   *  init, and fail loudly if init didn't take. Single source of truth so the
+   *  three chat methods don't each re-implement it. */
+  private async ensureReady(): Promise<void> {
+    if (this.paused) throw new Error('LLM paused during image generation — deferred');
+    if (!this.initialized) {
+      await this.init();
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- init() flips `initialized` across the await; TS narrows the field to its pre-await `false` and can't see the mutation.
+      if (!this.initialized) throw new Error('LLM Service not ready');
+    }
+  }
+
   /** Auto-recover from an unexpected llama-server crash. Backs off, and on repeated
    *  crashes shrinks the context (the usual culprit is memory pressure) before
    *  retrying. Gives up after a few attempts so we never spin forever. */
@@ -545,13 +557,7 @@ export class LLMService {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     opts: { responseFormat?: any; temperature?: number; disableThinking?: boolean } = {}
   ): Promise<string> {
-    if (this.paused) throw new Error("LLM paused during image generation — deferred");
-    if (!this.initialized) {
-        await this.init();
-        if (!this.initialized) {
-             throw new Error("LLM Service not ready");
-        }
-    }
+    await this.ensureReady();
 
     return this.chatMutex.runExclusive(async () => {
     try {
@@ -606,11 +612,7 @@ export class LLMService {
     maxTokens: number = 2048,
     timeoutMs: number = 300000,
   ): Promise<string> {
-    if (this.paused) throw new Error('LLM paused during image generation — deferred');
-    if (!this.initialized) {
-      await this.init();
-      if (!this.initialized) throw new Error('LLM Service not ready');
-    }
+    await this.ensureReady();
 
     const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -647,11 +649,7 @@ export class LLMService {
     opts: { temperature?: number; thinking?: boolean; signal?: AbortSignal; tools?: unknown[]; toolChoice?: string; maxTokens?: number } = {},
     timeoutMs: number = 300000,
   ): Promise<{ content: string; toolCalls: AssembledToolCall[] }> {
-    if (this.paused) throw new Error('LLM paused during image generation — deferred');
-    if (!this.initialized) {
-      await this.init();
-      if (!this.initialized) throw new Error('LLM Service not ready');
-    }
+    await this.ensureReady();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {
       messages,

@@ -15,7 +15,7 @@ export interface SizingModel {
   kind: string;
   params?: number;
   minRamGb?: number;
-  files: { sizeBytes?: number }[];
+  files?: { sizeBytes?: number }[];
 }
 
 /** Conservative KV-cache cost per 1k tokens (~8B-class). Quantized KV roughly

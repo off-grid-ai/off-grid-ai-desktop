@@ -183,7 +183,7 @@ export async function downloadModel(modelId: string, onProgress?: ProgressCb): P
     // as installed + activatable and its files aren't flagged as "unused". Catalog
     // models are recognized by CATALOG membership already, so skip them.
     if (!inCatalog) {
-      recordDownloaded(dir, { id: modelId, name: entry.name ?? modelId, kind: entry.kind, files: entry.files.map((f) => f.name) });
+      recordDownloaded(dir, { id: modelId, name: entry.name, kind: entry.kind, files: entry.files.map((f) => f.name) });
     }
     send({ percent: 100, status: 'completed' });
     return { success: true };

@@ -898,7 +898,7 @@ export function startModelServer(port = GATEWAY_PORT): void {
         const patch = (await readJson(req)) as LlmSettings;
         await llm.setSettings(patch);
         json(res, 200, { success: true, settings: llm.getSettings() });
-      })().catch((e) => json(res, 500, { error: { message: String((e as Error).message ?? e) } }));
+      })().catch((e) => json(res, 500, { error: { message: String(e instanceof Error ? e.message : e) } }));
     }
 
     if (url === '/v1/embeddings' && method === 'POST') return void handleEmbeddings(req, res, rid);

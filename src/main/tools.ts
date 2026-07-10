@@ -331,7 +331,7 @@ export async function toolChat(
   for (const e of exts) {
     try {
       const s = await e.schemas();
-      if (s && s.length) {
+      if (s.length) {
         extSchemas.push(...s);
         if (e.systemHint) hints.push(e.systemHint());
       }

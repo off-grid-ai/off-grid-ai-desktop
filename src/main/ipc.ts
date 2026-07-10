@@ -246,7 +246,7 @@ export async function evaluateAndStoreMemoryForMessage(params: {
 
 async function extractEntitiesForSession(sessionId: string): Promise<void> {
         const memories = getMemoryRecordsForSession(sessionId);
-        if (!memories || memories.length === 0) return;
+        if (memories.length === 0) return;
 
         // Get strictness setting
         const strictness = getSetting<'lenient' | 'balanced' | 'strict'>('entityStrictness', 'balanced');
@@ -260,7 +260,7 @@ async function extractEntitiesForSession(sessionId: string): Promise<void> {
         const response = await llm.chat(prompt);
         const parsed = safeParseJson<{ entities: { name: string; type?: string; facts?: string[] }[] }>(response, { entities: [] });
 
-        if (!parsed.entities || parsed.entities.length === 0) return;
+        if (parsed.entities.length === 0) return;
 
         // Blocklist of very common short entity names that are too generic
         const ENTITY_BLOCKLIST = new Set([
@@ -339,7 +339,7 @@ async function extractEntitiesForSession(sessionId: string): Promise<void> {
 
 export async function summarizeSession(sessionId: string): Promise<string | null> {
     const memories = getMemoriesForSession(sessionId);
-    if (!memories || memories.length === 0) return null;
+    if (memories.length === 0) return null;
 
     const conversationText = memories.map((m: any) => `[${m.role || 'unknown'}]: ${m.content}`).join('\n');
     const prompt = getPrompt('sessionSummary', { CONVERSATION_TEXT: conversationText });
@@ -1283,7 +1283,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
   // Whether the active chat model can read images (gate image attachments on this).
   ipcMain.handle('model:chat-vision', () => import('./llm').then((m) => m.llm.hasVision()));
   // Reliable text→clipboard (the renderer's navigator.clipboard is flaky in Electron).
-  ipcMain.handle('clipboard:write-text', (_e, text: string) => { try { clipboard.writeText(String(text ?? '')); return true; } catch { return false; } });
+  ipcMain.handle('clipboard:write-text', (_e, text?: string) => { try { clipboard.writeText(String(text ?? '')); return true; } catch { return false; } });
   // "Configure for me": pick a RAM-appropriate model, download, activate, start,
   // verify. Streams progress back to all windows via 'setup:progress'.
   ipcMain.handle('setup:auto-configure', async () => {
@@ -1476,7 +1476,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
   });
   // An on-disk uploaded file as a data URL, so the chat viewer can render a PDF
   // natively (Chromium's built-in viewer) instead of dumping parsed text.
-  ipcMain.handle('files:data-url', async (_e, p: string) => {
+  ipcMain.handle('files:data-url', async (_e, p?: string) => {
       try {
           const fs = await import('fs');
           const path = await import('path');
