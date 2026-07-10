@@ -31,6 +31,11 @@ export default defineConfig({
     }
   },
   test: {
+    // jsdom render tests (userEvent + waitFor over real DOM) and DB/crypto integration
+    // tests legitimately exceed the 5s default under CI/parallel load — this was
+    // intermittently failing the pre-push gate. 15s is generous headroom without
+    // masking a real hang (a genuinely stuck test still fails).
+    testTimeout: 15000,
     // .ts = pure/main unit + integration tests (node env, the default). .tsx = renderer
     // component render tests, which opt into jsdom per-file via `// @vitest-environment jsdom`
     // so the default suite stays node-fast. (React render harness: jsdom + @testing-library/react.)
