@@ -42,6 +42,13 @@ jobs:
       - name: Test + coverage thresholds
         timeout-minutes: 10
         run: npm run test:coverage
+      # Architecture-boundary gate (hygiene §A/§H): walks the import graph and fails
+      # on a forbidden edge — core->pro (open-core), a pure-logic module gaining an
+      # IO import, renderer->main, circular deps. Fast (graph-only, ~2s), so unlike
+      # eslint it can BLOCK without wedging CI. Rules verified clean on the tree.
+      - name: Dependency boundaries
+        timeout-minutes: 4
+        run: npm run depcruise
       # Advisory: lint is enforced locally; bounded + non-blocking here so an
       # eslint slowdown over the full tree (incl. checked-out pro/) can't wedge CI.
       - name: Lint

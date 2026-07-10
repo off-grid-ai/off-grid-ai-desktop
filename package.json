@@ -32,7 +32,8 @@
     "test:e2e": "electron-vite build && playwright test",
     "smoke": "bash scripts/smoke-api.sh",
     "test:swift": "cd swift-tests/TextExtractorKit && swift test",
-    "test:db": "bash scripts/test-db.sh"
+    "test:db": "bash scripts/test-db.sh",
+    "depcruise": "depcruise --config .dependency-cruiser.cjs \"src/**/*.ts\" \"src/**/*.tsx\""
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -115,6 +116,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "@vitest/coverage-v8": "^4.1.10",
     "autoprefixer": "^10.4.23",
+    "dependency-cruiser": "^18.0.0",
     "electron": "^39.2.6",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
