@@ -10,13 +10,14 @@ import tsESLint from 'typescript-eslint'
 // Typed dead-BRANCH gate: no-unnecessary-condition uses the type-checker to flag
 // conditions that are always truthy/falsy given the types — the exact AI pattern
 // (defensive `if (x && x.y)` after x is already non-null, dead `===` branches,
-// `x?.y` where x can't be null). Requires typed linting (projectService). WARN
-// ratchet — many are genuine dead branches to delete, but some are legit guards at
-// untyped boundaries (JSON.parse / IPC / external data) where the fix is to correct
-// the TYPE, not delete the guard — so it's a triage signal, never auto-fixed.
+// `x?.y` where x can't be null). Requires typed linting (projectService). The
+// backlog is fully ground to zero, so this is now ERROR: a new dead branch fails
+// the build. When the fix is a legit guard at an untyped boundary (JSON.parse /
+// IPC / external data), correct the TYPE so the guard becomes necessary — do NOT
+// weaken this back to warn or blanket-disable. Never auto-fixed (suggestion-only).
 // Scoped to the dirs the tsconfigs cover so projectService never errors on a stray file.
 const typedDeadBranchWarn = {
-  name: 'typed no-unnecessary-condition (warn ratchet)',
+  name: 'typed no-unnecessary-condition (error)',
   files: [
     'src/main/**/*.ts',
     'src/preload/**/*.ts',
@@ -30,7 +31,7 @@ const typedDeadBranchWarn = {
     parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname }
   },
   plugins: { '@typescript-eslint': tsESLint.plugin },
-  rules: { '@typescript-eslint/no-unnecessary-condition': 'warn' }
+  rules: { '@typescript-eslint/no-unnecessary-condition': 'error' }
 }
 
 // Sonar-grade rules (bugs, cognitive complexity, duplicated branches, dead code)
