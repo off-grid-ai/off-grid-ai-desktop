@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { cn } from '@renderer/lib/utils';
 import { parseSqliteUtc } from '@renderer/lib/time';
+import { parseSessionId } from '@renderer/lib/session-id';
 import { BorderBeam } from './ui/border-beam';
 import { ProgressiveBlur } from './ui/progressive-blur';
 
@@ -228,14 +229,8 @@ export function ChatDetail({ sessionId, onBack, onSelectEntity, onSelectMemory }
     const [loading, setLoading] = useState(false);
     const [expandedSection, setExpandedSection] = useState<ExpandedSection>(null);
 
-    // Parse session ID to extract title
-    const firstDashIndex = sessionId.indexOf('-');
-    const modelName = firstDashIndex > 0 ? sessionId.slice(0, firstDashIndex) : undefined;
-    const chatTitleRaw = firstDashIndex > 0 ? sessionId.slice(firstDashIndex + 1) : sessionId;
-    const chatTitle = chatTitleRaw.split('-').join(' ').toLowerCase();
-    const readableTitle = chatTitle
-        ? `${chatTitle.charAt(0).toUpperCase()}${chatTitle.slice(1)}`
-        : sessionId;
+    // Parse session ID to extract title + model (shared with ChatList).
+    const { modelName, readableTitle, llmLabel } = parseSessionId(sessionId);
 
     // Keyboard shortcut for back navigation (Cmd+[) and Escape to collapse
     const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -301,7 +296,7 @@ export function ChatDetail({ sessionId, onBack, onSelectEntity, onSelectMemory }
                     <h1 className="font-semibold text-white truncate text-sm">{readableTitle}</h1>
                     {modelName && (
                         <span className="text-[10px] text-neutral-500 uppercase tracking-wide">
-                            {modelName.replace(/[-_]/g, ' ')}
+                            {llmLabel}
                         </span>
                     )}
                 </div>

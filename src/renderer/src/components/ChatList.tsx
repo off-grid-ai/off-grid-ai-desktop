@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { parseSqliteUtc } from '@renderer/lib/time';
+import { parseSessionId } from '@renderer/lib/session-id';
 import { Modal, ModalBody, ModalContent, ModalTrigger } from './ui/animated-modal';
 import { Item, ItemActions, ItemContent, ItemGroup, ItemTitle } from './ui/item';
 import { BorderBeam } from './ui/border-beam';
@@ -32,14 +33,7 @@ interface ChatListItemProps {
 }
 
 function ChatListItem({ session, index, formattedTime, onSelect, onDelete }: ChatListItemProps) {
-    const firstDashIndex = session.session_id.indexOf('-');
-    const modelName = firstDashIndex > 0 ? session.session_id.slice(0, firstDashIndex) : undefined;
-    const chatTitleRaw = firstDashIndex > 0 ? session.session_id.slice(firstDashIndex + 1) : session.session_id;
-    const chatTitle = chatTitleRaw.split('-').join(' ').toLowerCase();
-    const readableTitle = chatTitle
-        ? `${chatTitle.charAt(0).toUpperCase()}${chatTitle.slice(1)}`
-        : session.session_id;
-    const llmLabel = modelName ? modelName.replace(/[-_]/g, ' ') : 'LLM';
+    const { readableTitle, llmLabel } = parseSessionId(session.session_id);
 
     // Glare effect state
     const containerRef = useRef<HTMLDivElement>(null);
