@@ -3,7 +3,9 @@
 // structural invariants (unique ids, http entries have a url, token entries have
 // secrets, every category is in the display order) are the contract the UI relies on.
 import { describe, it, expect } from 'vitest';
-import { CONNECTOR_CATALOG, CATEGORY_ORDER } from '../../components/connectorCatalog';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { CONNECTOR_CATALOG, CATEGORY_ORDER, CONNECTOR_SETUP_HINTS, setupHintFor } from '../../components/connectorCatalog';
 
 describe('CONNECTOR_CATALOG', () => {
   it('is non-empty', () => {
@@ -65,5 +67,26 @@ describe('CONNECTOR_CATALOG', () => {
     for (const a of auths) {
       expect(['oauth', 'token', 'none']).toContain(a);
     }
+  });
+});
+
+describe('CONNECTOR_SETUP_HINTS — catalog data, out of the view', () => {
+  it('every hint id is a real catalog connector (no orphan hints)', () => {
+    const ids = new Set(CONNECTOR_CATALOG.map((e) => e.id));
+    for (const id of Object.keys(CONNECTOR_SETUP_HINTS)) {
+      expect(ids.has(id)).toBe(true);
+    }
+  });
+
+  it('setupHintFor returns the hint for a known id, undefined otherwise', () => {
+    expect(setupHintFor('slack')).toMatch(/Bot User OAuth Token/);
+    expect(setupHintFor('gmail')).toBeUndefined(); // OAuth connector, no manual hint
+    expect(setupHintFor('does-not-exist')).toBeUndefined();
+  });
+
+  it('the hints live in the catalog data module, not inlined in ConnectorsScreen', () => {
+    const view = readFileSync(join(__dirname, '../../components/ConnectorsScreen.tsx'), 'utf8');
+    expect(view).not.toMatch(/const SETUP_HINTS/);
+    expect(view).toContain('setupHintFor');
   });
 });

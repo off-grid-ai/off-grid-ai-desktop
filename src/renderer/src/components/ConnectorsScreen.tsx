@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { IconLoader2, IconPlug, IconPlus, IconTrash, IconPlugConnected, IconAlertTriangle, IconCircleCheck, IconRefresh, IconChevronRight, IconChevronLeft } from '@tabler/icons-react';
-import { CONNECTOR_CATALOG, CATEGORY_ORDER, type CatalogEntry } from './connectorCatalog';
+import { CONNECTOR_CATALOG, CATEGORY_ORDER, setupHintFor, type CatalogEntry } from './connectorCatalog';
 import slackLogo from '@/assets/logos/slack.svg';
 
 // Brands Simple Icons dropped (trademark) → bundled local logos, keyed by catalog id.
@@ -38,22 +38,6 @@ const LOGO_SLUGS: Record<string, string> = {
 };
 
 // How to obtain credentials for token-based connectors (shown in the connect form).
-const SETUP_HINTS: Record<string, string> = {
-  slack: 'Create a Slack app, add bot scopes (channels:read, chat:write, search:read), install it to your workspace, then copy the Bot User OAuth Token (xoxb-…) and your Team ID (T…).',
-  discord: 'Discord Developer Portal → New Application → Bot → Reset/Copy Token. Enable the Message Content intent.',
-  whatsapp: 'Runs a local WhatsApp bridge. On first connect it shows a QR — scan it in WhatsApp → Linked Devices. Paste the session/config path it gives you.',
-  coda: 'Coda → Account Settings → API Settings → Generate API token.',
-  obsidian: 'Enter the absolute path to your Obsidian vault folder (e.g. /Users/you/Vault).',
-  clickup: 'ClickUp → Settings → Apps → Generate (personal API token).',
-  trello: 'Get your API key and token from https://trello.com/app-key.',
-  shortcut: 'Shortcut → Settings → API Tokens → Generate Token.',
-  github: 'GitHub → Settings → Developer settings → Personal access tokens → generate one (repo + read:org scopes).',
-  gitlab: 'GitLab → Preferences → Access Tokens → create one with the “api” scope.',
-  postgres: 'Paste a (read-only) connection string: postgres://user:password@host:5432/dbname.',
-  amplitude: 'Amplitude → Settings → Projects → copy the API Key.',
-  mixpanel: 'Mixpanel → Project Settings → Service Accounts → create one.',
-  airtable: 'Airtable → Builder Hub → Personal access tokens → create a token (pat…) with the scopes/bases you need.',
-};
 
 // Turn raw transport errors into something human.
 function cleanError(detail: string): string {
@@ -364,9 +348,9 @@ export function ConnectorsScreen() {
                         <div className="rounded-md border border-neutral-800 py-1.5 text-center text-xs text-neutral-600">Not enabled yet</div>
                       ) : tokenFor?.id === e.id ? (
                         <div className="space-y-2">
-                          {(SETUP_HINTS[e.id] || e.docsUrl) && (
+                          {(setupHintFor(e.id) || e.docsUrl) && (
                             <p className="text-[11px] leading-relaxed text-neutral-500">
-                              {SETUP_HINTS[e.id]}{' '}
+                              {setupHintFor(e.id)}{' '}
                               {e.docsUrl && (
                                 <a href={e.docsUrl} target="_blank" rel="noreferrer" className="text-green-500 hover:underline">
                                   How to get this →

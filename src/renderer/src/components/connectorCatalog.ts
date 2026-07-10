@@ -114,3 +114,31 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
   // ---------- Automation ----------
   { id: 'zapier', name: 'Zapier', blurb: '8,000+ apps via one connector', category: 'Automation', color: '#FF4F00', letter: 'Z', transport: 'http', url: 'https://mcp.zapier.com/api/mcp/mcp', auth: 'oauth', docsUrl: 'https://zapier.com/mcp', ready: false },
 ];
+
+/**
+ * Per-connector setup instructions, keyed by catalog id. This is catalog DATA and
+ * lives here beside CONNECTOR_CATALOG (single source), not inlined in the
+ * ConnectorsScreen view. Only connectors needing manual token setup have a hint;
+ * OAuth ones authorize in-browser and rely on their docsUrl instead.
+ */
+export const CONNECTOR_SETUP_HINTS: Record<string, string> = {
+  slack: 'Create a Slack app, add bot scopes (channels:read, chat:write, search:read), install it to your workspace, then copy the Bot User OAuth Token (xoxb-…) and your Team ID (T…).',
+  discord: 'Discord Developer Portal → New Application → Bot → Reset/Copy Token. Enable the Message Content intent.',
+  whatsapp: 'Runs a local WhatsApp bridge. On first connect it shows a QR — scan it in WhatsApp → Linked Devices. Paste the session/config path it gives you.',
+  coda: 'Coda → Account Settings → API Settings → Generate API token.',
+  obsidian: 'Enter the absolute path to your Obsidian vault folder (e.g. /Users/you/Vault).',
+  clickup: 'ClickUp → Settings → Apps → Generate (personal API token).',
+  trello: 'Get your API key and token from https://trello.com/app-key.',
+  shortcut: 'Shortcut → Settings → API Tokens → Generate Token.',
+  github: 'GitHub → Settings → Developer settings → Personal access tokens → generate one (repo + read:org scopes).',
+  gitlab: 'GitLab → Preferences → Access Tokens → create one with the “api” scope.',
+  postgres: 'Paste a (read-only) connection string: postgres://user:password@host:5432/dbname.',
+  amplitude: 'Amplitude → Settings → Projects → copy the API Key.',
+  mixpanel: 'Mixpanel → Project Settings → Service Accounts → create one.',
+  airtable: 'Airtable → Builder Hub → Personal access tokens → create a token (pat…) with the scopes/bases you need.',
+};
+
+/** Setup instructions for a connector id, or undefined when it has none. */
+export function setupHintFor(id: string): string | undefined {
+  return CONNECTOR_SETUP_HINTS[id];
+}
