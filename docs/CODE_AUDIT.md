@@ -5,11 +5,11 @@ smell). This is a BACKLOG for a decision on scope — NOT auto-fixed. Ranked by 
 Fixing is a separate, deliberate effort (a SOLID refactor is behavior-risk; each item needs its
 own change + tests). Real BUGS (not just smells) are marked 🐞.
 
-## Highest-value / real bugs first
-- 🐞 **3 divergent ext→MIME maps** — `src/main/index.ts:180` (ogcapture) vs `media-server.ts:22` vs `model-server/data-url.ts:42`. Add a format to one, another serves wrong/absent MIME (video won't seek / image won't render) on that path only. Fix: one `mimeForExt()` imported by all three.
-- 🐞 **`.webp` mislabeled** — `tools.ts:302` inlines `endsWith('.png')?'image/png':'image/jpeg'`, so a webp attachment → `image/jpeg`, which the vision model may reject. Fix: use `model-server/data-url.ts` `mimeFromExt`/`toDataUrl` (the owner).
-- 🐞 **picker allowlist vs processor router disagree** — `rag-ipc.ts:27` hardcodes dialog extensions separately from `files-classify.ts` IMAGE/AUDIO/VIDEO_EXT; already drifted (picker offers flac/mkv, omits opus/aiff/avi; no gif/bmp/heic). User picks a dialog-allowed file the router can't classify. Fix: build the filter FROM the classify sets.
-- 🐞 **double intent decision (root of the image-gen-as-tool bug)** — renderer `MemoryChat.tsx:813 looksLikeImageRequest` vs main `ipc.ts classifyIntent` decide "is this an image request?" for the SAME turn, independently, and can disagree. Fix: one intent seam; renderer shouldn't pre-decide.
+## Highest-value / real bugs first — ALL RESOLVED (this branch)
+- ✅ 🐞 **3 divergent ext→MIME maps** — fixed in `fix(mime)`: one `mimeForExt(ext, fallback)` map in `src/main/mime.ts`; index.ts / media-server.ts / data-url.ts all delegate. Tested (`__tests__/mime.test.ts`).
+- ✅ 🐞 **`.webp` mislabeled** — fixed in `fix(mime)`: `tools.ts` routes attachments through `mimeFromExt` → `image/webp`. Source-read regression guard added; gif→image/gif corrected too.
+- ✅ 🐞 **picker allowlist vs processor router disagree** — fixed in `fix(upload)`: `files-classify.uploadPickerExtensions()` derives the dialog filter from the router's IMAGE/AUDIO/VIDEO + DOC sets. Tested (picker⊇router, every offered ext classifies).
+- ✅ 🐞 **double intent decision (root of the image-gen-as-tool bug)** — fixed in `fix(chat)`: `shouldAutoRouteImage()` in `image-intent.ts` suppresses the renderer's keyword auto-route when the agentic path owns the turn. Unit + render-harness wiring tests (tools ON → toolChat, not generateImage).
 
 ## STRUCTURAL root cause (the §A drift class)
 - **The renderer has NO store layer** (`src/renderer/src/stores/` does not exist). Every screen re-fetches + holds its own `useState` copy — the reason the "local copy that drifts" bug keeps recurring (image composer, ProjectsScreen doc-toggle, etc.). A thin per-domain store (owns the authoritative fetch + write-through) would prevent the class structurally instead of fixing it screen-by-screen.
@@ -48,9 +48,28 @@ DIP: `dictation/controller.buildSinks:448` hardcodes concrete sink classes per f
 SRP (sequence AFTER seams): `agent.proposeActions` (53-252), `extract.extractObservationFromScreen` (250-416), `vault-service` unlock/recovery — inject a VaultStore.
 The new *-helpers/-rank/-heuristics/-window siblings are clean pure seams; violations are in their callers.
 
+## Progress (this branch pair — fix/honest-pro-coverage + test/pro-coverage-campaign)
+RESOLVED so far, each behavior-neutral + tested + coverage floor held (97/92/95/98):
+- Core: all 4 real 🐞 bugs (above); `isValidGguf` shared (`models/gguf.ts`); artifact-kind +
+  model-kind label maps shared (`lib/artifact-labels.ts`, `lib/model-kind-labels.ts`).
+- Pro: `crm/text-sim.ts` (charSim/normalizedCharSim/numbersDiffer/nameSimThreshold/bestFuzzyMatch —
+  closed the charSim dup + twice-written fuzzy scan + threshold ladder); `PRIORITY_RANK` single
+  source (Actions ORDER BY generated via `priorityRankCaseSql`, no more TS-vs-SQL drift).
+
+REMAINING (larger DIP interfaces + SRP god-file splits — each genuinely behavior-risk, best done
+one at a time with its own verification; NOT yet started):
+- Core DIP: `ImageRuntime` interface (imagegen 4-runtime cascade); `tools.ts` `ToolDef.run` dispatch;
+  imagegen.ts SRP split; llm.ts `streamCompletion` dedup (chatStream vs streamChat); transcription
+  `ffmpeg-decode` dedup (3×); search `likeMatcher`; models-manager mflux-branch fold.
+- Core lower DRY: markdownComponents 3× (incl. ChatList cyan → emerald token); ipc.ts `retrieveContext`
+  god-handler split; database.ts split (1339 lines); `CHAT_JOB` const; sessionId/UTC-parse dups;
+  ModelsScreen/StoragePanel `@tabler` → Phosphor (CLAUDE.md mandate).
+- Pro: `ConnectorIngestor` interface; `emitCrmChanged` single owner (+ `crm:changed` const);
+  `surfaceCapabilities` registry; residual `norm`/`dayKey`/`isMe` dups; dictation `SinkFactory`;
+  agent/extract/vault SRP splits.
+
 ## Scope note
-This is a DIAGNOSIS backlog. A SOLID/DRY refactor of this size is behavior-risk and MUST NOT be
-bundled into the coverage PR. Each item is its own change + tests. Recommended sequence: land the
-coverage PR first (net safety), then the real 🐞 bugs (MIME maps, webp, picker, double-intent) as
-small fixes, then the consolidation seams (text-sim, ConnectorIngestor, emitCrmChanged,
-surfaceCapabilities), then the SRP god-file splits last.
+This is a DIAGNOSIS backlog. A SOLID/DRY refactor of this size is behavior-risk. The safe,
+high-payoff DRY consolidations + all 4 real bugs are DONE on the branch pair above. The remaining
+DIP/SRP items each change interfaces or split god-files and should land as their own reviewed
+changes (per-item tests, individual verification) rather than a single blind sweep.
