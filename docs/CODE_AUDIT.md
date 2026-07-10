@@ -62,23 +62,38 @@ RESOLVED, each behavior-neutral + tested + coverage floor held (~97/92/96/98):
   shared `norm`; `EMAIL_SURFACES`/`emailSurfaceSqlIn` (`crm/surfaces.ts`); shared `existing()`
   bundled-binary resolver (`lib/bin-resolution.ts`).
 
+ALSO RESOLVED (2nd wave): `tools.ts` `ToolDef.run` uniform dispatch (DIP — search_memory/
+generate_image side channels; verified via the real loop with only the model + search boundaries
+faked); ipc.ts `appNameLikeClause` (the app-name filter unified across 7 rag:chat query sites);
+search `likeMatch`/`LIKE_COLUMNS` (facet counts + hit builders share one clause+params source);
+ConnectorsScreen setup hints moved into the catalog data module. CI now enforces the coverage
+ratchet (`.github/workflows/ci.yml` runs `npm run test:coverage`); README carries coverage badges.
+
 REMAINING — DEFERRED ON PURPOSE. Each rewrites an engine contract on a coverage-excluded I/O path
-(spawns binaries / hits the model server on single-owner ports) that CANNOT be verified live in a
-headless run. Per the merge gate ("nothing is done until verified live"), these must land as their
-own changes with real image-gen / agentic-loop / DB verification — NOT a blind sweep:
+(spawns binaries / hits the model server on single-owner ports / native DB) that CANNOT be verified
+live in a headless run. Per the merge gate ("nothing is done until verified live"), these must land
+as their own changes with real image-gen / DB / connector verification — NOT a blind sweep:
 - Core DIP/SRP: `ImageRuntime` interface (imagegen 4-runtime cascade + models-manager mflux fold);
-  `tools.ts` `ToolDef.run` uniform dispatch (search_memory/generate_image side-channels); imagegen.ts
-  SRP split; ipc.ts `retrieveContext` god-handler split; database.ts split (1339 lines); search
-  `likeMatcher`; ModelsScreen/StoragePanel `@tabler` → Phosphor.
+  imagegen.ts SRP split; ipc.ts `retrieveContext`/FTS-block god-handler split; database.ts split
+  (1339 lines).
 - Core correctness (needs live image-gen): Z-Image guard-vs-run regex (the memory guard sizes a
   different match than the run loads).
-- Pro DIP/SRP: `ConnectorIngestor` interface; agent/extract/vault SRP splits; dictation `SinkFactory`.
-- NOT a real dup (leave): `isMe` (token-overlap, DB-sourced) vs `isSelfName` (substring-position,
-  injected list) are different matchers; markdownComponents maps are intentionally per-surface;
-  `dayKey` (string) vs `dayKeyOf` (epoch-sec number) are different functions.
+- Core brand (needs screenshot verification): ModelsScreen/StoragePanel/ConnectorsScreen `@tabler`
+  → Phosphor — a many-icon swap; each glyph + weight must be verified visually (merge gate), not
+  swapped blind.
+- Pro DIP/SRP: `ConnectorIngestor` interface (connector-identity dispatch); agent/extract/vault
+  SRP splits.
+- NOT a real violation (leave — flagged by the audit, judged against §B on inspection): `isMe`
+  (token-overlap, DB-sourced) vs `isSelfName` (substring-position, injected list) are different
+  matchers, not a dup; markdownComponents maps are intentionally per-surface; `dayKey` (string) vs
+  `dayKeyOf` (epoch-sec number) are different functions; dictation `buildSinks` is the factory
+  itself (the delivery loop is already polymorphic over `OutputSink`) — a SinkFactory there is
+  speculative (YAGNI) with only two sinks.
 
 ## Scope note
-This is a DIAGNOSIS backlog. A SOLID/DRY refactor of this size is behavior-risk. The safe,
-high-payoff DRY consolidations + all 4 real bugs are DONE on the branch pair above. The remaining
-DIP/SRP items each change interfaces or split god-files and should land as their own reviewed
-changes (per-item tests, individual verification) rather than a single blind sweep.
+This is a DIAGNOSIS backlog. All 4 real bugs + the safe/high-payoff DRY consolidations + the two
+verifiable DIP refactors (ToolDef.run, the query-clause unifications) are DONE on the branch pair
+above, each behavior-neutral + tested + coverage floor held + pushed. The remaining items either
+rewrite an engine contract on an unverifiable I/O path or need visual verification, and should land
+as their own reviewed changes (per-item tests, live/screenshot verification) rather than a blind
+sweep — doing them headless would ship an unverified "done", which the merge gate forbids.
