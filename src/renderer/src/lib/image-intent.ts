@@ -28,6 +28,37 @@ export function looksLikeImageRequest(text: string): boolean {
   return false;
 }
 
+/** Inputs to the renderer's auto-route decision. Kept as data (not scattered
+ *  booleans in the component) so the one decision is unit-testable. */
+export interface AutoImageRouteOpts {
+  /** The composer's current mode ('image' is explicit; anything else is chat). */
+  mode: string;
+  /** An image model is installed + active. */
+  imageAvailable: boolean;
+  /** The agentic tools/connectors path owns this turn (tools|connectors on, not a project chat). */
+  agenticActive: boolean;
+  /** The user's message text. */
+  text: string;
+}
+
+/** Whether the renderer should auto-route a chat turn straight to image
+ *  generation (the "draw a dog" fast-path) instead of sending it down the chat /
+ *  agentic pipeline.
+ *
+ *  Returns false when the agentic path is active: there, image generation is a
+ *  TOOL the model chooses to call, so the renderer must NOT pre-decide from a
+ *  keyword. That renderer-vs-model double decision is exactly what hijacked
+ *  "draw ..." turns away from the tool loop (the image-gen-as-tool bug). One
+ *  seam: in agentic mode the model decides; only in plain chat does the renderer
+ *  keyword heuristic auto-route. */
+export function shouldAutoRouteImage(opts: AutoImageRouteOpts): boolean {
+  const { mode, imageAvailable, agenticActive, text } = opts;
+  if (mode === 'image') return false; // explicit image mode is handled by the caller, not auto-route
+  if (!imageAvailable) return false;
+  if (agenticActive) return false; // the agent owns intent — no renderer pre-decision
+  return looksLikeImageRequest(text);
+}
+
 /** Strip the leading "draw/generate an image of" phrasing so the diffusion prompt
  *  is just the subject. Falls back to the original text if stripping empties it. */
 export function cleanImagePrompt(text: string): string {

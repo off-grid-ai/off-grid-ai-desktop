@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { looksLikeImageRequest, cleanImagePrompt } from '../image-intent';
+import { looksLikeImageRequest, cleanImagePrompt, shouldAutoRouteImage } from '../image-intent';
 
 describe('looksLikeImageRequest', () => {
   it('detects bare visual verbs', () => {
@@ -34,6 +34,40 @@ describe('looksLikeImageRequest', () => {
     expect(looksLikeImageRequest('what is the capital of France?')).toBe(false);
     expect(looksLikeImageRequest('summarize my notes')).toBe(false);
     expect(looksLikeImageRequest('')).toBe(false);
+  });
+});
+
+// The renderer's auto-route pre-decision. The bug it guards: when the agentic
+// tools/connectors path owns the turn, image generation is a TOOL the model
+// calls — the renderer must NOT pre-decide from a keyword and hijack the turn
+// (that double decision routed "draw ..." away from the tool loop). Every branch:
+describe('shouldAutoRouteImage', () => {
+  const KEYWORD = 'draw a dog'; // looksLikeImageRequest === true
+  const PLAIN = 'what is the capital of France?'; // looksLikeImageRequest === false
+
+  it('auto-routes a keyword request in plain chat when an image model is available', () => {
+    expect(shouldAutoRouteImage({ mode: 'chat', imageAvailable: true, agenticActive: false, text: KEYWORD })).toBe(true);
+  });
+
+  it('does NOT auto-route when the agentic path is active (the model owns image intent)', () => {
+    // This is the fix: same keyword, but the agent decides — renderer stays out.
+    expect(shouldAutoRouteImage({ mode: 'chat', imageAvailable: true, agenticActive: true, text: KEYWORD })).toBe(false);
+  });
+
+  it('does NOT auto-route in explicit image mode (the caller handles that path directly)', () => {
+    expect(shouldAutoRouteImage({ mode: 'image', imageAvailable: true, agenticActive: false, text: KEYWORD })).toBe(false);
+  });
+
+  it('does NOT auto-route when no image model is available', () => {
+    expect(shouldAutoRouteImage({ mode: 'chat', imageAvailable: false, agenticActive: false, text: KEYWORD })).toBe(false);
+  });
+
+  it('does NOT auto-route an ordinary chat message even with everything else enabled', () => {
+    expect(shouldAutoRouteImage({ mode: 'chat', imageAvailable: true, agenticActive: false, text: PLAIN })).toBe(false);
+  });
+
+  it('agentic gate wins over the keyword regardless of image availability', () => {
+    expect(shouldAutoRouteImage({ mode: 'chat', imageAvailable: true, agenticActive: true, text: PLAIN })).toBe(false);
   });
 });
 

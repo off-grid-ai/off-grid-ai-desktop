@@ -11,7 +11,7 @@ import { SkillsPanel } from './SkillsPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { ModelPicker } from './ModelPicker';
 import { resolveImageParams, setOverride, type ImageParamStore } from '@renderer/lib/image-params';
-import { looksLikeImageRequest, cleanImagePrompt } from '@renderer/lib/image-intent';
+import { shouldAutoRouteImage, cleanImagePrompt } from '@renderer/lib/image-intent';
 import { buildAssistantContext, readReasoning } from '@renderer/lib/message-persistence';
 import { Button } from '@renderer/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
@@ -808,9 +808,12 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
 
     // Image-generation mode: render a prompt → image instead of a memory answer.
     // Also auto-route when the user clearly asks for an image in chat ("draw a
-    // dog") so they get a picture instead of the text model refusing. Intent
-    // detection only fires in chat mode when an image model is available.
-    const autoImage = mode !== 'image' && imageAvailable && looksLikeImageRequest(trimmed);
+    // dog") so they get a picture instead of the text model refusing. The auto-
+    // route is SUPPRESSED when the agentic tools/connectors path owns the turn:
+    // there, image generation is a tool the model calls, so the renderer must not
+    // pre-decide (that double decision hijacked "draw ..." away from the tool loop).
+    const agenticActive = (toolsOn || connectorsOn) && !activeProjectId;
+    const autoImage = shouldAutoRouteImage({ mode, imageAvailable, agenticActive, text: trimmed });
     if (mode === 'image' || autoImage) {
       setImgProgress(null);
       setGeneratingImage(true);

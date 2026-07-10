@@ -54,12 +54,16 @@ type GenPayload = { steps?: number; model?: string; width?: number; height?: num
  *  component touches on mount / send is stubbed at the TRUE boundary (the IPC bridge),
  *  so the component code under test is 100% real. `generateImage` + `setActiveModalModel`
  *  are the assertion subjects; the rest resolve to inert defaults. */
-function installApi(opts: { active: string; models: string[] }) {
-  const settings: Record<string, unknown> = {};
+function installApi(opts: { active: string; models: string[]; settings?: Record<string, unknown> }) {
+  const settings: Record<string, unknown> = { ...(opts.settings ?? {}) };
   const generateImage = vi.fn(
     async (_p: GenPayload) => ({ dataUrl: 'data:image/png;base64,AAAA', path: '/tmp/out.png' })
   );
   const setActiveModalModel = vi.fn(async (_kind: string, _model: string) => {});
+  // The agentic path's single entry point. Returns a benign text answer with no
+  // imageRequest, so if the turn reaches the agent no generateImage call follows —
+  // making "generateImage was/ wasn't called" an unambiguous terminal artifact.
+  const toolChat = vi.fn(async () => ({ answer: 'done', toolCalls: [], unified: [] }));
   const api = {
     isPro: false,
     // --- assertion subjects ---
@@ -82,10 +86,11 @@ function installApi(opts: { active: string; models: string[] }) {
     listProjects: vi.fn(async () => []),
     styleThumbs: vi.fn(async () => ({})),
     listSkills: vi.fn(async () => []),
-    onRagStream: vi.fn(() => () => {})
+    onRagStream: vi.fn(() => () => {}),
+    toolChat
   };
   (globalThis as unknown as { window: { api: unknown } }).window.api = api;
-  return { generateImage, setActiveModalModel };
+  return { generateImage, setActiveModalModel, toolChat };
 }
 
 /** Drive the composer into image mode with the options panel open. */
@@ -181,5 +186,58 @@ describe('<MemoryChat/> image mode — the generateImage payload is the terminal
     // Switching to the few-step model with no user override resolves to THAT model's
     // default (10), not a leftover value — proving the [imgModel] effect re-resolves.
     expect(payload.steps).toBe(10);
+  });
+});
+
+// Send a message in the DEFAULT chat composer (not image mode).
+async function sendChat(user: ReturnType<typeof userEvent.setup>, text: string) {
+  const textarea = await screen.findByPlaceholderText(/ask anything/i, {}, { timeout: 3000 });
+  await user.type(textarea, text);
+  await user.click(screen.getByRole('button', { name: /^send$/i }));
+}
+
+// Bug 4 (root of the image-gen-as-tool bug): the renderer's keyword auto-route and
+// the agent's tool decision both decided "is this an image request?" for the same
+// turn. With tools on, "draw ..." was hijacked by the renderer's direct generate,
+// so the generate_image TOOL never ran. The terminal artifacts: which IPC the turn
+// actually crosses on (toolChat = agent path, generateImage = direct route).
+describe('<MemoryChat/> chat mode — image intent is decided in ONE place', () => {
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    (Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  });
+
+  it('with tools ON, a "draw ..." turn goes to the agent (toolChat), NOT the renderer direct-generate', async () => {
+    const user = userEvent.setup();
+    // composerToolsOn is persisted in settings and read into toolsOn on mount.
+    const { generateImage, toolChat } = installApi({ active: FULL, models: [FULL], settings: { composerToolsOn: true } });
+    renderChat();
+
+    await sendChat(user, 'draw a dog');
+
+    // The turn crossed on the agentic path...
+    await waitFor(() => expect(toolChat).toHaveBeenCalledTimes(1));
+    // ...and the renderer did NOT pre-decide + fire a direct image generation.
+    expect(generateImage).not.toHaveBeenCalled();
+  });
+
+  it('with tools OFF, the same "draw ..." turn auto-routes to direct image generation', async () => {
+    const user = userEvent.setup();
+    const { generateImage, toolChat } = installApi({ active: FULL, models: [FULL] });
+    renderChat();
+
+    await sendChat(user, 'draw a dog');
+
+    // No agent in plain chat — the renderer keyword auto-route generates directly.
+    await waitFor(() => expect(generateImage).toHaveBeenCalledTimes(1));
+    expect(toolChat).not.toHaveBeenCalled();
+    const payload = generateImage.mock.calls[0][0] as GenPayload;
+    expect(payload.prompt).toBe('a dog'); // cleanImagePrompt stripped the verb
   });
 });
