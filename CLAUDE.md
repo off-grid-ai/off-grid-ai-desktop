@@ -56,6 +56,24 @@ Two process rules, learned from the same incident — they matter as much as the
 - Main-process changes need an app restart; renderer changes hot-reload.
 - Don't over-restart — it interrupts capture.
 
+## Commit incrementally — never batch a session's work into one commit
+
+A long agent session WILL hit a context/session limit; anything uncommitted is lost. Protect
+progress by committing continuously, not at the end:
+
+- **One logical change = one commit, landed as soon as it's green** (tsc + its tests pass). A bug
+  fix, a single consolidation/extraction, a doc update — each is its own small, self-contained,
+  well-described commit. Do NOT accumulate 5 unrelated edits and commit them together "later".
+- **Commit the moment a unit is verified**, before starting the next one — so a session cut-off at
+  any point leaves every finished unit already saved. Treat "done and green" as "commit now".
+- **Push regularly** (at least whenever you'd be sad to lose what's landed) so progress survives even
+  a lost local worktree; the pre-push gate (tsc + tests + coverage ratchet) still runs each time.
+  If a pre-push hook is blocked by an unrelated environment issue (e.g. a running app holding a
+  port), use the documented CI-equivalent workaround (see the gateway-dead-port note) — never
+  `--no-verify`.
+- **Small commits are the record** (merge, never squash — see the workspace multi-agent model), so
+  each step stays reviewable and revertible. A giant end-of-session commit is a defect.
+
 ## Pending hygiene adoption — READ BEFORE EVERY PUSH
 
 **TODO (deferred to its own PR — do NOT bundle into an unrelated PR):** adopt the wednesday-solutions
