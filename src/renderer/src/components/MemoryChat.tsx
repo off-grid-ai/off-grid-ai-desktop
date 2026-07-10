@@ -405,6 +405,13 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   // Map streamId → convId so the onRagStream handler can route tokens to the right
   // conversation regardless of which tab is active when the event fires.
   const streamConvRef = useRef<Map<string, string>>(new Map());
+  // Accumulated reasoning per streamId, mirrored from the onRagStream reasoning
+  // events. Read DETERMINISTICALLY at persist time — reading it out of a
+  // setConvMessages updater (a state-updater side effect) was unreliable: React
+  // only runs the updater eagerly on a bail-out, else defers it to render, so the
+  // read could see undefined and the persisted 'Thinking' block would vanish on
+  // reload (the exact T1f bug). A ref is written synchronously and read directly.
+  const reasoningByStream = useRef<Record<string, string>>({});
   // Conversations the user hit "stop" on. The in-flight send checks this at each of
   // its awaits and bails (no error bubble, no persisted junk) instead of finalizing a
   // turn the user abandoned. Cleared when the conversation's send settles.
@@ -562,21 +569,19 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const setStepsOverride = useCallback((value: number) => {
     setImgSteps(value);
     if (!imgModel) return;
-    setImgParamStore(prev => {
-      const next = setOverride(prev, imgModel, 'steps', value);
-      void window.api.saveSetting('imageParams', next);
-      return next;
-    });
+    setImgParamStore(prev => setOverride(prev, imgModel, 'steps', value));
   }, [imgModel]);
   const setSizeOverride = useCallback((value: number) => {
     setImgSize(value);
     if (!imgModel) return;
-    setImgParamStore(prev => {
-      const next = setOverride(prev, imgModel, 'size', value);
-      void window.api.saveSetting('imageParams', next);
-      return next;
-    });
+    setImgParamStore(prev => setOverride(prev, imgModel, 'size', value));
   }, [imgModel]);
+  // Persist the per-model image params in ONE effect (not inside the state updater —
+  // an updater must be pure; StrictMode double-invokes it, firing the IPC save twice).
+  // Gated on prefsLoaded so the initial hydrate doesn't write back.
+  useEffect(() => {
+    if (prefsLoaded.current) void window.api.saveSetting('imageParams', imgParamStore);
+  }, [imgParamStore]);
 
   const activeProjectName = projects.find(p => p.id === activeProjectId)?.name ?? null;
 
@@ -891,7 +896,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       // plus (when Connectors is on) MCP connector tools. STREAMS like the RAG path:
       // a streamId placeholder fills in live - thinking, then each tool-call activity
       // step, then the answer - and the stop button aborts it via rag:cancel.
-      if ((toolsOn || connectorsOn) && !activeProjectId) {
+      if (agenticActive) {
         if (cancelledRef.current.has(convId)) return;
         const toolStreamId = `a-${Date.now()}`;
         activeStreamId = toolStreamId;
@@ -913,15 +918,15 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           return;
         }
         const answer = tr?.answer || 'No response returned.';
-        // Capture the reasoning that streamed onto this turn so it can ride the
-        // persisted context blob (React-only state would vanish on reload).
-        let toolReasoning: string | undefined;
+        // Reasoning read from the ref (populated as it streamed) — deterministic,
+        // unlike reading it out of the setConvMessages updater. Rides the persisted
+        // context blob so the 'Thinking' block survives reload (T1f).
+        const toolReasoning = reasoningByStream.current[toolStreamId];
+        delete reasoningByStream.current[toolStreamId]; // done with this stream — free it
         // Finalize the streamed placeholder in place (never append a second bubble).
-        setConvMessages(convId, prev => prev.map(m => {
-          if (m.id !== toolStreamId) return m;
-          toolReasoning = m.reasoning;
-          return { ...m, content: answer, context, toolCalls, activity: undefined, streaming: false };
-        }));
+        setConvMessages(convId, prev => prev.map(m => (
+          m.id === toolStreamId ? { ...m, content: answer, context, toolCalls, activity: undefined, streaming: false } : m
+        )));
         const toolCtxWithReasoning = buildAssistantContext(toolCtx, { reasoning: toolReasoning });
         if (voiceMode) setAutoPlayId(toolStreamId);
         // Deferred image generation: the tool loop only RECORDS the prompt (it never
@@ -989,13 +994,15 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         const priorVariants = pendingVariantsRef.current;
         pendingVariantsRef.current = null;
         const allVariants = priorVariants ? [...priorVariants, assistantContent] : undefined;
-        // Capture the streamed reasoning so it rides the persisted context blob.
-        let ragReasoning: string | undefined;
-        setConvMessages(convId, prev => prev.map(m => {
-          if (m.id !== streamId) return m;
-          ragReasoning = m.reasoning;
-          return { ...m, content: assistantContent, context: result.context, streaming: false, variants: allVariants, variantIndex: allVariants ? allVariants.length - 1 : undefined };
-        }));
+        // Reasoning from the ref (populated as it streamed) — deterministic read, not
+        // a setState-updater side effect. Rides the persisted context blob (T1f).
+        const ragReasoning = reasoningByStream.current[streamId];
+        delete reasoningByStream.current[streamId]; // done with this stream — free it
+        setConvMessages(convId, prev => prev.map(m => (
+          m.id === streamId
+            ? { ...m, content: assistantContent, context: result.context, streaming: false, variants: allVariants, variantIndex: allVariants ? allVariants.length - 1 : undefined }
+            : m
+        )));
         const art = parseArtifact(assistantContent);
         if (art) {
           // Inline-first: don't force the canvas open — the user opens the live
@@ -1238,6 +1245,12 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     const off = window.api.onRagStream?.((data) => {
       const cid = streamConvRef.current.get(data.streamId);
       if (!cid) return;
+      // Mirror reasoning into a ref as it streams, so persistence can read it
+      // deterministically (not via a state-updater side effect). Rendering still
+      // uses message.reasoning below; this is the durable source for the saved blob.
+      if (data.type === 'reasoning') {
+        reasoningByStream.current[data.streamId] = (reasoningByStream.current[data.streamId] || '') + (data.text || '');
+      }
       setConvMessages(cid, prev => prev.map(m => {
         if (m.id !== data.streamId || !m.streaming) return m;
         if (data.type === 'content') return { ...m, content: (m.content || '') + (data.text || ''), activity: undefined };
