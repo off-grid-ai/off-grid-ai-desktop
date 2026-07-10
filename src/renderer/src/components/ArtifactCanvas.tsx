@@ -23,9 +23,9 @@ function extractPkgs(code: string): string[] {
   const re = /import\s+(?:[\w*{}\n\s,]+from\s+)?['"]([^'"]+)['"]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(code))) {
-    let p = m[1];
+    let p = m[1]!;
     if (p.startsWith('.') || p.startsWith('/')) continue;
-    p = p.startsWith('@') ? p.split('/').slice(0, 2).join('/') : p.split('/')[0];
+    p = p.startsWith('@') ? p.split('/').slice(0, 2).join('/') : p.split('/')[0]!;
     if (p === 'react' || p === 'react-dom') continue;
     out.add(p);
   }
@@ -242,18 +242,18 @@ export function parseArtifact(content: string): Artifact | null {
   // React first: COMBINE all jsx/tsx/react blocks so multi-file responses
   // (App.js + Child.js) run together — imports are stripped, so every component
   // ends up in one shared scope and relative imports resolve.
-  const reactBlocks = [...content.matchAll(/```(?:jsx|tsx|react)\s*\n([\s\S]*?)```/gi)].map((b) => b[1].trim());
+  const reactBlocks = [...content.matchAll(/```(?:jsx|tsx|react)\s*\n([\s\S]*?)```/gi)].map((b) => b[1]!.trim());
   if (reactBlocks.length) return { kind: 'react', code: reactBlocks.join('\n\n') };
 
   // A single html/svg/mermaid artifact.
   const m = content.match(/```(html|svg|mermaid)\s*\n([\s\S]*?)```/i);
   if (m) {
-    const lang = m[1].toLowerCase();
-    return { kind: lang === 'svg' ? 'svg' : lang === 'mermaid' ? 'mermaid' : 'html', code: m[2].trim() };
+    const lang = m[1]!.toLowerCase();
+    return { kind: lang === 'svg' ? 'svg' : lang === 'mermaid' ? 'mermaid' : 'html', code: m[2]!.trim() };
   }
 
   // Plain js/ts blocks that look like React — combine them too.
-  const jsBlocks = [...content.matchAll(/```(?:javascript|js|typescript|ts)\s*\n([\s\S]*?)```/gi)].map((b) => b[1].trim());
+  const jsBlocks = [...content.matchAll(/```(?:javascript|js|typescript|ts)\s*\n([\s\S]*?)```/gi)].map((b) => b[1]!.trim());
   if (jsBlocks.length && jsBlocks.some((b) => JSX_SIGNAL.test(b))) {
     return { kind: 'react', code: jsBlocks.join('\n\n') };
   }
@@ -264,6 +264,6 @@ export function parseArtifact(content: string): Artifact | null {
 
   // A fenced markdown/doc block becomes a rendered document artifact.
   const md = content.match(/```(?:markdown|md)\s*\n([\s\S]*?)```/i);
-  if (md) return { kind: 'text', code: md[1].trim() };
+  if (md) return { kind: 'text', code: md[1]!.trim() };
   return null;
 }
