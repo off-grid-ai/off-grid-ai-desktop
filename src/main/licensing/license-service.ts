@@ -36,7 +36,7 @@ export const PRO_PAY_PAGE_URL = 'https://getoffgridai.co/pay';
 
 export type ActivateResult = { ok: true } | { ok: false; reason: 'invalid' | 'limit' | 'network' };
 
-type ProLicense = {
+export type ProLicense = {
   isPro: boolean;
   key: string | null;
   licenseId: string | null;
@@ -46,8 +46,8 @@ type ProLicense = {
 
 const EMPTY: ProLicense = { isPro: false, key: null, licenseId: null, expiry: null, verifiedAt: 0 };
 
-const REVOKED_CODES = ['EXPIRED', 'SUSPENDED', 'BANNED', 'OVERDUE', 'NOT_FOUND'];
-const NEEDS_ACTIVATION = ['NO_MACHINE', 'NO_MACHINES', 'FINGERPRINT_SCOPE_MISMATCH'];
+export const REVOKED_CODES = ['EXPIRED', 'SUSPENDED', 'BANNED', 'OVERDUE', 'NOT_FOUND'];
+export const NEEDS_ACTIVATION = ['NO_MACHINE', 'NO_MACHINES', 'FINGERPRINT_SCOPE_MISMATCH'];
 
 export type ProTier = 'lifetime' | 'monthly';
 export interface ProLicenseInfo {
@@ -72,7 +72,7 @@ function licensePath(): string {
 }
 
 /** Whether the cached license grants Pro right now (offline-safe, synchronous). */
-function isProActive(lic: ProLicense): boolean {
+export function isProActive(lic: ProLicense): boolean {
   if (!lic.isPro) return false;
   // Monthly keys carry an expiry — once it passes, no Pro even offline. Lifetime
   // keys have null expiry. Revocation propagates at the next online revalidate.
@@ -80,7 +80,7 @@ function isProActive(lic: ProLicense): boolean {
   return true;
 }
 
-function toInfo(lic: ProLicense): ProLicenseInfo {
+export function toInfo(lic: ProLicense): ProLicenseInfo {
   const isPro = isProActive(lic);
   return {
     isPro,

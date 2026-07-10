@@ -61,7 +61,7 @@ async function request(path: string, init: RequestInit): Promise<Response> {
   }
 }
 
-function toLicense(data: any): KeygenLicense | null {
+export function toLicense(data: any): KeygenLicense | null {
   if (!data || !data.id) return null;
   return {
     id: data.id,
@@ -69,6 +69,45 @@ function toLicense(data: any): KeygenLicense | null {
     metadata: data.attributes?.metadata ?? {},
     name: data.attributes?.name ?? null,
   };
+}
+
+/** Turn a validate-key JSON:API body into our ValidateResult shape. Pure. */
+export function parseValidateResult(body: any): ValidateResult {
+  return {
+    valid: !!body?.meta?.valid,
+    code: (body?.meta?.code ?? 'UNKNOWN') as ValidationCode,
+    license: toLicense(body?.data),
+  };
+}
+
+/**
+ * Turn a machine-activate response (status + JSON:API body) into { ok, limitReached }.
+ * Pure — 201 means activated; a 422 whose errors carry a LIMIT code or a "machine
+ * limit" detail means the device cap was hit. Any other non-201 is a plain failure.
+ */
+export function parseActivateResult(status: number, body: any): { ok: boolean; limitReached: boolean } {
+  if (status === 201) return { ok: true, limitReached: false };
+  const errors: any[] = body?.errors ?? [];
+  const limitReached =
+    status === 422 &&
+    errors.some(
+      (e) =>
+        String(e?.code ?? '').includes('LIMIT') ||
+        String(e?.detail ?? '').toLowerCase().includes('machine limit'),
+    );
+  return { ok: false, limitReached };
+}
+
+/** Turn a list-machines JSON:API body into our KeygenMachine[] shape. Pure. */
+export function parseMachines(body: any): KeygenMachine[] {
+  const data: any[] = body?.data ?? [];
+  return data.map((m) => ({
+    id: m.id,
+    fingerprint: m.attributes?.fingerprint ?? '',
+    platform: m.attributes?.platform ?? null,
+    name: m.attributes?.name ?? null,
+    lastSeen: m.attributes?.lastHeartbeat ?? m.attributes?.created ?? null,
+  }));
 }
 
 /** Validate a key, scoped to this product + device fingerprint. No auth needed. */
@@ -81,11 +120,7 @@ export async function validateKey(key: string, fingerprint: string): Promise<Val
     }),
   });
   const body: any = await res.json().catch(() => ({}));
-  return {
-    valid: !!body?.meta?.valid,
-    code: (body?.meta?.code ?? 'UNKNOWN') as ValidationCode,
-    license: toLicense(body?.data),
-  };
+  return parseValidateResult(body);
 }
 
 /** Register this device as a machine on the license. Enforces the device cap. */
@@ -108,19 +143,11 @@ export async function activateMachine(
   });
   if (res.status === 201) return { ok: true, limitReached: false };
   const body: any = await res.json().catch(() => ({}));
-  const errors: any[] = body?.errors ?? [];
-  // Keygen returns 422 with a MACHINE_LIMIT_EXCEEDED code when over the cap.
-  const limitReached =
-    res.status === 422 &&
-    errors.some(
-      (e) =>
-        String(e?.code ?? '').includes('LIMIT') ||
-        String(e?.detail ?? '').toLowerCase().includes('machine limit'),
-    );
-  if (!limitReached) {
-    console.error(`[Keygen] activate failed (${res.status}): ${JSON.stringify(errors)}`);
+  const result = parseActivateResult(res.status, body);
+  if (!result.limitReached) {
+    console.error(`[Keygen] activate failed (${res.status}): ${JSON.stringify(body?.errors ?? [])}`);
   }
-  return { ok: false, limitReached };
+  return result;
 }
 
 /** List the machines currently activated on a license. */
@@ -130,14 +157,7 @@ export async function listMachines(key: string, licenseId: string): Promise<Keyg
     headers: { Accept: JSON_API, Authorization: `License ${key}` },
   });
   const body: any = await res.json().catch(() => ({}));
-  const data: any[] = body?.data ?? [];
-  return data.map((m) => ({
-    id: m.id,
-    fingerprint: m.attributes?.fingerprint ?? '',
-    platform: m.attributes?.platform ?? null,
-    name: m.attributes?.name ?? null,
-    lastSeen: m.attributes?.lastHeartbeat ?? m.attributes?.created ?? null,
-  }));
+  return parseMachines(body);
 }
 
 /** Free a device slot. */
