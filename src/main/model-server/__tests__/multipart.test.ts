@@ -35,8 +35,8 @@ describe('parseMultipart', () => {
     const body = build('BOUND', [{ name: 'image', filename: 'a.png', value: 'BINARYDATA' }]);
     const { files, fields } = parseMultipart(body, 'multipart/form-data; boundary=BOUND');
     expect(fields).toEqual({});
-    expect(files.image.filename).toBe('a.png');
-    expect(files.image.data.toString('utf8')).toBe('BINARYDATA');
+    expect(files.image!.filename).toBe('a.png');
+    expect(files.image!.data.toString('utf8')).toBe('BINARYDATA');
   });
 
   it('parses mixed files and fields', () => {
@@ -46,7 +46,7 @@ describe('parseMultipart', () => {
       { name: 'strength', value: '0.6' },
     ]);
     const { files, fields } = parseMultipart(body, 'multipart/form-data; boundary=B');
-    expect(files.image.data.toString('utf8')).toBe('IMG');
+    expect(files.image!.data.toString('utf8')).toBe('IMG');
     expect(fields).toEqual({ prompt: 'hello', strength: '0.6' });
   });
 
@@ -63,7 +63,7 @@ describe('parseMultipart', () => {
       Buffer.from(`--B--${CRLF}`),
     ]);
     const { files } = parseMultipart(body, 'multipart/form-data; boundary=B');
-    expect(files['only.png'].data.toString('utf8')).toBe('DATA');
+    expect(files['only.png']!.data.toString('utf8')).toBe('DATA');
   });
 
   it('preserves binary bytes in a file part exactly', () => {
@@ -74,6 +74,6 @@ describe('parseMultipart', () => {
       Buffer.from(`${CRLF}--B--${CRLF}`),
     ]);
     const { files } = parseMultipart(body, 'multipart/form-data; boundary=B');
-    expect(Buffer.compare(files.image.data, raw)).toBe(0);
+    expect(Buffer.compare(files.image!.data, raw)).toBe(0);
   });
 });

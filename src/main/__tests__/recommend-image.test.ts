@@ -16,9 +16,9 @@ describe('DreamShaper quant catalog entries', () => {
   });
   it('has distinct ids and distinct primary filenames', () => {
     expect(full.id).not.toBe(light.id);
-    expect(full.files[0].name).not.toBe(light.files[0].name);
-    expect(full.files[0].name).toMatch(/Q8/i);
-    expect(light.files[0].name).toMatch(/Q4/i);
+    expect(full.files[0]!.name).not.toBe(light.files[0]!.name);
+    expect(full.files[0]!.name).toMatch(/Q8/i);
+    expect(light.files[0]!.name).toMatch(/Q4/i);
   });
   it("tags the light quant Fast+Light; the full Q8 is Versatile but NOT Fast", () => {
     // 'Fast' is reserved for the distilled Light (Q4) variant — few-step AND
@@ -29,7 +29,7 @@ describe('DreamShaper quant catalog entries', () => {
     expect(full.tags).not.toContain('Light');
   });
   it('the light quant is smaller on disk', () => {
-    expect(light.files[0].sizeBytes!).toBeLessThan(full.files[0].sizeBytes!);
+    expect(light.files[0]!.sizeBytes!).toBeLessThan(full.files[0]!.sizeBytes!);
   });
 });
 

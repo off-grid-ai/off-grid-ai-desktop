@@ -82,8 +82,8 @@ describe('McpConnectorToolExtension', () => {
 
       expect(fetchTools).toHaveBeenCalledTimes(1); // disabled connector skipped
       expect(out).toHaveLength(1);
-      expect(out[0].function.name).toBe('mcp__7__send_message');
-      expect(out[0].function.description).toBe('[Slack] Send a message');
+      expect(out[0]!.function.name).toBe('mcp__7__send_message');
+      expect(out[0]!.function.description).toBe('[Slack] Send a message');
     });
 
     it('falls back to an empty object schema when a tool has no inputSchema', async () => {
@@ -94,8 +94,8 @@ describe('McpConnectorToolExtension', () => {
         function: { description: string; parameters: unknown };
       }[];
 
-      expect(out[0].function.description).toBe('[C] get_x'); // falls back to tool name
-      expect(out[0].function.parameters).toEqual({ type: 'object', properties: {} });
+      expect(out[0]!.function.description).toBe('[C] get_x'); // falls back to tool name
+      expect(out[0]!.function.parameters).toEqual({ type: 'object', properties: {} });
     });
 
     it('skips a connector whose fetchTools rejects but still returns others', async () => {
@@ -108,7 +108,7 @@ describe('McpConnectorToolExtension', () => {
       const out = (await mcpConnectorToolExtension.schemas()) as { function: { name: string } }[];
 
       expect(out).toHaveLength(1);
-      expect(out[0].function.name).toBe('mcp__2__read_it');
+      expect(out[0]!.function.name).toBe('mcp__2__read_it');
     });
   });
 

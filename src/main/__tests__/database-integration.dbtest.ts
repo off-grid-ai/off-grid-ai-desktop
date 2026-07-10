@@ -139,15 +139,15 @@ describe('database.ts - RAG messages', () => {
     db.addRagMessage('ctx-conv', 'assistant', 'answer', ctx);
     const msgs = db.getRagMessages('ctx-conv');
     expect(msgs).toHaveLength(1);
-    expect(msgs[0].context).toBe(JSON.stringify(ctx));
+    expect(msgs[0]!.context).toBe(JSON.stringify(ctx));
     // JSON round-trips back to the original object.
-    expect(JSON.parse(msgs[0].context as string)).toEqual(ctx);
+    expect(JSON.parse(msgs[0]!.context as string)).toEqual(ctx);
   });
 
   it('addRagMessage stores null context when none is passed', () => {
     db.createRagConversation('noctx-conv');
     db.addRagMessage('noctx-conv', 'user', 'no context');
-    expect(db.getRagMessages('noctx-conv')[0].context).toBeNull();
+    expect(db.getRagMessages('noctx-conv')[0]!.context).toBeNull();
   });
 
   it('deleting a conversation cascades to its messages (FK ON DELETE CASCADE)', () => {

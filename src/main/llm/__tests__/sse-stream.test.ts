@@ -153,7 +153,7 @@ describe('createToolCallAccumulator - assembling streamed tool_calls', () => {
     acc.push([{ index: 0, function: { arguments: '"query"' } }]);
     acc.push([{ index: 0, function: { arguments: ':"tokyo"}' } }]);
     expect(acc.list()).toEqual([{ id: 'call_1', name: 'web_search', arguments: '{"query":"tokyo"}' }]);
-    expect(JSON.parse(acc.list()[0].arguments)).toEqual({ query: 'tokyo' });
+    expect(JSON.parse(acc.list()[0]!.arguments)).toEqual({ query: 'tokyo' });
   });
 
   it('keeps parallel tool calls separate by index', () => {

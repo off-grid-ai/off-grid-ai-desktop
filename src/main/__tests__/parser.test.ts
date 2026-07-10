@@ -44,17 +44,17 @@ describe('Claude Desktop Parser', () => {
         const result = parseClaudeDesktopOutput(sampleOutput);
         const userMessages = result.messages.filter(m => m.role === 'user');
         expect(userMessages.length).toBe(2);
-        expect(userMessages[0].content).toBe('Can you help me debug this error?');
-        expect(userMessages[1].content).toBe("TypeError: Cannot read property 'foo' of undefined");
+        expect(userMessages[0]!.content).toBe('Can you help me debug this error?');
+        expect(userMessages[1]!.content).toBe("TypeError: Cannot read property 'foo' of undefined");
     });
 
     it('should extract assistant messages and combine consecutive ones', () => {
         const result = parseClaudeDesktopOutput(sampleOutput);
         const assistantMessages = result.messages.filter(m => m.role === 'assistant');
         expect(assistantMessages.length).toBe(2);
-        expect(assistantMessages[0].content).toBe('Of course! Please share the error message.');
-        expect(assistantMessages[1].content).toContain('This error typically occurs');
-        expect(assistantMessages[1].content).toContain('1. The object wasn\'t initialized');
+        expect(assistantMessages[0]!.content).toBe('Of course! Please share the error message.');
+        expect(assistantMessages[1]!.content).toContain('This error typically occurs');
+        expect(assistantMessages[1]!.content).toContain('1. The object wasn\'t initialized');
     });
 
     it('should handle empty input', () => {
@@ -86,15 +86,15 @@ describe('Claude Web Parser', () => {
     it('should extract all messages in order', () => {
         const result = parseClaudeWebOutput(sampleOutput);
         expect(result.messages.length).toBe(4);
-        expect(result.messages[0].role).toBe('user');
-        expect(result.messages[1].role).toBe('assistant');
-        expect(result.messages[2].role).toBe('user');
-        expect(result.messages[3].role).toBe('assistant');
+        expect(result.messages[0]!.role).toBe('user');
+        expect(result.messages[1]!.role).toBe('assistant');
+        expect(result.messages[2]!.role).toBe('user');
+        expect(result.messages[3]!.role).toBe('assistant');
     });
 
     it('should combine consecutive assistant messages', () => {
         const result = parseClaudeWebOutput(sampleOutput);
-        const firstAssistant = result.messages[1];
+        const firstAssistant = result.messages[1]!;
         expect(firstAssistant.content).toContain('The fetch API');
         expect(firstAssistant.content).toContain('basic example');
     });
@@ -165,15 +165,15 @@ describe('Gemini Parser', () => {
         const result = parseGeminiOutput(sampleOutput);
         const userMessages = result.messages.filter(m => m.role === 'user');
         expect(userMessages.length).toBe(1);
-        expect(userMessages[0].content).toBe('Test');
+        expect(userMessages[0]!.content).toBe('Test');
     });
 
     it('should combine consecutive assistant messages', () => {
         const result = parseGeminiOutput(sampleOutput);
         const assistantMessages = result.messages.filter(m => m.role === 'assistant');
         expect(assistantMessages.length).toBe(1);
-        expect(assistantMessages[0].content).toContain('System Check: Operational');
-        expect(assistantMessages[0].content).toContain('How can I assist you today?');
+        expect(assistantMessages[0]!.content).toContain('System Check: Operational');
+        expect(assistantMessages[0]!.content).toContain('How can I assist you today?');
     });
 
     it('should filter out Gemini UI noise', () => {
@@ -183,7 +183,7 @@ describe('Gemini Parser', () => {
 [USER] Actual user question`;
         const result = parseGeminiOutput(noiseOutput);
         expect(result.messages.length).toBe(1);
-        expect(result.messages[0].content).toBe('Actual user question');
+        expect(result.messages[0]!.content).toBe('Actual user question');
     });
 
     it('should handle window title', () => {
@@ -228,6 +228,6 @@ describe('Cross-platform isolation', () => {
         // Each subsequent call should start fresh
         const result = parseClaudeDesktopOutput(input2);
         expect(result.messages.length).toBe(1);
-        expect(result.messages[0].role).toBe('assistant');
+        expect(result.messages[0]!.role).toBe('assistant');
     });
 });

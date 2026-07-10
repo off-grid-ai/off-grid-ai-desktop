@@ -73,8 +73,8 @@ describe('mergeCatalog — order + all three sources', () => {
       catalog: [catEntry], present: presentAll,
     });
     expect(out.map((m) => m.id)).toEqual(['local:my.gguf', 'org/hf', 'cat/text']);
-    expect(out[0].tags).toEqual(['Imported']);
-    expect(out[1].tags).toEqual(['Downloaded']);
+    expect(out[0]!.tags).toEqual(['Imported']);
+    expect(out[1]!.tags).toEqual(['Downloaded']);
     expect(out[2]).toBe(catEntry);
   });
   it('empty locals + empty downloads => just the catalog', () => {
@@ -214,7 +214,7 @@ describe('protectedNames — orphan protection', () => {
 });
 
 describe('scanModelDir — total + orphans', () => {
-  const stat = (sizes: Record<string, number>) => (name: string) => (name in sizes ? { isFile: true, size: sizes[name] } : null);
+  const stat = (sizes: Record<string, number>) => (name: string) => (name in sizes ? { isFile: true, size: sizes[name]! } : null);
   it('sums .gguf/.part sizes and flags unknown files as orphans', () => {
     const known = new Set(['keep.gguf']);
     const out = scanModelDir({

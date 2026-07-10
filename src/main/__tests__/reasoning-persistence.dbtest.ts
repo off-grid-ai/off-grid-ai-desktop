@@ -118,7 +118,7 @@ describe('reasoning persistence — DB round-trip terminal artifact', () => {
     db.createRagConversation(convId);
     db.addRagMessage(convId, 'assistant', 'just an answer', { unified: [] });
     const restored = mapRagMessages(db.getRagMessages(convId));
-    expect(restored[0].reasoning).toBeUndefined();
+    expect(restored[0]!.reasoning).toBeUndefined();
   });
 
   it('reasoning persists as a real serialized column, not just in-memory (survives a re-read)', () => {
@@ -130,11 +130,11 @@ describe('reasoning persistence — DB round-trip terminal artifact', () => {
     // Confirm it actually hit the DB column as JSON (this is what a fresh app
     // launch re-reads), not merely an object we passed in.
     const rows = db.getRagMessages(convId);
-    expect(typeof rows[0].context).toBe('string');
-    expect(JSON.parse(rows[0].context as string).reasoning).toBe(reasoning);
+    expect(typeof rows[0]!.context).toBe('string');
+    expect(JSON.parse(rows[0]!.context as string).reasoning).toBe(reasoning);
 
     // And the restore contract lifts it back onto the terminal artifact.
-    expect(mapRagMessages(rows)[0].reasoning).toBe(reasoning);
+    expect(mapRagMessages(rows)[0]!.reasoning).toBe(reasoning);
   });
 
   it('RED-CAPABLE PROOF: if the mapper stops restoring ctx.reasoning, the terminal artifact assertion fails', () => {
@@ -150,10 +150,10 @@ describe('reasoning persistence — DB round-trip terminal artifact', () => {
 
     const rows = db.getRagMessages(convId);
     // Persistence is intact...
-    expect(JSON.parse(rows[0].context as string).reasoning).toBe(reasoning);
+    expect(JSON.parse(rows[0]!.context as string).reasoning).toBe(reasoning);
     // ...but a mapper that ignores ctx.reasoning loses the terminal artifact.
     const brokenRestore = mapRagMessages(rows, { dropReasoning: true });
-    expect(brokenRestore[0].reasoning).not.toBe(reasoning);
-    expect(brokenRestore[0].reasoning).toBeUndefined();
+    expect(brokenRestore[0]!.reasoning).not.toBe(reasoning);
+    expect(brokenRestore[0]!.reasoning).toBeUndefined();
   });
 });

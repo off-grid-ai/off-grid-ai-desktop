@@ -18,7 +18,7 @@ const APP = path.resolve(process.cwd(), 'src/renderer/src/App.tsx');
 const SRC = fs.readFileSync(APP, 'utf-8');
 
 // Every route the nav builds from the catalog: proItem('search'), proItem('day'), …
-const routes = [...SRC.matchAll(/proItem\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m) => m[1]);
+const routes = [...SRC.matchAll(/proItem\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m) => m[1]!);
 
 describe('App nav ↔ pro catalog contract', () => {
   it('references at least one pro nav item (sanity)', () => {

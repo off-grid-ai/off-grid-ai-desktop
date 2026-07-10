@@ -59,7 +59,7 @@ describe('downloaded-models registry (real temp dir)', () => {
   });
 
   it('a partially-deleted model (missing a file) is NOT installed', () => {
-    writeFiles([MINICPM.files[0]]); // only the primary; mmproj missing
+    writeFiles([MINICPM.files[0]!]); // only the primary; mmproj missing
     recordDownloaded(dir, MINICPM);
     expect(installedDownloadedIds(dir)).toEqual([]);
   });
@@ -70,7 +70,7 @@ describe('downloaded-models registry (real temp dir)', () => {
     recordDownloaded(dir, { ...MINICPM, name: 'MiniCPM-V 2.6 (updated)' });
     const all = readDownloaded(dir);
     expect(all).toHaveLength(1);
-    expect(all[0].name).toBe('MiniCPM-V 2.6 (updated)');
+    expect(all[0]!.name).toBe('MiniCPM-V 2.6 (updated)');
   });
 
   it('remove drops it from installed + protected (delete path)', () => {

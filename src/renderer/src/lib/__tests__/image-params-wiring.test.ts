@@ -44,7 +44,7 @@ function makeSettingsStore() {
       raw[key] = JSON.stringify(value);
     }),
     getSetting<T>(key: string): T | undefined {
-      return key in raw ? (JSON.parse(raw[key]) as T) : undefined;
+      return key in raw ? (JSON.parse(raw[key]!) as T) : undefined;
     }
   };
 }

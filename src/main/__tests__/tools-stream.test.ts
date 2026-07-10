@@ -66,13 +66,13 @@ describe('toolChat streaming loop (C7)', () => {
 
     expect(steps).toEqual(['get_datetime']);                 // step surfaced BEFORE execution
     expect(r.toolCalls.map((c) => c.name)).toEqual(['get_datetime']);
-    expect(r.toolCalls[0].result).toBeTruthy();              // real get_datetime output
+    expect(r.toolCalls[0]!.result).toBeTruthy();              // real get_datetime output
     expect(r.answer).toBe('It is now.');
     expect(streamChatMock).toHaveBeenCalledTimes(2);
 
     // The second model call must include the assistant tool_call turn + the tool result,
     // so the model can use it (the loop fed the result back).
-    const round2Messages = streamChatMock.mock.calls[1][0] as { role: string }[];
+    const round2Messages = streamChatMock.mock.calls[1]![0] as { role: string }[];
     expect(round2Messages.some((m) => m.role === 'tool')).toBe(true);
     expect(round2Messages.some((m) => m.role === 'assistant')).toBe(true);
   });
@@ -80,7 +80,7 @@ describe('toolChat streaming loop (C7)', () => {
   it('passes the tool schemas + tool_choice to the model on the first round', async () => {
     streamChatMock.mockImplementationOnce(async () => ({ content: 'ok', toolCalls: [] }));
     await toolChat('hi', []);
-    const opts = streamChatMock.mock.calls[0][2] as { tools?: unknown[]; toolChoice?: string };
+    const opts = streamChatMock.mock.calls[0]![2] as { tools?: unknown[]; toolChoice?: string };
     expect(Array.isArray(opts.tools)).toBe(true);
     expect((opts.tools as unknown[]).length).toBeGreaterThan(0);
     expect(opts.toolChoice).toBe('auto');
@@ -106,13 +106,13 @@ describe('toolChat streaming loop (C7)', () => {
   it('rejects a non-arithmetic calculator expression (guard branch)', async () => {
     scriptToolThenAnswer('calculator', '{"expression":"process.exit(1)"}', 'Cannot compute that.');
     const r = await toolChat('evil', []);
-    expect(r.toolCalls[0].result).toMatch(/only basic arithmetic/i);
+    expect(r.toolCalls[0]!.result).toMatch(/only basic arithmetic/i);
   });
 
   it('tolerates malformed tool arguments (empty args object)', async () => {
     scriptToolThenAnswer('get_datetime', 'not-json', 'done');
     const r = await toolChat('time', []);
-    expect(r.toolCalls[0].name).toBe('get_datetime');
+    expect(r.toolCalls[0]!.name).toBe('get_datetime');
     expect(r.answer).toBe('done');
   });
 
@@ -120,14 +120,14 @@ describe('toolChat streaming loop (C7)', () => {
     // imageAvailable: true -> the tool is offered.
     streamChatMock.mockImplementationOnce(async () => ({ content: 'ok', toolCalls: [] }));
     await toolChat('draw a cat', [], { imageAvailable: true });
-    const withImg = streamChatMock.mock.calls[0][2] as { tools: { function: { name: string } }[] };
+    const withImg = streamChatMock.mock.calls[0]![2] as { tools: { function: { name: string } }[] };
     expect(withImg.tools.map((t) => t.function.name)).toContain('generate_image');
 
     // imageAvailable: false -> it is withheld (intent may misclassify, but no model to run).
     streamChatMock.mockReset();
     streamChatMock.mockImplementationOnce(async () => ({ content: 'ok', toolCalls: [] }));
     await toolChat('draw a cat', [], { imageAvailable: false });
-    const withoutImg = streamChatMock.mock.calls[0][2] as { tools: { function: { name: string } }[] };
+    const withoutImg = streamChatMock.mock.calls[0]![2] as { tools: { function: { name: string } }[] };
     expect(withoutImg.tools.map((t) => t.function.name)).not.toContain('generate_image');
   });
 
@@ -140,13 +140,13 @@ describe('toolChat streaming loop (C7)', () => {
 
     expect(steps).toEqual(['generate_image']);                             // activity surfaced
     expect(r.imageRequest).toEqual({ prompt: 'a red bicycle on a beach' }); // prompt captured
-    expect(r.toolCalls[0].name).toBe('generate_image');
-    expect(r.toolCalls[0].result).toMatch(/will appear in the chat/i);     // placeholder fed back
+    expect(r.toolCalls[0]!.name).toBe('generate_image');
+    expect(r.toolCalls[0]!.result).toMatch(/will appear in the chat/i);     // placeholder fed back
     expect(r.answer).toBe('Here is your image.');                          // loop still finished
     expect(streamChatMock).toHaveBeenCalledTimes(2);
 
     // The second model round must include the tool result so the model could wrap up.
-    const round2 = streamChatMock.mock.calls[1][0] as { role: string }[];
+    const round2 = streamChatMock.mock.calls[1]![0] as { role: string }[];
     expect(round2.some((m) => m.role === 'tool')).toBe(true);
   });
 
@@ -166,7 +166,7 @@ describe('toolChat streaming loop (C7)', () => {
     scriptToolThenAnswer('generate_image', '{"prompt":"   "}', 'I could not tell what to draw.');
     const r = await toolChat('draw', [], { imageAvailable: true });
     expect(r.imageRequest).toBeUndefined();
-    expect(r.toolCalls[0].result).toMatch(/no image prompt/i);
+    expect(r.toolCalls[0]!.result).toMatch(/no image prompt/i);
   });
 
   it('routes a connector/extension tool through the registered extension (connectors on)', async () => {
@@ -220,7 +220,7 @@ describe('toolChat streaming loop (C7)', () => {
     scriptToolThenAnswer('search_memory', '{"query":"nothing"}', 'I could not find anything.');
     const r = await toolChat('anything?', []);
     expect(r.unified).toEqual([]);
-    expect(r.toolCalls[0].result).toMatch(/nothing found in memory/i);
+    expect(r.toolCalls[0]!.result).toMatch(/nothing found in memory/i);
   });
 
   // --- DIP guard: the loop must not re-introduce per-tool-name branching ----------
@@ -284,8 +284,8 @@ describe('web tool HTML parsing (fetch faked at the network boundary)', () => {
     scriptToolThenAnswer('web_search', '{"query":"achilles"}', 'Here is what I found.');
     const r = await toolChat('search achilles', []);
     // web_search decodes the DDG redirect + strips tags in the title/snippet.
-    expect(r.toolCalls[0].result).toContain('en.wikipedia.org/Achilles');
-    expect(r.toolCalls[0].result).toContain('Achilles - Wikipedia');
-    expect(r.toolCalls[0].result).toContain('Trojan War');
+    expect(r.toolCalls[0]!.result).toContain('en.wikipedia.org/Achilles');
+    expect(r.toolCalls[0]!.result).toContain('Achilles - Wikipedia');
+    expect(r.toolCalls[0]!.result).toContain('Trojan War');
   });
 });

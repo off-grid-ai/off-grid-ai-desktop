@@ -123,7 +123,7 @@ describe('rag/store.ts - VectorStore documents + chunks', () => {
       kind: 'text',
       enabled: true
     });
-    expect(typeof docs[0].createdAt).toBe('string');
+    expect(typeof docs[0]!.createdAt).toBe('string');
   });
 
   it('setDocumentEnabled toggles the enabled flag (0/1 -> boolean)', async () => {
@@ -136,9 +136,9 @@ describe('rag/store.ts - VectorStore documents + chunks', () => {
       kind: 'text'
     });
     await store.desktopVectorStore.setDocumentEnabled(id, false);
-    expect((await store.desktopVectorStore.listDocuments('p-toggle'))[0].enabled).toBe(false);
+    expect((await store.desktopVectorStore.listDocuments('p-toggle'))[0]!.enabled).toBe(false);
     await store.desktopVectorStore.setDocumentEnabled(id, true);
-    expect((await store.desktopVectorStore.listDocuments('p-toggle'))[0].enabled).toBe(true);
+    expect((await store.desktopVectorStore.listDocuments('p-toggle'))[0]!.enabled).toBe(true);
   });
 
   it('getChunkCandidates returns enabled-doc chunks with parsed embeddings', async () => {

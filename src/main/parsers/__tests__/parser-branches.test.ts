@@ -25,61 +25,61 @@ describe.each(tagParsers)('shared tag skeleton: %s', (_name, parse) => {
   it('captures a [METADATA] timestamp that matches H:MM and attaches it to the message', () => {
     const r = parse(`[METADATA] 10:42\n[USER] hi there`);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0].timestamp).toBe('10:42');
+    expect(r.messages[0]!.timestamp).toBe('10:42');
   });
 
   it('ignores a [METADATA] line with no time pattern (timestamp stays empty)', () => {
     const r = parse(`[METADATA] no time here\n[USER] hi there`);
-    expect(r.messages[0].timestamp).toBe('');
+    expect(r.messages[0]!.timestamp).toBe('');
   });
 
   it('skips a generic [TITLE] line without emitting a message', () => {
     const r = parse(`[TITLE] Some Section Header\n[USER] real question`);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0].content).toBe('real question');
+    expect(r.messages[0]!.content).toBe('real question');
   });
 
   it('appends a continuation line (no tag) to the current role', () => {
     const r = parse(`[ASSISTANT] first line\nsecond line`);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0].content).toBe('first line\nsecond line');
+    expect(r.messages[0]!.content).toBe('first line\nsecond line');
   });
 
   it('drops a leading orphan continuation line when no role is active yet', () => {
     const r = parse(`orphan text before any role\n[USER] question`);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0].content).toBe('question');
+    expect(r.messages[0]!.content).toBe('question');
   });
 
   it('strips a bracket tag prefix off a continuation line', () => {
     const r = parse(`[USER] question\n[IGNORED] continued body`);
-    expect(r.messages[0].content).toBe('question\ncontinued body');
+    expect(r.messages[0]!.content).toBe('question\ncontinued body');
   });
 
   it('starts a fresh message with an empty body when a [USER] tag has no inline content', () => {
     const r = parse(`[ASSISTANT] answer\n[USER]\nfollow up`);
     const users = r.messages.filter((m) => m.role === 'user');
     expect(users).toHaveLength(1);
-    expect(users[0].content).toBe('follow up');
+    expect(users[0]!.content).toBe('follow up');
   });
 
   it('appends inline content to the same role across repeated [USER] tags', () => {
     const r = parse(`[USER] one\n[USER] two`);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0].content).toBe('one\ntwo');
+    expect(r.messages[0]!.content).toBe('one\ntwo');
   });
 
   it('appends inline content to the same role across repeated [ASSISTANT] tags', () => {
     const r = parse(`[ASSISTANT] a\n[ASSISTANT] b`);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0].content).toBe('a\nb');
+    expect(r.messages[0]!.content).toBe('a\nb');
   });
 
   it('does not push an empty continuation of the same role', () => {
     // Second [USER] tag with no content and role already user -> nothing appended.
     const r = parse(`[USER] only\n[USER]`);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0].content).toBe('only');
+    expect(r.messages[0]!.content).toBe('only');
   });
 
   it('extracts window title, chat title, and browser url tags', () => {
@@ -94,7 +94,7 @@ describe('ChatGPT inline role-label detection + noise', () => {
   it('detects a bare "ChatGPT said:" label (exact match, no remainder)', () => {
     const r = parseChatGPTOutput(`You said: question\nChatGPT said:\nthe answer body`);
     expect(r.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
-    expect(r.messages[1].content).toBe('the answer body');
+    expect(r.messages[1]!.content).toBe('the answer body');
   });
 
   it('captures the remainder after a "You said: " label on the same line', () => {
@@ -111,13 +111,13 @@ describe('ChatGPT inline role-label detection + noise', () => {
   it('filters a "chatgpt <digits>" model-header line as noise', () => {
     const r = parseChatGPTOutput(`[USER] chatgpt 4o\n[USER] real`);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0].content).toBe('real');
+    expect(r.messages[0]!.content).toBe('real');
   });
 
   it('filters lines that start with the chatgpt.com / chat.openai.com hosts', () => {
     const r = parseChatGPTOutput(`[USER] chatgpt.com/c/abc\n[USER] chat.openai.com/c/def\n[USER] kept`);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0].content).toBe('kept');
+    expect(r.messages[0]!.content).toBe('kept');
   });
 
   it('recognises the "assistant:" label with a remainder', () => {
@@ -130,7 +130,7 @@ describe('Gemini inline role-label detection + noise', () => {
   it('detects a bare "Gemini" label as assistant (exact match)', () => {
     const r = parseGeminiOutput(`You question here\nGemini\nassistant reply`);
     expect(r.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
-    expect(r.messages[1].content).toBe('assistant reply');
+    expect(r.messages[1]!.content).toBe('assistant reply');
   });
 
   it('captures the remainder after a "you " label', () => {
@@ -141,7 +141,7 @@ describe('Gemini inline role-label detection + noise', () => {
   it('filters lines starting with the gemini / bard google hosts', () => {
     const r = parseGeminiOutput(`[ASSISTANT] gemini.google.com/app/1\n[ASSISTANT] bard.google.com/x\n[ASSISTANT] kept`);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0].content).toBe('kept');
+    expect(r.messages[0]!.content).toBe('kept');
   });
 
   it('drops a role-label remainder that is pure Gemini noise', () => {
@@ -154,7 +154,7 @@ describe('Gemini inline role-label detection + noise', () => {
     // prefixes, so they reach the continuation noise filter and are stripped.
     const r = parseGeminiOutput(`[ASSISTANT] real answer\nextensions\nfeedback`);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0].content).toBe('real answer');
+    expect(r.messages[0]!.content).toBe('real answer');
   });
 });
 

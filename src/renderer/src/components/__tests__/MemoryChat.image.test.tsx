@@ -154,7 +154,7 @@ describe('<MemoryChat/> image mode — the generateImage payload is the terminal
     await sendPrompt(user, 'a red fox in the snow');
 
     await waitFor(() => expect(generateImage).toHaveBeenCalledTimes(1));
-    const payload = generateImage.mock.calls[0][0] as GenPayload;
+    const payload = generateImage.mock.calls[0]![0] as GenPayload;
     // Bug (a): the send path used to hand over the stomped default (28). Assert 10.
     expect(payload.steps).toBe(10);
     expect(payload.steps).not.toBe(28);
@@ -181,7 +181,7 @@ describe('<MemoryChat/> image mode — the generateImage payload is the terminal
 
     await sendPrompt(user, 'a mountain lake');
     await waitFor(() => expect(generateImage).toHaveBeenCalledTimes(1));
-    const payload = generateImage.mock.calls[0][0] as GenPayload;
+    const payload = generateImage.mock.calls[0]![0] as GenPayload;
     expect(payload.model).toBe(FEW_STEP);
     // Switching to the few-step model with no user override resolves to THAT model's
     // default (10), not a leftover value — proving the [imgModel] effect re-resolves.
@@ -237,7 +237,7 @@ describe('<MemoryChat/> chat mode — image intent is decided in ONE place', () 
     // No agent in plain chat — the renderer keyword auto-route generates directly.
     await waitFor(() => expect(generateImage).toHaveBeenCalledTimes(1));
     expect(toolChat).not.toHaveBeenCalled();
-    const payload = generateImage.mock.calls[0][0] as GenPayload;
+    const payload = generateImage.mock.calls[0]![0] as GenPayload;
     expect(payload.prompt).toBe('a dog'); // cleanImagePrompt stripped the verb
   });
 });

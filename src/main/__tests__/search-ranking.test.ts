@@ -237,7 +237,7 @@ describe('rankResults — filter then sort', () => {
   it('match sorts by literal term overlap in title+snippet, score breaks ties', () => {
     // "grid" appears twice in obs:1 snippet + once in its title -> densest match.
     const out = rankResults(results(), { query: 'off grid', sort: 'match' });
-    expect(out[0].key).toBe('obs:1');
+    expect(out[0]!.key).toBe('obs:1');
   });
 
   it('match sort is NOT capped at 12 terms (uses the full query)', () => {
@@ -248,7 +248,7 @@ describe('rankResults — filter then sort', () => {
       { key: 'b', kind: 'screen' as const, refId: 2, title: 'zebra', snippet: 'zebra', surface: 'X', url: null, ts: 0, imagePath: null, score: 0.1 },
     ];
     const out = rankResults(rs, { query: many, sort: 'match' });
-    expect(out[0].key).toBe('b'); // matched the 13th term despite lower score
+    expect(out[0]!.key).toBe('b'); // matched the 13th term despite lower score
   });
 
   it('source filter keeps only matching surfaces, case-insensitive', () => {

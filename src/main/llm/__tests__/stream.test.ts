@@ -87,8 +87,8 @@ describe('streamCompletion', () => {
     });
     const out = await streamCompletion(port, '{}', () => {}, { timeoutMs: 5000 });
     expect(out.toolCalls).toHaveLength(1);
-    expect(out.toolCalls[0].name).toBe('search_memory');
-    expect(out.toolCalls[0].arguments).toBe('{"q":"fox"}'); // reassembled across deltas
+    expect(out.toolCalls[0]!.name).toBe('search_memory');
+    expect(out.toolCalls[0]!.arguments).toBe('{"q":"fox"}'); // reassembled across deltas
   });
 
   it('rejects on a non-200 status', async () => {

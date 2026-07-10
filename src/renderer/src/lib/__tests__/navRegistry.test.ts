@@ -29,7 +29,7 @@ describe('navRegistry', () => {
     const m = await fresh();
     m.registerNav({ route: 'day', label: 'Day', icon: Icon });
     expect(m.getRegisteredNav()).toHaveLength(1);
-    expect(m.getRegisteredNav()[0].route).toBe('day');
+    expect(m.getRegisteredNav()[0]!.route).toBe('day');
     expect(m.isProActive()).toBe(true);
   });
 
@@ -40,7 +40,7 @@ describe('navRegistry', () => {
     const nav = m.getRegisteredNav();
     expect(nav).toHaveLength(1);
     // First registration wins - the label is the original, not the duplicate.
-    expect(nav[0].label).toBe('Day');
+    expect(nav[0]!.label).toBe('Day');
   });
 
   it('keeps distinct routes', async () => {

@@ -38,7 +38,7 @@ describe('decodeWavPcm16', () => {
     const decoded = decodeWavPcm16(encodeWav(samples, 16000));
     expect(decoded.length).toBe(samples.length);
     // 16-bit quantization → allow a tiny tolerance.
-    for (let i = 0; i < samples.length; i++) expect(decoded[i]).toBeCloseTo(samples[i], 3);
+    for (let i = 0; i < samples.length; i++) expect(decoded[i]).toBeCloseTo(samples[i]!, 3);
   });
 
   it('returns empty for a non-WAVE / truncated buffer (no crash, no phantom samples)', () => {
