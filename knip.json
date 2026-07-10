@@ -1,0 +1,18 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "src/main/index.ts",
+    "src/preload/index.ts",
+    "src/renderer/src/main.tsx",
+    "pro/main/index.ts",
+    "pro/renderer/index.tsx",
+    "pro/renderer/screens.ts",
+    "e2e/**/*.spec.ts",
+    "scripts/**/*.{ts,mjs,cjs,js}",
+    "src/**/*.{test,dbtest}.{ts,tsx}",
+    "pro/**/*.test.{ts,tsx}"
+  ],
+  "project": ["src/**/*.{ts,tsx}", "pro/**/*.{ts,tsx}"],
+  "ignore": ["**/*.d.ts", "component-library-animations/**"],
+  "ignoreBinaries": ["swift", "osascript", "pkill", "xattr", "lsof", "ps", "sips", "afplay", "codesign"]
+}
