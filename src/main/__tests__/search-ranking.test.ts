@@ -18,6 +18,7 @@ import {
   rankResults,
   likeMatch,
   LIKE_COLUMNS,
+  epochMsSql,
   type RawHit,
 } from '../search-ranking';
 
@@ -298,5 +299,17 @@ describe('likeMatch — shared LIKE WHERE + params (facet counts == results)', (
     expect(LIKE_COLUMNS.chat).toEqual(['rm.content', 'rc.title']);
     expect(LIKE_COLUMNS.doc).toEqual(['c.content', 'd.name']);
     expect(LIKE_COLUMNS.meeting).toEqual(['title', 'summary', 'transcript']);
+  });
+});
+
+describe('epochMsSql — the shared SQLite datetime → epoch-ms fragment', () => {
+  it('produces the exact fragment the 6 search.ts SELECT sites used', () => {
+    expect(epochMsSql('ts')).toBe("CAST(strftime('%s', ts) AS INTEGER)*1000");
+  });
+
+  it('interpolates a qualified column identifier verbatim', () => {
+    expect(epochMsSql('rc.updated_at')).toBe("CAST(strftime('%s', rc.updated_at) AS INTEGER)*1000");
+    expect(epochMsSql('d.created_at')).toBe("CAST(strftime('%s', d.created_at) AS INTEGER)*1000");
+    expect(epochMsSql('o.ts')).toBe("CAST(strftime('%s', o.ts) AS INTEGER)*1000");
   });
 });

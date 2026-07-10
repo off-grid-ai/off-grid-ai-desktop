@@ -49,6 +49,17 @@ export function ftsExpr(query: string): string {
 }
 
 /**
+ * SQL fragment converting a SQLite datetime column (stored as text) to epoch
+ * milliseconds — `CAST(strftime('%s', <col>) AS INTEGER)*1000`. The idiom was
+ * hand-written 6× across search.ts's SELECT lists; defined once here so a change
+ * to the conversion is one edit. `col` is a caller-controlled column identifier
+ * (never user input), safe to interpolate.
+ */
+export function epochMsSql(col: string): string {
+  return `CAST(strftime('%s', ${col}) AS INTEGER)*1000`;
+}
+
+/**
  * Column sets for the no-FTS LIKE search of each source. THE SINGLE SOURCE OF
  * TRUTH shared by the facet COUNT queries and the hit builders in search.ts — a
  * source's facet count used to be able to diverge from its results because the

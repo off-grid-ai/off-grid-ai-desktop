@@ -14,6 +14,7 @@ import {
   rankResults,
   likeMatch,
   LIKE_COLUMNS,
+  epochMsSql,
   type RawHit,
   type SearchKind,
   type SearchResult,
@@ -31,11 +32,11 @@ export type { SearchKind, SearchResult, SearchSort } from './search-ranking';
 const SOURCES_SQL = `
   SELECT 'frame:'||id AS key, 'screen' AS kind, id AS refId, text AS text,
          COALESCE(surface,'') AS surface, COALESCE(url,'') AS url,
-         CAST(strftime('%s', ts) AS INTEGER)*1000 AS ts
+         ${epochMsSql('ts')} AS ts
     FROM frames WHERE text IS NOT NULL AND length(text) > 20
   UNION ALL
   SELECT 'obs:'||id, 'screen', id, summary, COALESCE(surface,''), COALESCE(url,''),
-         CAST(strftime('%s', ts) AS INTEGER)*1000
+         ${epochMsSql('ts')}
     FROM observations WHERE summary IS NOT NULL AND length(summary) > 0
   UNION ALL
   SELECT 'sum:'||rowid, 'meeting', rowid, summary, 'Meeting', '', 0
@@ -188,7 +189,7 @@ function ftsHits(sql: string, match: string, limit: number): RawHit[] {
 
 function keywordHits(query: string, perSource: number): RawHit[][] {
   const m = ftsExpr(query);
-  const epochMs = `CAST(strftime('%s', o.ts) AS INTEGER)*1000`;
+  const epochMs = epochMsSql('o.ts');
   return [
     // Screen captures (distilled observation summaries)
     ftsHits(
@@ -258,7 +259,7 @@ function likeChatHits(query: string, limit: number): RawHit[] {
     .prepare(
       `SELECT 'chat:'||rc.id AS key, 'chat' AS kind, 0 AS refId, COALESCE(rc.title,'Chat') AS title,
               substr(rm.content,1,300) AS snippet, 'Chat' AS surface, rc.id AS url,
-              CAST(strftime('%s', rc.updated_at) AS INTEGER)*1000 AS ts
+              ${epochMsSql('rc.updated_at')} AS ts
          FROM rag_messages rm JOIN rag_conversations rc ON rc.id = rm.conversation_id
         WHERE ${where} GROUP BY rc.id ORDER BY rc.updated_at DESC LIMIT ?`
     )
@@ -275,7 +276,7 @@ function likeDocHits(query: string, limit: number): RawHit[] {
     .prepare(
       `SELECT 'doc:'||d.id AS key, 'doc' AS kind, d.id AS refId, d.name AS title,
               substr(c.content,1,300) AS snippet, 'Knowledge base' AS surface, d.project_id AS url,
-              CAST(strftime('%s', d.created_at) AS INTEGER)*1000 AS ts
+              ${epochMsSql('d.created_at')} AS ts
          FROM rag_chunks c JOIN rag_documents d ON d.id = c.doc_id
         WHERE ${where} GROUP BY d.id LIMIT ?`
     )
@@ -305,7 +306,7 @@ function likeFrameHits(query: string, limit: number): RawHit[] {
     .prepare(
       `SELECT 'frame:'||id AS key, 'screen' AS kind, id AS refId, COALESCE(surface,'Screen') AS title,
               substr(text,1,300) AS snippet, COALESCE(surface,'') AS surface, url AS url,
-              CAST(strftime('%s', ts) AS INTEGER)*1000 AS ts
+              ${epochMsSql('ts')} AS ts
          FROM frames WHERE text IS NOT NULL AND ${where} ORDER BY ts DESC LIMIT ?`
     )
     .all(...args, limit) as RawHit[];
