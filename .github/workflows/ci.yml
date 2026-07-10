@@ -14,15 +14,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 25 # backstop: a hung step fails fast instead of running for hours
-    # Exposed as an env so the SonarCloud step's `if` can test it — secrets can't be
-    # referenced directly in a step `if`. Absent (forks / until the secret is added)
-    # => the scan step is skipped, not failed.
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # full history so SonarCloud can attribute new-code + blame
       - name: Check out pro (paid features) into ./pro
         uses: actions/checkout@v4
         continue-on-error: true
@@ -56,21 +49,8 @@ jobs:
       - name: Dependency boundaries
         timeout-minutes: 4
         run: npm run depcruise
-      # SonarCloud scan of the WHOLE product — core src + the pro/ checked out above —
-      # for duplication, smells, bugs, security, and new-code coverage (from the lcov
-      # just produced). Reads sonar-project.properties. Skipped (not failed) until the
-      # SONAR_TOKEN repo secret exists, so it never blocks forks or the pre-secret window.
-      # Setup, one time: add the SONAR_TOKEN repo secret (SonarCloud > My Account >
-      # Security), and turn OFF Automatic Analysis for the project (Administration >
-      # Analysis Method) — CI-based analysis is required here because Automatic
-      # Analysis clones only THIS repo (never the pro/ submodule) and can't import
-      # coverage; the two modes are mutually exclusive.
-      - name: SonarCloud scan
-        if: ${{ env.SONAR_TOKEN != '' }}
-        timeout-minutes: 6
-        uses: SonarSource/sonarqube-scan-action@v4
-        env:
-          SONAR_HOST_URL: https://sonarcloud.io
+      # NOTE: SonarCloud runs via Automatic Analysis (SonarCloud clones this repo and
+      # analyzes core on each push/PR — no CI step, token, or coverage upload here).
       # Advisory: lint is enforced locally; bounded + non-blocking here so an
       # eslint slowdown over the full tree (incl. checked-out pro/) can't wedge CI.
       - name: Lint
