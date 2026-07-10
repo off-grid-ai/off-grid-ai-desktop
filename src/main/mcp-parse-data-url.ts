@@ -14,10 +14,23 @@ export interface ParsedDataUrl {
 export function parseDataUrl(ref: string, fallbackExt: string): ParsedDataUrl {
   const url = ref.trim();
   const comma = url.indexOf(',');
+  // A data: URL MUST have a comma separating the metadata from the payload. Without
+  // one (truncated / malformed ref) there is nothing valid to decode — return empty
+  // bytes rather than slicing garbage out of the metadata section.
+  if (comma === -1) {
+    return { data: Buffer.alloc(0), ext: fallbackExt };
+  }
   const meta = url.slice(5, comma);
   const ext = /(\w+)\/(\w+)/.exec(meta)?.[2] || fallbackExt;
-  const data = meta.includes('base64')
-    ? Buffer.from(url.slice(comma + 1), 'base64')
-    : Buffer.from(decodeURIComponent(url.slice(comma + 1)));
-  return { data, ext };
+  const payload = url.slice(comma + 1);
+  if (meta.includes('base64')) {
+    return { data: Buffer.from(payload, 'base64'), ext };
+  }
+  // A non-base64 payload is a URI-encoded string; a stray '%' makes decodeURIComponent
+  // throw URIError — fall back to the raw bytes instead of bubbling it to the caller.
+  try {
+    return { data: Buffer.from(decodeURIComponent(payload)), ext };
+  } catch {
+    return { data: Buffer.from(payload), ext };
+  }
 }

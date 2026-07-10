@@ -37,10 +37,17 @@ describe('parseDataUrl — decode + extension inference', () => {
     expect(parseDataUrl(url, 'dat').ext).toBe('dat');
   });
 
-  it('a malformed data URL (no comma) does not throw and falls back to fallbackExt', () => {
+  it('a malformed data URL (no comma) returns EMPTY bytes + fallbackExt, never decodes garbage', () => {
     const { data, ext } = parseDataUrl('data:garbage', 'png');
-    // no comma -> comma = -1 -> meta = url.slice(5, -1); no subtype match -> fallback.
     expect(ext).toBe('png');
-    expect(Buffer.isBuffer(data)).toBe(true);
+    expect(data.length).toBe(0); // no comma -> nothing valid to decode
+  });
+
+  it('a non-base64 payload with a stray % falls back to raw bytes instead of throwing URIError', () => {
+    // decodeURIComponent('bad%zz') throws; the guard must catch and return raw bytes.
+    expect(() => parseDataUrl('data:text/plain,bad%zz', 'txt')).not.toThrow();
+    const { data, ext } = parseDataUrl('data:text/plain,bad%zz', 'txt');
+    expect(ext).toBe('plain');
+    expect(data.toString()).toBe('bad%zz');
   });
 });

@@ -46,15 +46,24 @@ export function streamCompletion(
     const splitter = createThinkSplitter((ev) => onDelta(ev.text, ev.kind));
     const tools = createToolCallAccumulator();
     const done = (): StreamResult => ({ content: splitter.answer(), toolCalls: tools.list() });
+    // opts.signal is REUSED across the whole tool loop, so every completed stream
+    // must detach its abort listener — otherwise handlers accumulate on the shared
+    // signal for the loop's lifetime. cleanup() runs on every terminal path.
+    let onAbort: (() => void) | null = null;
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      if (onAbort && opts.signal) opts.signal.removeEventListener('abort', onAbort);
+    };
     const timer = setTimeout(() => {
       timedOut = true;
+      cleanup();
       req.destroy();
       reject(new Error('LLM request timed out'));
     }, opts.timeoutMs);
 
     const req = http.request(modelRequestOptions(port, Buffer.byteLength(body)), (res) => {
       if (res.statusCode !== 200) {
-        clearTimeout(timer);
+        cleanup();
         reject(new Error(`LLM Server Error: ${res.statusCode}`));
         res.resume();
         return;
@@ -82,23 +91,23 @@ export function streamCompletion(
         }
       });
       res.on('end', () => {
-        clearTimeout(timer);
+        cleanup();
         if (!timedOut && !aborted) {
           resolve(done());
         }
       });
     });
     req.on('error', (e) => {
-      clearTimeout(timer);
+      cleanup();
       if (!timedOut && !aborted) {
         reject(e);
       }
     });
     // Cooperative cancellation: stop the request and return whatever streamed so far.
     if (opts.signal) {
-      const onAbort = (): void => {
+      onAbort = (): void => {
         aborted = true;
-        clearTimeout(timer);
+        cleanup();
         try {
           req.destroy();
         } catch {
@@ -109,7 +118,7 @@ export function streamCompletion(
       if (opts.signal.aborted) {
         onAbort();
       } else {
-        opts.signal.addEventListener('abort', onAbort, { once: true });
+        opts.signal.addEventListener('abort', onAbort);
       }
     }
     req.write(body);

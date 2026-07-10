@@ -313,10 +313,13 @@ export function ChatList({ onSelectSession }: ChatListProps) {
         (s.summary && s.summary.toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
-    const formatTime = (dateStr: string) => {
+    const formatTime = (dateStr: string): string => {
         // SQLite "YYYY-MM-DD HH:MM:SS" is UTC — parsed via the shared lib/time helper.
-        const local = parseSqliteUtc(dateStr).toLocaleString();
-        return local.substring(0, 16) + ' ' + local.substring(20, 22);
+        // Format with explicit fields (date + HH:MM, no seconds) rather than slicing
+        // toLocaleString() at fixed offsets, which truncates/breaks in non-US locales.
+        return parseSqliteUtc(dateStr).toLocaleString(undefined, {
+            year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
     };
 
     return (
