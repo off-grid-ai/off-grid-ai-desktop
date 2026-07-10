@@ -10,8 +10,9 @@ import { VoiceBubble, stopAllVoicePlayback } from './VoiceBubble';
 import { SkillsPanel } from './SkillsPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { ModelPicker } from './ModelPicker';
-import { standardModelDefaults } from '@offgrid/core/shared/image-defaults';
+import { resolveImageParams, setOverride, type ImageParamStore } from '@renderer/lib/image-params';
 import { looksLikeImageRequest, cleanImagePrompt } from '@renderer/lib/image-intent';
+import { buildAssistantContext, readReasoning } from '@renderer/lib/message-persistence';
 import { Button } from '@renderer/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from '@renderer/components/ui/dropdown-menu';
@@ -128,6 +129,8 @@ function mapRagMessages(raw: any[]): ChatMessage[] {
       role: m.role as 'user' | 'assistant',
       content: m.content,
       context: ctx,
+      // Reasoning rides in the context blob so the "Thinking" block survives reload.
+      reasoning: readReasoning(ctx),
       toolCalls: Array.isArray(ctx?.toolCalls) ? ctx.toolCalls : undefined,
       image: ctx?.image ? `ogcapture://${ctx.image}` : undefined,
       imagePath: ctx?.image,
@@ -250,6 +253,12 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const [imgStrength, setImgStrength] = useState(0.6);
   const [imgModels, setImgModels] = useState<string[]>([]);
   const [imgModel, setImgModel] = useState<string>('');
+  // Per-model steps/size overrides. This is the ONE persisted owner of those two
+  // params — the composer and (future) a Settings > Image section both read/write
+  // it. Persisted via saveSetting('imageParams', …). A value here means the user
+  // pinned it; absence means "track the model default". Resolved through the pure
+  // resolveImageParams so a model change never clobbers a user override.
+  const [imgParamStore, setImgParamStore] = useState<ImageParamStore>({});
   const [activeStyle, setActiveStyle] = useState<string | null>(null);
   const [styleThumbs, setStyleThumbs] = useState<Record<string, string>>({});
   const [genThumbsBusy, setGenThumbsBusy] = useState(false);
@@ -299,6 +308,14 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           if (typeof s.composerConnectorsOn === 'boolean') setConnectorsOn(s.composerConnectorsOn);
           if (typeof s.composerThinking === 'boolean') setThinkingEnabled(s.composerThinking);
           if (typeof s.composerVoiceMode === 'boolean') setVoiceMode(s.composerVoiceMode);
+          // Image-composer params: per-model steps/size overrides + the global
+          // seed/negative/strength/style. These are persisted so they survive a
+          // remount (they used to reset every mount).
+          if (s.imageParams && typeof s.imageParams === 'object') setImgParamStore(s.imageParams as ImageParamStore);
+          if (typeof s.imgSeed === 'string') setImgSeed(s.imgSeed);
+          if (typeof s.imgNegative === 'string') setImgNegative(s.imgNegative);
+          if (typeof s.imgStrength === 'number') setImgStrength(s.imgStrength);
+          if (typeof s.imgStyle === 'string' || s.imgStyle === null) setActiveStyle((s.imgStyle as string | null) ?? null);
         }
       } catch (e) { console.error('Failed to load composer prefs', e); }
       finally { prefsLoaded.current = true; }
@@ -309,6 +326,13 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('composerConnectorsOn', connectorsOn); }, [connectorsOn]);
   useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('composerThinking', thinkingEnabled); }, [thinkingEnabled]);
   useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('composerVoiceMode', voiceMode); }, [voiceMode]);
+  // Persist the global image-composer params (per-model steps/size live in the
+  // store, saved on change). Guarded by prefsLoaded so the initial load doesn't
+  // echo back an empty default.
+  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('imgSeed', imgSeed); }, [imgSeed]);
+  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('imgNegative', imgNegative); }, [imgNegative]);
+  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('imgStrength', imgStrength); }, [imgStrength]);
+  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('imgStyle', activeStyle); }, [activeStyle]);
   const [autoPlayId, setAutoPlayId] = useState<string | null>(null); // assistant reply to auto-speak once
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [speakLoadingId, setSpeakLoadingId] = useState<string | null>(null);
@@ -436,6 +460,35 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     },
   } as Components);
 
+  // Bind the composer's image model to the ONE owner of that state: the active
+  // modal model (what the Active-models panel / ModelPicker writes via
+  // setActiveModalModel). We READ it from imageGenStatus().active and mirror it
+  // locally for the dropdown; we never hold a divergent latched copy. Called on
+  // mount and whenever the model picker closes, so a change made there flows back
+  // into the composer. Falls back to a sensible default only when nothing is active.
+  const refreshImageModel = useCallback(async () => {
+    try {
+      const s = await window.api.imageGenStatus?.();
+      if (!s) return;
+      setImageAvailable(!!s.available);
+      const models = s.models || [];
+      setImgModels(models);
+      // Skip the parked/slow Core ML dir (it would otherwise win on an "sdxl" name
+      // match and default the composer to a non-distilled model).
+      const usable = models.filter(m => !/coreml/i.test(m));
+      const preferred = usable.find(m => /dreamshaper/i.test(m)) || usable.find(m => /lightning|turbo/i.test(m)) || usable.find(m => /z[-_]?image/i.test(m)) || usable.find(m => /sdxl|xl/i.test(m)) || usable[0] || models[0] || '';
+      setImgModel(s.active || preferred);
+    } catch { /* engine may be down; leave prior state */ }
+  }, []);
+  // When the model picker closes it may have changed the active image model
+  // (setActiveModalModel). Re-read so the composer reflects the single source of
+  // truth rather than a stale mirror.
+  const prevPickerOpen = useRef(modelPickerOpen);
+  useEffect(() => {
+    if (prevPickerOpen.current && !modelPickerOpen) void refreshImageModel();
+    prevPickerOpen.current = modelPickerOpen;
+  }, [modelPickerOpen, refreshImageModel]);
+
   // Load conversations on mount; probe image gen; load projects for scoping.
   useEffect(() => {
     void (async () => {
@@ -451,19 +504,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         try { setConvMessages(first.id, mapRagMessages(await window.api.getRagMessages(first.id))); } catch { setConvMessages(first.id, []); }
       }
     })();
-    window.api.imageGenStatus?.().then((s: { available: boolean; models?: string[]; active?: string | null }) => {
-      setImageAvailable(!!s?.available);
-      const models = s?.models || [];
-      setImgModels(models);
-      // Default the picker to the ACTIVE image model (what the Active-models panel
-      // shows, e.g. DreamShaper) so the composer never mismatches it. Fall back to a
-      // preference that skips the parked/slow Core ML dir (it would otherwise win on
-      // an "sdxl" name match and default the composer to a non-distilled model).
-      const usable = models.filter(m => !/coreml/i.test(m));
-      const preferred = usable.find(m => /dreamshaper/i.test(m)) || usable.find(m => /lightning|turbo/i.test(m)) || usable.find(m => /z[-_]?image/i.test(m)) || usable.find(m => /sdxl|xl/i.test(m)) || usable[0] || models[0] || '';
-      const active = s?.active || preferred;
-      setImgModel(prev => prev || active);
-    }).catch(() => {});
+    void refreshImageModel();
     window.api.listProjects?.().then((p: ProjectLite[]) => setProjects(p || [])).catch(() => {});
     window.api.styleThumbs?.().then((t: Record<string, string>) => setStyleThumbs(t || {})).catch(() => {});
   }, []);
@@ -489,15 +530,47 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     }
   }, [genThumbsBusy, styleThumbs]);
 
-  // Seed the size + steps controls with the model's sensible defaults (from the
-  // SINGLE shared source of truth the main process also uses — so the two layers
-  // can never drift; a stale copy of this logic once defaulted turbo models to 4
-  // steps -> rainbow artifacts). The user can then adjust Size/Steps directly.
+  // Resolve the size + steps controls for the current model: a per-model user
+  // OVERRIDE (persisted in imgParamStore) wins; otherwise fall back to the model's
+  // default from the SINGLE shared source of truth the main process also uses (so
+  // the two layers can't drift — a stale copy once defaulted turbo models to 4
+  // steps -> rainbow artifacts). This never clobbers a value the user typed: the
+  // resolver reads the override for whichever model is now selected. Depends on the
+  // store too, so persisted overrides apply once they load.
   useEffect(() => {
     if (!imgModel) return;
-    const d = standardModelDefaults(imgModel);
-    setImgSize(d.defaultSize);
-    setImgSteps(d.defaultSteps);
+    const { steps, size } = resolveImageParams(imgModel, imgParamStore);
+    setImgSize(size);
+    setImgSteps(steps);
+  }, [imgModel, imgParamStore]);
+
+  // Composer image-model dropdown: write through to the SAME owner ModelPicker
+  // uses (setActiveModalModel), then mirror locally for immediate UI. This is what
+  // keeps the composer and the Active-models panel from silently disagreeing about
+  // which model runs — one source of truth.
+  const chooseImageModel = useCallback((value: string) => {
+    setImgModel(value);
+    void window.api.setActiveModalModel?.('image', value);
+  }, []);
+  // Steps/size edits persist as a per-model override so they survive a remount and
+  // a model switch (setOverride is pure; a value == the model default clears it).
+  const setStepsOverride = useCallback((value: number) => {
+    setImgSteps(value);
+    if (!imgModel) return;
+    setImgParamStore(prev => {
+      const next = setOverride(prev, imgModel, 'steps', value);
+      void window.api.saveSetting('imageParams', next);
+      return next;
+    });
+  }, [imgModel]);
+  const setSizeOverride = useCallback((value: number) => {
+    setImgSize(value);
+    if (!imgModel) return;
+    setImgParamStore(prev => {
+      const next = setOverride(prev, imgModel, 'size', value);
+      void window.api.saveSetting('imageParams', next);
+      return next;
+    });
   }, [imgModel]);
 
   const activeProjectName = projects.find(p => p.id === activeProjectId)?.name ?? null;
@@ -832,8 +905,16 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           return;
         }
         const answer = tr?.answer || 'No response returned.';
+        // Capture the reasoning that streamed onto this turn so it can ride the
+        // persisted context blob (React-only state would vanish on reload).
+        let toolReasoning: string | undefined;
         // Finalize the streamed placeholder in place (never append a second bubble).
-        setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, content: answer, context, toolCalls, activity: undefined, streaming: false } : m)));
+        setConvMessages(convId, prev => prev.map(m => {
+          if (m.id !== toolStreamId) return m;
+          toolReasoning = m.reasoning;
+          return { ...m, content: answer, context, toolCalls, activity: undefined, streaming: false };
+        }));
+        const toolCtxWithReasoning = buildAssistantContext(toolCtx, { reasoning: toolReasoning });
         if (voiceMode) setAutoPlayId(toolStreamId);
         // Deferred image generation: the tool loop only RECORDS the prompt (it never
         // generates inline, which would evict the LLM). Generate + attach here AFTER
@@ -842,14 +923,14 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           try {
             const img = await window.api.generateImage({ prompt: tr.imageRequest.prompt, conversationId: convId, projectId: activeProjectId });
             setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, image: img.dataUrl, imagePath: img.path } : m)));
-            try { await window.api.addRagMessage(convId, 'assistant', answer, { ...(toolCtx ?? {}), image: img.path }); } catch (_) { /* ignore */ }
+            try { await window.api.addRagMessage(convId, 'assistant', answer, { ...(toolCtxWithReasoning ?? {}), image: img.path }); } catch (_) { /* ignore */ }
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            if (!/cancel/i.test(msg)) { try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtx); } catch (_) { /* ignore */ } }
+            if (!/cancel/i.test(msg)) { try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtxWithReasoning); } catch (_) { /* ignore */ } }
           }
           return;
         }
-        try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtx); } catch (_) { /* ignore */ }
+        try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtxWithReasoning); } catch (_) { /* ignore */ }
         return;
       }
 
@@ -900,7 +981,13 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         const priorVariants = pendingVariantsRef.current;
         pendingVariantsRef.current = null;
         const allVariants = priorVariants ? [...priorVariants, assistantContent] : undefined;
-        setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: assistantContent, context: result.context, streaming: false, variants: allVariants, variantIndex: allVariants ? allVariants.length - 1 : undefined } : m)));
+        // Capture the streamed reasoning so it rides the persisted context blob.
+        let ragReasoning: string | undefined;
+        setConvMessages(convId, prev => prev.map(m => {
+          if (m.id !== streamId) return m;
+          ragReasoning = m.reasoning;
+          return { ...m, content: assistantContent, context: result.context, streaming: false, variants: allVariants, variantIndex: allVariants ? allVariants.length - 1 : undefined };
+        }));
         const art = parseArtifact(assistantContent);
         if (art) {
           // Inline-first: don't force the canvas open — the user opens the live
@@ -910,7 +997,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         }
         if (voiceMode) setAutoPlayId(streamId);
         try {
-          await window.api.addRagMessage(convId, 'assistant', assistantContent, result.context);
+          await window.api.addRagMessage(convId, 'assistant', assistantContent, buildAssistantContext(result.context, { reasoning: ragReasoning }));
         } catch (e) {
           console.error('Failed to persist assistant message:', e);
         }
@@ -2043,14 +2130,14 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   {imgModels.length > 1 && (
                     <label className="flex items-center gap-1.5">
                       Model
-                      <select value={imgModel} onChange={e => setImgModel(e.target.value)} className="max-w-[12rem] rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500">
+                      <select value={imgModel} onChange={e => chooseImageModel(e.target.value)} className="max-w-[12rem] rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500">
                         {imgModels.map(m => <option key={m} value={m}>{m.replace(/\.gguf$/i, '').replace(/-Q\d.*$/i, '')}</option>)}
                       </select>
                     </label>
                   )}
                   <label className="flex items-center gap-1.5">
                     Size
-                    <select value={imgSize} onChange={e => setImgSize(Number(e.target.value))} className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500">
+                    <select value={imgSize} onChange={e => setSizeOverride(Number(e.target.value))} className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500">
                       <option value={256}>256</option>
                       <option value={512}>512</option>
                       <option value={640}>640</option>
@@ -2060,7 +2147,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   </label>
                   <label className="flex items-center gap-1.5">
                     Steps
-                    <input type="number" min={4} max={50} value={imgSteps} onChange={e => setImgSteps(Math.max(4, Math.min(50, Number(e.target.value) || 16)))} className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                    <input type="number" min={4} max={50} value={imgSteps} onChange={e => setStepsOverride(Math.max(4, Math.min(50, Number(e.target.value) || 16)))} className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
                   </label>
                   <label className="flex items-center gap-1.5">
                     Seed
