@@ -4,7 +4,6 @@ import { Mutex } from "async-mutex";
 import { callHook } from "./bootstrap/hookRegistry";
 import path from "path";
 import * as fs from "fs";
-import * as http from "http";
 import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit } from "./runtime-env";
 import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from "./model-sizing";
 import { classifyLlamaError } from "./llama-error";
@@ -14,8 +13,9 @@ import { DEFAULT_CTX_SIZE } from "../shared/llm-defaults";
 import { applyModePreset, samplingPayload, launchArgsChanged, buildLaunchArgs, type PresetField } from "./llm/settings-math";
 import { buildMessages, imageMime, thinkingPayload, type DecodedImage } from "./llm/chat-payload";
 import { isValidGgufFile } from "./models/gguf";
-import { parseSseLine, createThinkSplitter, createToolCallAccumulator, type AssembledToolCall } from "./llm/sse-stream";
-import { modelRequestOptions, postCompletionOnce } from "./llm/http-post";
+import { type AssembledToolCall } from "./llm/sse-stream";
+import { postCompletionOnce } from "./llm/http-post";
+import { streamCompletion } from "./llm/stream";
 
 export type { KvCacheType, PerformanceMode };
 
@@ -627,44 +627,10 @@ export class LLMService {
     };
     const body = JSON.stringify(payload);
 
-    return new Promise<string>((resolve, reject) => {
-      let buf = '';
-      let timedOut = false;
-      let aborted = false;
-      // Stateful <think>…</think> splitter: routes inline reasoning vs answer and
-      // accumulates the answer text across chunk boundaries (see sse-stream.ts).
-      const splitter = createThinkSplitter((ev) => onDelta(ev.text, ev.kind));
-      const timer = setTimeout(() => { timedOut = true; req.destroy(); reject(new Error('LLM request timed out')); }, timeoutMs);
-
-      // Fresh connection per request via the shared contract (llm/http-post.ts) — no keep-alive
-      // pool, so the tool loop's back-to-back requests never hit a half-closed socket (ECONNRESET).
-      const req = http.request(modelRequestOptions(this.port, Buffer.byteLength(body)), (res) => {
-        if (res.statusCode !== 200) { clearTimeout(timer); reject(new Error(`LLM Server Error: ${res.statusCode}`)); res.resume(); return; }
-        res.setEncoding('utf8');
-        res.on('data', (chunk: string) => {
-          buf += chunk;
-          let nl: number;
-          while ((nl = buf.indexOf('\n')) >= 0) {
-            const line = buf.slice(0, nl);
-            buf = buf.slice(nl + 1);
-            const delta = parseSseLine(line);
-            if (!delta) continue;
-            if (delta.reasoning_content) onDelta(delta.reasoning_content, 'reasoning');
-            if (delta.content) splitter.push(delta.content);
-          }
-        });
-        res.on('end', () => { clearTimeout(timer); if (!timedOut && !aborted) resolve(splitter.answer()); });
-      });
-      req.on('error', (e) => { clearTimeout(timer); if (!timedOut && !aborted) reject(e); });
-      // Cooperative cancellation: stop the request and return whatever was generated so far.
-      if (opts.signal) {
-        const onAbort = (): void => { aborted = true; clearTimeout(timer); try { req.destroy(); } catch { /* already gone */ } resolve(splitter.answer()); };
-        if (opts.signal.aborted) onAbort();
-        else opts.signal.addEventListener('abort', onAbort, { once: true });
-      }
-      req.write(body);
-      req.end();
-    });
+    // Single SSE transport (llm/stream.ts). The plain chat path sends no tools, so
+    // the returned toolCalls are always empty — take only the answer text.
+    const { content } = await streamCompletion(this.port, body, onDelta, { signal: opts.signal, timeoutMs });
+    return content;
   }
 
   // Lower-level streaming turn over a RAW messages array with optional tool-calling.
@@ -698,44 +664,9 @@ export class LLMService {
     if (opts.tools && opts.tools.length) { payload.tools = opts.tools; payload.tool_choice = opts.toolChoice ?? 'auto'; }
     const body = JSON.stringify(payload);
 
-    return new Promise<{ content: string; toolCalls: AssembledToolCall[] }>((resolve, reject) => {
-      let buf = '';
-      let timedOut = false;
-      let aborted = false;
-      const splitter = createThinkSplitter((ev) => onDelta(ev.text, ev.kind));
-      const tools = createToolCallAccumulator();
-      const done = (): { content: string; toolCalls: AssembledToolCall[] } => ({ content: splitter.answer(), toolCalls: tools.list() });
-      const timer = setTimeout(() => { timedOut = true; req.destroy(); reject(new Error('LLM request timed out')); }, timeoutMs);
-
-      // Fresh connection per request via the shared contract (llm/http-post.ts) — no keep-alive
-      // pool, so the tool loop's back-to-back requests never hit a half-closed socket (ECONNRESET).
-      const req = http.request(modelRequestOptions(this.port, Buffer.byteLength(body)), (res) => {
-        if (res.statusCode !== 200) { clearTimeout(timer); reject(new Error(`LLM Server Error: ${res.statusCode}`)); res.resume(); return; }
-        res.setEncoding('utf8');
-        res.on('data', (chunk: string) => {
-          buf += chunk;
-          let nl: number;
-          while ((nl = buf.indexOf('\n')) >= 0) {
-            const line = buf.slice(0, nl);
-            buf = buf.slice(nl + 1);
-            const delta = parseSseLine(line);
-            if (!delta) continue;
-            if (delta.reasoning_content) onDelta(delta.reasoning_content, 'reasoning');
-            if (delta.content) splitter.push(delta.content);
-            if (delta.tool_calls) tools.push(delta.tool_calls);
-          }
-        });
-        res.on('end', () => { clearTimeout(timer); if (!timedOut && !aborted) resolve(done()); });
-      });
-      req.on('error', (e) => { clearTimeout(timer); if (!timedOut && !aborted) reject(e); });
-      if (opts.signal) {
-        const onAbort = (): void => { aborted = true; clearTimeout(timer); try { req.destroy(); } catch { /* already gone */ } resolve(done()); };
-        if (opts.signal.aborted) onAbort();
-        else opts.signal.addEventListener('abort', onAbort, { once: true });
-      }
-      req.write(body);
-      req.end();
-    });
+    // Single SSE transport (llm/stream.ts) — same path as chatStream, but the
+    // assembled tool calls are surfaced too (this powers the agentic loop).
+    return streamCompletion(this.port, body, onDelta, { signal: opts.signal, timeoutMs });
   }
 
   stop() {
