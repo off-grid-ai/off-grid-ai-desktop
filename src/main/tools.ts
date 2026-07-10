@@ -11,6 +11,7 @@ import { llm } from './llm';
 import { getSetting, saveSetting } from './database';
 import { buildUserContent } from './tool-content';
 import { stripTags, htmlToText, decodeDdgHref } from './tools-parsers';
+import { mimeFromExt } from './model-server/data-url';
 
 // Per-tool enable/disable, persisted as a list of disabled tool names.
 function disabledSet(): Set<string> {
@@ -300,7 +301,10 @@ export async function toolChat(
   for (const p of opts.images ?? []) {
     try {
       const base64 = fs.readFileSync(p).toString('base64');
-      const mime = p.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+      // Route through the shared ext->MIME map (image/png fallback) so a .webp
+      // attachment is labelled image/webp, not the old png-or-jpeg guess that
+      // mislabelled webp as image/jpeg (which the vision model may reject).
+      const mime = mimeFromExt(p.split('.').pop() ?? '');
       imageDataUrls.push(`data:${mime};base64,${base64}`);
     } catch (e) { console.error('[tools] failed to read image', p, e); }
   }

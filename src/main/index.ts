@@ -24,6 +24,7 @@ import { purgeLegacyChatImports, getSetting } from './database'
 import { modalityQueue } from './modality-queue/queue'
 import { registerRuntime } from './runtime-manager'
 import { guardConsoleStreams } from './stream-guards'
+import { mimeForExt } from './mime'
 
 // Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
 // must never crash main via an uncaught EPIPE. See stream-guards.ts.
@@ -177,11 +178,6 @@ app.whenReady().then(() => {
   // tear the file stream down SILENTLY — never call controller.error/close after a
   // cancel — otherwise Chromium treats the seek as a failed load and resets to 0:00.
   // (net.fetch(file://) sidesteps this but doesn't honour Range, so seeking is dead.)
-  const OGCAPTURE_MIME: Record<string, string> = {
-    mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
-    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
-    mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', aac: 'audio/aac', ogg: 'audio/ogg',
-  };
   const fileStreamToWeb = (rs: fs.ReadStream): ReadableStream<Uint8Array> => {
     let done = false;
     return new ReadableStream<Uint8Array>({
@@ -217,7 +213,7 @@ app.whenReady().then(() => {
       const stat = await fs.promises.stat(p);
       const size = stat.size;
       const ext = p.split('.').pop()?.toLowerCase() ?? '';
-      const type = OGCAPTURE_MIME[ext] ?? 'application/octet-stream';
+      const type = mimeForExt(ext);
       const range = request.headers.get('Range');
       const m = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
       if (m && (m[1] || m[2])) {

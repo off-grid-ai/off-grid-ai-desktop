@@ -18,12 +18,7 @@ import { randomUUID } from 'crypto';
 import { app } from 'electron';
 import { parseRange, isPathAllowed } from './media-range';
 import { MEDIA_PORT } from '../shared/ports';
-
-const MIME: Record<string, string> = {
-  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm',
-  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.aac': 'audio/aac', '.ogg': 'audio/ogg',
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
-};
+import { mimeForExt } from './mime';
 
 // Fixed loopback port so the renderer CSP (media-src) can allowlist it. Bound to
 // 127.0.0.1 only — not reachable off-device. Canonical value in shared/ports.
@@ -59,7 +54,7 @@ function serveFile(req: http.IncomingMessage, res: http.ServerResponse, filePath
     return;
   }
   const size = stat.size;
-  const type = MIME[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+  const type = mimeForExt(path.extname(filePath));
   const r = parseRange(req.headers.range, size);
 
   if (r.unsatisfiable) {

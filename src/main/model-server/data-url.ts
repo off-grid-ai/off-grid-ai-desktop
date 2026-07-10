@@ -2,6 +2,8 @@
 // Extracted from model-server.ts's fetchImage/toDataUrl so the decode decision
 // (base64 vs percent-encoded), mime sniffing, and reference kind are testable.
 
+import { mimeForExt } from '../mime';
+
 export type ImageRefKind = 'data' | 'http' | 'file';
 
 /** Classify an image reference the gateway accepts (data:, http(s)://, path). */
@@ -33,13 +35,12 @@ export function stripFileScheme(ref: string): string {
 }
 
 /**
- * Guess an image mime from a bare file extension (no leading dot), png fallback.
- * Callers extract the ext via path.extname(...).slice(1) so the sniffing logic
- * lives in one place.
+ * Guess an image mime from a bare file extension (no leading dot). Delegates to
+ * the shared ext->MIME map (single source of truth) with an image/png fallback,
+ * matching the image-attachment contract this function has always had.
  */
 export function mimeFromExt(ext: string): string {
-  const e = ext.toLowerCase();
-  return e === 'jpg' || e === 'jpeg' ? 'image/jpeg' : e === 'webp' ? 'image/webp' : 'image/png';
+  return mimeForExt(ext, 'image/png');
 }
 
 /** Map a mime to the temp-file extension used for init images. */

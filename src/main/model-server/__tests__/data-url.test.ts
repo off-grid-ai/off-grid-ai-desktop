@@ -76,10 +76,16 @@ describe('mimeFromExt', () => {
     expect(mimeFromExt('WEBP')).toBe('image/webp');
   });
 
-  it('falls back to image/png for png and anything else', () => {
+  it('resolves gif to its real type (now the shared map is the source, not the png lump)', () => {
+    // Previously gif fell into the png bucket (a wrong-MIME bug); the shared
+    // ext->MIME map resolves it correctly.
+    expect(mimeFromExt('gif')).toBe('image/gif');
+  });
+
+  it('falls back to image/png for png and an unknown/empty ext', () => {
     expect(mimeFromExt('png')).toBe('image/png');
-    expect(mimeFromExt('gif')).toBe('image/png');
     expect(mimeFromExt('')).toBe('image/png');
+    expect(mimeFromExt('heic')).toBe('image/png');
   });
 });
 
