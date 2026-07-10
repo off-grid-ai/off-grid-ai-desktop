@@ -58,7 +58,7 @@ function parseAsk(content: string): AskBlock | null {
   const m = content.match(/```ask\s*\n([\s\S]*?)```/i);
   if (!m) return null;
   try {
-    const j = JSON.parse(m[1].trim());
+    const j = JSON.parse(m[1]!.trim());
     if (j && typeof j.question === 'string' && Array.isArray(j.options) && j.options.length) {
       return { question: j.question, options: j.options.map(String), multiSelect: !!j.multiSelect };
     }
@@ -444,7 +444,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     a: ({ href, children }: any) => {
       const m = typeof href === 'string' ? /^cite:(\d+)$/.exec(href) : null;
       if (m && unified) {
-        const u = unified[parseInt(m[1], 10) - 1];
+        const u = unified[parseInt(m[1]!, 10) - 1];
         return (
           <button
             type="button"
@@ -504,7 +504,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       // Open the latest conversation by default (most recent first), unless the shell
       // asked to open a specific chat/project — then its own effect handles it.
       if (!openTarget && convos.length > 0) {
-        const first = convos[0];
+        const first = convos[0]!; // convos.length > 0
         setActiveConversationId(first.id);
         setActiveProjectId((first as { project_id?: string | null }).project_id ?? null);
         setOpenTabs([first.id]);
@@ -752,11 +752,11 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     // Skill invocation: "/skill-name [rest]" prepends that skill's instructions.
     if (isInput) {
       const sm = /^\/([A-Za-z0-9_-]+)\s*([\s\S]*)$/.exec(typed);
-      if (sm && skills.some(s => s.name.toLowerCase() === sm[1].toLowerCase())) {
+      if (sm && skills.some(s => s.name.toLowerCase() === sm[1]!.toLowerCase())) {
         try {
-          const sk = await window.api.getSkill?.(sm[1]);
+          const sk = await window.api.getSkill?.(sm[1]!);
           if (sk) {
-            const rest = sm[2].trim();
+            const rest = sm[2]!.trim();
             modelQuery = `${attBlock ? attBlock + '\n\n' : ''}# Skill: ${sk.name}\n${sk.instructions}\n\n${rest}`.trim();
           }
         } catch (e) { console.error('skill load failed', e); }
@@ -978,7 +978,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       // with on-device generation.
       const imgMatch = assistantContent.match(/```image\s*\n([\s\S]*?)```/i);
       if (imgMatch && window.api.generateImage) {
-        const imgPrompt = imgMatch[1].trim();
+        const imgPrompt = imgMatch[1]!.trim();
         setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: 'Generating image…', reasoning: undefined, streaming: false } : m)));
         try {
           const img = await window.api.generateImage({ prompt: imgPrompt, conversationId: convId, projectId: activeProjectId });
@@ -1088,7 +1088,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       const exact = skills.some(s => s.name.toLowerCase() === sq);
       if (matches.length > 0 && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !exact))) {
         e.preventDefault();
-        setInput(`/${matches[0].name} `);
+        setInput(`/${matches[0]!.name} `); // matches.length > 0
         inputRef.current?.focus();
         return;
       }
@@ -1280,14 +1280,15 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     const idx = messages.findIndex(m => m.id === messageId);
     if (idx < 0) return;
     // Regenerating an assistant answer keeps prior answers as navigable variants.
-    const target = messages[idx];
+    const target = messages[idx]!; // idx >= 0 checked above
     if (target.role === 'assistant' && target.content.trim()) {
       pendingVariantsRef.current = target.variants && target.variants.length ? target.variants : [target.content];
     }
     // Walk back to the user turn that produced this answer.
     for (let i = idx; i >= 0; i--) {
-      if (messages[i].role === 'user') {
-        const content = messages[i].content;
+      const mi = messages[i]!; // 0 <= i <= idx
+      if (mi.role === 'user') {
+        const content = mi.content;
         // Drop everything after that user turn (the old answer) and re-run in
         // place — no new user bubble. Also prune the persisted rows so reopening
         // the chat doesn't show old answers stacked.
@@ -1506,10 +1507,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                 ];
                 for (const c of filtered) {
                   const t = new Date(c.updated_at).getTime();
-                  if (t >= startToday) groups[0].items.push(c);
-                  else if (t >= startToday - 86400000) groups[1].items.push(c);
-                  else if (t >= startToday - 6 * 86400000) groups[2].items.push(c);
-                  else groups[3].items.push(c);
+                  if (t >= startToday) groups[0]!.items.push(c);
+                  else if (t >= startToday - 86400000) groups[1]!.items.push(c);
+                  else if (t >= startToday - 6 * 86400000) groups[2]!.items.push(c);
+                  else groups[3]!.items.push(c);
                 }
                 return groups.filter(g => g.items.length).map(g => (
                   <div key={g.label} className="mb-2">
@@ -1678,7 +1679,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                           />
                         );
                       }
-                      const transcript = (message.variants && message.variantIndex != null ? message.variants[message.variantIndex] : message.content)
+                      const transcript = (message.variants && message.variantIndex != null ? message.variants[message.variantIndex]! : message.content)
                         .replace(ASK_FENCE, '').replace(ARTIFACT_FENCE, '').replace(/\[S(\d+)\]/g, '').trim();
                       return (
                         <VoiceBubble
@@ -1805,7 +1806,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                           ? message.content
                           // Show the selected regenerated variant (if any); keep artifact code
                           // inline; hide only the clarifying-question fence.
-                          : (message.variants && message.variantIndex != null ? message.variants[message.variantIndex] : message.content).replace(ASK_FENCE, '').replace(/\[S(\d+)\]/g, '[S$1](cite:$1)').trim()}
+                          : (message.variants && message.variantIndex != null ? message.variants[message.variantIndex]! : message.content).replace(ASK_FENCE, '').replace(/\[S(\d+)\]/g, '[S$1](cite:$1)').trim()}
                       </ReactMarkdown>
                       )}
                       {(() => {
