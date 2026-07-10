@@ -56,12 +56,13 @@ export function parseSkill(md: string, fallbackName: string): Skill {
     let connectors = true;
     const fm = /^﻿?---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/.exec(md);
     if (fm) {
-        body = fm[2];
-        for (const line of fm[1].split('\n')) {
+        // fm matched a 2-group pattern, so groups 1 and 2 are always present.
+        body = fm[2]!;
+        for (const line of fm[1]!.split('\n')) {
             const m = /^\s*([A-Za-z_]+)\s*:\s*(.+?)\s*$/.exec(line);
             if (!m) continue;
-            const key = m[1].toLowerCase();
-            const val = m[2].replace(/^["']|["']$/g, '');
+            const key = m[1]!.toLowerCase();
+            const val = m[2]!.replace(/^["']|["']$/g, '');
             if (key === 'name') name = val;
             else if (key === 'description') description = val;
             else if (key === 'trigger') triggerKind = val.toLowerCase();

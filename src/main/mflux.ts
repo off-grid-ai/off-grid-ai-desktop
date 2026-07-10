@@ -116,7 +116,7 @@ export function downloadMfluxModel(modelId: string, onProgress?: (pct: number) =
       // huggingface_hub prints "Fetching 13 files:  46%|… | 6/13 …".
       const m = /Fetching\s+\d+\s+files:\s+(\d+)%/.exec(s) || /\|\s*(\d+)\/(\d+)\s/.exec(s);
       if (m && onProgress) {
-        const pct = m[2] ? Math.round((parseInt(m[1], 10) / parseInt(m[2], 10)) * 100) : parseInt(m[1], 10);
+        const pct = m[2] ? Math.round((parseInt(m[1]!, 10) / parseInt(m[2], 10)) * 100) : parseInt(m[1]!, 10);
         if (Number.isFinite(pct)) onProgress(pct);
       }
     };
@@ -193,7 +193,7 @@ const STEP_RE = /(\d+)\/(\d+)\s*\[[^\]]*?([\d.]+)s\/it/;
 
 function parseMfluxProgress(s: string): { step: number; total: number; secPerStep: number } | null {
   const m = STEP_RE.exec(s);
-  if (m) return { step: parseInt(m[1], 10), total: parseInt(m[2], 10), secPerStep: parseFloat(m[3]) };
+  if (m) return { step: parseInt(m[1]!, 10), total: parseInt(m[2]!, 10), secPerStep: parseFloat(m[3]!) };
   return null;
 }
 

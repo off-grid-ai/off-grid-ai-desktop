@@ -41,7 +41,7 @@ export function reduceProgress(
 ): { state: ProgressState; event?: ProgressEvent } {
   let resolvedSeed = prev.resolvedSeed;
   const sm = chunk.match(SEED_RE);
-  if (sm) resolvedSeed = parseInt(sm[1], 10);
+  if (sm) resolvedSeed = parseInt(sm[1]!, 10);
 
   // Find the last "N/N - Xs/it" in the chunk.
   const re = new RegExp(STEP_RE.source, 'g');
@@ -52,9 +52,9 @@ export function reduceProgress(
     return { state: { ...prev, resolvedSeed } };
   }
 
-  const step = parseInt(last[1], 10);
-  const total = parseInt(last[2], 10);
-  const secPerStep = parseFloat(last[3]);
+  const step = parseInt(last[1]!, 10);
+  const total = parseInt(last[2]!, 10);
+  const secPerStep = parseFloat(last[3]!);
   let samplingDone = prev.samplingDone;
   let phase = prev.phase;
   if (!samplingDone) {

@@ -15,7 +15,7 @@ export function parseSize(size: unknown): { width?: number; height?: number } {
   if (typeof size !== 'string') return {};
   const m = /^(\d+)\s*[x×]\s*(\d+)$/i.exec(size.trim());
   if (!m) return {};
-  return { width: parseInt(m[1], 10), height: parseInt(m[2], 10) };
+  return { width: parseInt(m[1]!, 10), height: parseInt(m[2]!, 10) };
 }
 
 // Resolve output dimensions from any of: explicit width/height, an OpenAI
@@ -37,7 +37,7 @@ export function resolveDims(p: {
   if (typeof p.aspect_ratio === 'string') {
     const m = /^(\d+)\s*[:x×]\s*(\d+)$/.exec(p.aspect_ratio.trim());
     if (m) {
-      const ar = parseInt(m[1], 10) / parseInt(m[2], 10);
+      const ar = parseInt(m[1]!, 10) / parseInt(m[2]!, 10);
       const res = String(p.resolution ?? '1K').toUpperCase();
       const base = res === '2K' ? 1536 : res === '512' ? 512 : 1024; // long edge
       const [w, h] = ar >= 1 ? [base, base / ar] : [base * ar, base];
