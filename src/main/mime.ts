@@ -20,12 +20,15 @@ const EXT_MIME: Record<string, string> = {
   wav: 'audio/wav',
   aac: 'audio/aac',
   ogg: 'audio/ogg',
-  // image
+  // image — must cover every ext files-classify's IMAGE_EXT accepts, or an
+  // accepted upload gets mislabelled (the webp bug this map was created to fix).
   png: 'image/png',
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
   webp: 'image/webp',
-  gif: 'image/gif'
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  heic: 'image/heic'
 };
 
 /**

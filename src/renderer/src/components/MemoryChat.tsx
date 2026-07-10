@@ -550,7 +550,12 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   // which model runs — one source of truth.
   const chooseImageModel = useCallback((value: string) => {
     setImgModel(value);
-    void window.api.setActiveModalModel?.('image', value);
+    // Write through to the owning source; log on failure rather than swallow — a
+    // silent reject would let the composer and Active-models panel diverge again
+    // (the exact drift this binding prevents), with no signal.
+    void window.api.setActiveModalModel?.('image', value).catch((e) =>
+      console.error('[image] failed to persist active model', e)
+    );
   }, []);
   // Steps/size edits persist as a per-model override so they survive a remount and
   // a model switch (setOverride is pure; a value == the model default clears it).

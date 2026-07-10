@@ -43,8 +43,13 @@ export function isValidGgufFile(p: string, fs: GgufFs): boolean {
     if (size < GGUF_MIN_BYTES) return false;
     const fd = fs.openSync(p, 'r');
     const buf = Buffer.alloc(4);
-    fs.readSync(fd, buf, 0, 4, 0);
-    fs.closeSync(fd);
+    // try/finally so a readSync throw can't leak the descriptor (the outer catch
+    // swallows the error, so without this the fd would never be closed).
+    try {
+      fs.readSync(fd, buf, 0, 4, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
     return isValidGgufHeader(size, buf);
   } catch {
     return false;

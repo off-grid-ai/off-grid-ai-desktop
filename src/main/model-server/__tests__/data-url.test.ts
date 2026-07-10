@@ -82,10 +82,15 @@ describe('mimeFromExt', () => {
     expect(mimeFromExt('gif')).toBe('image/gif');
   });
 
-  it('falls back to image/png for png and an unknown/empty ext', () => {
+  it('resolves bmp/heic to their real types (accepted image uploads, now in the map)', () => {
+    expect(mimeFromExt('bmp')).toBe('image/bmp');
+    expect(mimeFromExt('heic')).toBe('image/heic');
+  });
+
+  it('falls back to image/png for png and a genuinely-unknown/empty ext', () => {
     expect(mimeFromExt('png')).toBe('image/png');
     expect(mimeFromExt('')).toBe('image/png');
-    expect(mimeFromExt('heic')).toBe('image/png');
+    expect(mimeFromExt('tiff')).toBe('image/png');
   });
 });
 

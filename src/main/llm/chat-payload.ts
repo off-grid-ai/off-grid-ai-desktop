@@ -6,18 +6,23 @@
 // The one impure step - reading image bytes off disk - stays in llm.ts; this module
 // takes ALREADY-decoded image data (base64 + mime) so it is fully pure.
 
+import { mimeForExt } from '../mime';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
 export interface DecodedImage {
   base64: string;
-  mime: string; // 'image/png' | 'image/jpeg'
+  mime: string; // e.g. 'image/png' | 'image/jpeg' | 'image/webp'
 }
 
-/** MIME type for an image path by extension - .png is png, everything else jpeg.
- *  Single source of truth for the rule both chat paths used inline. */
+/** MIME type for an image path by extension, via the shared ext->MIME map (image/png
+ *  fallback). Previously forced everything non-.png to image/jpeg, which mislabelled
+ *  webp/gif/bmp/heic attachments in the RAG chat vision path (the vision model may
+ *  reject a declared type that doesn't match the bytes). */
 export function imageMime(imgPath: string): string {
-  return imgPath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+  const ext = imgPath.split('.').pop() ?? '';
+  return mimeForExt(ext, 'image/png');
 }
 
 /** Build the OpenAI-style multimodal content array: the text part first, then one
