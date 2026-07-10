@@ -332,43 +332,34 @@ function AppContent() {
     const unsubscribers: (() => void)[] = [];
 
     // Proactive approval queued — needs the user's decision
-    if (window.api.onNewApproval) {
-      const unsubscribe = window.api.onNewApproval((data) => {
-        addNotification({
-          type: 'approval',
-          title: data.entityName ? `Approval — ${data.entityName}` : 'Approval needed',
-          message: data.detail ? `${data.title} — ${data.detail}` : data.title,
-          approvalId: data.approvalId,
-        });
+    unsubscribers.push(window.api.onNewApproval((data) => {
+      addNotification({
+        type: 'approval',
+        title: data.entityName ? `Approval — ${data.entityName}` : 'Approval needed',
+        message: data.detail ? `${data.title} — ${data.detail}` : data.title,
+        approvalId: data.approvalId,
       });
-      unsubscribers.push(unsubscribe);
-    }
+    }));
 
     // New to-do extracted from your activity
-    if (window.api.onNewAction) {
-      const unsubscribe = window.api.onNewAction((data) => {
-        const where = [data.entityName, data.sourceApp].filter(Boolean).join(' · ');
-        addNotification({
-          type: 'todo',
-          title: data.due ? `New to-do — due ${data.due}` : 'New to-do',
-          message: where ? `${data.text} (${where})` : data.text,
-          actionId: data.actionId,
-        });
+    unsubscribers.push(window.api.onNewAction((data) => {
+      const where = [data.entityName, data.sourceApp].filter(Boolean).join(' · ');
+      addNotification({
+        type: 'todo',
+        title: data.due ? `New to-do — due ${data.due}` : 'New to-do',
+        message: where ? `${data.text} (${where})` : data.text,
+        actionId: data.actionId,
       });
-      unsubscribers.push(unsubscribe);
-    }
+    }));
 
     // A new version finished downloading and is staged — show the restart banner.
     // Seed from main too: on macOS the app can keep running with no windows, so a
     // download that finished before this window existed would otherwise be missed
     // (the event only reaches windows open at download time).
-    if (window.api.onUpdateDownloaded) {
-      window.api.getStagedUpdateVersion().then((v) => { if (v) setUpdateReady(v); }).catch(() => {});
-      const unsubscribe = window.api.onUpdateDownloaded((data) => {
-        setUpdateReady(data.version);
-      });
-      unsubscribers.push(unsubscribe);
-    }
+    window.api.getStagedUpdateVersion().then((v) => { if (v) setUpdateReady(v); }).catch(() => {});
+    unsubscribers.push(window.api.onUpdateDownloaded((data) => {
+      setUpdateReady(data.version);
+    }));
 
     return () => {
       unsubscribers.forEach(unsub => unsub());
@@ -590,7 +581,6 @@ function AppContent() {
           <span>Update {updateReady} is ready</span>
           <button
             onClick={async () => {
-              if (!window.api.installUpdate) return;
               setInstalling(true);
               try {
                 await window.api.installUpdate();

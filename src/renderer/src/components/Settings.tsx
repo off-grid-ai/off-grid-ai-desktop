@@ -125,7 +125,7 @@ function RuntimeResidencySection(): React.ReactElement {
   const api = (window as any).api;
   const [modes, setModes] = useState<Record<string, string>>({});
   useEffect(() => {
-    api.residencyGet?.().then((m: Record<string, string>) => setModes(m || {})).catch(() => {});
+    api.residencyGet?.().then((m: Record<string, string>) => setModes(m)).catch(() => {});
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
   const toggle = (modality: string, locked?: boolean): void => {
@@ -341,7 +341,7 @@ function ProPlanSection(): React.ReactElement {
   useEffect(() => {
     let live = true;
     void Promise.all([api?.license?.status?.(), api?.license?.listDevices?.()])
-      .then(([i, d]: [PlanInfo, PlanDevice[]]) => { if (!live) return; setInfo(i ?? null); setDevices(Array.isArray(d) ? d : []); })
+      .then(([i, d]: [PlanInfo, PlanDevice[]]) => { if (!live) return; setInfo(i); setDevices(Array.isArray(d) ? d : []); })
       .catch(() => {})
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
@@ -417,10 +417,8 @@ export function Settings() {
     if (!isPro) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window.api as any).idGet?.().then((id: { name: string; email: string }) => {
-      if (id) {
-        setIdName(id.name || '');
-        setIdEmail(id.email || '');
-      }
+      setIdName(id.name || '');
+      setIdEmail(id.email || '');
     }).catch(() => {});
   }, [isPro]);
 

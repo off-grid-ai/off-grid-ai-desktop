@@ -261,8 +261,8 @@ export function ChatDetail({ sessionId, onBack, onSelectEntity, onSelectMemory }
                     window.api.getEntitiesForSession(sessionId),
                     window.api.getChatSessions(),
                 ]);
-                setMemories(memoriesData || []);
-                setEntities(entitiesData || []);
+                setMemories(memoriesData);
+                setEntities(entitiesData);
 
                 const thisSession = sessionsData.find((s: any) => s.session_id === sessionId);
                 setSummary(thisSession?.summary || null);

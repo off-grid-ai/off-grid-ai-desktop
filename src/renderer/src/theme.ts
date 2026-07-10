@@ -8,7 +8,7 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 const KEY = 'og-theme';
 
 function systemPrefersDark(): boolean {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ?? true;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
 export function getThemeMode(): ThemeMode {

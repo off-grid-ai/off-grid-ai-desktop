@@ -76,7 +76,7 @@ export function ArtifactCanvas({ artifact, onClose, width, onResize }: { artifac
   useEffect(() => {
     let alive = true;
     window.api.artifactRuntime?.(artifact.kind)
-      .then((r: Record<string, string>) => { if (alive) setRuntime(r || {}); })
+      .then((r: Record<string, string>) => { if (alive) setRuntime(r); })
       .catch(() => { if (alive) setRuntime({}); });
     return () => { alive = false; };
   }, [artifact.kind]);

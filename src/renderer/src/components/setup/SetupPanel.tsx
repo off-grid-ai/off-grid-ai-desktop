@@ -89,7 +89,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
     setRunning(true);
     setProgress({ phase: 'select', message: 'Picking a model that fits your Mac…' });
     try { await api?.autoConfigure?.(); }
-    catch (e) { setProgress({ phase: 'error', message: (e as Error).message ?? 'Setup failed.' }); setRunning(false); }
+    catch (e) { setProgress({ phase: 'error', message: e instanceof Error ? e.message : 'Setup failed.' }); setRunning(false); }
   };
 
   const cancel = (): void => {

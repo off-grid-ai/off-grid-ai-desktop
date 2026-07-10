@@ -73,7 +73,7 @@ async function decodeFileWaveform(url: string, points: number): Promise<number[]
   try {
     const res = await fetch(url);
     const buf = await res.arrayBuffer();
-    const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+    const Ctx = window.AudioContext;
     const ctx = new Ctx();
     const audio = await ctx.decodeAudioData(buf);
     const ch = audio.getChannelData(0);

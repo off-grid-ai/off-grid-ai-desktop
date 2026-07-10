@@ -47,15 +47,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [voiceState, setVoiceState] = useState<'idle' | 'generating' | 'playing' | 'error'>('idle');
 
   useEffect(() => {
-    window.api.getLlmSettings?.().then((v: LlmSettings) => setS(v || {})).catch(() => {});
-    window.api.ttsVoices?.().then((v: string[]) => setVoices(v || [])).catch(() => {});
-    window.api.listTools?.().then((t: { name: string; description: string }[]) => setTools(t || [])).catch(() => {});
+    window.api.getLlmSettings?.().then((v: LlmSettings) => setS(v)).catch(() => {});
+    window.api.ttsVoices?.().then((v: string[]) => setVoices(v)).catch(() => {});
+    window.api.listTools?.().then((t: { name: string; description: string }[]) => setTools(t)).catch(() => {});
     window.api.getSettings().then((all: Record<string, unknown>) => { if (all.ttsVoice) setVoice(String(all.ttsVoice)); }).catch(() => {});
     refreshConnectors();
   }, []);
 
   const refreshConnectors = (): void => {
-    window.api.mcpList?.().then((c: Connector[]) => setConnectors(c || [])).catch(() => setConnectors([]));
+    window.api.mcpList?.().then((c: Connector[]) => setConnectors(c)).catch(() => setConnectors([]));
   };
 
   // Persist one inference setting (optimistic) — backend applies it per-request.

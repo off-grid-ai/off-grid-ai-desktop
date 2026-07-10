@@ -122,7 +122,7 @@ export function ModelsScreen() {
   // one truth from the backend; the UI never re-derives "active" per kind.
   const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
   const isActive = (id: string): boolean => activeIds.has(id);
-  const refreshActive = (): void => { void api.getActiveModelIds?.().then((ids: string[]) => setActiveIds(new Set(ids ?? []))); };
+  const refreshActive = (): void => { void api.getActiveModelIds?.().then((ids: string[]) => setActiveIds(new Set(ids))); };
   const [switching, setSwitching] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const [ramGb, setRamGb] = useState<number | null>(null);

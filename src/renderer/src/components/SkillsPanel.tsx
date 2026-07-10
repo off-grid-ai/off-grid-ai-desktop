@@ -47,7 +47,7 @@ export function SkillsPanel({ onClose, onChanged }: { onClose: () => void; onCha
   const [busy, setBusy] = useState(false);
 
   const refresh = (): void => {
-    window.api.listSkills().then((s) => setSkills(s || [])).catch(() => setSkills([]));
+    window.api.listSkills().then((s) => setSkills(s)).catch(() => setSkills([]));
   };
   useEffect(refresh, []);
 

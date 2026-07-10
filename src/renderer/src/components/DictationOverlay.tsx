@@ -62,7 +62,7 @@ export function DictationOverlay(): React.JSX.Element | null {
       const rec = new MediaRecorder(stream);
       recorderRef.current = rec;
       rec.ondataavailable = (e) => {
-        if (!e.data || e.data.size === 0) return;
+        if (e.data.size === 0) return;
         blobsRef.current.push(e.data);
         // Live interim: transcribe the recording-so-far. Self-paced — skip while a
         // previous interim is still running (never pile up / hammer the machine).

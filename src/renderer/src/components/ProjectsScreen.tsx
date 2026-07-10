@@ -273,7 +273,7 @@ function ProjectChats({
     let alive = true;
     api
       .getRagConversations?.(project.id)
-      .then((c: RagConvo[]) => { if (alive) setChats(c || []); })
+      .then((c: RagConvo[]) => { if (alive) setChats(c); })
       .catch(() => {});
     return () => { alive = false; };
   }, [project.id]);

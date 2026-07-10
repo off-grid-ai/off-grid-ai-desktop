@@ -122,7 +122,7 @@ interface MemoryChatProps {
 }
 
 function mapRagMessages(raw: any[]): ChatMessage[] {
-  return (raw || []).map((m: any) => {
+  return raw.map((m: any) => {
     const ctx = m.context ? (typeof m.context === 'string' ? JSON.parse(m.context) : m.context) : undefined;
     return {
       id: String(m.id),
@@ -302,21 +302,19 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     (async () => {
       try {
         const s = await window.api.getSettings();
-        if (s) {
-          if (typeof s.composerNoMemory === 'boolean') setNoMemory(s.composerNoMemory);
-          if (typeof s.composerToolsOn === 'boolean') setToolsOn(s.composerToolsOn);
-          if (typeof s.composerConnectorsOn === 'boolean') setConnectorsOn(s.composerConnectorsOn);
-          if (typeof s.composerThinking === 'boolean') setThinkingEnabled(s.composerThinking);
-          if (typeof s.composerVoiceMode === 'boolean') setVoiceMode(s.composerVoiceMode);
-          // Image-composer params: per-model steps/size overrides + the global
-          // seed/negative/strength/style. These are persisted so they survive a
-          // remount (they used to reset every mount).
-          if (s.imageParams && typeof s.imageParams === 'object') setImgParamStore(s.imageParams as ImageParamStore);
-          if (typeof s.imgSeed === 'string') setImgSeed(s.imgSeed);
-          if (typeof s.imgNegative === 'string') setImgNegative(s.imgNegative);
-          if (typeof s.imgStrength === 'number') setImgStrength(s.imgStrength);
-          if (typeof s.imgStyle === 'string' || s.imgStyle === null) setActiveStyle((s.imgStyle as string | null) ?? null);
-        }
+        if (typeof s.composerNoMemory === 'boolean') setNoMemory(s.composerNoMemory);
+        if (typeof s.composerToolsOn === 'boolean') setToolsOn(s.composerToolsOn);
+        if (typeof s.composerConnectorsOn === 'boolean') setConnectorsOn(s.composerConnectorsOn);
+        if (typeof s.composerThinking === 'boolean') setThinkingEnabled(s.composerThinking);
+        if (typeof s.composerVoiceMode === 'boolean') setVoiceMode(s.composerVoiceMode);
+        // Image-composer params: per-model steps/size overrides + the global
+        // seed/negative/strength/style. These are persisted so they survive a
+        // remount (they used to reset every mount).
+        if (s.imageParams && typeof s.imageParams === 'object') setImgParamStore(s.imageParams as ImageParamStore);
+        if (typeof s.imgSeed === 'string') setImgSeed(s.imgSeed);
+        if (typeof s.imgNegative === 'string') setImgNegative(s.imgNegative);
+        if (typeof s.imgStrength === 'number') setImgStrength(s.imgStrength);
+        if (typeof s.imgStyle === 'string' || s.imgStyle === null) setActiveStyle((s.imgStyle as string | null) ?? null);
       } catch (e) { console.error('Failed to load composer prefs', e); }
       finally { prefsLoaded.current = true; }
     })();
@@ -499,7 +497,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   // Load conversations on mount; probe image gen; load projects for scoping.
   useEffect(() => {
     void (async () => {
-      const convos = (await window.api.getRagConversations().catch(() => [])) || [];
+      const convos = await window.api.getRagConversations().catch(() => []);
       setConversations(convos);
       // Open the latest conversation by default (most recent first), unless the shell
       // asked to open a specific chat/project — then its own effect handles it.
@@ -512,8 +510,8 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       }
     })();
     void refreshImageModel();
-    window.api.listProjects?.().then((p: ProjectLite[]) => setProjects(p || [])).catch(() => {});
-    window.api.styleThumbs?.().then((t: Record<string, string>) => setStyleThumbs(t || {})).catch(() => {});
+    window.api.listProjects?.().then((p: ProjectLite[]) => setProjects(p)).catch(() => {});
+    window.api.styleThumbs?.().then((t: Record<string, string>) => setStyleThumbs(t)).catch(() => {});
   }, []);
 
   const styleKey = (name: string): string => name.replace(/[^\w-]+/g, '_');
@@ -638,7 +636,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const loadConversations = async () => {
     try {
       const convos = await window.api.getRagConversations();
-      setConversations(convos || []);
+      setConversations(convos);
     } catch (e) {
       console.error('Failed to load conversations:', e);
     }
@@ -1180,7 +1178,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       : galleryScope === 'project' ? { projectId: activeProjectId }
       : undefined;
     try { setGallery((await window.api.listGeneratedImages?.(scope)) || []); } catch (e) { console.error(e); }
-    try { setArtifacts((await window.api.listArtifacts(scope)) || []); } catch (e) { console.error(e); }
+    try { setArtifacts(await window.api.listArtifacts(scope)); } catch (e) { console.error(e); }
   }, [galleryScope, activeConversationId, activeProjectId]);
 
   // Reload the gallery's artifacts whenever the scope changes while it's open.
@@ -1234,7 +1232,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   }, [input]);
 
   useEffect(() => {
-    window.api.listSkills().then(s => setSkills(s || [])).catch(() => {});
+    window.api.listSkills().then(s => setSkills(s)).catch(() => {});
   }, []);
 
   // Live streaming: route token/reasoning events to the in-flight assistant
@@ -1255,8 +1253,8 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         if (m.id !== data.streamId || !m.streaming) return m;
         if (data.type === 'content') return { ...m, content: (m.content || '') + (data.text || ''), activity: undefined };
         if (data.type === 'reasoning') return { ...m, reasoning: (m.reasoning || '') + (data.text || '') };
-        if (data.type === 'step') return { ...m, activity: data.step as ChatMessage['activity'] };
-        return m;
+        // type is exhaustively 'content' | 'reasoning' | 'step' — this is the 'step' arm.
+        return { ...m, activity: data.step as ChatMessage['activity'] };
       }));
     });
     return () => off();
@@ -1335,9 +1333,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         const res = await window.api.processFile(buf, file.name);
         // Images are "ready" if we have the file path (even with no caption), so the
         // actual image still gets sent to the vision model.
-        const ok = !!res && (!!res.text || (res.kind === 'image' && !!res.path));
+        const ok = (!!res.text || (res.kind === 'image' && !!res.path));
         setAttachments(prev => prev.map(a => a.id === id
-          ? { ...a, kind: (res.kind as Attachment['kind']) || (isImg ? 'image' : 'text'), text: res.text || '', path: res.path, preview, status: ok ? 'ready' : 'error' }
+          ? { ...a, kind: res.kind as Attachment['kind'], text: res.text || '', path: res.path, preview, status: ok ? 'ready' : 'error' }
           : a));
       } catch (e) {
         console.error('process file failed', e);
@@ -1357,7 +1355,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     // through to the filename text.
     let pasteFiles = Array.from(dt.files);
     if (!pasteFiles.length) {
-      pasteFiles = Array.from(dt.items || [])
+      pasteFiles = Array.from(dt.items)
         .filter(it => it.kind === 'file')
         .map(it => it.getAsFile())
         .filter((f): f is File => !!f);
@@ -2586,7 +2584,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       {canvasArtifact && <ArtifactCanvas artifact={canvasArtifact} onClose={() => setCanvasArtifact(null)} width={canvasWidth} onResize={setCanvasWidth} />}
 
       {/* Skills — view / create / edit reusable instruction packs */}
-      {skillsOpen && <SkillsPanel onClose={() => setSkillsOpen(false)} onChanged={() => window.api.listSkills().then(s => setSkills(s || [])).catch(() => {})} />}
+      {skillsOpen && <SkillsPanel onClose={() => setSkillsOpen(false)} onChanged={() => window.api.listSkills().then(s => setSkills(s)).catch(() => {})} />}
 
       {/* Settings — model params, voice, tools, connectors */}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}

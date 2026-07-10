@@ -19,5 +19,5 @@ export const ARTIFACT_KIND_LABELS: Record<ArtifactKind, string> = {
 /** Badge label for a kind, falling back to the raw kind string for anything
  *  outside the known set. */
 export function artifactKindLabel(kind: string): string {
-  return ARTIFACT_KIND_LABELS[kind as ArtifactKind] ?? kind;
+  return (ARTIFACT_KIND_LABELS as Record<string, string>)[kind] ?? kind;
 }
