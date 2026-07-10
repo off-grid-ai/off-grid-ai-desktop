@@ -1,27 +1,67 @@
-// Architecture-boundary gate (hygiene §A separation-of-concerns + §H open-core).
-// dependency-cruiser walks the IMPORT GRAPH and fails the build on a forbidden edge.
-// It is the mechanical enforcement for the two rules that were previously guarded
-// only by review: core-never-imports-pro, and the extracted pure-logic siblings
-// staying zero-IO. (Duplication / smells / coverage are SonarCloud's job — a
-// different axis; this tool sees edges, not code content.)
+// Architecture-boundary + hygiene gate (hygiene §A separation-of-concerns + §H
+// open-core). dependency-cruiser walks the IMPORT GRAPH and fails the build on a
+// forbidden edge. Runs FREE + local (no hosted service), so it enforces structure
+// on core here without exposing anything. (Duplication / smells / coverage are
+// SonarCloud's axis — content, not edges.)
 //
-// Run: `npm run depcruise`. All rules below are verified clean against the current
-// tree (534 modules, 0 violations) so this is a true blocking gate that passes today.
+// Deliberately AGGRESSIVE: broken imports, phantom/dev deps, circular deps, dead
+// modules, and the layer/open-core boundaries all gate. All error-level rules are
+// verified clean on the current tree (0 errors); no-orphans is warn (surfaces dead
+// code without blocking). Run: `npm run depcruise`.
 module.exports = {
   forbidden: [
+    // --- structural bug-catchers ------------------------------------------------
+    {
+      name: 'not-to-unresolvable',
+      comment: 'A broken/typo/moved import must fail the build, not surface at runtime.',
+      severity: 'error',
+      from: {},
+      to: { couldNotResolve: true },
+    },
     {
       name: 'no-circular',
-      comment: 'Circular imports make load order fragile and break tree-shaking. Restructure so the shared piece is its own module.',
+      comment: 'Circular imports make load order fragile and break tree-shaking. Extract the shared piece.',
       severity: 'error',
       from: {},
       to: { circular: true },
     },
     {
+      name: 'not-to-dev-dep',
+      comment: 'Shipping code must not import a devDependency — it would be missing in the packaged app.',
+      severity: 'error',
+      from: { path: '^src', pathNot: '\\.(test|spec)\\.(ts|tsx)$|__tests__|\\.config\\.' },
+      to: { dependencyTypes: ['npm-dev'], pathNot: 'node_modules/(vitest|@vitest|@testing-library)' },
+    },
+    {
+      name: 'no-non-package-json',
+      comment: 'A dependency not declared in package.json (a phantom dep) — install it or fix the import.',
+      severity: 'error',
+      from: { path: '^src' },
+      to: { dependencyTypes: ['npm-no-pkg', 'npm-unknown'] },
+    },
+    {
+      name: 'no-deprecated-core',
+      comment: 'Deprecated Node core module.',
+      severity: 'error',
+      from: {},
+      to: { dependencyTypes: ['core'], path: '^(punycode|domain|sys|_linklist|constants)$' },
+    },
+    {
+      name: 'no-orphans',
+      comment: 'Dead module — nothing imports it. Delete it or wire it up.',
+      severity: 'warn',
+      from: {
+        orphan: true,
+        pathNot: '\\.d\\.ts$|\\.(test|spec)\\.(ts|tsx)$|__tests__|(^|/)(tsconfig|vitest|eslint|playwright)\\.|\\.config\\.|bootstrap/proStub|main\\.tsx$|src/preload/',
+      },
+      to: {},
+    },
+    // --- the boundary rules (hygiene §A / §H) -----------------------------------
+    {
       name: 'open-core-boundary',
       comment:
-        'Open core (§H): core (public, AGPL) must NEVER import pro source. Only the loader seams ' +
-        '(loadProFeaturesMain/Renderer + main.tsx, which resolve the alias to the free-build stub) ' +
-        'may cross the pro boundary. A stray core->pro import ships paid source in the public repo.',
+        'Open core (§H): core (public, AGPL) must NEVER import pro source. Only the loader seams cross ' +
+        'the boundary. A stray core->pro import ships paid source in the public repo.',
       severity: 'error',
       from: { pathNot: '(loadProFeaturesMain|loadProFeaturesRenderer|main\\.tsx|bootstrap/proStub)' },
       to: { path: 'bootstrap/proStub\\.ts$|(^|/)pro/(main|renderer)/' },
@@ -29,27 +69,25 @@ module.exports = {
     {
       name: 'pure-stays-pure',
       comment:
-        'Isolate pure logic from I/O (§A). The extracted decision modules are unit-tested BECAUSE ' +
-        'they import no Electron/DB/network. An accidental IO import both breaks testability and ' +
-        'silently grows the coverage-excluded shell while coverage still looks green.',
+        'Isolate pure logic from I/O (§A). These extracted decision modules are unit-tested BECAUSE they ' +
+        'import no Electron/DB/network; an accidental IO import breaks testability AND silently grows the ' +
+        'coverage-excluded shell while coverage still looks green.',
       severity: 'error',
       from: {
         path: 'src/main/(search-ranking|ipc-query-logic|model-sizing|files-classify|tts-logic|vectors-predicates|skills-parse|tools-parsers|mime|models/gguf)\\.ts$',
       },
-      to: {
-        path: '(^|/)node_modules/electron|src/main/(database|vectors|llm|mcp|embeddings|search)\\.ts$',
-      },
+      to: { path: '(^|/)node_modules/electron|src/main/(database|vectors|llm|mcp|embeddings|search)\\.ts$' },
     },
     {
       name: 'renderer-not-to-main',
-      comment: 'The renderer talks to main ONLY through the preload IPC bridge, never by importing main modules directly.',
+      comment: 'The renderer talks to main ONLY through the preload IPC bridge, never by importing main modules.',
       severity: 'error',
       from: { path: '^src/renderer' },
       to: { path: '^src/main' },
     },
     {
       name: 'not-to-test',
-      comment: 'Production code must not import test files (a test in the prod graph ships, and drags its fixtures in).',
+      comment: 'Production code must not import test files (they would ship, dragging fixtures in).',
       severity: 'error',
       from: { pathNot: '\\.(test|spec)\\.(ts|tsx)$|__tests__' },
       to: { path: '\\.(test|spec)\\.(ts|tsx)$|__tests__/' },
@@ -60,5 +98,12 @@ module.exports = {
     tsConfig: { fileName: 'tsconfig.web.json' },
     exclude: { path: 'node_modules|e2e/' },
     tsPreCompilationDeps: true,
+    // Follow package "exports" subpaths (e.g. @modelcontextprotocol/sdk/client/*.js)
+    // so real imports resolve and not-to-unresolvable doesn't false-positive on them.
+    enhancedResolveOptions: {
+      exportsFields: ['exports'],
+      conditionNames: ['import', 'require', 'node', 'default', 'types'],
+      mainFields: ['module', 'main', 'types'],
+    },
   },
 };
