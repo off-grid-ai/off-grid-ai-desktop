@@ -96,7 +96,7 @@ export function DictationOverlay(): React.JSX.Element | null {
       const tick = (): void => {
         analyser.getByteTimeDomainData(buf);
         let sum = 0;
-        for (let i = 0; i < buf.length; i++) { const x = (buf[i] - 128) / 128; sum += x * x; }
+        for (let i = 0; i < buf.length; i++) { const x = (buf[i]! - 128) / 128; sum += x * x; }
         setLevel(Math.min(1, Math.sqrt(sum / buf.length) * 6));
         rafRef.current = requestAnimationFrame(tick);
       };

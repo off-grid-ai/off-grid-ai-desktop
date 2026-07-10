@@ -73,9 +73,9 @@ function CopyButton({ text }: { text: string }): React.ReactElement {
 }
 
 export function GatewayScreen(): React.ReactElement {
-  const [tab, setTab] = useState(SNIPPETS[0].id);
+  const [tab, setTab] = useState(SNIPPETS[0]!.id);
   const open = (p: string): void => { window.open(BASE + p, '_blank'); };
-  const active = SNIPPETS.find((s) => s.id === tab) ?? SNIPPETS[0];
+  const active = SNIPPETS.find((s) => s.id === tab) ?? SNIPPETS[0]!;
 
   return (
     <div className="relative h-full overflow-y-auto font-mono">

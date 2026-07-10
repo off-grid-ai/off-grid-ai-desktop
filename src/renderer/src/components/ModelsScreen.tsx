@@ -240,7 +240,7 @@ export function ModelsScreen() {
   );
 
   const displayedCatalog = filterAndSort(
-    list.map((m) => ({ ...m, org: m.org ?? '', params: m.params ?? parseParamCount(m.name) ?? undefined, credibility: determineCredibility((m.id || '').split('/')[0]) })),
+    list.map((m) => ({ ...m, org: m.org ?? '', params: m.params ?? parseParamCount(m.name) ?? undefined, credibility: determineCredibility((m.id || '').split('/')[0]!) })),
     filterState
   )
     .filter((m) => sizeBucket == null || totalBytes(m) <= sizeBucket * 1e9)

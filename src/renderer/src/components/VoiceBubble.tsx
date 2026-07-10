@@ -42,7 +42,7 @@ function waveformFromText(text: string, points: number): number[] {
   const out: number[] = [];
   for (let i = 0; i < points; i++) {
     const idx = Math.min(clean.length - 1, Math.floor((i / points) * clean.length));
-    const ch = clean[idx];
+    const ch = clean[idx]!;
     const code = clean.charCodeAt(idx);
     let base: number;
     if (ch === ' ') base = 0.12;

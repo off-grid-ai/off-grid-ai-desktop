@@ -14,7 +14,7 @@ export function NavThemeToggle({ expanded }: { expanded: boolean }): React.React
   const [mode, setMode] = useState<ThemeMode>(getThemeMode());
   const Icon = ICON[mode];
   const cycle = (): void => {
-    const next = ORDER[(ORDER.indexOf(mode) + 1) % ORDER.length];
+    const next = ORDER[(ORDER.indexOf(mode) + 1) % ORDER.length]!;
     setThemeMode(next);
     setMode(next);
   };
