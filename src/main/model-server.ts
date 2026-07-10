@@ -436,7 +436,7 @@ async function handleEmbeddings(req: http.IncomingMessage, res: http.ServerRespo
   const run = async (): Promise<unknown> => {
     const data: { object: string; index: number; embedding: number[] }[] = [];
     for (let i = 0; i < inputs.length; i++) {
-      const embedding = await embeddings.generateEmbedding(inputs[i]);
+      const embedding = await embeddings.generateEmbedding(inputs[i]!);
       data.push({ object: 'embedding', index: i, embedding });
     }
     return { object: 'list', data, model: 'all-MiniLM-L6-v2', usage: { prompt_tokens: 0, total_tokens: 0 } };
@@ -763,7 +763,7 @@ export function startModelServer(port = GATEWAY_PORT): void {
       return;
     }
 
-    const url = (req.url || '/').split('?')[0];
+    const url = (req.url || '/').split('?')[0]!; // split() always yields >= 1 element
     const method = req.method || 'GET';
 
     // Every request gets a stable id — returned as X-Request-Id and reused as the

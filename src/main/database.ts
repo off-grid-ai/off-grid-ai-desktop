@@ -59,9 +59,10 @@ function cosineSimilarity(v1Str: string, v2Str: string): number {
     let normB = 0;
 
     for (let i = 0; i < v1.length; i++) {
-        dotProduct += v1[i] * v2[i];
-        normA += v1[i] * v1[i];
-        normB += v2[i] * v2[i];
+        // i < v1.length === v2.length (checked above), so both reads are in-bounds.
+        dotProduct += v1[i]! * v2[i]!;
+        normA += v1[i]! * v1[i]!;
+        normB += v2[i]! * v2[i]!;
     }
 
     if (normA === 0 || normB === 0) return 0;
@@ -594,7 +595,7 @@ export function rebuildEntityEdgesForSession(sessionId: string): void {
 
     for (let i = 0; i < entityIds.length; i++) {
         for (let j = i + 1; j < entityIds.length; j++) {
-            const [sourceId, targetId] = normalizeEdgePair(entityIds[i], entityIds[j]);
+            const [sourceId, targetId] = normalizeEdgePair(entityIds[i]!, entityIds[j]!);
             upsertEdge.run(sourceId, targetId, sessionId);
         }
     }
