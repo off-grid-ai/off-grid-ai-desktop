@@ -469,8 +469,8 @@ export function Settings() {
                 Tells Off Grid who you are - so it can tell your messages and commitments apart from everyone else&apos;s. Used to attribute action items and to make sense of your email and calendar.
               </p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <input value={idName} onChange={(e) => setIdName(e.target.value)} onBlur={saveIdentity} placeholder="Your name" className="rounded-xl bg-neutral-950 border border-neutral-800 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-neutral-600" />
-                <input value={idEmail} onChange={(e) => setIdEmail(e.target.value)} onBlur={saveIdentity} placeholder="you@email.com" className="rounded-xl bg-neutral-950 border border-neutral-800 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-neutral-600" />
+                <input value={idName} onChange={(e) => setIdName(e.target.value)} onBlur={saveIdentity} onKeyDown={(e) => { if (e.key === 'Enter') saveIdentity(); }} placeholder="Your name" className="rounded-xl bg-neutral-950 border border-neutral-800 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-neutral-600" />
+                <input value={idEmail} onChange={(e) => setIdEmail(e.target.value)} onBlur={saveIdentity} onKeyDown={(e) => { if (e.key === 'Enter') saveIdentity(); }} placeholder="you@email.com" className="rounded-xl bg-neutral-950 border border-neutral-800 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-neutral-600" />
               </div>
             </SettingsCard>
           ) : (

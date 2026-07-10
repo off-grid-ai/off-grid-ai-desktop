@@ -241,7 +241,7 @@ try {
 
     // --- LLM inference settings ---
     getLlmSettings: () => ipcRenderer.invoke('llm:get-settings'),
-    setLlmSettings: (s: { temperature?: number; ctxSize?: number; topP?: number; topK?: number; minP?: number; repeatPenalty?: number; maxTokens?: number; systemPrompt?: string }) => ipcRenderer.invoke('llm:set-settings', s),
+    setLlmSettings: (s: { temperature?: number; ctxSize?: number; topP?: number; topK?: number; minP?: number; repeatPenalty?: number; maxTokens?: number; systemPrompt?: string; kvCacheType?: 'f16' | 'q8_0' | 'q4_0'; flashAttn?: boolean; gpuLayers?: number; threads?: number; batchSize?: number; performanceMode?: 'conservative' | 'balanced' | 'extreme' }) => ipcRenderer.invoke('llm:set-settings', s),
 
     // --- Canvas / artifacts sandbox runtime + library ---
     artifactRuntime: (kind: 'html' | 'svg' | 'mermaid' | 'react') => ipcRenderer.invoke('artifacts:runtime', kind),
