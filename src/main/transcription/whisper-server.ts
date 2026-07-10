@@ -23,6 +23,7 @@ import os from 'os';
 import { promisify } from 'util';
 import { execFile } from 'child_process';
 import { binRoots, isPackaged } from '../runtime-env';
+import { existing } from './bin-resolution';
 import { whisperModel, ffmpegBin } from './whisper-cli';
 import { decodeToWavArgs, DECODE_TIMEOUT_MS } from './ffmpeg-decode';
 import type { TranscriptionService, Transcript, TranscribeOptions } from './types';
@@ -135,11 +136,9 @@ export class WhisperServerService {
 
   /** Resolve the bundled whisper-server binary across dev / packaged layouts. */
   findBinary(): string | null {
-    for (const r of binRoots()) {
-      const p = path.join(r, 'whisper-server', 'whisper-server');
-      if (fs.existsSync(p)) return p;
-    }
-    return null;
+    // Shared first-existing-path resolver (bin-resolution), instead of a hand-rolled
+    // existsSync loop that duplicated it.
+    return existing(binRoots().map((r) => path.join(r, 'whisper-server', 'whisper-server')));
   }
 
   /** Ensure a server is up with EXACTLY this context; restart on a model/thread
