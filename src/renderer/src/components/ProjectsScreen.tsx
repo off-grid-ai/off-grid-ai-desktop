@@ -15,6 +15,7 @@ import {
   IconLayoutGrid,
 } from '@tabler/icons-react';
 import { ArtifactCanvas, type Artifact } from './ArtifactCanvas';
+import { artifactKindLabel } from '@renderer/lib/artifact-labels';
 import { timeAgo } from '@renderer/lib/time';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -27,7 +28,6 @@ function ProjectArtifacts({ projectId }: { projectId: string }): React.ReactElem
   useEffect(() => {
     (async () => { try { setItems((await api.listArtifacts?.({ projectId })) || []); } catch { /* ignore */ } })();
   }, [projectId]);
-  const KIND_LABEL: Record<string, string> = { html: 'HTML', svg: 'SVG', mermaid: 'Diagram', react: 'React', text: 'Document', image: 'Image' };
   return (
     <div className="w-full px-8 py-6">
       <div className="mb-5 text-[11px] uppercase tracking-widest text-neutral-600">
@@ -46,7 +46,7 @@ function ProjectArtifacts({ projectId }: { projectId: string }): React.ReactElem
               className="group flex flex-col gap-2 rounded-lg border border-neutral-800/80 bg-neutral-900/30 p-4 text-left transition-colors hover:border-green-500/50 hover:bg-neutral-900/60"
             >
               <div className="flex items-center justify-between">
-                <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-green-400">{KIND_LABEL[a.kind] ?? a.kind}</span>
+                <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-green-400">{artifactKindLabel(a.kind)}</span>
                 <span className="text-[10px] text-neutral-600">{a.created ? timeAgo(new Date(a.created).toISOString()) : ''}</span>
               </div>
               <span className="min-w-0 truncate text-sm text-neutral-200 group-hover:text-white">{a.title}</span>

@@ -16,6 +16,7 @@ import {
   IconStarFilled,
 } from '@tabler/icons-react';
 import { StoragePanel } from './setup/StoragePanel';
+import { modelKindLabel } from '@renderer/lib/model-kind-labels';
 import {
   filterAndSort,
   parseParamCount,
@@ -107,7 +108,6 @@ function featureRank(m: { id?: string; credibility?: string; tags?: string[] }, 
 }
 
 const MODE_LABELS: Record<string, string> = { txt2img: 'Text→Image', img2img: 'Image→Image' };
-const KIND_LABELS: Record<string, string> = { text: 'Text', vision: 'Vision', image: 'Image', voice: 'Voice', transcription: 'Transcription' };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const api = (window as any).api;
@@ -423,7 +423,7 @@ export function ModelsScreen() {
                     <span className="rounded-sm bg-red-500/15 px-1 text-[8px] text-red-400">{storageCounts.failed}✕</span>
                   )}
                 </>
-              : KIND_LABELS[k] ?? k}
+              : modelKindLabel(k)}
           </button>
         ))}
         {ramGb && activeKind !== 'storage' && (

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { ARTIFACT_KIND_LABELS, type ArtifactKind } from '@renderer/lib/artifact-labels';
 
 // Renders a model-generated artifact (HTML / SVG / Mermaid / React) in a SANDBOXED
 // iframe — sandbox="allow-scripts" only, no same-origin, no network — so generated
@@ -8,11 +9,9 @@ import ReactMarkdown from 'react-markdown';
 
 // 'text'/'image' are catalogued inputs (uploaded file / pasted block / image) —
 // shown as plain text or a thumbnail, never executed in the sandbox.
-export type Artifact = { kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'; code: string; title?: string };
+export type Artifact = { kind: ArtifactKind; code: string; title?: string };
 
-const KIND_LABEL: Record<Artifact['kind'], string> = {
-  html: 'HTML', svg: 'SVG', mermaid: 'Diagram', react: 'React', text: 'Document', image: 'Image',
-};
+const KIND_LABEL = ARTIFACT_KIND_LABELS;
 
 function escapeForHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

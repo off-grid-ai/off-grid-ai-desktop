@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { HardDrives, Trash, ArrowsClockwise, X, Broom } from '@phosphor-icons/react';
 import { cn } from '@renderer/lib/utils';
+import { modelKindLabel } from '@renderer/lib/model-kind-labels';
 
 interface ModelDiskEntry { id: string; name: string; kind?: string; bytes: number; active: boolean }
 interface StorageInfo {
@@ -25,11 +26,9 @@ function gb(bytes: number): string {
   return `${(bytes / 1e9).toFixed(1)} GB`;
 }
 
-// Group order + display labels for the by-type storage layout.
+// Group order for the by-type storage layout. Display labels come from the shared
+// model-kind-labels source (single source of truth with the Models screen).
 const KIND_ORDER = ['text', 'vision', 'image', 'voice', 'transcription', 'other'];
-const KIND_LABELS: Record<string, string> = {
-  text: 'Text', vision: 'Vision', image: 'Image', voice: 'Voice', transcription: 'Transcription', other: 'Other',
-};
 
 /** Disk usage for downloaded models, orphan cleanup, and a download manager
  *  (active / failed / interrupted downloads with retry + cancel). */
@@ -184,7 +183,7 @@ export function StoragePanel(): React.ReactElement {
               return (
                 <div key={kind}>
                   <div className="mb-1.5 flex items-center gap-2">
-                    <span className="text-[9px] font-medium uppercase tracking-widest text-neutral-500">{KIND_LABELS[kind] ?? kind}</span>
+                    <span className="text-[9px] font-medium uppercase tracking-widest text-neutral-500">{modelKindLabel(kind)}</span>
                     <span className="text-[9px] text-neutral-700">{group.length}</span>
                     {active && (
                       <span className="flex items-center gap-1 text-[9px] text-green-500">
