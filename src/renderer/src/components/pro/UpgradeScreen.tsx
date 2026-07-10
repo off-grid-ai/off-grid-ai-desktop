@@ -13,7 +13,7 @@ function LicenseActivation(): React.ReactElement {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const activate = async (): Promise<void> => {
-    const license = window.api?.license;
+    const license = window.api.license;
     if (!license || !key.trim()) return;
     setBusy(true);
     setMsg(null);
@@ -65,7 +65,7 @@ function LicenseActivation(): React.ReactElement {
           <span>{msg.text}</span>
           {msg.kind === 'ok' && (
             <button
-              onClick={() => window.api?.license?.relaunch()}
+              onClick={() => window.api.license?.relaunch()}
               className="shrink-0 rounded-md border border-green-500/40 px-2.5 py-1 font-medium text-green-300 hover:bg-green-500/10"
             >
               Restart now

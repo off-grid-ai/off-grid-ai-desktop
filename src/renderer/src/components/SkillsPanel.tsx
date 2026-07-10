@@ -47,12 +47,12 @@ export function SkillsPanel({ onClose, onChanged }: { onClose: () => void; onCha
   const [busy, setBusy] = useState(false);
 
   const refresh = (): void => {
-    window.api.listSkills?.().then((s) => setSkills(s || [])).catch(() => setSkills([]));
+    window.api.listSkills().then((s) => setSkills(s || [])).catch(() => setSkills([]));
   };
   useEffect(refresh, []);
 
   const openSkill = async (name: string): Promise<void> => {
-    const full = await window.api.getSkill?.(name);
+    const full = await window.api.getSkill(name);
     if (full) setDraft({ name: full.name, description: full.description, instructions: full.instructions, originalName: full.name, ...flattenTrigger(full) });
   };
 
@@ -60,7 +60,7 @@ export function SkillsPanel({ onClose, onChanged }: { onClose: () => void; onCha
     if (!draft || !draft.name.trim()) return;
     setBusy(true);
     try {
-      await window.api.saveSkill?.({
+      await window.api.saveSkill({
         name: draft.name,
         description: draft.description,
         instructions: draft.instructions,
@@ -81,7 +81,7 @@ export function SkillsPanel({ onClose, onChanged }: { onClose: () => void; onCha
     if (!draft?.originalName) { setDraft(null); return; }
     setBusy(true);
     try {
-      await window.api.deleteSkill?.(draft.originalName);
+      await window.api.deleteSkill(draft.originalName);
       refresh();
       onChanged?.();
       setDraft(null);

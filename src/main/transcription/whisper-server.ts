@@ -182,8 +182,8 @@ class WhisperServerService {
       for (const line of String(d).split(/\r?\n/)) if (line.trim()) this.stderrTail.push(line);
       if (this.stderrTail.length > 50) this.stderrTail = this.stderrTail.slice(-50);
     };
-    proc.stdout?.on('data', capture);
-    proc.stderr?.on('data', capture);
+    proc.stdout.on('data', capture);
+    proc.stderr.on('data', capture);
     proc.on('close', () => {
       if (this.server !== proc) return; // an already-replaced instance
       this.server = null;

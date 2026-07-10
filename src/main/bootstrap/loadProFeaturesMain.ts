@@ -39,7 +39,7 @@ export async function loadProFeaturesMain(): Promise<void> {
   } catch {
     return; // free / contributor build: package not present
   }
-  const activateMain = (pro as { activateMain?: (api: ProMainApi) => void | Promise<void> })?.activateMain;
+  const activateMain = (pro as { activateMain?: (api: ProMainApi) => void | Promise<void> }).activateMain;
   if (typeof activateMain !== 'function') return; // stub resolved to null
   try {
     await activateMain({ getDB, runMigration, llm, registerHook, registerToolExtension });

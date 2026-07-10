@@ -64,7 +64,7 @@ export async function processUpload(name: string, bytes: ArrayBuffer | Uint8Arra
       // so a parse failure must NOT make the file unattachable — fall back to ''.
       let text = '';
       try { if (ex.extractPdf) text = await ex.extractPdf(tmp, 200_000); }
-      catch (e) { console.warn('[files] PDF text extraction failed; attaching without text:', (e as Error)?.message); }
+      catch (e) { console.warn('[files] PDF text extraction failed; attaching without text:', (e as Error).message); }
       return { name, kind: 'pdf', text, path: dest };
     }
     if (ext === 'docx') return { name, kind: 'docx', text: ex.extractDocx ? await ex.extractDocx(tmp, 200_000) : '' };

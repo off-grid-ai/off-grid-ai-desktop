@@ -69,7 +69,7 @@ let serveIdleTimer: ReturnType<typeof setTimeout> | null = null;
 function armIdleEvict(): void {
   if (serveIdleTimer) clearTimeout(serveIdleTimer);
   serveIdleTimer = setTimeout(() => stopServe(), SERVE_IDLE_MS);
-  serveIdleTimer.unref?.();
+  serveIdleTimer.unref();
 }
 function clearIdleEvict(): void {
   if (serveIdleTimer) { clearTimeout(serveIdleTimer); serveIdleTimer = null; }

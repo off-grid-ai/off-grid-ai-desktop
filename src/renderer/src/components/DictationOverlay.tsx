@@ -175,7 +175,7 @@ export function DictationOverlay(): React.JSX.Element | null {
       }),
     ];
     return () => {
-      offs.forEach((off) => off?.());
+      offs.forEach((off) => off());
       stopCapture();
       if (timerRef.current) clearInterval(timerRef.current);
       if (errorHideRef.current) clearTimeout(errorHideRef.current);

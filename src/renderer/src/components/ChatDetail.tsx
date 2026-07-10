@@ -264,7 +264,7 @@ export function ChatDetail({ sessionId, onBack, onSelectEntity, onSelectMemory }
                 setMemories(memoriesData || []);
                 setEntities(entitiesData || []);
 
-                const thisSession = sessionsData?.find((s: any) => s.session_id === sessionId);
+                const thisSession = sessionsData.find((s: any) => s.session_id === sessionId);
                 setSummary(thisSession?.summary || null);
             } catch (e) {
                 console.error("Failed to load session data", e);

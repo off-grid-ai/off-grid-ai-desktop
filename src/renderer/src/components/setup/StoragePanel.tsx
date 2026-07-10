@@ -49,7 +49,7 @@ export function StoragePanel(): React.ReactElement {
   useEffect(() => {
     refresh();
     const t = setInterval(refresh, 3000);
-    const off = (api as unknown as { onModelProgress?: (cb: () => void) => () => void })?.onModelProgress?.(refresh);
+    const off = (api as unknown as { onModelProgress?: (cb: () => void) => () => void }).onModelProgress?.(refresh);
     return () => { clearInterval(t); off?.(); };
   }, [refresh, api]);
 

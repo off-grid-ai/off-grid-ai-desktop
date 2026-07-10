@@ -165,7 +165,7 @@ export function ModelsScreen() {
   };
 
   useEffect(() => {
-    api.systemHealth?.().then((h: { ramGb?: number }) => setRamGb(h?.ramGb ?? null)).catch(() => {});
+    api.systemHealth?.().then((h: { ramGb?: number }) => setRamGb(h.ramGb ?? null)).catch(() => {});
     api.getModelCatalog?.().then((c: { kinds: string[]; models: ModelEntry[] }) => {
       setKinds(c.kinds); setModels(c.models);
       if (c.kinds[0]) setActiveKind(c.kinds[0]);

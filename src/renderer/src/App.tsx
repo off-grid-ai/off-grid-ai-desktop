@@ -332,7 +332,7 @@ function AppContent() {
     const unsubscribers: (() => void)[] = [];
 
     // Proactive approval queued — needs the user's decision
-    if (window.api?.onNewApproval) {
+    if (window.api.onNewApproval) {
       const unsubscribe = window.api.onNewApproval((data) => {
         addNotification({
           type: 'approval',
@@ -345,7 +345,7 @@ function AppContent() {
     }
 
     // New to-do extracted from your activity
-    if (window.api?.onNewAction) {
+    if (window.api.onNewAction) {
       const unsubscribe = window.api.onNewAction((data) => {
         const where = [data.entityName, data.sourceApp].filter(Boolean).join(' · ');
         addNotification({
@@ -362,8 +362,8 @@ function AppContent() {
     // Seed from main too: on macOS the app can keep running with no windows, so a
     // download that finished before this window existed would otherwise be missed
     // (the event only reaches windows open at download time).
-    if (window.api?.onUpdateDownloaded) {
-      window.api.getStagedUpdateVersion?.().then((v) => { if (v) setUpdateReady(v); }).catch(() => {});
+    if (window.api.onUpdateDownloaded) {
+      window.api.getStagedUpdateVersion().then((v) => { if (v) setUpdateReady(v); }).catch(() => {});
       const unsubscribe = window.api.onUpdateDownloaded((data) => {
         setUpdateReady(data.version);
       });
@@ -590,7 +590,7 @@ function AppContent() {
           <span>Update {updateReady} is ready</span>
           <button
             onClick={async () => {
-              if (!window.api?.installUpdate) return;
+              if (!window.api.installUpdate) return;
               setInstalling(true);
               try {
                 await window.api.installUpdate();

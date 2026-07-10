@@ -188,7 +188,7 @@ export async function downloadModel(modelId: string, onProgress?: ProgressCb): P
     send({ percent: 100, status: 'completed' });
     return { success: true };
   } catch (err) {
-    if (controller.signal.aborted || (err as Error)?.name === 'AbortError') {
+    if (controller.signal.aborted || (err as Error).name === 'AbortError') {
       send({ status: 'cancelled' });
       return { success: false, error: 'cancelled' };
     }

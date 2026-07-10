@@ -50,7 +50,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     window.api.getLlmSettings?.().then((v: LlmSettings) => setS(v || {})).catch(() => {});
     window.api.ttsVoices?.().then((v: string[]) => setVoices(v || [])).catch(() => {});
     window.api.listTools?.().then((t: { name: string; description: string }[]) => setTools(t || [])).catch(() => {});
-    window.api.getSettings?.().then((all: Record<string, unknown>) => { if (all?.ttsVoice) setVoice(String(all.ttsVoice)); }).catch(() => {});
+    window.api.getSettings().then((all: Record<string, unknown>) => { if (all.ttsVoice) setVoice(String(all.ttsVoice)); }).catch(() => {});
     refreshConnectors();
   }, []);
 
@@ -71,7 +71,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   const pickVoice = (v: string): void => {
     setVoice(v);
-    window.api.saveSetting?.('ttsVoice', v);
+    window.api.saveSetting('ttsVoice', v);
   };
 
   const testVoice = async (): Promise<void> => {

@@ -515,7 +515,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
           let referenceBlock = '';
           const urls = intentUrls;
           if (urls.length) {
-              if (streamId) event.sender?.send('rag:stream', { streamId, type: 'step', step: { kind: 'reading', counts: { urls: urls.length } } });
+              if (streamId) event.sender.send('rag:stream', { streamId, type: 'step', step: { kind: 'reading', counts: { urls: urls.length } } });
               const { readUrlText } = await import('./tools');
               const parts: string[] = [];
               for (const u of urls) {
@@ -568,7 +568,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
           const { formatForPrompt } = await import('@offgrid/rag');
           const { llm } = await import('./llm');
           const project = listProjects().find((p) => p.id === projectId);
-          const sys = project?.systemPrompt?.trim() || 'You are a helpful assistant for this project.';
+          const sys = project?.systemPrompt.trim() || 'You are a helpful assistant for this project.';
           const search = await ragService.searchProject(projectId, query, { topK: 6, contextLength: 4096 });
           const ctx = formatForPrompt(search);
           // Cross-chat memory: recent messages from other chats in this project.
@@ -585,7 +585,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
               .filter(Boolean)
               .join('\n\n');
           void llm; // retained for non-stream fallback inside streamAnswer
-          if (streamId) event.sender?.send('rag:stream', { streamId, type: 'step', step: { kind: 'project', counts: { sources: search.chunks.length, projectChats: siblings.length } } });
+          if (streamId) event.sender.send('rag:stream', { streamId, type: 'step', step: { kind: 'project', counts: { sources: search.chunks.length, projectChats: siblings.length } } });
           const answer = await streamAnswer(event, streamId, prompt, thinking, imgs);
           return {
               answer,
@@ -596,7 +596,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
           };
       }
 
-      if (streamId) event.sender?.send('rag:stream', { streamId, type: 'step', step: { kind: 'searching' } });
+      if (streamId) event.sender.send('rag:stream', { streamId, type: 'step', step: { kind: 'searching' } });
       const db = getDB();
       const tokens = tokenizeQuery(query);
       const ftsQuery = tokens.length > 0 ? tokens.join(' OR ') : query;
@@ -779,7 +779,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
     });
 
       try {
-          if (streamId) event.sender?.send('rag:stream', { streamId, type: 'step', step: { kind: 'memory', counts: { memories: memories.length, messages: messages.length, summaries: summaries.length, entities: entities.length, facts: entityFacts.length, unified: unifiedHits.length } } });
+          if (streamId) event.sender.send('rag:stream', { streamId, type: 'step', step: { kind: 'memory', counts: { memories: memories.length, messages: messages.length, summaries: summaries.length, entities: entities.length, facts: entityFacts.length, unified: unifiedHits.length } } });
           const answer = await streamAnswer(event, streamId, prompt, thinking, imgs);
           return {
               answer,
@@ -1340,7 +1340,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       });
       // Write a scope sidecar so the gallery can filter images by chat/project.
       try {
-          if (result?.path && (params.conversationId || params.projectId)) {
+          if (result.path && (params.conversationId || params.projectId)) {
               const fsp = await import('fs');
               fsp.writeFileSync(`${result.path}.json`, JSON.stringify({ conversationId: params.conversationId, projectId: params.projectId ?? null }));
           }
@@ -1430,7 +1430,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
           return await modalityQueue.run(CHAT_JOB, () =>
               toolChat(query, history || [], {
                   ...opts,
-                  thinking: opts?.thinking,
+                  thinking: opts.thinking,
                   signal: controller.signal,
                   onDelta: (text, kind) => { try { sender.send('rag:stream', { streamId, type: kind, text }); } catch { /* window gone */ } },
                   onStep: (call) => { try { sender.send('rag:stream', { streamId, type: 'step', step: { kind: 'running_tool', name: call.name } }); } catch { /* window gone */ } },

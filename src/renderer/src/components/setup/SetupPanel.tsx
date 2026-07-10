@@ -69,7 +69,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
   // Progress stream for the whole lifetime.
   useEffect(() => {
     const off = (api as unknown as { onSetupProgress?: (cb: (p: SetupProgress) => void) => () => void })
-      ?.onSetupProgress?.((p) => {
+      .onSetupProgress?.((p) => {
         setProgress(p);
         if (p.phase === 'done' || p.phase === 'error') setRunning(false);
         if (p.phase === 'done' && !firedConfigured.current) { firedConfigured.current = true; onConfigured?.(); }
@@ -89,7 +89,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
     setRunning(true);
     setProgress({ phase: 'select', message: 'Picking a model that fits your Mac…' });
     try { await api?.autoConfigure?.(); }
-    catch (e) { setProgress({ phase: 'error', message: (e as Error)?.message ?? 'Setup failed.' }); setRunning(false); }
+    catch (e) { setProgress({ phase: 'error', message: (e as Error).message ?? 'Setup failed.' }); setRunning(false); }
   };
 
   const cancel = (): void => {

@@ -79,7 +79,7 @@ function ProactiveSection(): React.ReactElement {
   useEffect(() => {
     api.getSettings?.().then((s: Record<string, unknown>) => {
       // default ON unless explicitly disabled
-      setEnabled(s?.['proactive:enabled'] !== false);
+      setEnabled(s['proactive:enabled'] !== false);
     });
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
@@ -185,9 +185,9 @@ function SoftwareUpdateSection(): React.ReactElement {
   const [status, setStatus] = useState('');
   useEffect(() => {
     api.updateGetPrefs?.().then((p: { currentVersion?: string; auto?: boolean; channel?: string }) => {
-      setVersion(p?.currentVersion ?? '');
-      setAuto(p?.auto !== false);
-      setBeta(p?.channel === 'beta');
+      setVersion(p.currentVersion ?? '');
+      setAuto(p.auto !== false);
+      setBeta(p.channel === 'beta');
     }).catch(() => {});
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
@@ -272,7 +272,7 @@ function SecretaryPrefs(): React.ReactElement {
   const api = (window as any).api;
   const [doc, setDoc] = useState('');
   const load = (): void => {
-    api.secretaryPrefsGet?.().then((p: { doc?: string }) => setDoc(p?.doc ?? ''));
+    api.secretaryPrefsGet?.().then((p: { doc?: string }) => setDoc(p.doc ?? ''));
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 

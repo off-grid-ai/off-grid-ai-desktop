@@ -28,7 +28,7 @@ export function ReprocessingProvider({ children }: { children: ReactNode }) {
 
   // Listen for progress events from the main process
   useEffect(() => {
-    if (!window.api?.onReprocessProgress) return;
+    if (!window.api.onReprocessProgress) return;
     const unsub = window.api.onReprocessProgress((data) => {
       setProgress(data);
     });

@@ -26,7 +26,7 @@ export const ragService = new RagService({
 
 function projectSystemPrompt(projectId: string): string {
   const p = listProjects().find((x) => x.id === projectId);
-  return p?.systemPrompt?.trim() || 'You are a helpful assistant for this project.';
+  return p?.systemPrompt.trim() || 'You are a helpful assistant for this project.';
 }
 
 /**

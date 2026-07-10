@@ -174,7 +174,7 @@ export async function estimateModelFit(modelId: string): Promise<FitEstimate> {
     const { CATALOG, resolveHuggingFaceModel } = await import('@offgrid/models');
     const entry = CATALOG.find((m) => m.id === modelId) ?? (await resolveHuggingFaceModel(modelId));
     const { fitLevel } = await import('./model-sizing');
-    const weightsGb = (entry?.files?.reduce((s: number, f: { sizeBytes?: number }) => s + (f.sizeBytes ?? 0), 0) ?? 0) / 1e9;
+    const weightsGb = (entry?.files.reduce((s: number, f: { sizeBytes?: number }) => s + (f.sizeBytes ?? 0), 0) ?? 0) / 1e9;
     if (!weightsGb) return { level: 'ok', ramGb: gb, weightsGb: 0, message: '' };
     const level: FitEstimate['level'] = fitLevel(weightsGb, gb);
     return { level, ramGb: gb, weightsGb, message: fitMessage(level, weightsGb, gb) };
@@ -192,7 +192,7 @@ export async function getRecommendation(mode?: RecMode): Promise<Recommendation 
   if (!pick) return null;
   const { CATALOG } = await import('@offgrid/models');
   const entry = CATALOG.find((m) => m.id === pick.id);
-  const sizeGb = (entry?.files?.reduce((s: number, f: { sizeBytes?: number }) => s + (f.sizeBytes ?? 0), 0) ?? 0) / 1e9;
+  const sizeGb = (entry?.files.reduce((s: number, f: { sizeBytes?: number }) => s + (f.sizeBytes ?? 0), 0) ?? 0) / 1e9;
   let installed = false;
   try { installed = (await listInstalled()).includes(pick.id); } catch { /* ignore */ }
   const effMode: RecMode = mode ?? settingsMode();
@@ -222,7 +222,7 @@ export async function getSetupPlan(mode?: RecMode): Promise<SetupPlan> {
   try { installed = await listInstalled(); } catch { /* ignore */ }
   const sizeOf = (id: string): number => {
     const e = CATALOG.find((m) => m.id === id);
-    return (e?.files?.reduce((s: number, f: { sizeBytes?: number }) => s + (f.sizeBytes ?? 0), 0) ?? 0) / 1e9;
+    return (e?.files.reduce((s: number, f: { sizeBytes?: number }) => s + (f.sizeBytes ?? 0), 0) ?? 0) / 1e9;
   };
   const nameOf = (id: string, fallback: string): string => CATALOG.find((m) => m.id === id)?.name ?? fallback;
 

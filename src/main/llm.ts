@@ -440,7 +440,7 @@ export class LLMService {
     this.server = proc;
     this.stderrTail = [];
 
-    proc.stderr?.on("data", (data) => {
+    proc.stderr.on("data", (data) => {
       const text = String(data);
       console.log(`[llama-server] ${text}`);
       // Keep a rolling tail so we can classify a load failure after it exits.

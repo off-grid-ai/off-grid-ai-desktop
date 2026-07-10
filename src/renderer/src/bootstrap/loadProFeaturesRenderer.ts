@@ -28,7 +28,7 @@ export async function loadProFeaturesRenderer(): Promise<void> {
   } catch {
     return; // free / contributor build
   }
-  const activateRenderer = (pro as { activateRenderer?: (api: ProRendererApi) => void })?.activateRenderer;
+  const activateRenderer = (pro as { activateRenderer?: (api: ProRendererApi) => void }).activateRenderer;
   if (typeof activateRenderer !== 'function') return; // stub resolved to null
   try {
     activateRenderer({ registerScreen, registerNav, registerSlot, registerSettingsSection, registerHook, registerProView });

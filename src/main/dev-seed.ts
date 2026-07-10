@@ -56,7 +56,7 @@ function extractCode(text: string): string | null {
 async function gen(prompt: string): Promise<string | null> {
   try {
     const out = await llm.chat(prompt, [], 120_000, 1500, { disableThinking: true });
-    return out?.trim() || null;
+    return out.trim() || null;
   } catch (e) {
     console.error('[seed] llm.chat failed', e);
     return null;

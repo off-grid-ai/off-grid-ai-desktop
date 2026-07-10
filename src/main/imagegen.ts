@@ -394,7 +394,7 @@ async function runImageGen(
   onProgress?: (p: ImageGenProgress & { preview?: string }) => void,
 ): Promise<ImageGenOutput> {
   if (running) throw new Error('An image is already generating — please wait for it to finish.');
-  if (!params.prompt?.trim()) throw new Error('A prompt is required.');
+  if (!params.prompt.trim()) throw new Error('A prompt is required.');
 
   // --- MLX / mflux runtime branch (FLUX / Z-Image with native LoRA) ----------
   // Self-contained: reuses the single-flight guard; the LLM is already evicted by the

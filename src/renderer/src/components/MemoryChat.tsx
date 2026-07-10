@@ -596,7 +596,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     setProjCreating(false);
     setProjNewName('');
     if (activeConversationId) {
-      try { await window.api.setRagConversationProject?.(activeConversationId, projectId); } catch (e) { console.error(e); }
+      try { await window.api.setRagConversationProject(activeConversationId, projectId); } catch (e) { console.error(e); }
       await loadConversations();
     }
   }, [activeConversationId]);
@@ -682,8 +682,8 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           const convId = openTarget.conversationId;
           setActiveConversationId(convId);
           setOpenTabs(t => (t.includes(convId) ? t : [...t, convId]));
-          const conv = await window.api.getRagConversation?.(convId);
-          setActiveProjectId((conv as { project_id?: string | null })?.project_id ?? null);
+          const conv = await window.api.getRagConversation(convId);
+          setActiveProjectId((conv as { project_id?: string | null }).project_id ?? null);
           setConvMessages(convId, mapRagMessages(await window.api.getRagMessages(convId)));
         } else if (openTarget.projectId) {
           setActiveConversationId(null);
@@ -754,7 +754,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       const sm = /^\/([A-Za-z0-9_-]+)\s*([\s\S]*)$/.exec(typed);
       if (sm && skills.some(s => s.name.toLowerCase() === sm[1]!.toLowerCase())) {
         try {
-          const sk = await window.api.getSkill?.(sm[1]!);
+          const sk = await window.api.getSkill(sm[1]!);
           if (sk) {
             const rest = sm[2]!.trim();
             modelQuery = `${attBlock ? attBlock + '\n\n' : ''}# Skill: ${sk.name}\n${sk.instructions}\n\n${rest}`.trim();
@@ -809,9 +809,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     if (!regen) {
       for (const a of atts) {
         if (a.kind === 'image' && a.path) {
-          try { void window.api.saveArtifact?.({ kind: 'image', code: a.path, title: a.name, conversationId: convId, projectId: activeProjectId }); } catch { /* ignore */ }
+          try { void window.api.saveArtifact({ kind: 'image', code: a.path, title: a.name, conversationId: convId, projectId: activeProjectId }); } catch { /* ignore */ }
         } else if (a.text) {
-          try { void window.api.saveArtifact?.({ kind: 'text', code: a.text, title: a.name, conversationId: convId, projectId: activeProjectId }); } catch { /* ignore */ }
+          try { void window.api.saveArtifact({ kind: 'text', code: a.text, title: a.name, conversationId: convId, projectId: activeProjectId }); } catch { /* ignore */ }
         }
       }
     }
@@ -859,7 +859,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           await window.api.addRagMessage(convId, 'assistant', `Generated for: ${trimmed}`, { image: img.path });
         } catch (_) { /* ignore */ }
       } catch (e) {
-        const errorContent = (e as Error)?.message || 'Image generation failed.';
+        const errorContent = (e as Error).message || 'Image generation failed.';
         // User-cancelled: just drop the loading state, no error bubble.
         if (!/cancel/i.test(errorContent)) {
           console.error('Image generation failed', e);
@@ -985,7 +985,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: `Generated: ${imgPrompt.slice(0, 80)}`, image: img.dataUrl, imagePath: img.path } : m)));
           try { await window.api.addRagMessage(convId, 'assistant', `Generated: ${imgPrompt.slice(0, 80)}`, { image: img.path }); } catch (_) { /* ignore */ }
         } catch (err) {
-          const msg = (err as Error)?.message || 'Image generation failed.';
+          const msg = (err as Error).message || 'Image generation failed.';
           if (!/cancel/i.test(msg)) setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: msg, streaming: false } : m)));
         }
       } else {
@@ -1008,7 +1008,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           // Inline-first: don't force the canvas open — the user opens the live
           // preview via the artifact card when they want it. Still save it, scoped
           // to this chat + project so the gallery can filter.
-          try { void window.api.saveArtifact?.({ kind: art.kind, code: art.code, conversationId: convId, projectId: activeProjectId }); } catch { /* ignore */ }
+          try { void window.api.saveArtifact({ kind: art.kind, code: art.code, conversationId: convId, projectId: activeProjectId }); } catch { /* ignore */ }
         }
         if (voiceMode) setAutoPlayId(streamId);
         try {
@@ -1067,7 +1067,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     if (!convId) return;
     cancelledRef.current.add(convId);
     const streamingId = (messagesByConv[convId] ?? []).find(m => m.streaming)?.id;
-    if (streamingId) window.api.cancelRag?.(streamingId);
+    if (streamingId) window.api.cancelRag(streamingId);
     window.api.cancelImageGen?.();
     if (queuedRef.current[convId]?.length) {
       queuedRef.current = clearQueue(queuedRef.current, convId);
@@ -1180,7 +1180,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       : galleryScope === 'project' ? { projectId: activeProjectId }
       : undefined;
     try { setGallery((await window.api.listGeneratedImages?.(scope)) || []); } catch (e) { console.error(e); }
-    try { setArtifacts((await window.api.listArtifacts?.(scope)) || []); } catch (e) { console.error(e); }
+    try { setArtifacts((await window.api.listArtifacts(scope)) || []); } catch (e) { console.error(e); }
   }, [galleryScope, activeConversationId, activeProjectId]);
 
   // Reload the gallery's artifacts whenever the scope changes while it's open.
@@ -1188,7 +1188,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
 
   const deleteArtifact = useCallback(async (id: string) => {
     try {
-      await window.api.deleteArtifact?.(id);
+      await window.api.deleteArtifact(id);
       setArtifacts(prev => prev.filter(a => a.id !== id));
     } catch (e) { console.error(e); }
   }, []);
@@ -1234,7 +1234,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   }, [input]);
 
   useEffect(() => {
-    window.api.listSkills?.().then(s => setSkills(s || [])).catch(() => {});
+    window.api.listSkills().then(s => setSkills(s || [])).catch(() => {});
   }, []);
 
   // Live streaming: route token/reasoning events to the in-flight assistant
@@ -1242,7 +1242,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   // Use streamConvRef to find the right conversation — setMessages is stale in a
   // [] effect because it captures activeConversationId at mount time.
   useEffect(() => {
-    const off = window.api.onRagStream?.((data) => {
+    const off = window.api.onRagStream((data) => {
       const cid = streamConvRef.current.get(data.streamId);
       if (!cid) return;
       // Mirror reasoning into a ref as it streams, so persistence can read it
@@ -1259,7 +1259,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         return m;
       }));
     });
-    return () => off?.();
+    return () => off();
   }, [setConvMessages]);
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -1293,7 +1293,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         // place — no new user bubble. Also prune the persisted rows so reopening
         // the chat doesn't show old answers stacked.
         setMessages(prev => prev.slice(0, i + 1));
-        if (activeConversationId) void window.api.truncateRagMessages?.(activeConversationId, i + 1);
+        if (activeConversationId) void window.api.truncateRagMessages(activeConversationId, i + 1);
         void sendMessage(content, { regen: true });
         return;
       }
@@ -1311,7 +1311,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     // Persist the edit: drop the old user row + everything after, re-add the
     // edited message, then regenerate the answer onto it.
     const cid = activeConversationId;
-    if (cid) void window.api.truncateRagMessages?.(cid, idx).then(() => window.api.addRagMessage(cid, 'user', text));
+    if (cid) void window.api.truncateRagMessages(cid, idx).then(() => window.api.addRagMessage(cid, 'user', text));
     void sendMessage(text, { regen: true });
   }, [editText, messages, activeConversationId]);
 
@@ -1332,12 +1332,12 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       setAttachments(prev => [...prev, { id, name: file.name, kind: isImg ? 'image' : 'text', text: '', preview, status: 'loading' }]);
       try {
         const buf = await file.arrayBuffer();
-        const res = await window.api.processFile?.(buf, file.name);
+        const res = await window.api.processFile(buf, file.name);
         // Images are "ready" if we have the file path (even with no caption), so the
         // actual image still gets sent to the vision model.
         const ok = !!res && (!!res.text || (res.kind === 'image' && !!res.path));
         setAttachments(prev => prev.map(a => a.id === id
-          ? { ...a, kind: (res?.kind as Attachment['kind']) || (isImg ? 'image' : 'text'), text: res?.text || '', path: res?.path, preview, status: ok ? 'ready' : 'error' }
+          ? { ...a, kind: (res.kind as Attachment['kind']) || (isImg ? 'image' : 'text'), text: res.text || '', path: res.path, preview, status: ok ? 'ready' : 'error' }
           : a));
       } catch (e) {
         console.error('process file failed', e);
@@ -2246,7 +2246,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
               <div
                 onDragOver={(e) => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
                 onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
-                onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) void addFiles(e.dataTransfer.files); }}
+                onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files); }}
                 className={`relative rounded-xl border bg-neutral-950 shadow-sm transition-colors ${dragOver ? 'border-green-500' : 'border-neutral-800 focus-within:border-neutral-600'}`}
               >
                 {dragOver ? (
@@ -2586,7 +2586,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       {canvasArtifact && <ArtifactCanvas artifact={canvasArtifact} onClose={() => setCanvasArtifact(null)} width={canvasWidth} onResize={setCanvasWidth} />}
 
       {/* Skills — view / create / edit reusable instruction packs */}
-      {skillsOpen && <SkillsPanel onClose={() => setSkillsOpen(false)} onChanged={() => window.api.listSkills?.().then(s => setSkills(s || [])).catch(() => {})} />}
+      {skillsOpen && <SkillsPanel onClose={() => setSkillsOpen(false)} onChanged={() => window.api.listSkills().then(s => setSkills(s || [])).catch(() => {})} />}
 
       {/* Settings — model params, voice, tools, connectors */}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}

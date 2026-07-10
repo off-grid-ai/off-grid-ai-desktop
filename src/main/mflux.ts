@@ -120,8 +120,8 @@ export function downloadMfluxModel(modelId: string, onProgress?: (pct: number) =
         if (Number.isFinite(pct)) onProgress(pct);
       }
     };
-    child.stdout?.on('data', capture);
-    child.stderr?.on('data', capture);
+    child.stdout.on('data', capture);
+    child.stderr.on('data', capture);
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0 && isMfluxModelCached(modelId)) { onProgress?.(100); resolve(); }

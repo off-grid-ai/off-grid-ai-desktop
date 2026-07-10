@@ -8,7 +8,7 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 const KEY = 'og-theme';
 
 function systemPrefersDark(): boolean {
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ?? true;
 }
 
 export function getThemeMode(): ThemeMode {
@@ -39,7 +39,7 @@ export function cycleThemeMode(): ThemeMode {
 }
 
 // Re-apply when the OS scheme changes and we are following it.
-window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', () => {
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if (getThemeMode() === 'system') applyTheme();
 });
 

@@ -124,7 +124,7 @@ export function installedIds(opts: {
 /** The primary filename for a catalog entry: the file tagged role 'primary', else
  *  the first file. undefined when the entry has no files. */
 export function primaryFileName(entry: Pick<CatalogEntry, 'files'>): string | undefined {
-  return (entry.files?.find((f) => f.role === 'primary') ?? entry.files?.[0])?.name;
+  return (entry.files.find((f) => f.role === 'primary') ?? entry.files[0])?.name;
 }
 
 /** Build the per-installed-model disk entry (id, name, kind, bytes, active) for one
@@ -191,7 +191,7 @@ export function protectedNames(opts: {
   activeMmproj?: string | null;
 }): Set<string> {
   const known = new Set<string>();
-  opts.catalog.forEach((m) => m.files?.forEach((f) => known.add(f.name)));
+  opts.catalog.forEach((m) => m.files.forEach((f) => known.add(f.name)));
   for (const n of opts.localNames) known.add(n);
   for (const n of opts.downloadedNames) known.add(n);
   if (opts.activePrimary) known.add(opts.activePrimary);
