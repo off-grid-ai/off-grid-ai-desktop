@@ -46,7 +46,9 @@ export default defineConfig({
       // desktop covers rendered components via the Playwright e2e tour, not unit tests.
       all: true,
       include: ['src/**/*.ts', 'pro/**/*.ts'],
-      reporter: ['text-summary', 'json-summary', 'json'],
+      // lcov is for SonarCloud's coverage gate (sonar.javascript.lcov.reportPaths);
+      // text-summary is the console line, json-summary powers the README badges.
+      reporter: ['text-summary', 'json-summary', 'json', 'lcov'],
       // Excludes: (a) vendored/built code (not ours) and (b) native/DB/spawn/IPC-wiring
       // shells the default vitest runner CANNOT cover in-process - each covered by a real
       // alternative suite (test:db / smoke / e2e), not left untested. See
