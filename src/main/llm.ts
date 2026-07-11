@@ -355,33 +355,23 @@ export class LLMService {
     // newest model archs (gemma4/qwen35) AND runs on macOS 13+. The old dual-
     // engine setup shipped a second, older binary as a "fallback" that silently
     // couldn't load those models — removed.
+    // Engines to try, IN ORDER. On Windows we ship a Vulkan (GPU) build in
+    // bin/llama and a CPU-only fallback in bin/llama-cpu: if the Vulkan server
+    // can't start (e.g. no Vulkan loader on the box) we fall through to CPU. On
+    // macOS/Linux only bin/llama exists, so this is a single-entry list and the
+    // behaviour is unchanged.
     const roots = binRoots();
-    const candidates = roots.flatMap((r) => [
+    const serverPaths = roots.flatMap((r) => [
         path.join(r, "llama", exe("llama-server")),
+        path.join(r, "llama-cpu", exe("llama-server")),
         path.join(r, exe("llama-server")),
-    ]);
-    const serverPath = candidates.find((p) => fs.existsSync(p)) ?? "";
-    if (!serverPath) {
-        console.error(`[LLMService] llama-server binary not found. Looked in:\n${candidates.join("\n")}`);
+    ]).filter((p) => fs.existsSync(p));
+    if (!serverPaths.length) {
+        console.error(`[LLMService] llama-server binary not found under: ${roots.join(", ")}`);
         return;
     }
 
-    console.log(`[LLMService] Starting llama-server from ${serverPath}`);
     console.log(`[LLMService] Model: ${this.modelPath}`);
-
-    // Strip macOS quarantine attributes on production builds (downloaded DMGs get quarantined)
-    if (isPackaged() && process.platform === 'darwin') {
-        try {
-            const binDir = path.dirname(serverPath);
-            execSync(`xattr -cr "${binDir}"`, { stdio: 'ignore' });
-            execSync(`chmod +x "${serverPath}"`, { stdio: 'ignore' });
-            console.log('[LLMService] Cleared quarantine attributes from bin directory');
-        } catch (e) {
-            console.warn('[LLMService] Could not clear quarantine attributes:', e);
-        }
-    }
-
-    const binDir = path.dirname(serverPath);
 
     const args = ["-m", this.modelPath];
     if (this.mmProjPath) args.push("--mmproj", this.mmProjPath);
@@ -416,20 +406,60 @@ export class LLMService {
       await new Promise((r) => setTimeout(r, 400)); // let the port free
     }
 
-    const proc = spawn(serverPath, args, {
-      env: {
-        ...process.env,
-        // macOS: rpath for the co-located dylibs. Windows: the loader already
-        // searches the exe's own dir for DLLs, but prepend binDir to PATH so the
-        // ggml/llama DLLs resolve even if that behaviour is restricted.
-        DYLD_LIBRARY_PATH: binDir,
-        ...(process.platform === 'win32'
-          ? { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` }
-          : {}),
-      },
-    });
+    for (let i = 0; i < serverPaths.length; i++) {
+      if (await this.launchServer(serverPaths[i], args)) return; // ready
+      if (i < serverPaths.length - 1) {
+        console.warn(`[LLMService] engine at ${serverPaths[i]} failed to start; trying fallback engine`);
+        // launchServer already tore its process down; free the port before retry.
+        if (this.killOrphansOnPort(this.port) > 0) await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+    console.error('[LLMService] all llama-server engines failed to start');
+  }
+
+  /** Spawn ONE llama-server binary and wait until the model is loaded. Returns
+   *  true when it's ready, false when it fails to start — so _doInit can fall
+   *  through to the next engine (Windows Vulkan -> CPU). A failed process is torn
+   *  down with its close handler neutralized so it can't trigger a crash-restart. */
+  private async launchServer(serverPath: string, args: string[]): Promise<boolean> {
+    const binDir = path.dirname(serverPath);
+    console.log(`[LLMService] Starting llama-server from ${serverPath}`);
+    // Strip macOS quarantine attributes on production builds (downloaded DMGs get quarantined)
+    if (isPackaged() && process.platform === 'darwin') {
+        try {
+            execSync(`xattr -cr "${binDir}"`, { stdio: 'ignore' });
+            execSync(`chmod +x "${serverPath}"`, { stdio: 'ignore' });
+            console.log('[LLMService] Cleared quarantine attributes from bin directory');
+        } catch (e) {
+            console.warn('[LLMService] Could not clear quarantine attributes:', e);
+        }
+    }
+
+    let proc: ChildProcess;
+    try {
+      proc = spawn(serverPath, args, {
+        env: {
+          ...process.env,
+          // macOS: rpath for the co-located dylibs. Windows: the loader already
+          // searches the exe's own dir for DLLs, but prepend binDir to PATH so the
+          // ggml/llama DLLs resolve even if that behaviour is restricted.
+          DYLD_LIBRARY_PATH: binDir,
+          ...(process.platform === 'win32'
+            ? { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` }
+            : {}),
+        },
+      });
+    } catch (e) {
+      console.error(`[LLMService] failed to spawn ${serverPath}:`, e);
+      return false;
+    }
     this.server = proc;
     this.stderrTail = [];
+    let abandoned = false; // set when we give up on this proc so its close handler is inert
+
+    // A spawn/load error (e.g. a missing Vulkan loader on Windows) surfaces here;
+    // swallow it (waitForReady will fail and we fall back) so it isn't unhandled.
+    proc.on("error", (e) => { console.error(`[LLMService] llama-server process error:`, e); });
 
     proc.stderr?.on("data", (data) => {
       const text = String(data);
@@ -441,10 +471,9 @@ export class LLMService {
 
     proc.on("close", (code, signal) => {
         console.log(`[llama-server] exited with code ${code} signal ${signal}`);
-        // Ignore the close of a PROCESS WE'VE ALREADY REPLACED: on restart/reload,
-        // stop() kills the old proc and init() spawns a new one; the old proc's
-        // close event fires async and must not null out the live server.
-        if (this.server !== proc) return;
+        // Ignore the close of a PROCESS WE'VE ALREADY REPLACED (restart/reload) or
+        // one we deliberately abandoned during engine fallback.
+        if (this.server !== proc || abandoned) return;
         const wasIntentional = this.intentionalStop;
         this.intentionalStop = false;
         this.server = null;
@@ -472,9 +501,16 @@ export class LLMService {
         console.log("[LLMService] Vision server ready!");
         this.initialized = true;
         this.lastErrorMsg = null; // healthy again — clear any prior failure reason
+        return true;
     } catch (e) {
-        console.error("[LLMService] Failed to start server:", e);
-        this.stop();
+        console.error(`[LLMService] engine at ${binDir} failed to start:`, e);
+        // Tear down WITHOUT going through stop() (which sets intentionalStop and
+        // would suppress crash-recovery for the NEXT engine). Neutralize this
+        // proc's close handler so the fallback isn't misread as a crash.
+        abandoned = true;
+        try { proc.kill("SIGKILL"); } catch { /* already gone */ }
+        if (this.server === proc) { this.server = null; this.initialized = false; }
+        return false;
     }
   }
 

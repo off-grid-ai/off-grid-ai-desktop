@@ -86,8 +86,12 @@ export function getDB(): Database.Database {
   }
   db.pragma('journal_mode = WAL');
 
-  // Register custom function for vector search
-  db.function('cosine_similarity', (...args: unknown[]) => cosineSimilarity(args[0] as string, args[1] as string));
+  // Register custom function for vector search. Declare the two params EXPLICITLY:
+  // better-sqlite3 derives the SQL arity from fn.length, and a rest param
+  // (...args) has length 0 — so it registered as a 0-arg function and every
+  // 2-arg call ("SELECT cosine_similarity(embedding, ?)") threw "wrong number of
+  // arguments to function cosine_similarity()".
+  db.function('cosine_similarity', (a: unknown, b: unknown) => cosineSimilarity(a as string, b as string));
 
     // Initialize Schema
   db.exec(`

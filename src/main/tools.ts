@@ -321,7 +321,13 @@ export async function toolChat(
   // answer); prune verbose schemas first, drop connector tools only if needed.
   const { budgetTools } = await import('./tools/tool-budget');
   const ctx = llm.effectiveContextSize();
-  const toolBudget = Math.max(1024, Math.floor(ctx * 0.45));
+  // Cap tool tokens in ABSOLUTE terms too, not just as a fraction of context:
+  // llama-server re-processes the entire tool prompt every tool round (gemma-4's
+  // sliding-window attention defeats the prompt cache), so on CPU-only inference a
+  // large tool payload dominates latency. ~4k keeps a useful connector set while
+  // roughly halving per-round prompt cost vs the old 45%-of-a-big-context budget.
+  const MAX_TOOL_TOKENS = 4000;
+  const toolBudget = Math.max(1024, Math.min(Math.floor(ctx * 0.4), MAX_TOOL_TOKENS));
   const budgeted = budgetTools(rawTools, toolBudget, builtins.length);
   if (budgeted.pruned || budgeted.droppedCount) {
     console.warn(`[tools] context budget ${toolBudget} tok: pruned schemas${budgeted.droppedCount ? `, dropped ${budgeted.droppedCount} connector tool(s)` : ''} to fit (final ~${budgeted.estTokens} tok)`);

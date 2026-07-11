@@ -73,15 +73,29 @@ function Copy-Runtime($srcDir, $destName) {
   return $dest
 }
 
-# --- llama.cpp (server + CLIs + ggml DLLs), CPU x64 baseline -----------------
+# --- llama.cpp (server + CLIs + ggml DLLs) -----------------------------------
 # PINNED to match the macOS engine (scripts/build-llama.sh). Overridable via env
 # for a coordinated cross-platform bump — keep it in lockstep with build-llama.sh.
+#
+# We ship TWO builds so Windows gets GPU speed without breaking GPU-less boxes:
+#   bin/llama      <- Vulkan (GPU) build, the app's PRIMARY. Offloads to any
+#                     Vulkan device (Intel/AMD/NVIDIA, incl. iGPUs like Radeon
+#                     740M) and still runs on CPU when no device is present.
+#                     Needs the system Vulkan loader (vulkan-1.dll, present with
+#                     any modern GPU driver).
+#   bin/llama-cpu  <- CPU-only build, the app's FALLBACK (llm.ts) for the rare
+#                     box with no Vulkan loader at all, where the Vulkan .exe
+#                     can't even load.
 $LlamaRef = if ($env:LLAMA_REF) { $env:LLAMA_REF } else { 'b9838' }
-Write-Host "== llama.cpp (pinned $LlamaRef) =="
+Write-Host "== llama.cpp (pinned $LlamaRef): vulkan primary + cpu fallback =="
+try {
+  $x = Expand-Asset 'ggml-org/llama.cpp' 'bin-win-vulkan-x64\.zip$' $LlamaRef
+  Copy-Runtime $x 'llama' | Out-Null
+} catch { Write-Warning "llama.cpp (vulkan) fetch failed: $_" }
 try {
   $x = Expand-Asset 'ggml-org/llama.cpp' 'bin-win-cpu-x64\.zip$' $LlamaRef
-  Copy-Runtime $x 'llama' | Out-Null
-} catch { Write-Warning "llama.cpp fetch failed: $_" }
+  Copy-Runtime $x 'llama-cpu' | Out-Null
+} catch { Write-Warning "llama.cpp (cpu fallback) fetch failed: $_" }
 
 # --- whisper.cpp (whisper-cli.exe + DLLs) ------------------------------------
 Write-Host '== whisper.cpp =='
@@ -132,6 +146,7 @@ if (-not (Test-Path -LiteralPath $llama)) {
   exit 1
 }
 foreach ($p in @(
+    (Join-Path $bin 'llama-cpu\llama-server.exe'),
     (Join-Path $bin 'whisper\whisper-cli.exe'),
     (Join-Path $bin 'sd\sd-cli.exe'),
     (Join-Path $bin 'ffmpeg.exe'))) {
