@@ -1185,6 +1185,18 @@ export function setRagConversationProject(id: string, projectId: string | null):
     db.prepare(`UPDATE rag_conversations SET project_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(projectId, id);
 }
 
+/** Conversation ids whose MESSAGE CONTENT matches a query (all terms, AND) — so the
+ *  chat-list search can match what was said, not just the title. */
+export function searchRagConversationIds(query: string): string[] {
+    const terms = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).slice(0, 6);
+    if (!terms.length) return [];
+    const where = terms.map(() => 'lower(content) LIKE ?').join(' AND ');
+    const rows = getDB()
+        .prepare(`SELECT DISTINCT conversation_id FROM rag_messages WHERE ${where}`)
+        .all(...terms.map((t) => `%${t}%`)) as { conversation_id: string }[];
+    return rows.map((r) => r.conversation_id);
+}
+
 /**
  * Recent messages from OTHER chats in the same project — lets a project chat
  * reference what was discussed in sibling conversations. Returns chronological.

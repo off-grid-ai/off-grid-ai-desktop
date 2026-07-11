@@ -6,10 +6,10 @@
 // and loop until it answers. Built-in tools only (no network) for now — web
 // search + MCP connectors plug in here later.
 
+import fs from 'fs';
 import { llm } from './llm';
 import { getSetting, saveSetting } from './database';
-
-const PORT = 8439;
+import { buildUserContent } from './tool-content';
 
 // Per-tool enable/disable, persisted as a list of disabled tool names.
 function disabledSet(): Set<string> {
@@ -168,16 +168,60 @@ const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'search_memory',
+    description:
+      "Search the user's ENTIRE memory — past chats, screen captures, meetings, people, notes, and connected apps (Slack, Gmail, etc.) — for anything relevant. Use this for ANY question about what was said, discussed, or decided, about a PERSON, or to recall past activity (e.g. 'what were Praveen and I talking about', 'my notes on the Q3 launch'). Prefer this over read_screen unless the user explicitly asks what's on screen RIGHT NOW. Fully local.",
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'what to look for, in natural language (e.g. a person + topic)' },
+        limit: { type: 'number', description: 'max results (default 8)' },
+      },
+      required: ['query'],
+    },
+    run: async (a) => {
+      try {
+        const { universalSearch } = await import('./search');
+        const n = Math.min(20, Math.max(1, Number(a.limit) || 8));
+        const hits = await universalSearch(String(a.query ?? ''), { limit: n, semantic: true });
+        if (!hits.length) return 'Nothing found in memory for that.';
+        return hits
+          .map((h) => {
+            const when = h.ts ? ' · ' + new Date(h.ts).toISOString().slice(0, 16).replace('T', ' ') : '';
+            return `(${h.surface || h.kind}${when}) ${h.title ? h.title + ' — ' : ''}${h.snippet}`;
+          })
+          .join('\n');
+      } catch (e) {
+        return 'Error searching memory: ' + (e as Error).message;
+      }
+    },
+  },
+  {
     name: 'get_datetime',
     description: 'Get the current local date and time.',
     parameters: { type: 'object', properties: {} },
     run: () => new Date().toString(),
   },
+  {
+    // generate_image is DEFERRED: this run() is never used to generate. The loop
+    // special-cases it (like search_memory) to record the requested prompt and return
+    // it, so the renderer generates AFTER the turn. Generating inline would evict the
+    // LLM from unified memory mid-loop and risk a nested modality-queue deadlock.
+    name: 'generate_image',
+    description: 'Generate an image on-device from a text prompt. Use when the user asks for a picture/photo/logo/art to be created.',
+    parameters: { type: 'object', properties: { prompt: { type: 'string', description: 'a detailed description of the image to create' } }, required: ['prompt'] },
+    run: () => 'Image generation started - it will appear in the chat.',
+  },
 ];
 
-function schemas(): unknown[] {
+// generate_image is gated on an image model being available and is never offered
+// otherwise; every other built-in obeys only the disabled-set.
+function schemas(imageAvailable: boolean): unknown[] {
   const off = disabledSet();
-  return TOOLS.filter((t) => !off.has(t.name)).map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
+  return TOOLS
+    .filter((t) => !off.has(t.name))
+    .filter((t) => t.name !== 'generate_image' || imageAvailable)
+    .map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
 }
 
 async function execute(name: string, args: Record<string, unknown>): Promise<string> {
@@ -213,14 +257,44 @@ export function getToolExtensions(): ToolExtension[] {
 }
 
 export type ToolCall = { name: string; args: Record<string, unknown>; result: string };
+// Structured sources surfaced by search_memory so the chat can render them as
+// interactive citation cards (thumbnail + open-in-Replay), same as the RAG path.
+export type UnifiedSource = { key: string; kind: string; refId: number; title: string; snippet: string; surface: string; ts: number; imagePath: string | null };
 
-/** Run a chat turn with tool-calling. Returns the final answer + the calls made. */
+/**
+ * Run a chat turn with tool-calling. STREAMS by default (thinking -> tool-call activity
+ * -> answer) through the callbacks: `onDelta` gets reasoning/content deltas, `onStep`
+ * fires as each tool is about to run so the UI can show "Running web_search...". Omit the
+ * callbacks (e.g. the pro skills-engine caller) and it just buffers - the final answer is
+ * always the return value either way. Returns the final answer + the calls made.
+ */
 export async function toolChat(
   query: string,
   history: { role: string; content: string }[] = [],
-  opts: { connectors?: boolean } = {},
-): Promise<{ answer: string; toolCalls: ToolCall[] }> {
+  opts: {
+    connectors?: boolean;
+    conversationId?: string;
+    images?: string[];
+    imageAvailable?: boolean;
+    thinking?: boolean;
+    signal?: AbortSignal;
+    onDelta?: (text: string, kind: 'content' | 'reasoning') => void;
+    onStep?: (call: { name: string; args: Record<string, unknown> }) => void;
+  } = {},
+): Promise<{ answer: string; toolCalls: ToolCall[]; unified: UnifiedSource[]; imageRequest?: { prompt: string } }> {
   await llm.init(); // respects pause; ensures the server is up
+  const onDelta = opts.onDelta ?? ((): void => {});
+
+  // Offer generate_image only when an image model is available. The renderer passes
+  // this; fall back to the main-process check so a caller that omits it still gates
+  // correctly (single source of truth for "can we make an image right now").
+  let imageAvailable = opts.imageAvailable ?? false;
+  if (opts.imageAvailable === undefined) {
+    try {
+      const { activeImageModel } = await import('./imagegen');
+      imageAvailable = !!activeImageModel();
+    } catch { /* no image runtime -> stay false */ }
+  }
 
   // Opt-in: pull in tools from registered pro extensions (e.g. MCP connectors)
   // alongside the built-ins. Schemas are built once per turn; each extension
@@ -238,47 +312,92 @@ export async function toolChat(
       }
     } catch (err) { console.error('[tools] extension schemas', e.id, err); }
   }
-  const tools = extSchemas.length ? [...schemas(), ...extSchemas] : schemas();
+  const tools = extSchemas.length ? [...schemas(imageAvailable), ...extSchemas] : schemas(imageAvailable);
   const sys = 'You are Off Grid, a private on-device assistant. Use the provided tools when they help answer precisely. Keep answers concise.'
     + (hints.length ? ' ' + hints.join(' ') : '');
 
+  // Attached images ride on the current user turn so the vision model can read
+  // them even in tools/connectors mode (otherwise they were silently dropped).
+  const imageDataUrls: string[] = [];
+  for (const p of opts.images ?? []) {
+    try {
+      const base64 = fs.readFileSync(p).toString('base64');
+      const mime = p.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+      imageDataUrls.push(`data:${mime};base64,${base64}`);
+    } catch (e) { console.error('[tools] failed to read image', p, e); }
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const messages: any[] = [
     { role: 'system', content: sys },
     ...history.slice(-10).map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user', content: query },
+    { role: 'user', content: buildUserContent(query, imageDataUrls) },
   ];
   const toolCalls: ToolCall[] = [];
+  const unified: UnifiedSource[] = [];
+  const unifiedKeys = new Set<string>();
+  // Deferred image generation: the loop only RECORDS the requested prompt (last call
+  // wins). The renderer generates after the turn so we never evict the LLM mid-loop.
+  let imageRequest: { prompt: string } | undefined;
 
   for (let step = 0; step < 5; step++) {
-    const res = await fetch(`http://127.0.0.1:${PORT}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, tools, tool_choice: 'auto', temperature: 0.3, max_tokens: 1024 }),
+    // Stream this round: reasoning + any answer text flow through onDelta live; tool_calls
+    // are accumulated and returned. A tool-calling round streams thinking (and no content);
+    // the final round streams the answer. tool temperature stays 0.3 (was the blocking path).
+    const { content, toolCalls: calls } = await llm.streamChat(messages, onDelta, {
+      tools, toolChoice: 'auto', temperature: 0.3, maxTokens: 1024, thinking: opts.thinking, signal: opts.signal,
     });
-    if (!res.ok) throw new Error(`tool chat failed: ${res.status}`);
-    const data = await res.json();
-    const msg = data.choices?.[0]?.message;
-    if (!msg) throw new Error('no response');
-    messages.push(msg);
 
-    const calls = msg.tool_calls as { id: string; function: { name: string; arguments: string } }[] | undefined;
-    if (calls && calls.length) {
+    if (calls.length) {
+      // Re-add the assistant turn (with its tool_calls) so the model sees what it invoked.
+      messages.push({ role: 'assistant', content: content || null, tool_calls: calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })) });
       for (const c of calls) {
         let args: Record<string, unknown> = {};
-        try { args = JSON.parse(c.function.arguments || '{}'); } catch { /* keep empty */ }
-        const ext = exts.find((e) => e.canHandle(c.function.name));
-        const result = ext
-          ? await ext.execute(c.function.name, args)
-          : await execute(c.function.name, args);
-        toolCalls.push({ name: c.function.name, args, result });
+        try { args = JSON.parse(c.arguments || '{}'); } catch { /* keep empty */ }
+        opts.onStep?.({ name: c.name, args }); // surface the tool activity BEFORE running it
+        let result: string;
+        if (c.name === 'search_memory') {
+          // Run memory search here (not via the generic tool) so we can both build
+          // the model's text result AND surface the structured hits as interactive
+          // citations — excluding the current conversation so it can't cite itself.
+          try {
+            const { universalSearch } = await import('./search');
+            const n = Math.min(20, Math.max(1, Number(args.limit) || 8));
+            const hits = await universalSearch(String(args.query ?? ''), { limit: n, semantic: true, excludeChatId: opts.conversationId });
+            for (const h of hits) {
+              if (unifiedKeys.has(h.key)) continue;
+              unifiedKeys.add(h.key);
+              unified.push({ key: h.key, kind: h.kind, refId: h.refId, title: h.title, snippet: h.snippet, surface: h.surface, ts: h.ts, imagePath: h.imagePath });
+            }
+            result = hits.length
+              ? hits.map((h) => {
+                  const when = h.ts ? ' · ' + new Date(h.ts).toISOString().slice(0, 16).replace('T', ' ') : '';
+                  return `(${h.surface || h.kind}${when}) ${h.title ? h.title + ' — ' : ''}${h.snippet}`;
+                }).join('\n')
+              : 'Nothing found in memory for that.';
+          } catch (e) {
+            result = 'Error searching memory: ' + (e as Error).message;
+          }
+        } else if (c.name === 'generate_image') {
+          // Deferred: don't generate here (would evict the LLM mid-loop). Record the
+          // prompt (last call wins) and feed a placeholder back so the model can wrap up.
+          const prompt = String(args.prompt ?? '').trim();
+          if (prompt) imageRequest = { prompt };
+          result = prompt
+            ? 'Image generation started - it will appear in the chat.'
+            : 'Error: no image prompt provided.';
+        } else {
+          const ext = exts.find((e) => e.canHandle(c.name));
+          result = ext ? await ext.execute(c.name, args) : await execute(c.name, args);
+        }
+        toolCalls.push({ name: c.name, args, result });
         messages.push({ role: 'tool', tool_call_id: c.id, content: result });
       }
       continue; // let the model use the results
     }
-    return { answer: (msg.content || '').trim(), toolCalls };
+    // No tool calls this round: `content` is the final answer (already streamed via onDelta).
+    return { answer: content.trim(), toolCalls, unified, imageRequest };
   }
-  return { answer: 'Stopped after too many tool steps.', toolCalls };
+  return { answer: 'Stopped after too many tool steps.', toolCalls, unified, imageRequest };
 }
 
 /** Names + descriptions + enabled state of all tools (for the settings UI). */

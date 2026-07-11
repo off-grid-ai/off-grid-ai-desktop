@@ -29,13 +29,14 @@ export async function processUpload(name: string, bytes: ArrayBuffer | Uint8Arra
   try {
     if (IMAGE_EXT.includes(ext)) {
       // Persist the image so the chat can pass the ACTUAL image to the multimodal
-      // model (not just a caption). Caption too, as a text fallback.
+      // model. Return as soon as it's saved — do NOT block the attachment on a
+      // vision-model caption (that ran the model synchronously and left the chip
+      // stuck on "Reading…"). The image goes straight to the vision model anyway.
       const dir = path.join(app.getPath('userData'), 'uploads');
       await fs.promises.mkdir(dir, { recursive: true });
       const dest = path.join(dir, `${Date.now()}-${safe}`);
       await fs.promises.copyFile(tmp, dest);
-      const text = ex.captionImage ? await ex.captionImage(dest).catch(() => '') : '';
-      return { name, kind: 'image', text, path: dest };
+      return { name, kind: 'image', text: '', path: dest };
     }
     if (AUDIO_EXT.includes(ext)) {
       if (!ex.transcribeAudio) throw new Error('Transcription runtime not available.');
@@ -55,7 +56,20 @@ export async function processUpload(name: string, bytes: ArrayBuffer | Uint8Arra
       }
       return { name, kind: 'video', text: caps.join('\n') };
     }
-    if (ext === 'pdf') return { name, kind: 'pdf', text: ex.extractPdf ? await ex.extractPdf(tmp, 200_000) : '' };
+    if (ext === 'pdf') {
+      // Persist the PDF so the chat viewer can render the ACTUAL file (Chromium's
+      // built-in viewer), in addition to extracting text for the model context.
+      const dir = path.join(app.getPath('userData'), 'uploads');
+      await fs.promises.mkdir(dir, { recursive: true });
+      const dest = path.join(dir, `${Date.now()}-${safe}`);
+      await fs.promises.copyFile(tmp, dest);
+      // Text extraction is best-effort: the PDF is already persisted and viewable,
+      // so a parse failure must NOT make the file unattachable — fall back to ''.
+      let text = '';
+      try { if (ex.extractPdf) text = await ex.extractPdf(tmp, 200_000); }
+      catch (e) { console.warn('[files] PDF text extraction failed; attaching without text:', (e as Error)?.message); }
+      return { name, kind: 'pdf', text, path: dest };
+    }
     if (ext === 'docx') return { name, kind: 'docx', text: ex.extractDocx ? await ex.extractDocx(tmp, 200_000) : '' };
     // Everything else is treated as text — .txt/.md and every programming
     // language file (.js/.ts/.py/.go/.rs/.json/.csv/…) is just text.

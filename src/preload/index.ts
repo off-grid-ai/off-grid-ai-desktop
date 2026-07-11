@@ -35,6 +35,11 @@ try {
       return () => ipcRenderer.removeListener(channel, sub);
     },
     proOff: (channel: string) => ipcRenderer.removeAllListeners(channel),
+    // Loopback HTTP URL for seekable local media (meeting recordings) — <video>
+    // can't reliably stream large files over the custom protocol, so use real HTTP.
+    getMediaUrl: (absPath: string) => ipcRenderer.invoke('media:url', absPath),
+    // Clipboard manager is a Pro feature: its renderer reaches IPC through the
+    // generic proInvoke / proOn passthrough above (no dedicated namespace here).
     getMemories: (limit: number, appName?: string) => ipcRenderer.invoke('db:get-memories', limit, appName),
     addMemory: (content: string, source?: string) => ipcRenderer.invoke('db:add-memory', content, source),
     searchMemories: (query: string) => ipcRenderer.invoke('db:search-memories', query),
@@ -69,6 +74,7 @@ try {
     // RAG Conversation History
     createRagConversation: (id: string, title?: string, projectId?: string | null) => ipcRenderer.invoke('rag:create-conversation', id, title, projectId),
     getRagConversations: (projectId?: string | null) => ipcRenderer.invoke('rag:get-conversations', projectId),
+    searchRagConversationIds: (query: string) => ipcRenderer.invoke('rag:search-conversation-ids', query),
     setRagConversationProject: (id: string, projectId: string | null) => ipcRenderer.invoke('rag:set-conversation-project', id, projectId),
     getRagConversation: (id: string) => ipcRenderer.invoke('rag:get-conversation', id),
     getRagMessages: (conversationId: string) => ipcRenderer.invoke('rag:get-messages', conversationId),
@@ -116,6 +122,26 @@ try {
       return () => ipcRenderer.removeListener('reprocess:progress', subscription)
     },
     
+    // Auto-update — fired when a new version finished downloading and is staged.
+    // installUpdate() forces the quit+swap (Squirrel only applies on a graceful
+    // quit; a force-kill would otherwise leave the download unapplied).
+    onUpdateDownloaded: (callback: (data: { version: string }) => void) => {
+      const subscription = (_event: unknown, data: { version: string }) => callback(data)
+      ipcRenderer.on('update:downloaded', subscription)
+      return () => ipcRenderer.removeListener('update:downloaded', subscription)
+    },
+    getStagedUpdateVersion: () => ipcRenderer.invoke('update:staged-version'),
+    installUpdate: () => ipcRenderer.invoke('update:install'),
+    // Software-update controls for Settings: current version + auto-update toggle,
+    // Per-modality runtime residency (on-demand vs resident/in-memory).
+    residencyGet: () => ipcRenderer.invoke('runtime:residency:get'),
+    residencySet: (modality: string, mode: string) => ipcRenderer.invoke('runtime:residency:set', modality, mode),
+    // and a manual "check for updates" that resolves with a definite status.
+    updateGetPrefs: () => ipcRenderer.invoke('update:get-prefs'),
+    updateSetAuto: (on: boolean) => ipcRenderer.invoke('update:set-auto', on),
+    updateSetChannel: (channel: 'stable' | 'beta') => ipcRenderer.invoke('update:set-channel', channel),
+    checkForUpdates: () => ipcRenderer.invoke('update:check'),
+
     // Watcher Events
     onWatcherData: (callback: (data: any) => void) => {
       const subscription = (_: any, data: any) => callback(data)
@@ -148,6 +174,7 @@ try {
     openAccessibilitySettings: () => ipcRenderer.invoke('permissions:open-accessibility-settings'),
     openScreenRecordingSettings: () => ipcRenderer.invoke('permissions:open-screen-recording-settings'),
     getAppVersion: () => ipcRenderer.invoke('app:version'),
+    openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url),
 
     // Model Download APIs
     checkModelStatus: () => ipcRenderer.invoke('model:check-status'),
@@ -166,7 +193,10 @@ try {
     cancelModelDownload: (modelId: string) => ipcRenderer.invoke('models:cancel-download', modelId),
     deleteModel: (modelId: string) => ipcRenderer.invoke('models:delete', modelId),
     setActiveModel: (modelId: string) => ipcRenderer.invoke('models:set-active', modelId),
+    // Activate any model for its type — UI calls this and never branches on kind.
+    activateModel: (modelId: string) => ipcRenderer.invoke('models:activate', modelId),
     getActiveModel: () => ipcRenderer.invoke('models:get-active'),
+    getActiveModelIds: () => ipcRenderer.invoke('models:active-ids'),
     setActiveModalModel: (kind: string, modelId: string | null) => ipcRenderer.invoke('models:set-active-modal', kind, modelId),
     getActiveModalities: () => ipcRenderer.invoke('models:active-modalities'),
     // Local model server control (dev/recovery from the Models page).
@@ -179,10 +209,39 @@ try {
       return () => ipcRenderer.removeListener('model:download-progress', subscription)
     },
 
+    // Setup + system health
+    systemHealth: () => ipcRenderer.invoke('system:health'),
+    setupRecommendation: (mode?: string) => ipcRenderer.invoke('setup:recommendation', mode),
+    setupPlan: (mode?: string) => ipcRenderer.invoke('setup:plan', mode),
+    chatVisionAvailable: () => ipcRenderer.invoke('model:chat-vision'),
+    writeClipboardText: (text: string) => ipcRenderer.invoke('clipboard:write-text', text),
+    autoConfigure: () => ipcRenderer.invoke('setup:auto-configure'),
+    restartComponent: (id: string) => ipcRenderer.invoke('system:restart', id),
+    estimateModelFit: (modelId: string) => ipcRenderer.invoke('system:estimate-fit', modelId),
+
+    // Storage + download manager
+    getStorageInfo: () => ipcRenderer.invoke('models:storage'),
+    deleteOrphans: () => ipcRenderer.invoke('models:delete-orphans'),
+    listDownloads: () => ipcRenderer.invoke('models:downloads'),
+    retryDownload: (modelId: string) => ipcRenderer.invoke('models:retry-download', modelId),
+    clearDownload: (modelId: string) => ipcRenderer.invoke('models:clear-download', modelId),
+    clearDownloads: () => ipcRenderer.invoke('models:clear-downloads'),
+    importLocalModel: () => ipcRenderer.invoke('models:import'),
+
+    // Data & privacy
+    getDataSummary: () => ipcRenderer.invoke('data:summary'),
+    clearDataCategory: (id: string, olderThanDays?: number) => ipcRenderer.invoke('data:clear', id, olderThanDays),
+    deleteAllData: () => ipcRenderer.invoke('data:delete-all'),
+    onSetupProgress: (callback: (data: any) => void) => {
+      const subscription = (_: any, data: any) => callback(data)
+      ipcRenderer.on('setup:progress', subscription)
+      return () => ipcRenderer.removeListener('setup:progress', subscription)
+    },
+
     // --- Agentic tool-calling (built-in tools) ---
     listTools: () => ipcRenderer.invoke('tools:list'),
     setToolEnabled: (name: string, enabled: boolean) => ipcRenderer.invoke('tools:set-enabled', name, enabled),
-    toolChat: (query: string, history?: { role: string; content: string }[], opts?: { connectors?: boolean }) => ipcRenderer.invoke('tools:chat', query, history, opts),
+    toolChat: (query: string, history?: { role: string; content: string }[], opts?: { connectors?: boolean; conversationId?: string; images?: string[]; imageAvailable?: boolean; streamId?: string; thinking?: boolean }) => ipcRenderer.invoke('tools:chat', query, history, opts),
 
     // --- LLM inference settings ---
     getLlmSettings: () => ipcRenderer.invoke('llm:get-settings'),
@@ -190,12 +249,16 @@ try {
 
     // --- Canvas / artifacts sandbox runtime + library ---
     artifactRuntime: (kind: 'html' | 'svg' | 'mermaid' | 'react') => ipcRenderer.invoke('artifacts:runtime', kind),
-    saveArtifact: (a: { kind: 'html' | 'svg' | 'mermaid' | 'react'; code: string; title?: string; conversationId?: string; projectId?: string | null }) => ipcRenderer.invoke('artifacts:save', a),
+    // Kind union MUST match the renderer's `saveArtifact` contract in
+    // src/renderer/src/env.d.ts (text/image are real artifact kinds). Guarded by
+    // src/main/__tests__/ipc-type-parity.test.ts.
+    saveArtifact: (a: { kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'; code: string; title?: string; conversationId?: string; projectId?: string | null }) => ipcRenderer.invoke('artifacts:save', a),
     listArtifacts: (scope?: { conversationId?: string; projectId?: string | null }) => ipcRenderer.invoke('artifacts:list', scope),
     deleteArtifact: (id: string) => ipcRenderer.invoke('artifacts:delete', id),
 
     // --- File attachments → text ---
     processFile: (bytes: ArrayBuffer, name: string) => ipcRenderer.invoke('files:process', bytes, name),
+    fileDataUrl: (path: string) => ipcRenderer.invoke('files:data-url', path),
 
     // --- Skills ---
     listSkills: () => ipcRenderer.invoke('skills:list'),
@@ -280,7 +343,8 @@ try {
       ipcRenderer.invoke('crm:entity-record', entityId, opts),
     crmObservationFrames: (observationId: number) => ipcRenderer.invoke('crm:observation-frames', observationId),
     crmSearch: (query: string, entityId?: number) => ipcRenderer.invoke('crm:search', query, entityId),
-    universalSearch: (query: string, opts?: { limit?: number; semantic?: boolean; sources?: string[] }) =>
+    searchFacets: (query: string) => ipcRenderer.invoke('search:facets', query),
+    universalSearch: (query: string, opts?: { limit?: number; semantic?: boolean; sources?: string[]; sort?: 'relevance' | 'recency' | 'match' }) =>
       ipcRenderer.invoke('search:universal', query, opts),
     searchStatus: () => ipcRenderer.invoke('search:status'),
     searchSources: () => ipcRenderer.invoke('search:sources'),
@@ -319,11 +383,14 @@ try {
     crmDayJournal: (startSec: number, endSec: number) => ipcRenderer.invoke('crm:day-journal', startSec, endSec),
     crmDayJournalCached: (startSec: number) => ipcRenderer.invoke('crm:day-journal-cached', startSec),
     crmReplayFrames: (startSec: number, endSec: number) => ipcRenderer.invoke('crm:replay-frames', startSec, endSec),
+    crmReplayThreads: (startSec: number, endSec: number) => ipcRenderer.invoke('crm:replay-threads', startSec, endSec),
+    crmReplayEntityDay: (entityId: number, startSec: number, endSec: number) => ipcRenderer.invoke('crm:replay-entity-day', entityId, startSec, endSec),
     crmReplayDefaultDay: () => ipcRenderer.invoke('crm:replay-default-day'),
     crmDayReflection: (startSec: number, endSec: number) => ipcRenderer.invoke('crm:day-reflection', startSec, endSec),
     crmWeekReflection: (anchorDayStartSec: number) => ipcRenderer.invoke('crm:week-reflection', anchorDayStartSec),
     crmListActions: () => ipcRenderer.invoke('crm:list-actions'),
     crmSetActionStatus: (id: number, status: 'open' | 'done' | 'dismissed') => ipcRenderer.invoke('crm:set-action-status', id, status),
+    crmAddTodo: (text: string) => ipcRenderer.invoke('crm:add-todo', text),
 
     // Identity
     idGet: () => ipcRenderer.invoke('id:get'),
@@ -358,26 +425,26 @@ try {
     // Meeting recorder (screen video + system audio + mic → local transcript)
     meetingSave: (audio: Uint8Array, meta: { startedAt: number; endedAt: number; ext?: string }) => ipcRenderer.invoke('meeting:save', audio, meta),
     // Native recorder — main process captures everything via the Swift binary.
+    // Commands only — the main-process MeetingController owns the lifecycle.
     meetingStart: (platform?: string) => ipcRenderer.invoke('meeting:start', platform),
     meetingStop: () => ipcRenderer.invoke('meeting:stop'),
+    meetingKeepAlive: () => ipcRenderer.invoke('meeting:keep-alive'),
     meetingGetState: () => ipcRenderer.invoke('meeting:get-state'),
     meetingList: () => ipcRenderer.invoke('meeting:list'),
     meetingDelete: (id: number) => ipcRenderer.invoke('meeting:delete', id),
-    onMeetingDetected: (cb: (platform: string) => void) => {
-      const sub = (_e: unknown, platform: string): void => cb(platform);
-      ipcRenderer.on('meeting:detected', sub);
-      return () => ipcRenderer.removeListener('meeting:detected', sub);
+    meetingRetranscribe: (id: number) => ipcRenderer.invoke('meeting:retranscribe', id),
+    meetingPlayablePath: (p: string) => ipcRenderer.invoke('meeting:playable-path', p),
+    // The controller broadcasts its full state here; the renderer just reflects it.
+    onMeetingState: (cb: (s: unknown) => void) => {
+      const sub = (_e: unknown, s: unknown): void => cb(s);
+      ipcRenderer.on('meeting:state', sub);
+      return () => ipcRenderer.removeListener('meeting:state', sub);
     },
-    onMeetingEnded: (cb: () => void) => {
-      const sub = (): void => cb();
-      ipcRenderer.on('meeting:ended', sub);
-      return () => ipcRenderer.removeListener('meeting:ended', sub);
-    },
-    meetingSetRecording: (recording: boolean) => ipcRenderer.invoke('meeting:set-recording', recording),
-    onMeetingStop: (cb: () => void) => {
-      const sub = (): void => cb();
-      ipcRenderer.on('meeting:stop', sub);
-      return () => ipcRenderer.removeListener('meeting:stop', sub);
+    // Main-driven view navigation (used by the tray to jump to a screen).
+    onNavigate: (cb: (view: string) => void) => {
+      const sub = (_e: unknown, view: string): void => cb(view);
+      ipcRenderer.on('navigate', sub);
+      return () => ipcRenderer.removeListener('navigate', sub);
     }
   });
   console.log("API Exposed successfully");

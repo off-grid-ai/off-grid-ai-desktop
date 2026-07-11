@@ -1,9 +1,19 @@
 name: Build and Release
 
 on:
+  # Every merge to main publishes to the BETA (nightly) channel — opt-in users only.
   push:
     branches:
       - main
+  # Promote to STABLE on demand: Actions → Build and Release → Run workflow → stable.
+  # (Default beta, so an accidental run never ships stable to everyone.)
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel — beta = nightly opt-in feed; stable = everyone'
+        type: choice
+        options: [beta, stable]
+        default: beta
 
 permissions:
   contents: write
@@ -12,135 +22,265 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-# macOS-only for now: core (free) + pro, both Developer-ID signed + notarized.
-# Pro source lives in the separate private repo off-grid-ai/desktop-pro (gitignored
-# here), cloned into pro/ at build time via the PRO_REPO_TOKEN secret. Windows is
-# parked (bundled llama-server fix owned elsewhere) — re-add a windows-2022 job when
-# it lands.
+# macOS-only for now. ONE signed + notarized DMG: the build bundles the private pro
+# source (cloned from off-grid-ai/desktop-pro) and is license-gated at runtime —
+# free = unlicensed (pro tabs locked), a valid Keygen key unlocks in place (no
+# re-download). The ASAR integrity fuse (electron-builder.yml) makes a tampered
+# app.asar refuse to load — our local-first anti-tamper lever (we don't phone home).
+# Actions are pinned to commit SHAs. Windows is parked.
 jobs:
-  # Bump the version once (on Ubuntu) and push it, so every build job builds the
-  # same version. [skip ci] keeps it from re-triggering.
+  # Resolve the channel + version. STABLE (manual promote) bumps the patch and
+  # commits it so main tracks the released version; BETA (every merge) stamps a
+  # throwaway -beta.<run> version WITHOUT committing, so nightly builds never move
+  # main's base version or spam it with bump commits.
   version:
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
       sha: ${{ steps.bump.outputs.sha }}
+      channel: ${{ steps.bump.outputs.channel }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
-      - name: Bump patch version
+      - name: Resolve channel + version
         id: bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          npm version patch --no-git-tag-version
-          VERSION=$(node -p "require('./package.json').version")
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.channel }}" = "stable" ]; then
+            CHANNEL=stable
+            npm version patch --no-git-tag-version
+            VERSION=$(node -p "require('./package.json').version")
+            git add package.json package-lock.json
+            git commit -m "chore: bump version to $VERSION [skip ci]"
+            git push
+          else
+            CHANNEL=beta
+            # A nightly is a prerelease of the NEXT patch, so it sorts ABOVE the last
+            # stable, not below it: 0.0.35 stable -> 0.0.36-beta.<run> (NOT
+            # 0.0.35-beta.<run>, which semver ranks BELOW 0.0.35 and would read as a
+            # downgrade). electron-builder turns the -beta suffix into the `beta`
+            # channel (beta-mac.yml) automatically. No commit.
+            BASE=$(node -p "require('./package.json').version")
+            BASE=${BASE%%-*}
+            NEXT=$(node -e "const p='$BASE'.split('.').map(Number); console.log(p[0]+'.'+p[1]+'.'+(p[2]+1))")
+            VERSION="${NEXT}-beta.${{ github.run_number }}"
+          fi
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          git add package.json package-lock.json
-          git commit -m "chore: bump version to $VERSION [skip ci]"
-          git push
-          # Pin the build to THIS exact commit, not floating main — otherwise a
-          # concurrent push's bump can advance main and the build publishes a
-          # mismatched/duplicate release (the version race that tangled v0.0.20/.21).
+          # Pin the build to THIS exact commit, not floating main.
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-  # CORE (free) build: OFFGRID_FORCE_CORE=1 makes the build ignore any pro/ that might
-  # be present → __OFFGRID_PRO__ false (in CI pro/ isn't there anyway; belt-and-braces).
-  # Publishes to the default update channel (latest-mac.yml).
-  build-mac-core:
+  # Single build: pro code bundled, license-gated. Publishes to the default update
+  # channel (latest-mac.yml).
+  build-mac:
     needs: version
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ needs.version.outputs.sha }} # the exact bumped commit, not floating main
+          ref: ${{ needs.version.outputs.sha }} # the exact bumped commit
           fetch-depth: 0
           lfs: true # resources/bin/* (llama-server, sd-cli, whisper, ffmpeg, dylibs)
-                    # are Git LFS — without this, CI bundles 131-byte pointer stubs
-                    # and every runtime spawn fails with ENOEXEC.
+                    # are Git LFS — without this CI bundles pointer stubs and every
+                    # runtime spawn fails with ENOEXEC.
       - name: Pull LFS binaries
         run: git lfs pull
-      - uses: actions/setup-node@v4
+      # Rebuild the chat engine from source with a PINNED macOS deployment target.
+      # The committed/LFS llama-server is minos 26 (built on a macOS-26 toolchain),
+      # so it only launches on macOS 26 — every macOS 13/14/15 user saw "Chat model
+      # Down". This compiles llama-server targeting macOS 13, GATES on its minos,
+      # and overwrites resources/bin/llama/ BEFORE electron-builder signs+notarizes,
+      # so the shipped engine is correct by construction. (~2 min, zero deps.)
+      - name: Build llama-server (pinned deployment target)
+        run: |
+          command -v cmake >/dev/null || brew install cmake
+          MACOS_DEPLOYMENT_TARGET=13.0 LLAMA_REF=b9838 bash scripts/build-llama.sh
+          otool -l resources/bin/llama/llama-server | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print "[ci] bundled engine minos="$2; exit}'
+      # Compile the native meeting recorder (ScreenCaptureKit + AVFoundation) and stage
+      # it into resources/bin so extraResources bundles it at Contents/Resources/bin —
+      # the first path recorderBin() resolves in the packaged app (pro meeting-native.ts).
+      # Built fresh against the pinned macOS 13 target (NOT the committed dev copy), and
+      # signed automatically by the electron-builder pass. Without this the binary is
+      # never staged into the .app and packaged users hit "Meeting recorder binary not
+      # found" — same class of bug as the un-pinned/un-staged engine failures above.
+      - name: Build meeting recorder (native ScreenCaptureKit helper)
+        run: |
+          bash scripts/build-meeting-recorder.sh
+          mkdir -p resources/bin
+          cp scripts/meeting-recorder/meeting-recorder resources/bin/meeting-recorder
+          chmod +x resources/bin/meeting-recorder
+          file resources/bin/meeting-recorder
+          otool -l resources/bin/meeting-recorder | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print "[ci] meeting-recorder minos="$2; exit}'
+      # Compile the dictation push-to-talk helper (CGEventTap) and stage it into
+      # resources/bin so extraResources bundles it at Contents/Resources/bin — the
+      # path PushToTalkHotkey resolves. Self-contained: no committed binary, built
+      # fresh against the pinned target. If this ever fails to ship, dictation
+      # simply falls back to tap-to-toggle (globalShortcut), so it can't break a release.
+      - name: Build dictation hotkey helper (push-to-talk)
+        run: |
+          bash scripts/build-dictation-hotkey.sh
+          mkdir -p resources/bin
+          cp scripts/dictation-hotkey/dictation-hotkey resources/bin/dictation-hotkey
+          chmod +x resources/bin/dictation-hotkey
+      # Stage the Parakeet STT runtime (sherpa-onnx CLI + ONNX model) into
+      # resources/bin/parakeet. Additive: with SHERPA_ONNX_URL / PARAKEET_MODEL_URL
+      # unset this is a no-op and transcription stays on whisper, so it can't break a
+      # release. Set those vars once the exact sherpa-onnx build + Parakeet export are pinned.
+      - name: Stage Parakeet STT runtime (optional)
+        env:
+          SHERPA_ONNX_URL: ${{ vars.SHERPA_ONNX_URL }}
+          PARAKEET_MODEL_URL: ${{ vars.PARAKEET_MODEL_URL }}
+        run: bash scripts/fetch-parakeet.sh
+      # Private pro source into pro/ → __OFFGRID_PRO__ true. The checkout action
+      # injects the token as an http.extraheader (never in a clone URL) and scrubs
+      # it afterwards — safer than embedding ${TOKEN} in a git URL.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: off-grid-ai/desktop-pro
+          token: ${{ secrets.PRO_REPO_TOKEN }}
+          path: pro
+          fetch-depth: 1
+      - name: Drop nested .git from pro/
+        run: rm -rf pro/.git # don't nest a repo inside the build tree
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
-      - name: Build (typecheck + bundle) — CORE
-        env:
-          OFFGRID_FORCE_CORE: '1'
+      # Stamp the resolved version into package.json so electron-builder picks the
+      # right channel. For stable this matches the committed bump (no-op); for beta
+      # it applies the -beta.<run> version (no commit needed — this checkout is
+      # throwaway). The -beta suffix is what makes electron-builder write beta-mac.yml.
+      - name: Stamp build version
+        run: npm version "${{ needs.version.outputs.version }}" --no-git-tag-version --allow-same-version
+      - name: Build (typecheck + bundle)
         run: npm run build
-      - name: Package & publish CORE (signed + notarized)
+      # Same approach as mobile (.github/workflows/release.yml): collect the commits
+      # since the previous release tag into release-notes.md. Generated BEFORE publish
+      # so the tag electron-builder is about to create (v$VERSION) is not yet the
+      # "last tag" — git describe resolves to the PREVIOUS release. We drop the
+      # bot version-bump commit ([skip ci]) so notes are only real changes.
+      - name: Generate release notes
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          node scripts/release-notes.mjs \
+            "$LAST_TAG" \
+            "${{ needs.version.outputs.version }}" \
+            "${{ github.repository }}" \
+            > release-notes.md
+          cat release-notes.md
+      - name: Package, sign, notarize & publish (DMG + auto-update metadata)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # notarytool needs the API key as a file; write it from the secret.
           printf '%s' "$APPLE_API_KEY_CONTENT" > "$RUNNER_TEMP/AuthKey.p8"
           export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
-          npx electron-builder --mac \
-            -c.productName="Off Grid AI" \
-            -c.appId="co.getoffgridai.desktop" \
-            -c.dmg.artifactName='OffGrid-core-${version}.${ext}' \
-            --publish always
-
-  # PRO build: clone the private pro source into pro/ → __OFFGRID_PRO__ true. Pro is
-  # license-gated at runtime (a leaked DMG is inert without a valid Keygen key), so
-  # publishing it publicly is safe. Publishes to a SEPARATE update channel (pro-mac.yml)
-  # so core and pro auto-updates never feed each other the wrong binary.
-  build-mac-pro:
-    needs: version
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.version.outputs.sha }}
-          fetch-depth: 0
-          lfs: true
-      - name: Pull LFS binaries
-        run: git lfs pull
-      - name: Clone private pro source into pro/
-        env:
-          PRO_REPO_TOKEN: ${{ secrets.PRO_REPO_TOKEN }}
-        run: |
-          rm -rf pro
-          git clone --depth 1 \
-            "https://x-access-token:${PRO_REPO_TOKEN}@github.com/off-grid-ai/desktop-pro.git" pro
-          rm -rf pro/.git # don't nest a repo inside the build tree
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - name: Install dependencies
-        run: npm ci
-      - name: Build (typecheck + bundle) — PRO
-        run: npm run build
-      - name: Package & publish PRO (signed + notarized, pro channel)
+          # ONE signed + notarized build. The version's channel decides the feed:
+          #   stable → latest-mac.yml, published as a normal release (everyone)
+          #   beta   → beta-mac.yml (from the -beta suffix), published as a
+          #            PRE-RELEASE so it never becomes /releases/latest and the
+          #            stable feed + the OffGrid-latest.dmg link stay untouched.
+          if [ "${{ needs.version.outputs.channel }}" = "stable" ]; then
+            npx electron-builder --mac \
+              -c.dmg.artifactName='OffGrid-${version}.${ext}' \
+              -c.publish.releaseType=release \
+              --publish always
+          else
+            npx electron-builder --mac \
+              -c.dmg.artifactName='OffGrid-${version}.${ext}' \
+              -c.publish.releaseType=prerelease \
+              --publish always
+          fi
+      - name: Migrate legacy Pro update channel (publish pro-mac.yml)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          VERSION: ${{ needs.version.outputs.version }}
+          CHANNEL: ${{ needs.version.outputs.channel }}
         run: |
-          printf '%s' "$APPLE_API_KEY_CONTENT" > "$RUNNER_TEMP/AuthKey.p8"
-          export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
-          npx electron-builder --mac \
-            -c.productName="Off Grid AI Pro" \
-            -c.appId="co.getoffgridai.desktop.pro" \
-            -c.dmg.artifactName='OffGrid-pro-${version}.${ext}' \
-            -c.publish.channel=pro \
-            --publish always
+          # Older Pro builds poll a SEPARATE channel (pro-mac.yml); publish a copy
+          # on EVERY build (stable + nightly) so legacy Pro installs see updates on
+          # both channels and are never orphaned. Stable points at the versioned
+          # release; nightly points at the rolling 'nightly' pre-release tag.
+          if [ "$CHANNEL" = "stable" ]; then
+            cp dist/latest-mac.yml dist/pro-mac.yml
+            gh release upload "v$VERSION" dist/pro-mac.yml --clobber
+          else
+            # Nightly: upload alongside the rolling nightly tag so legacy Pro beta
+            # testers also get the freshest build.
+            cp dist/latest-mac.yml dist/pro-mac.yml
+            gh release upload nightly dist/pro-mac.yml --clobber
+          fi
+      # Stable "always latest" download link. The versioned DMG (OffGrid-<v>.dmg)
+      # changes name every release, so /releases/latest/download/<name> can't target
+      # it. Upload a constant-named COPY so this URL is permanent across releases:
+      #   https://github.com/off-grid-ai/off-grid-ai-desktop/releases/latest/download/OffGrid-latest.dmg
+      # --clobber replaces the copy from the prior run. The versioned DMG + updater
+      # feed (latest-mac.yml) are untouched, so auto-update is unaffected.
+      - name: Publish stable latest.dmg alias
+        if: needs.version.outputs.channel == 'stable'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cp "dist/OffGrid-$VERSION.dmg" dist/OffGrid-latest.dmg
+          gh release upload "v$VERSION" dist/OffGrid-latest.dmg --clobber
+      # Constant nightly download link. /releases/latest EXCLUDES pre-releases, so it
+      # can never point at a beta build (that is exactly what keeps the STABLE link
+      # safe). Nightly therefore gets its own fixed-tag 'nightly' release whose dmg is
+      # force-replaced every beta build — a permanent, SEPARATE URL that never touches
+      # /releases/latest or the stable OffGrid-latest.dmg:
+      #   https://github.com/off-grid-ai/off-grid-ai-desktop/releases/download/nightly/OffGrid-nightly.dmg
+      - name: Publish constant nightly.dmg link
+        if: needs.version.outputs.channel == 'beta'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cp "dist/OffGrid-$VERSION.dmg" dist/OffGrid-nightly.dmg
+          # Ensure the rolling 'nightly' pre-release exists (kept separate from the
+          # versioned -beta.N releases electron-builder makes for the updater feed),
+          # then clobber its dmg so the link always serves the freshest nightly.
+          gh release view nightly >/dev/null 2>&1 || \
+            gh release create nightly --prerelease --title "Nightly (rolling)" \
+              --notes "Rolling nightly build, auto-updated on every change. Pre-release — expect rough edges. Stable: https://github.com/off-grid-ai/off-grid-ai-desktop/releases/latest"
+          gh release upload nightly dist/OffGrid-nightly.dmg --clobber
+      # electron-builder creates the GitHub release with empty notes; attach the notes
+      # generated above. Runs for BOTH channels (beta + stable) — the notes file and the
+      # v$VERSION tag exist for beta too, so beta/nightly releases get their changelog on
+      # the release page, not just stable.
+      - name: Attach release notes
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: gh release edit "v$VERSION" --notes-file release-notes.md
+
+      # Announce every published release in Slack: the GitHub release link + the notes
+      # generated above. Fail-soft (scripts/notify-slack-release.mjs always exits 0), so a
+      # Slack outage never fails a release. Needs org/repo secret SLACK_WEBHOOK_URL (an
+      # Incoming Webhook, channel-bound). No secret => the step is a logged no-op.
+      - name: Announce release in Slack
+        if: success()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          PRODUCT: Off Grid AI Desktop
+          VERSION: ${{ needs.version.outputs.version }}
+          CHANNEL_LABEL: ${{ needs.version.outputs.channel }}
+          NOTES_FILE: release-notes.md
+          RELEASE_URL: https://github.com/off-grid-ai/off-grid-ai-desktop/releases/tag/v${{ needs.version.outputs.version }}
+        run: node scripts/notify-slack-release.mjs

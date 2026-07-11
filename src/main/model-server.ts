@@ -28,15 +28,25 @@ import { randomUUID } from 'crypto';
 import { desktopExtraction } from './rag/extractors';
 import * as tts from './tts';
 import { generateImage, imageGenStatus, activeImageModel, type ImageGenParams } from './imagegen';
-import { llm } from './llm';
 import { whisperModel } from './rag/extractors';
 import { getActiveModal } from './active-models';
 import { embeddings } from './embeddings';
 import { docsText, docsHtml, openApiSpec } from './api-docs';
 import { handleMcpRequest } from './mcp-server';
+import { llm, type LlmSettings } from './llm';
+import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports';
+import { retryWithDeadline } from './lib/retry';
+import { resolveDims } from './model-server/dimensions';
+import { guardProxyStreams } from './stream-guards';
+import { classifyRef, decodeDataUrl, stripFileScheme, mimeFromExt, extForMime, toDataUrl } from './model-server/data-url';
+import { errBody, errMeta } from './model-server/errors';
+import { isAsync, matchPollRoute } from './model-server/async-request';
+import { sanitizeChatMessages } from './model-server/chat-messages';
+import { parseMultipart } from './model-server/multipart';
+import { tagLlmEntries, modelEntry, ollamaMirror } from './model-server/models-list';
 
 const UPSTREAM_HOST = '127.0.0.1';
-const UPSTREAM_PORT = 8439; // bundled llama-server (see llm.ts)
+const UPSTREAM_PORT = LLAMA_SERVER_PORT; // bundled llama-server (see llm.ts)
 const MAX_UPLOAD = 200 * 1024 * 1024; // 200MB upload cap (audio / init image)
 
 let server: http.Server | null = null;
@@ -44,10 +54,6 @@ let server: http.Server | null = null;
 function json(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
-}
-
-function errBody(message: string, type = 'invalid_request_error') {
-  return { error: { message, type } };
 }
 
 // ─── Async requests & polling ────────────────────────────────────────────────
@@ -88,14 +94,6 @@ function createRequest(id: string, kind: string, collection: string): ApiRequest
   return r;
 }
 
-function errMeta(e: unknown): { status: number; type: string; message: string } {
-  const status = (e as { status?: number } | undefined)?.status ?? 500;
-  const message = e instanceof Error ? e.message : String(e);
-  const type =
-    status === 501 ? 'not_installed' : status === 502 ? 'upstream_error' : status === 400 ? 'invalid_request_error' : 'server_error';
-  return { status, type, message };
-}
-
 /** Move a request through running → completed/failed around the work promise. */
 function settle<T>(r: ApiRequest, work: Promise<T>): Promise<T> {
   r.status = 'running';
@@ -115,18 +113,6 @@ function settle<T>(r: ApiRequest, work: Promise<T>): Promise<T> {
       throw e;
     }
   );
-}
-
-/** Did the caller ask for async handling? */
-function isAsync(req: http.IncomingMessage, payload?: Record<string, unknown>, fields?: Record<string, string>): boolean {
-  const q = (req.url || '').split('?')[1] || '';
-  if (/(^|&)async=(1|true|yes)(&|$)/i.test(q)) return true;
-  const h = String(req.headers['x-async'] || '').toLowerCase();
-  if (h === 'true' || h === '1') return true;
-  if (/respond-async/i.test(String(req.headers['prefer'] || ''))) return true;
-  if (payload && payload.async === true) return true;
-  if (fields && /^(1|true|yes)$/i.test(fields.async || '')) return true;
-  return false;
 }
 
 /** 202 Accepted with the request resource + Location for polling. */
@@ -164,17 +150,6 @@ function handlePoll(res: http.ServerResponse, id: string): void {
   json(res, 200, body);
 }
 
-// Collections whose `<collection>/{id}` GET path resolves to a request resource.
-const POLL_COLLECTIONS = [
-  '/v1/images',
-  '/v1/images/generations',
-  '/v1/images/edits',
-  '/v1/chat/completions',
-  '/v1/embeddings',
-  '/v1/audio/speech',
-  '/v1/audio/transcriptions',
-];
-
 // Proxy a request to the local llama-server (response streaming preserved).
 // If `bodyOverride` is supplied, that buffer is sent as the request body (used
 // when we rewrite chat messages to inline remote images); otherwise the incoming
@@ -183,7 +158,8 @@ const POLL_COLLECTIONS = [
 // When a buffer is supplied the request is replayable, so on a connection error
 // (llama-server briefly down while it reloads after image generation) we wait and
 // retry until `retryUntil` rather than failing the caller with a 502. Piped
-// (streamed) requests can't be replayed, so they fail fast.
+// (streamed) requests can't be replayed, so they fail fast. The wait-and-retry
+// loop is the shared `retryWithDeadline` helper.
 function proxyToLlama(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -195,25 +171,34 @@ function proxyToLlama(
     headers['content-length'] = String(bodyOverride.length);
     delete headers['transfer-encoding'];
   }
-  const proxyReq = http.request(
-    { hostname: UPSTREAM_HOST, port: UPSTREAM_PORT, path: req.url, method: req.method, headers },
-    (proxyRes) => {
-      res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
-      proxyRes.pipe(res);
-    }
-  );
-  proxyReq.on('error', () => {
-    if (bodyOverride && Date.now() < retryUntil) {
-      setTimeout(() => proxyToLlama(req, res, bodyOverride, retryUntil), 1000);
-    } else {
-      json(res, 502, errBody('Local model not ready (llama-server unavailable).', 'upstream_error'));
-    }
+  // One attempt: resolves once the upstream response is piped through, rejects
+  // on a connection error (the only transient failure this proxy retries).
+  const attempt = (): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      const proxyReq = http.request(
+        { hostname: UPSTREAM_HOST, port: UPSTREAM_PORT, path: req.url, method: req.method, headers },
+        (proxyRes) => {
+          res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+          // Guard both ends BEFORE piping: a mid-stream reset from llama-server (or a client
+          // disconnect) emits 'error' on these streams, and with no listener that becomes an
+          // uncaught exception that crashes the main process. Does not re-settle this promise —
+          // it has already resolved once piping begins.
+          guardProxyStreams(proxyRes, res);
+          proxyRes.pipe(res);
+          resolve();
+        }
+      );
+      proxyReq.on('error', reject);
+      if (bodyOverride) {
+        proxyReq.end(bodyOverride);
+      } else {
+        req.pipe(proxyReq);
+      }
+    });
+  // Piped requests aren't replayable, so they fail fast (replayable=false).
+  retryWithDeadline(attempt, { deadlineMs: retryUntil, replayable: !!bodyOverride }).catch(() => {
+    json(res, 502, errBody('Local model not ready (llama-server unavailable).', 'upstream_error'));
   });
-  if (bodyOverride) {
-    proxyReq.end(bodyOverride);
-  } else {
-    req.pipe(proxyReq);
-  }
 }
 
 // Fetch an image reference into a Buffer. Accepts data: URLs, http(s):// URLs,
@@ -221,15 +206,11 @@ function proxyToLlama(
 // for local files" convention so the same payloads work against this gateway.
 function fetchImage(ref: string): Promise<{ data: Buffer; mime: string }> {
   const url = ref.trim();
-  if (url.startsWith('data:')) {
-    const comma = url.indexOf(',');
-    const mime = /data:([^;,]+)/.exec(url)?.[1] || 'image/png';
-    const meta = url.slice(5, comma);
-    const raw = url.slice(comma + 1);
-    const data = meta.includes('base64') ? Buffer.from(raw, 'base64') : Buffer.from(decodeURIComponent(raw));
-    return Promise.resolve({ data, mime });
+  const kind = classifyRef(url);
+  if (kind === 'data') {
+    return Promise.resolve(decodeDataUrl(url));
   }
-  if (url.startsWith('http://') || url.startsWith('https://')) {
+  if (kind === 'http') {
     const client = url.startsWith('https://') ? https : http;
     return new Promise((resolve, reject) => {
       const r = client.get(url, (resp) => {
@@ -254,44 +235,9 @@ function fetchImage(ref: string): Promise<{ data: Buffer; mime: string }> {
       r.on('error', reject);
     });
   }
-  const p = url.startsWith('file://') ? url.slice(7) : url;
-  const ext = path.extname(p).slice(1).toLowerCase();
-  const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+  const p = stripFileScheme(url);
+  const mime = mimeFromExt(path.extname(p).slice(1));
   return fs.promises.readFile(p).then((data) => ({ data, mime }));
-}
-
-function toDataUrl(data: Buffer, mime: string): string {
-  return `data:${mime};base64,${data.toString('base64')}`;
-}
-
-// Round to a multiple of 64 (diffusion models require it), clamped sane.
-function round64(n: number): number {
-  return Math.max(256, Math.min(2048, Math.round(n / 64) * 64));
-}
-
-// Resolve output dimensions from any of: explicit width/height, an OpenAI
-// "WIDTHxHEIGHT" size, or an OpenRouter aspect_ratio + resolution pair.
-function resolveDims(p: {
-  width?: unknown;
-  height?: unknown;
-  size?: unknown;
-  aspect_ratio?: unknown;
-  resolution?: unknown;
-}): { width?: number; height?: number } {
-  if (typeof p.width === 'number' && typeof p.height === 'number') return { width: p.width, height: p.height };
-  const fromSize = parseSize(p.size);
-  if (fromSize.width && fromSize.height) return fromSize;
-  if (typeof p.aspect_ratio === 'string') {
-    const m = /^(\d+)\s*[:x×]\s*(\d+)$/.exec(p.aspect_ratio.trim());
-    if (m) {
-      const ar = parseInt(m[1], 10) / parseInt(m[2], 10);
-      const res = String(p.resolution ?? '1K').toUpperCase();
-      const base = res === '2K' ? 1536 : res === '512' ? 512 : 1024; // long edge
-      const [w, h] = ar >= 1 ? [base, base / ar] : [base * ar, base];
-      return { width: round64(w), height: round64(h) };
-    }
-  }
-  return {};
 }
 
 function readBody(req: http.IncomingMessage, cap: number): Promise<Buffer> {
@@ -318,55 +264,8 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
   return JSON.parse(body.toString('utf8'));
 }
 
-// Minimal multipart/form-data parser — pulls out uploaded file(s) + text fields
-// (avoids adding a dependency for the upload endpoints). Keeps every file part
-// keyed by its form field name so img2img can grab `image` specifically.
-function parseMultipart(
-  body: Buffer,
-  contentType: string
-): { files: Record<string, { filename: string; data: Buffer }>; fields: Record<string, string> } {
-  const out: { files: Record<string, { filename: string; data: Buffer }>; fields: Record<string, string> } = {
-    files: {},
-    fields: {},
-  };
-  const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
-  if (!m) return out;
-  const boundary = (m[1] || m[2]).trim();
-  const delim = Buffer.from('--' + boundary);
-  const headSep = Buffer.from('\r\n\r\n');
-  let pos = body.indexOf(delim);
-  while (pos !== -1) {
-    let partStart = pos + delim.length;
-    if (body[partStart] === 0x2d && body[partStart + 1] === 0x2d) break; // closing "--"
-    partStart += 2; // skip CRLF after boundary
-    const next = body.indexOf(delim, partStart);
-    if (next === -1) break;
-    const part = body.slice(partStart, next - 2); // drop trailing CRLF
-    const sep = part.indexOf(headSep);
-    if (sep !== -1) {
-      const headers = part.slice(0, sep).toString('utf8');
-      const content = part.slice(sep + headSep.length);
-      const fileM = /filename="([^"]*)"/i.exec(headers);
-      const nameM = /name="([^"]*)"/i.exec(headers);
-      const field = nameM ? nameM[1] : '';
-      if (fileM && fileM[1]) {
-        out.files[field || fileM[1]] = { filename: fileM[1], data: content };
-      } else if (field) {
-        out.fields[field] = content.toString('utf8');
-      }
-    }
-    pos = next;
-  }
-  return out;
-}
-
-/** Parse an OpenAI "WIDTHxHEIGHT" size string. */
-function parseSize(size: unknown): { width?: number; height?: number } {
-  if (typeof size !== 'string') return {};
-  const m = /^(\d+)\s*[x×]\s*(\d+)$/i.exec(size.trim());
-  if (!m) return {};
-  return { width: parseInt(m[1], 10), height: parseInt(m[2], 10) };
-}
+// Chat message sanitization (Gemma system-message ordering) lives in
+// ./model-server/chat-messages (sanitizeChatMessages), imported above.
 
 // ─── Text(+image) → text (chat, proxied) ─────────────────────────────────────
 // Walk an OpenAI chat body and replace any remote/file image_url with an inlined
@@ -426,45 +325,59 @@ function jsonWithId(res: http.ServerResponse, rid: string, result: unknown): voi
 }
 
 // Non-streaming chat call to llama-server returning parsed JSON (used for async
-// chat). Retries through a brief reload window like the streaming proxy does.
+// chat). Retries through a brief reload window like the streaming proxy does,
+// via the shared `retryWithDeadline` helper. Only a connection error is
+// transient; an HTTP >= 400 answer (or a parse failure) is the engine's real
+// reply and is never retried - so those attempt-rejections are tagged fatal.
 function callLlamaJson(bodyObj: Record<string, unknown>, retryUntil: number): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const payload = Buffer.from(JSON.stringify({ ...bodyObj, stream: false }));
-    const upstream = http.request(
-      {
-        hostname: UPSTREAM_HOST,
-        port: UPSTREAM_PORT,
-        path: '/v1/chat/completions',
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'content-length': String(payload.length) },
-      },
-      (resp) => {
-        const chunks: Buffer[] = [];
-        resp.on('data', (c: Buffer) => chunks.push(c));
-        resp.on('end', () => {
-          try {
-            const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-            if ((resp.statusCode || 0) >= 400) {
-              const err = new Error(parsed?.error?.message || 'upstream error') as Error & { status?: number };
-              err.status = resp.statusCode;
-              reject(err);
-            } else resolve(parsed);
-          } catch (e) {
-            reject(e);
-          }
-        });
-      }
-    );
-    upstream.on('error', () => {
-      if (Date.now() < retryUntil) {
-        setTimeout(() => callLlamaJson(bodyObj, retryUntil).then(resolve, reject), 1000);
-      } else {
-        const err = new Error('Local model not ready (llama-server unavailable).') as Error & { status?: number };
-        err.status = 502;
-        reject(err);
-      }
+  const payload = Buffer.from(JSON.stringify({ ...bodyObj, stream: false }));
+  // One attempt. A connection ('error') rejection is left un-tagged (transient);
+  // an HTTP-error or parse rejection is tagged `fatal` so it is not replayed.
+  const attempt = (): Promise<unknown> =>
+    new Promise((resolve, reject) => {
+      const upstream = http.request(
+        {
+          hostname: UPSTREAM_HOST,
+          port: UPSTREAM_PORT,
+          path: '/v1/chat/completions',
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'content-length': String(payload.length) },
+        },
+        (resp) => {
+          const chunks: Buffer[] = [];
+          resp.on('data', (c: Buffer) => chunks.push(c));
+          resp.on('end', () => {
+            try {
+              const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+              if ((resp.statusCode || 0) >= 400) {
+                const err = new Error(parsed?.error?.message || 'upstream error') as Error & {
+                  status?: number;
+                  fatal?: boolean;
+                };
+                err.status = resp.statusCode;
+                err.fatal = true;
+                reject(err);
+              } else resolve(parsed);
+            } catch (e) {
+              (e as { fatal?: boolean }).fatal = true;
+              reject(e);
+            }
+          });
+        }
+      );
+      upstream.on('error', reject);
+      upstream.end(payload);
     });
-    upstream.end(payload);
+  return retryWithDeadline(attempt, {
+    deadlineMs: retryUntil,
+    isTransient: (err) => !(err as { fatal?: boolean })?.fatal,
+  }).catch((err) => {
+    // A transient failure that outlived the deadline surfaces as the 502 the
+    // caller previously saw; fatal errors keep their own status.
+    if ((err as { fatal?: boolean })?.fatal) throw err;
+    const e = new Error('Local model not ready (llama-server unavailable).') as Error & { status?: number };
+    e.status = 502;
+    throw e;
   });
 }
 
@@ -480,7 +393,11 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse, r
   let forward: Buffer = buf;
   try {
     body = JSON.parse(buf.toString('utf8'));
-    if (await inlineChatImages(body)) forward = Buffer.from(JSON.stringify(body));
+    let changed = await inlineChatImages(body);
+    // Gemma 4 (and others) reject system messages that aren't at position 0.
+    // Consolidate them before forwarding so any client's ordering works.
+    if (sanitizeChatMessages(body)) changed = true;
+    if (changed) forward = Buffer.from(JSON.stringify(body));
   } catch {
     // Not JSON, or image fetch failed — forward the original bytes untouched.
   }
@@ -555,10 +472,7 @@ async function handleModelsList(res: http.ServerResponse): Promise<void> {
   const upstream = await fetchUpstreamModels();
   const upData = Array.isArray(upstream.data) ? (upstream.data as Record<string, unknown>[]) : [];
   // Tag the LLM entries chat vs vision from their advertised capabilities.
-  let text: Record<string, unknown>[] = upData.map((m) => {
-    const caps = Array.isArray(m.capabilities) ? (m.capabilities as string[]) : [];
-    return { ...m, kind: caps.includes('multimodal') || caps.includes('vision') ? 'vision' : 'chat' };
-  });
+  let text: Record<string, unknown>[] = tagLlmEntries(upData);
   // Fall back to the on-disk active model when the upstream llama-server hasn't
   // loaded one yet (idle app, headless gateway, or a server that came up without
   // a model). Without this, /v1/models reports an empty chat model even though one
@@ -571,7 +485,7 @@ async function handleModelsList(res: http.ServerResponse): Promise<void> {
   }
 
   const tag = (id: string, kind: string, extra: Record<string, unknown> = {}): Record<string, unknown> =>
-    ({ id, object: 'model', created: now, owned_by: 'off-grid', kind, ...extra });
+    modelEntry(id, kind, now, extra);
 
   // Active image model (chosen pick, else the resolver default).
   const imgId = activeImageModel();
@@ -590,9 +504,7 @@ async function handleModelsList(res: http.ServerResponse): Promise<void> {
   const data: Record<string, unknown>[] = [...text, ...images, ...speech, ...transcription];
   // Mirror into the ollama-style `models` array some clients read, so both shapes
   // stay in sync.
-  const models = data.map((m) => ({
-    name: m.id, model: m.id, type: 'model', kind: m.kind,
-  }));
+  const models = ollamaMirror(data);
   json(res, 200, { object: 'list', data, models });
 }
 
@@ -777,7 +689,7 @@ async function handleImagesUnified(req: http.IncomingMessage, res: http.ServerRe
   try {
     if (refUrl) {
       const { data, mime } = await fetchImage(refUrl);
-      const ext = mime.includes('jpeg') ? '.jpg' : mime.includes('webp') ? '.webp' : '.png';
+      const ext = extForMime(mime);
       tmp = path.join(os.tmpdir(), `offgrid-imgref-${process.pid}-${data.length}${ext}`);
       await fs.promises.writeFile(tmp, data);
       params.initImage = tmp;
@@ -848,7 +760,7 @@ async function handleImageEdit(req: http.IncomingMessage, res: http.ServerRespon
 
 // ─── Server ──────────────────────────────────────────────────────────────────
 /** Start the unified local model gateway. Bound to loopback (local-only). */
-export function startModelServer(port = 7878): void {
+export function startModelServer(port = GATEWAY_PORT): void {
   if (server) return;
 
   server = http.createServer((req, res) => {
@@ -872,11 +784,9 @@ export function startModelServer(port = 7878): void {
     // RESTful polling: GET the request resource. Canonical /v1/requests/{id}, or
     // the per-collection resource (e.g. /v1/images/{id}, /v1/audio/speech/{id}).
     if (method === 'GET') {
-      const slash = url.lastIndexOf('/');
-      const prefix = url.slice(0, slash);
-      const id = url.slice(slash + 1);
+      const { id, isPollCollection } = matchPollRoute(url);
       if (url.startsWith('/v1/requests/') && id) return handlePoll(res, id);
-      if (id && POLL_COLLECTIONS.includes(prefix) && requests.has(id)) return handlePoll(res, id);
+      if (id && isPollCollection && requests.has(id)) return handlePoll(res, id);
     }
 
     if (url === '/' || url === '/health') {
@@ -980,6 +890,27 @@ export function startModelServer(port = 7878): void {
       return;
     }
 
+    // Runtime LLM settings (ctx size, KV-cache, flash-attn, GPU layers, threads,
+    // batch, sampling) — read + update remotely so a control plane (the console,
+    // via the gateway) can configure this node. setSettings persists and respawns
+    // llama-server when launch-time args change.
+    if (url === '/v1/settings' && method === 'GET') return json(res, 200, llm.getSettings());
+    if (url === '/v1/settings' && method === 'POST') {
+      // Mutating launch-time LLM args triggers a llama-server respawn — restrict
+      // to loopback so a LAN peer (e.g. the mobile app) can't cause a respawn loop.
+      const remote = req.socket.remoteAddress;
+      const isLocalhost = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+      if (!isLocalhost) {
+        json(res, 403, errBody('Settings mutations are restricted to localhost.', 'forbidden'));
+        return;
+      }
+      return void (async () => {
+        const patch = (await readJson(req)) as LlmSettings;
+        await llm.setSettings(patch);
+        json(res, 200, { success: true, settings: llm.getSettings() });
+      })().catch((e) => json(res, 500, { error: { message: String((e as Error)?.message ?? e) } }));
+    }
+
     if (url === '/v1/embeddings' && method === 'POST') return void handleEmbeddings(req, res, rid);
     if (url === '/v1/audio/transcriptions' && method === 'POST') return void handleTranscription(req, res, rid);
     if (url === '/v1/audio/speech' && method === 'POST') return void handleSpeech(req, res, rid);
@@ -1022,7 +953,7 @@ export function startModelServer(port = 7878): void {
             const { id, kind } = await readJson(req);
             if (!id) return json(res, 400, { error: 'id required' });
             const r = kind && kind !== 'text' && kind !== 'vision'
-              ? mm.setActiveModalChoice(String(kind), String(id))
+              ? await mm.setActiveModalChoice(String(kind), String(id))
               : await mm.setActiveModel(String(id));
             return json(res, r.success ? 200 : 400, r);
           }
@@ -1063,8 +994,10 @@ export function startModelServer(port = 7878): void {
   server.keepAliveTimeout = 60_000;
 
   server.on('error', (e) => console.error('[model-server]', e));
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`[model-server] multimodal gateway at http://127.0.0.1:${port}/v1`);
+  // Bind 0.0.0.0 (all interfaces) so other devices on the LAN — e.g. the Off Grid
+  // mobile app — can reach the gateway, not just localhost.
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`[model-server] multimodal gateway at http://0.0.0.0:${port}/v1 (reachable on your LAN)`);
   });
 }
 

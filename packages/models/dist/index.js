@@ -1,4 +1,3 @@
-"use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -23,6 +22,7 @@ __export(index_exports, {
   CATALOG: () => CATALOG,
   CREDIBILITY_LABELS: () => CREDIBILITY_LABELS,
   CREDIBILITY_OPTIONS: () => CREDIBILITY_OPTIONS,
+  LIGHT_MODEL_RAM_CEILING_GB: () => LIGHT_MODEL_RAM_CEILING_GB,
   MODEL_KINDS: () => MODEL_KINDS,
   MODEL_TYPE_OPTIONS: () => MODEL_TYPE_OPTIONS,
   ModelDownloader: () => ModelDownloader,
@@ -51,6 +51,7 @@ __export(index_exports, {
   openAICompatibleProvider: () => openAICompatibleProvider,
   parseParamCount: () => parseParamCount,
   recommendForRam: () => recommendForRam,
+  recommendedImageModelId: () => recommendedImageModelId,
   resolveHuggingFaceModel: () => resolveHuggingFaceModel,
   searchHuggingFace: () => searchHuggingFace,
   supportsMode: () => supportsMode,
@@ -254,7 +255,11 @@ var CATALOG = [
     id: "leejet/Z-Image-Turbo-GGUF",
     name: "Z-Image Turbo (2026)",
     kind: "image",
-    tags: ["Recommended", "2026", "Fast", "Top quality"],
+    // NOT tagged 'Fast': despite the "Turbo" name this is a FLUX-class diffusion
+    // transformer (DiT + Qwen3-4B text encoder + FLUX VAE) — heavy and slow on
+    // Apple Silicon via ggml, not a few-step SDXL distill. 'Fast' is reserved for
+    // models verified fast on-device (dreamshaper-turbo, realvis-lightning).
+    tags: ["Recommended", "2026", "Top quality"],
     org: "Alibaba Tongyi",
     description: "Flagship 2026 model \u2014 1024px in ~8 steps, top quality-per-byte, strong bilingual text. Apache-2.0. (diffusion + Qwen3 encoder + VAE)",
     minRamGb: 12,
@@ -333,10 +338,27 @@ var CATALOG = [
     files: [{ name: "realvisxl-v5.0-Q8_0.gguf", url: resolve("offgrid-ai/realvisxl-v5.0-GGUF", "realvisxl-v5.0-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
   },
   {
+    // Light (Q4_K) sibling — ~35% less memory, runs on a 16GB Mac. Tagged 'Light'
+    // so the RAM-aware default + "Recommended" badge pick it on <= 16GB machines.
+    id: "offgrid-ai/realvisxl-v5.0-GGUF-Q4",
+    name: "RealVisXL v5.0 (Light)",
+    kind: "image",
+    tags: ["Photoreal", "Light"],
+    org: "RealVis",
+    description: "Top photorealism SDXL. Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of SG161222/RealVisXL_V5.0.",
+    minRamGb: 8,
+    quant: "Q4_K",
+    releaseDate: "2024-08-05",
+    imageModes: ["txt2img", "img2img"],
+    files: [{ name: "realvisxl-v5.0-Q4_K.gguf", url: resolve("offgrid-ai/realvisxl-v5.0-GGUF", "realvisxl-v5.0-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
+  },
+  {
     id: "offgrid-ai/realvisxl-v5.0-lightning-GGUF",
     name: "RealVisXL v5.0 Lightning (photoreal)",
     kind: "image",
-    tags: ["Fast", "Photoreal"],
+    // Full Q8: few-step, but ~4.2GB pegs a 16GB Mac — 'Fast' is reserved for the
+    // Light (Q4) sibling that's both few-step AND memory-safe.
+    tags: ["Photoreal"],
     org: "RealVis",
     description: "Photoreal SDXL, few-step (fast) \u2014 Off Grid GGUF build of SG161222/RealVisXL_V5.0_Lightning.",
     minRamGb: 8,
@@ -346,17 +368,51 @@ var CATALOG = [
     files: [{ name: "realvisxl-v5.0-lightning-Q8_0.gguf", url: resolve("offgrid-ai/realvisxl-v5.0-lightning-GGUF", "realvisxl-v5.0-lightning-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
   },
   {
+    // Light (Q4_K) sibling — few-step photoreal, ~35% less memory, 16GB-friendly.
+    id: "offgrid-ai/realvisxl-v5.0-lightning-GGUF-Q4",
+    name: "RealVisXL v5.0 Lightning (Light)",
+    kind: "image",
+    tags: ["Fast", "Photoreal", "Light"],
+    org: "RealVis",
+    description: "Photoreal SDXL, few-step (fast). Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of SG161222/RealVisXL_V5.0_Lightning.",
+    minRamGb: 8,
+    quant: "Q4_K",
+    releaseDate: "2024-09-02",
+    imageModes: ["txt2img", "img2img"],
+    files: [{ name: "realvisxl-v5.0-lightning-Q4_K.gguf", url: resolve("offgrid-ai/realvisxl-v5.0-lightning-GGUF", "realvisxl-v5.0-lightning-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
+  },
+  {
     id: "offgrid-ai/dreamshaper-xl-v2-turbo-GGUF",
     name: "DreamShaper XL v2 Turbo (versatile)",
     kind: "image",
-    tags: ["Versatile", "Fast"],
+    // Full Q8: few-step, but ~4.2GB pegs a 16GB Mac — 'Fast' is reserved for the
+    // Light (Q4) sibling that's both few-step AND memory-safe.
+    tags: ["Versatile"],
     org: "Lykon",
-    description: "The all-rounder \u2014 photoreal, art, fantasy, 3D. Off Grid GGUF build of Lykon/dreamshaper-xl-v2-turbo.",
+    description: "The all-rounder \u2014 photoreal, art, fantasy, 3D. Off Grid GGUF build of Lykon/dreamshaper-xl-v2-turbo. Full Q8 quant (best quality); best on 24GB+ RAM.",
     minRamGb: 8,
     quant: "Q8_0",
     releaseDate: "2024-02-07",
     imageModes: ["txt2img", "img2img"],
     files: [{ name: "dreamshaper-xl-v2-turbo-Q8_0.gguf", url: resolve("offgrid-ai/dreamshaper-xl-v2-turbo-GGUF", "dreamshaper-xl-v2-turbo-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
+  },
+  {
+    // Lighter Q4_K quant of the same distilled turbo model — ~35% less memory
+    // (~3.08GB peak vs ~4.7GB), so it runs on a 16GB Mac without pegging unified
+    // memory. Same repo, distinct id + filename so download/active-tracking treat
+    // it as a separate installable model. Tagged 'Light' → the RAM-aware default +
+    // "Recommended" badge pick it on machines with <= 16GB RAM.
+    id: "offgrid-ai/dreamshaper-xl-v2-turbo-GGUF-Q4",
+    name: "DreamShaper XL v2 Turbo (Light)",
+    kind: "image",
+    tags: ["Versatile", "Fast", "Light"],
+    org: "Lykon",
+    description: "The all-rounder \u2014 photoreal, art, fantasy, 3D. Q4 quant: ~35% less memory than the full model, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of Lykon/dreamshaper-xl-v2-turbo.",
+    minRamGb: 8,
+    quant: "Q4_K",
+    releaseDate: "2024-02-07",
+    imageModes: ["txt2img", "img2img"],
+    files: [{ name: "dreamshaper-xl-v2-turbo-Q4_K.gguf", url: resolve("offgrid-ai/dreamshaper-xl-v2-turbo-GGUF", "dreamshaper-xl-v2-turbo-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
   },
   {
     id: "offgrid-ai/juggernaut-xl-v9-GGUF",
@@ -372,6 +428,20 @@ var CATALOG = [
     files: [{ name: "juggernaut-xl-v9-Q8_0.gguf", url: resolve("offgrid-ai/juggernaut-xl-v9-GGUF", "juggernaut-xl-v9-Q8_0.gguf"), role: "primary", sizeBytes: 435e7 }]
   },
   {
+    // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
+    id: "offgrid-ai/juggernaut-xl-v9-GGUF-Q4",
+    name: "Juggernaut XL v9 (Light)",
+    kind: "image",
+    tags: ["Photoreal", "Light"],
+    org: "RunDiffusion",
+    description: "Versatile photoreal SDXL. Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of RunDiffusion/Juggernaut-XL-v9.",
+    minRamGb: 8,
+    quant: "Q4_K",
+    releaseDate: "2024-02-18",
+    imageModes: ["txt2img", "img2img"],
+    files: [{ name: "juggernaut-xl-v9-Q4_K.gguf", url: resolve("offgrid-ai/juggernaut-xl-v9-GGUF", "juggernaut-xl-v9-Q4_K.gguf"), role: "primary", sizeBytes: 29e8 }]
+  },
+  {
     id: "offgrid-ai/animagine-xl-4.0-GGUF",
     name: "Animagine XL 4.0 (anime)",
     kind: "image",
@@ -383,6 +453,20 @@ var CATALOG = [
     releaseDate: "2025-01-10",
     imageModes: ["txt2img", "img2img"],
     files: [{ name: "animagine-xl-4.0-Q8_0.gguf", url: resolve("offgrid-ai/animagine-xl-4.0-GGUF", "animagine-xl-4.0-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
+  },
+  {
+    // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
+    id: "offgrid-ai/animagine-xl-4.0-GGUF-Q4",
+    name: "Animagine XL 4.0 (Light)",
+    kind: "image",
+    tags: ["Anime", "Light"],
+    org: "Cagliostro",
+    description: "Leading anime SDXL \u2014 strong character knowledge. Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of cagliostrolab/animagine-xl-4.0.",
+    minRamGb: 8,
+    quant: "Q4_K",
+    releaseDate: "2025-01-10",
+    imageModes: ["txt2img", "img2img"],
+    files: [{ name: "animagine-xl-4.0-Q4_K.gguf", url: resolve("offgrid-ai/animagine-xl-4.0-GGUF", "animagine-xl-4.0-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
   },
   {
     id: "offgrid-ai/illustrious-xl-v2.0-GGUF",
@@ -398,6 +482,20 @@ var CATALOG = [
     files: [{ name: "illustrious-xl-v2.0-Q8_0.gguf", url: resolve("offgrid-ai/illustrious-xl-v2.0-GGUF", "illustrious-xl-v2.0-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
   },
   {
+    // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
+    id: "offgrid-ai/illustrious-xl-v2.0-GGUF-Q4",
+    name: "Illustrious XL v2.0 (Light)",
+    kind: "image",
+    tags: ["Anime", "Light"],
+    org: "OnomaAI",
+    description: "Top anime / illustration SDXL base. Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of OnomaAIResearch/Illustrious-XL-v2.0.",
+    minRamGb: 8,
+    quant: "Q4_K",
+    releaseDate: "2025-04-18",
+    imageModes: ["txt2img", "img2img"],
+    files: [{ name: "illustrious-xl-v2.0-Q4_K.gguf", url: resolve("offgrid-ai/illustrious-xl-v2.0-GGUF", "illustrious-xl-v2.0-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
+  },
+  {
     id: "offgrid-ai/pony-diffusion-v6-xl-GGUF",
     name: "Pony Diffusion V6 XL (stylized)",
     kind: "image",
@@ -409,6 +507,20 @@ var CATALOG = [
     releaseDate: "2024-05-25",
     imageModes: ["txt2img", "img2img"],
     files: [{ name: "pony-diffusion-v6-xl-Q8_0.gguf", url: resolve("offgrid-ai/pony-diffusion-v6-xl-GGUF", "pony-diffusion-v6-xl-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
+  },
+  {
+    // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
+    id: "offgrid-ai/pony-diffusion-v6-xl-GGUF-Q4",
+    name: "Pony Diffusion V6 XL (Light)",
+    kind: "image",
+    tags: ["Stylized", "Light"],
+    org: "PurpleSmartAI",
+    description: "Dominant SDXL for stylized characters & illustration. Q4 quant: ~35% less memory, small quality trade-off. Runs on a 16GB Mac. Off Grid GGUF build of Pony Diffusion V6 XL.",
+    minRamGb: 8,
+    quant: "Q4_K",
+    releaseDate: "2024-05-25",
+    imageModes: ["txt2img", "img2img"],
+    files: [{ name: "pony-diffusion-v6-xl-Q4_K.gguf", url: resolve("offgrid-ai/pony-diffusion-v6-xl-GGUF", "pony-diffusion-v6-xl-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
   },
   // --- voice (TTS); open models, ONNX runtime (no Python) ---
   {
@@ -422,7 +534,8 @@ var CATALOG = [
       {
         name: "kokoro-82m-v1.0.onnx",
         url: resolve("onnx-community/Kokoro-82M-v1.0-ONNX", "onnx/model_quantized.onnx"),
-        role: "primary"
+        role: "primary",
+        sizeBytes: 92361116
       }
     ]
   },
@@ -501,6 +614,43 @@ var CATALOG = [
     description: "Highest accuracy (large); needs more RAM",
     minRamGb: 8,
     files: [{ name: "ggml-large-v3.bin", url: resolve("ggerganov/whisper.cpp", "ggml-large-v3.bin"), role: "primary", sizeBytes: 3095e6 }]
+  },
+  // --- transcription (Parakeet, NVIDIA NeMo) — sherpa-onnx offline transducer (ONNX).
+  // A model is 4 files (encoder/decoder/joiner/tokens); on-disk names are slug-prefixed
+  // so multiple Parakeet models coexist in the flat models dir without colliding. Higher
+  // accuracy than whisper; served by the bundled sherpa-onnx CLI (engine: 'parakeet'). ---
+  {
+    id: "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+    name: "Parakeet TDT 0.6B v2",
+    kind: "transcription",
+    engine: "parakeet",
+    org: "nvidia",
+    description: "High-accuracy English STT (int8) - tops the open ASR leaderboard",
+    minRamGb: 4,
+    tags: ["Accurate", "English"],
+    files: [
+      { name: "parakeet-v2.encoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "encoder.int8.onnx"), role: "primary", sizeBytes: 652e6 },
+      { name: "parakeet-v2.decoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "decoder.int8.onnx"), role: "aux", sizeBytes: 726e4 },
+      { name: "parakeet-v2.joiner.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "joiner.int8.onnx"), role: "aux", sizeBytes: 174e4 },
+      { name: "parakeet-v2.tokens.txt", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "tokens.txt"), role: "tokenizer", sizeBytes: 9600 }
+    ]
+  },
+  {
+    id: "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
+    name: "Parakeet TDT 0.6B v3",
+    kind: "transcription",
+    engine: "parakeet",
+    org: "nvidia",
+    description: "Multilingual STT (int8) - 25 European languages",
+    minRamGb: 4,
+    isNew: true,
+    tags: ["Accurate", "Multilingual"],
+    files: [
+      { name: "parakeet-v3.encoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "encoder.int8.onnx"), role: "primary", sizeBytes: 652e6 },
+      { name: "parakeet-v3.decoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "decoder.int8.onnx"), role: "aux", sizeBytes: 726e4 },
+      { name: "parakeet-v3.joiner.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "joiner.int8.onnx"), role: "aux", sizeBytes: 174e4 },
+      { name: "parakeet-v3.tokens.txt", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "tokens.txt"), role: "tokenizer", sizeBytes: 9600 }
+    ]
   }
 ];
 function modelsByKind(kind) {
@@ -526,7 +676,8 @@ var ModelDownloader = class {
     return this.store.isInstalled(modelId);
   }
   cancel(modelId) {
-    this.aborts.get(modelId)?.abort();
+    var _a;
+    (_a = this.aborts.get(modelId)) == null ? void 0 : _a.abort();
   }
   emit(p) {
     for (const l of this.listeners) l(p);
@@ -842,8 +993,8 @@ async function getModelFiles(repoId, opts = {}) {
     return {
       fileName: baseName(f.rfilename),
       quant,
-      quality: info?.quality ?? "Unknown",
-      recommended: info?.recommended ?? false,
+      quality: (info == null ? void 0 : info.quality) ?? "Unknown",
+      recommended: (info == null ? void 0 : info.recommended) ?? false,
       sizeBytes: f.size ?? 0,
       downloadUrl: url(f.rfilename),
       mmproj: matchMmproj(f.rfilename)
@@ -929,17 +1080,18 @@ function openAICompatibleProvider(cfg) {
       return (data.data ?? []).map((m) => ({ id: m.id, name: m.id }));
     },
     async *chat(messages, opts) {
+      var _a, _b, _c;
       const res = await f(`${cfg.endpoint}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders(cfg.apiKey) },
         body: JSON.stringify({
-          model: opts?.model,
+          model: opts == null ? void 0 : opts.model,
           messages,
           stream: true,
-          temperature: opts?.temperature,
-          max_tokens: opts?.maxTokens
+          temperature: opts == null ? void 0 : opts.temperature,
+          max_tokens: opts == null ? void 0 : opts.maxTokens
         }),
-        signal: opts?.signal
+        signal: opts == null ? void 0 : opts.signal
       });
       if (!res.ok || !res.body) throw new Error(`chat failed: HTTP ${res.status}`);
       for await (const line of lines(res.body)) {
@@ -949,7 +1101,7 @@ function openAICompatibleProvider(cfg) {
         if (data === "[DONE]") return;
         try {
           const j = JSON.parse(data);
-          const c = j.choices?.[0]?.delta?.content;
+          const c = (_c = (_b = (_a = j.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.delta) == null ? void 0 : _c.content;
           if (c) yield c;
         } catch {
         }
@@ -969,11 +1121,12 @@ function ollamaProvider(cfg) {
       return (data.models ?? []).map((m) => ({ id: m.name, name: m.name }));
     },
     async *chat(messages, opts) {
+      var _a;
       const res = await f(`${cfg.endpoint}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: opts?.model, messages, stream: true }),
-        signal: opts?.signal
+        body: JSON.stringify({ model: opts == null ? void 0 : opts.model, messages, stream: true }),
+        signal: opts == null ? void 0 : opts.signal
       });
       if (!res.ok || !res.body) throw new Error(`chat failed: HTTP ${res.status}`);
       for await (const line of lines(res.body)) {
@@ -981,7 +1134,7 @@ function ollamaProvider(cfg) {
         if (!t) continue;
         try {
           const j = JSON.parse(t);
-          if (j.message?.content) yield j.message.content;
+          if ((_a = j.message) == null ? void 0 : _a.content) yield j.message.content;
           if (j.done) return;
         } catch {
         }
@@ -1027,11 +1180,31 @@ function validateImageGenRequest(provider, req) {
   if (!req.prompt.trim()) return "prompt is required";
   return null;
 }
+
+// src/recommend-image.ts
+var LIGHT_MODEL_RAM_CEILING_GB = 16;
+var hasLightTag = (m) => (m.tags ?? []).some((t) => /^light$/i.test(t));
+var isVersatile = (m) => (m.tags ?? []).some((t) => /^versatile$/i.test(t));
+var pickVersatileFirst = (candidates) => candidates.find(isVersatile) ?? candidates[0];
+var familyKey = (m) => m.id.replace(/-Q\d[\w]*$/i, "");
+function recommendedImageModelId(models, ramGb) {
+  if (!ramGb || !Number.isFinite(ramGb)) return null;
+  const images = models.filter((m) => m.kind === "image");
+  if (!images.length) return null;
+  const light = images.filter(hasLightTag);
+  const lightFamilies = new Set(light.map(familyKey));
+  const fullOfLightFamily = images.filter((m) => !hasLightTag(m) && lightFamilies.has(familyKey(m)));
+  if (ramGb <= LIGHT_MODEL_RAM_CEILING_GB) {
+    return (pickVersatileFirst(light) ?? images[0]).id;
+  }
+  return (pickVersatileFirst(fullOfLightFamily) ?? images.find((m) => !hasLightTag(m)) ?? images[0]).id;
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   CATALOG,
   CREDIBILITY_LABELS,
   CREDIBILITY_OPTIONS,
+  LIGHT_MODEL_RAM_CEILING_GB,
   MODEL_KINDS,
   MODEL_TYPE_OPTIONS,
   ModelDownloader,
@@ -1060,6 +1233,7 @@ function validateImageGenRequest(provider, req) {
   openAICompatibleProvider,
   parseParamCount,
   recommendForRam,
+  recommendedImageModelId,
   resolveHuggingFaceModel,
   searchHuggingFace,
   supportsMode,

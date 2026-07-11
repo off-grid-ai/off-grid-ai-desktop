@@ -9,6 +9,43 @@ import { modelsDir } from './runtime-env';
 
 export type Modality = 'image' | 'speech' | 'transcription';
 
+/**
+ * The single source of truth mapping a catalog model `kind` to its modality.
+ * 'text'/'vision' are the chat LLM (no modality — they load llama-server, not a
+ * stateless per-call runtime), so they return null. Everything that activates a
+ * model routes through this — never re-derive the mapping in a caller/UI.
+ */
+export function modalityForKind(kind?: string | null): Modality | null {
+  switch (kind) {
+    case 'image': return 'image';
+    case 'voice': return 'speech';
+    case 'transcription': return 'transcription';
+    default: return null; // text / vision / local / unknown -> chat LLM, not a modality
+  }
+}
+
+/**
+ * Whether a given installed model is the active one for its type. Pure — the one
+ * rule the Storage UI and getStorageInfo both rely on:
+ *   - image/voice/transcription: matches that modality's chosen value, which is
+ *     stored as either the catalog id OR the primary filename → match either;
+ *   - text/vision/local/imported (no modality): the active chat LLM id.
+ */
+export function isModelActive(opts: {
+  kind?: string | null;
+  id: string;
+  primaryFile?: string | null;
+  activeChatId: string | null;
+  modals: Record<Modality, string | null>;
+}): boolean {
+  const modal = modalityForKind(opts.kind);
+  if (modal) {
+    const chosen = opts.modals[modal];
+    return chosen != null && (chosen === opts.id || chosen === opts.primaryFile);
+  }
+  return opts.id === opts.activeChatId;
+}
+
 function storeFile(): string {
   return path.join(modelsDir(), 'active-modalities.json');
 }

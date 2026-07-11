@@ -15,60 +15,15 @@ import os from 'os';
 import path from 'path';
 import type { ExtractionBridges } from '@offgrid/rag';
 import { llm } from '../llm';
-import { getActiveModal } from '../active-models';
-import { binRoots, modelsDir, exe } from '../runtime-env';
+import { whisperBin, whisperModel, ffmpegBin } from '../transcription/whisper-cli';
+import { getActiveTranscription } from '../transcription/select';
 
 const execFileAsync = promisify(execFile);
 
-function existing(paths: string[]): string | null {
-  for (const p of paths) {
-    try {
-      if (fs.existsSync(p)) return p;
-    } catch {
-      /* ignore */
-    }
-  }
-  return null;
-}
-
-/** Resolve the bundled whisper-cli across dev / packaged layouts. */
-export function whisperBin(): string | null {
-  return existing(binRoots().map((r) => path.join(r, 'whisper', exe('whisper-cli'))));
-}
-
-/** Resolve ffmpeg: bundled first, then common system locations. */
-function ffmpegBin(): string | null {
-  return existing([
-    ...binRoots().map((r) => path.join(r, exe('ffmpeg'))),
-    '/opt/homebrew/bin/ffmpeg',
-    '/usr/local/bin/ffmpeg',
-    '/usr/bin/ffmpeg',
-  ]);
-}
-
-/** Find a downloaded whisper ggml model in the user's models dir. Prefers a
- *  MULTILINGUAL model (the `.en` models can only do English) and a more capable
- *  size for accuracy, since meetings may be in any language. */
-export function whisperModel(): string | null {
-  const dir = modelsDir();
-  try {
-    // User-chosen transcription model wins, when it's actually present on disk.
-    const chosen = getActiveModal('transcription');
-    if (chosen && fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
-    const files = fs.readdirSync(dir).filter((f) => /^ggml-.*\.bin$/i.test(f));
-    if (!files.length) return null;
-    // Multilingual = NOT an `.en` model.
-    const multi = files.filter((f) => !/\.en\.bin$/i.test(f));
-    const pool = multi.length ? multi : files; // fall back to whatever exists
-    // Prefer larger/more-accurate multilingual models for non-English speech.
-    const rank = (f: string): number =>
-      /large/i.test(f) ? 4 : /medium/i.test(f) ? 3 : /small/i.test(f) ? 2 : /base/i.test(f) ? 1 : 0;
-    const pick = [...pool].sort((a, b) => rank(b) - rank(a))[0];
-    return path.join(dir, pick);
-  } catch {
-    return null;
-  }
-}
+// Binary/model resolvers now live in ../transcription/whisper-cli (single source
+// of truth). Re-exported here so existing importers of '@offgrid/core/main/rag/
+// extractors' keep working.
+export { whisperBin, whisperModel, ffmpegBin };
 
 const IMAGE_PROMPT =
   'Describe this image in detail and transcribe any visible text verbatim. Be thorough; this will be indexed for search.';
@@ -93,29 +48,10 @@ export const desktopExtraction: ExtractionBridges = {
   },
 
   async transcribeAudio(p) {
-    const bin = whisperBin();
-    if (!bin) throw new Error('Transcription runtime (whisper) is not installed.');
-    const model = whisperModel();
-    if (!model) throw new Error('No transcription model found — download Whisper from Models first.');
-    const ff = ffmpegBin();
-    if (!ff) throw new Error('ffmpeg is required to decode audio and was not found.');
-
-    const tmp = path.join(os.tmpdir(), `offgrid-stt-${Date.now()}.wav`);
-    try {
-      // Whisper needs 16 kHz mono PCM WAV.
-      await execFileAsync(ff, ['-y', '-i', p, '-ar', '16000', '-ac', '1', '-f', 'wav', tmp]);
-      const { stdout } = await execFileAsync(
-        bin,
-        // -l auto: detect the spoken language (whisper.cpp defaults to English).
-        // -mc 0 + -sns: kill the repetition/hallucination loop (the model feeding
-        // its own repeated output back) and suppress non-speech tokens.
-        ['-m', model, '-f', tmp, '-l', 'auto', '-mc', '0', '-sns', '-nt', '-np'],
-        { maxBuffer: 64 * 1024 * 1024 }
-      );
-      return stdout.trim();
-    } finally {
-      fs.promises.unlink(tmp).catch(() => {});
-    }
+    // Delegates to the active TranscriptionService (whisper by default, Parakeet when
+    // the user selected a Parakeet model and its runtime is installed). Kept on the
+    // ExtractionBridges surface for rag/file-ingest callers.
+    return (await getActiveTranscription().transcribe({ path: p })).text;
   },
 
   async sampleVideoFrames(p, opts) {

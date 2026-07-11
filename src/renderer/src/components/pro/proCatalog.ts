@@ -7,6 +7,9 @@ import {
   Graph,
   MagnifyingGlass,
   Broadcast,
+  ClipboardText,
+  Waveform,
+  ShieldCheck,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
@@ -16,11 +19,7 @@ import type { ComponentType } from 'react';
 // pro/ submodule is present and activated, the real screens (registered via
 // screenRegistry/navRegistry) take over these same routes.
 
-/** When Pro launches. */
-export const PRO_LAUNCH = 'July 2026';
-/** Join the Pro early-access waitlist (free to register). */
-export const PRO_EARLY_ACCESS_URL = 'https://getoffgridai.co/early-access/';
-/** Pay now → lifetime free + first access when Pro ships. */
+/** Buy Pro — live now, $49/year or $69 once, one license across up to 5 devices. */
 export const PRO_PAY_URL = 'https://getoffgridai.co/pay';
 
 export interface ProFeature {
@@ -113,6 +112,45 @@ export const PRO_FEATURES: ProFeature[] = [
     description:
       'Off Grid reaches out first — a morning briefing, a heads-up before meetings, approvals waiting on your decision, and to-dos it pulled from your day — even when the window is closed.',
     highlights: ['Proactive briefings & meeting prep', 'Approval queue for actions', 'Auto-extracted to-dos'],
+  },
+  {
+    route: 'voice',
+    label: 'Voice',
+    icon: Waveform,
+    tagline: 'Talk instead of type, fully local.',
+    description:
+      'Hold Option+Space and speak — Off Grid AI Desktop transcribes on-device with whisper.cpp and pastes the text into whatever app you are in. Tap to toggle, hold to push-to-talk. Every recording and transcript is kept in a searchable library, and you can drop in any audio or video file to transcribe it. Runs in your Mac’s RAM; nothing leaves the device.',
+    highlights: [
+      'Option+Space push-to-talk or toggle, anywhere',
+      'Paste-at-cursor + a searchable recordings library',
+      'Transcribe any audio/video file, all on-device',
+    ],
+  },
+  {
+    route: 'vault',
+    label: 'Vault',
+    icon: ShieldCheck,
+    tagline: 'Passwords and secrets, encrypted on this device.',
+    description:
+      'An encrypted KDBX4 vault for web logins, app passwords, API keys, secure notes, and secret files (.env and the like). Your master password and a device-specific key together lock the vault - the file alone is unreadable. Back up the file anywhere; it stays opaque without both factors. Sync to other devices in your Off Grid mesh via EasyShare when you are ready.',
+    highlights: [
+      'AES-256 + Argon2id, device-key bound',
+      'Logins, app passwords, API keys, notes, and files',
+      'KDBX4 format - compatible with KeePassXC',
+    ],
+  },
+  {
+    route: 'clipboard',
+    label: 'Clipboard',
+    icon: ClipboardText,
+    tagline: 'Every copy, kept and searchable.',
+    description:
+      'A local clipboard history that saves what you copy - text, images, and files - with a global hotkey (Cmd+Shift+C) quick-paste popup to drop any past copy into whatever app you are in. Stored on-device, nothing leaves your machine.',
+    highlights: [
+      'Searchable history of text, images & files',
+      'Cmd+Shift+C quick-paste popup anywhere',
+      'Stored locally in your encrypted database',
+    ],
   },
 ];
 

@@ -1,53 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
-import { motion, stagger, useAnimate } from 'motion/react';
-import { StarsBackground } from './ui/stars-background';
-import { ShootingStars } from './ui/shooting-stars';
+import { motion } from 'motion/react';
 import { BorderBeam } from './ui/border-beam';
+import { GridBackdrop } from './ui/grid-backdrop';
 import { cn } from '@renderer/lib/utils';
-import { Shield, Eye, Check, X, Gear as Settings, ArrowsClockwise as RefreshCw, Cpu } from '@phosphor-icons/react';
-import { ModelsScreen } from './ModelsScreen';
+import { Shield, Eye, Check, X, ArrowsClockwise as RefreshCw, Cpu } from '@phosphor-icons/react';
+import { SetupPanel } from './setup/SetupPanel';
 
 interface PermissionGateProps {
   children: React.ReactNode;
 }
 
-// Text Generate Effect for the title
-function TextGenerate({ words, className, delay = 0 }: { words: string; className?: string; delay?: number }) {
-  const [scope, animate] = useAnimate();
-  const wordsArray = words.split(" ");
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      animate(
-        "span",
-        { opacity: 1, filter: "blur(0px)" },
-        { duration: 0.4, delay: stagger(0.08) }
-      );
-    }, delay * 1000);
-
-    return () => clearTimeout(timer);
-  }, [animate, delay]);
-
-  return (
-    <motion.div ref={scope} className={cn("inline", className)}>
-      {wordsArray.map((word, idx) => (
-        <motion.span
-          key={word + idx}
-          className="opacity-0 inline-block"
-          style={{ filter: "blur(8px)" }}
-        >
-          {word}{idx < wordsArray.length - 1 ? "\u00A0" : ""}
-        </motion.span>
-      ))}
-    </motion.div>
-  );
-}
 
 export function PermissionGate({ children }: PermissionGateProps) {
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus | null>(null);
   const [isChecking, setIsChecking] = useState(true);
   const [modelStatus, setModelStatus] = useState<{ downloaded: boolean; modelsDir: string } | null>(null);
-  const [showModels, setShowModels] = useState(false);
   // Pro setup is NON-blocking: users go straight into the shell to look around.
   // The detailed setup screen opens on demand; a slim nudge can be dismissed.
   const [showSetup, setShowSetup] = useState(false);
@@ -130,7 +97,7 @@ export function PermissionGate({ children }: PermissionGateProps) {
   if (isChecking && !permissionStatus) {
     return (
       <div className="h-screen w-screen bg-neutral-950 flex items-center justify-center fixed inset-0">
-        <StarsBackground className="absolute inset-0 z-0" />
+        <GridBackdrop className="z-0" />
         <motion.div
           initial={{ opacity: 0, filter: 'blur(10px)' }}
           animate={{ opacity: 1, filter: 'blur(0px)' }}
@@ -144,33 +111,13 @@ export function PermissionGate({ children }: PermissionGateProps) {
     );
   }
 
-  // Free build: never gate — let people into the app shell (with the sidebar) to
-  // look around. Model download lives in the Models tab; the app defaults there on
-  // first run (see App.tsx). No capture permissions to ask for.
-  if (!isPro) {
-    return children;
-  }
-
-  // Pro is ready when capture permissions are granted and a model is present.
+  // Both tiers flow through the same NON-blocking path. "Ready" = a model is
+  // present (Pro also needs capture permissions). Free has permsOk=true, so for
+  // free this is just "has a model". Either way it's a dismissible nudge, never a
+  // wall — so free users also get the "Configure for me" prompt when they have no
+  // model yet (the most useful first-run action).
   const ready = permsOk && !!modelStatus?.downloaded;
 
-  // Browse the full model catalog (text, vision, image, voice, transcription).
-  // Downloading + Using a text/vision model flips modelStatus and opens the app.
-  if (showModels) {
-    return (
-      <div className="fixed inset-0 z-50 h-screen w-screen overflow-hidden bg-neutral-950">
-        <button
-          onClick={() => setShowModels(false)}
-          className="absolute left-4 top-4 z-20 flex items-center gap-1 text-sm text-neutral-400 transition-colors hover:text-white"
-        >
-          ← Back to setup
-        </button>
-        <div className="h-full w-full pt-12">
-          <ModelsScreen />
-        </div>
-      </div>
-    );
-  }
 
   // Default (NON-blocking): drop straight into the shell so people can look around.
   // Show a slim, dismissible nudge when capture perms or a model are still missing.
@@ -180,7 +127,6 @@ export function PermissionGate({ children }: PermissionGateProps) {
         {children}
         {!ready && !setupDismissed && (
           <SetupNudge
-            missingPerms={!permsOk}
             missingModel={!modelStatus?.downloaded}
             onOpen={() => setShowSetup(true)}
             onDismiss={() => setSetupDismissed(true)}
@@ -193,8 +139,7 @@ export function PermissionGate({ children }: PermissionGateProps) {
   // Detailed setup screen — opened on demand from the nudge (no longer a hard wall).
   return (
     <div className="h-screen w-screen bg-neutral-950 fixed inset-0 overflow-hidden">
-      <StarsBackground className="absolute inset-0 z-0" />
-      <ShootingStars className="absolute inset-0 z-0" />
+      <GridBackdrop className="z-0" />
       <button
         onClick={() => setShowSetup(false)}
         className="absolute left-4 top-4 z-20 flex items-center gap-1 text-sm text-neutral-400 transition-colors hover:text-white"
@@ -202,12 +147,12 @@ export function PermissionGate({ children }: PermissionGateProps) {
         ← Back to app
       </button>
 
-      <div className="relative z-10 h-full w-full flex flex-col items-center overflow-y-auto pt-16 pb-8 px-8">
+      <div className="relative z-10 h-full w-full flex flex-col items-center overflow-y-auto py-12 px-8">
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-          className="w-full max-w-3xl"
+          className="w-full max-w-3xl my-auto"
         >
           {/* Icon */}
           <motion.div
@@ -217,18 +162,14 @@ export function PermissionGate({ children }: PermissionGateProps) {
             className="flex justify-center mb-8"
           >
             <div className="w-16 h-16 rounded-2xl bg-neutral-900/80 border border-neutral-800 flex items-center justify-center backdrop-blur-xl">
-              <Shield className="w-7 h-7 text-neutral-500" />
+              <Cpu className="w-7 h-7 text-green-500" />
             </div>
           </motion.div>
 
-          {/* Title with text generate effect */}
-          <div className="text-center mb-3">
-            <TextGenerate
-              words="Setup Required"
-              className="text-4xl font-light text-white tracking-tight"
-              delay={0.2}
-            />
-          </div>
+          {/* Title */}
+          <h1 className="text-center text-3xl md:text-4xl font-light tracking-tight text-white mb-3">
+            Set up your local AI
+          </h1>
 
           {/* Subtitle */}
           <motion.p
@@ -242,119 +183,120 @@ export function PermissionGate({ children }: PermissionGateProps) {
               : 'Download a model to get started. Everything runs locally on your device — no cloud, no account.'}
           </motion.p>
 
-          {/* Cards — capture permissions are Pro-only; the model is always required. */}
-          <div className={cn('grid gap-4 mb-8', isPro ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1 max-w-sm mx-auto')}>
-            {isPro && (
-              <PermissionCard
-                title="Accessibility"
-                description="Read text from AI chat windows"
-                icon={<Eye className="w-5 h-5" />}
-                granted={permissionStatus?.accessibility ?? false}
-                onOpenSettings={handleOpenAccessibilitySettings}
-                delay={0.6}
-              />
-            )}
-
-            {isPro && (
-              <PermissionCard
-                title="Screen Recording"
-                description="Capture visual context for OCR"
-                icon={<Shield className="w-5 h-5" />}
-                granted={permissionStatus?.screenRecording ?? false}
-                onOpenSettings={handleOpenScreenRecordingSettings}
-                delay={0.7}
-              />
-            )}
-
-            {/* AI Model - opens the catalog (text, vision, image, voice, transcription) */}
-            <motion.button
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.8, duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-              onClick={() => setShowModels(true)}
-              className="flex h-full flex-col gap-3 rounded-xl border border-neutral-800 bg-neutral-900/60 p-4 text-left transition-colors hover:border-green-500/60"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-800/60">
-                  <Cpu className="h-5 w-5 text-neutral-500" />
-                </div>
-                <span className="whitespace-nowrap text-xs text-green-500">
-                  {modelStatus?.downloaded ? 'Done' : 'Browse →'}
-                </span>
-              </div>
-              <div className="flex-1">
-                <div className="text-sm font-medium text-white">AI Model</div>
-                <div className="text-xs text-neutral-500">
-                  {modelStatus?.downloaded ? 'Model ready' : 'Choose & download a model'}
-                </div>
-              </div>
-            </motion.button>
-          </div>
-
-          {/* Instructions */}
+          {/* The model: one-click "Configure for me" + manual browse (shared with
+              Settings). On success it flips modelStatus and the gate clears. */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9, duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="bg-neutral-900/40 border border-neutral-800/60 rounded-xl p-4 mb-6"
+            transition={{ delay: 0.6, duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="mb-8"
           >
-            <div className="flex items-center gap-2 mb-3">
-              <Settings className="w-3.5 h-3.5 text-neutral-600" />
-              <span className="text-[10px] font-medium text-neutral-600 uppercase tracking-widest">
-                {isPro ? 'How to enable' : 'Get started'}
-              </span>
-            </div>
-            <div className="space-y-2 text-sm text-neutral-500">
-              {isPro ? (
-                <>
-                  <p>1. Click <span className="text-neutral-400">Open Settings</span> for each permission</p>
-                  <p>2. Find <span className="text-neutral-400">Off Grid AI</span> in the list</p>
-                  <p>3. Toggle the switch to enable</p>
-                  <p>4. Click <span className="text-neutral-400">Browse</span> to download a model</p>
-                </>
-              ) : (
-                <>
-                  <p>1. Click <span className="text-neutral-400">Browse</span> on the AI Model card</p>
-                  <p>2. Pick a model and <span className="text-neutral-400">Download</span> it</p>
-                  <p>3. Hit <span className="text-neutral-400">Use</span> — the app opens automatically</p>
-                </>
-              )}
+            <SetupPanel hideHealth onConfigured={checkModelStatus} />
+            <div className="mt-3 text-center">
+              <button
+                onClick={() => {
+                  // Drop into the real in-app Models screen (with the left nav). The
+                  // app shell (already mounted behind this gate) listens for og:navigate
+                  // and switches view — replaceState alone wouldn't re-derive it. Keep
+                  // the URL in sync, then dismiss the gate.
+                  window.dispatchEvent(new CustomEvent('og:navigate', { detail: 'models' }));
+                  window.history.replaceState(null, '', '/models');
+                  setSetupDismissed(true);
+                  setShowSetup(false);
+                }}
+                className="text-xs text-neutral-500 underline-offset-2 transition-colors hover:text-neutral-300 hover:underline"
+              >
+                or browse &amp; pick a model yourself
+              </button>
             </div>
           </motion.div>
 
-          {/* Refresh Button */}
-          <motion.button
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1, duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-            onClick={handleRefresh}
-            disabled={isChecking}
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.99 }}
-            className={cn(
-              "w-full py-3 rounded-xl font-medium transition-all",
-              "bg-neutral-900/80 border border-neutral-800 text-neutral-300",
-              "hover:bg-neutral-800 hover:border-neutral-700 hover:text-white",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-              "flex items-center justify-center gap-2"
-            )}
-          >
-            <RefreshCw className={cn("w-4 h-4", isChecking && "animate-spin")} />
-            {isChecking ? 'Checking' : 'Check Again'}
-          </motion.button>
-
-          {/* Status indicator */}
+          {/* What you get — gives the screen substance and sells the local stack. */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 1.1 }}
-            className="flex items-center justify-center gap-2 mt-4"
+            transition={{ delay: 0.75, duration: 0.4 }}
+            className="mb-2 flex flex-col items-center gap-2"
           >
-            <div className="w-1.5 h-1.5 rounded-full bg-neutral-700 animate-pulse" />
-            <span className="text-[10px] text-neutral-600 uppercase tracking-widest">
-              Auto-checking
-            </span>
+            <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-neutral-400">
+              {['Chat', 'Vision', 'Images', 'Voice', 'Speech'].map((c) => (
+                <span key={c} className="flex items-center gap-1.5">
+                  <span className="h-1 w-1 rounded-full bg-green-500" />{c}
+                </span>
+              ))}
+            </div>
+            <p className="text-[11px] text-neutral-600">One app · every open model · all on your device</p>
           </motion.div>
+
+          {/* Capture permissions — Pro only. */}
+          {isPro && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.8, duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="mb-8"
+            >
+              <div className="mb-3 text-[10px] font-medium uppercase tracking-widest text-neutral-600">
+                Capture permissions
+              </div>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <PermissionCard
+                  title="Accessibility"
+                  description="Read text from AI chat windows"
+                  icon={<Eye className="w-5 h-5" />}
+                  granted={permissionStatus?.accessibility ?? false}
+                  onOpenSettings={handleOpenAccessibilitySettings}
+                  delay={0.85}
+                />
+                <PermissionCard
+                  title="Screen Recording"
+                  description="Capture visual context for OCR"
+                  icon={<Shield className="w-5 h-5" />}
+                  granted={permissionStatus?.screenRecording ?? false}
+                  onOpenSettings={handleOpenScreenRecordingSettings}
+                  delay={0.9}
+                />
+              </div>
+            </motion.div>
+          )}
+
+          {/* "Check Again" + auto-checking only make sense for Pro capture permissions
+              (you grant them in System Settings, then re-poll). For a model-only setup
+              there's nothing to re-check — Configure handles it. */}
+          {isPro && (
+            <>
+              <motion.button
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1, duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+                onClick={handleRefresh}
+                disabled={isChecking}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                className={cn(
+                  "w-full py-3 rounded-xl font-medium transition-all",
+                  "bg-neutral-900/80 border border-neutral-800 text-neutral-300",
+                  "hover:bg-neutral-800 hover:border-neutral-700 hover:text-white",
+                  "disabled:opacity-50 disabled:cursor-not-allowed",
+                  "flex items-center justify-center gap-2"
+                )}
+              >
+                <RefreshCw className={cn("w-4 h-4", isChecking && "animate-spin")} />
+                {isChecking ? 'Checking' : 'Check permissions again'}
+              </motion.button>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 1.1 }}
+                className="flex items-center justify-center gap-2 mt-4"
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-neutral-700 animate-pulse" />
+                <span className="text-[10px] text-neutral-600 uppercase tracking-widest">
+                  Auto-checking
+                </span>
+              </motion.div>
+            </>
+          )}
         </motion.div>
       </div>
     </div>
@@ -364,20 +306,22 @@ export function PermissionGate({ children }: PermissionGateProps) {
 // Slim, dismissible setup nudge shown over the shell when Pro setup is incomplete.
 // Non-blocking: people can explore the whole app and finish setup whenever.
 function SetupNudge({
-  missingPerms,
   missingModel,
   onOpen,
   onDismiss,
 }: {
-  missingPerms: boolean;
   missingModel: boolean;
   onOpen: () => void;
   onDismiss: () => void;
 }) {
-  const parts: string[] = [];
-  if (missingModel) parts.push('download a model');
-  if (missingPerms) parts.push('grant capture permissions');
-  const detail = parts.join(' · ');
+  // Model-first wording. Missing a model is the thing that actually blocks you, and
+  // "Configure for me" handles it in one click — so lead with that for both tiers.
+  // Capture permissions (Pro-only) are the secondary, optional step.
+  const title = missingModel ? 'Set up your local AI' : 'Finish setting up capture';
+  const detail = missingModel
+    ? 'Pick a model yourself, or let Off Grid configure one for your Mac.'
+    : 'Grant screen & accessibility access so Off Grid can see & remember.';
+  const cta = missingModel ? 'Configure' : 'Set up';
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -387,14 +331,14 @@ function SetupNudge({
     >
       <Cpu className="h-4 w-4 shrink-0 text-green-500" />
       <div className="text-xs leading-tight">
-        <div className="font-medium text-white">Finish setting up Off Grid Pro</div>
-        {detail && <div className="text-neutral-500">To capture &amp; remember, {detail}.</div>}
+        <div className="font-medium text-white">{title}</div>
+        <div className="text-neutral-500">{detail}</div>
       </div>
       <button
         onClick={onOpen}
         className="ml-1 whitespace-nowrap rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-green-500"
       >
-        Set up
+        {cta}
       </button>
       <button
         onClick={onDismiss}

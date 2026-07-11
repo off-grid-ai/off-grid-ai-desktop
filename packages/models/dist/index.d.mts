@@ -1,5 +1,5 @@
-import { M as ModelEntry, a as ModelKind, b as ModelRecommendationTier, D as DownloadBridge, c as ModelStore, d as DownloadProgress } from './types-C3JiELTS.mjs';
-export { e as DownloadStatus, I as ImageGenMode, f as ImageGenProvider, g as ImageGenRequest, h as ImageGenResult, i as ModelFile, s as supportsMode, v as validateImageGenRequest } from './types-C3JiELTS.mjs';
+import { M as ModelEntry, a as ModelKind, b as ModelRecommendationTier, D as DownloadBridge, c as ModelStore, d as DownloadProgress } from './types-Dbo7SGxu.mjs';
+export { e as DownloadStatus, I as ImageGenMode, f as ImageGenProvider, g as ImageGenRequest, h as ImageGenResult, i as ModelFile, s as supportsMode, v as validateImageGenRequest } from './types-Dbo7SGxu.mjs';
 
 declare const RECOMMENDATION_TIERS: ModelRecommendationTier[];
 declare function recommendForRam(ramGb: number): ModelRecommendationTier;
@@ -274,4 +274,28 @@ declare function applySort<T extends FilterableModel>(models: T[], sort: SortOpt
 /** Apply filters then sort in one pass. */
 declare function filterAndSort<T extends FilterableModel>(models: T[], state: FilterState, ramGb?: number): T[];
 
-export { CATALOG, CREDIBILITY_LABELS, CREDIBILITY_OPTIONS, type ChatMessage, type ChatOptions, type ChatRole, type Credibility, type CredibilityFilter, DownloadBridge, DownloadProgress, type FetchLike, type FilterState, type FilterableModel, type HFSearchResult, type InferenceProvider, MODEL_KINDS, MODEL_TYPE_OPTIONS, ModelDownloader, ModelEntry, type ModelFileVariant, ModelKind, ModelRecommendationTier, ModelStore, type ModelTypeFilter, OFFICIAL_MODEL_AUTHORS, type ProviderModel, ProviderRegistry, QUANTIZATION_INFO, type QuantInfo, RECOMMENDATION_TIERS, type RemoteServerConfig, type RemoteServerKind, SIZE_OPTIONS, SORT_OPTIONS, type SizeFilter, type SortOption, VERIFIED_QUANTIZERS, applyFilters, applySort, bestFitScore, createProvider, determineCredibility, extractQuantization, filterAndSort, formatFileSize, getModelFiles, getModelType, hasActiveFilters, initialFilterState, isMMProjFile, modelsByKind, ollamaProvider, openAICompatibleProvider, parseParamCount, recommendForRam, resolveHuggingFaceModel, searchHuggingFace };
+/** The minimal shape the recommendation reads — id, kind, tags. Structural so
+ *  callers can pass either the package `ModelEntry` or a renderer-local model type
+ *  (whose `kind` is a plain string) without a cast. */
+interface RecommendableModel {
+    id: string;
+    kind: string;
+    tags?: string[];
+}
+/** RAM (GB) at or below which the lighter (Light-tagged) quant is recommended.
+ *  16GB is the ceiling: verified that the full Q8 DreamShaper pegs memory (~4.7GB
+ *  peak) and can freeze a 16GB Mac, while the Q4 (~3.08GB peak) does not. */
+declare const LIGHT_MODEL_RAM_CEILING_GB = 16;
+/**
+ * The image model id best suited to a machine with `ramGb` RAM, or null when no
+ * image model qualifies. General over the 'Light' tag:
+ *   - ramGb <= LIGHT_MODEL_RAM_CEILING_GB → prefer a Light-tagged image model;
+ *   - ramGb >  ceiling                    → prefer the full (non-Light) sibling
+ *                                            of a family that HAS a Light variant.
+ * The "has a Light sibling" constraint keeps the badge on the versatile default
+ * family (DreamShaper) rather than an unrelated heavy model. Falls back to any
+ * Light model when only that exists (small machine) / the family's full entry.
+ */
+declare function recommendedImageModelId(models: RecommendableModel[], ramGb: number | null | undefined): string | null;
+
+export { CATALOG, CREDIBILITY_LABELS, CREDIBILITY_OPTIONS, type ChatMessage, type ChatOptions, type ChatRole, type Credibility, type CredibilityFilter, DownloadBridge, DownloadProgress, type FetchLike, type FilterState, type FilterableModel, type HFSearchResult, type InferenceProvider, LIGHT_MODEL_RAM_CEILING_GB, MODEL_KINDS, MODEL_TYPE_OPTIONS, ModelDownloader, ModelEntry, type ModelFileVariant, ModelKind, ModelRecommendationTier, ModelStore, type ModelTypeFilter, OFFICIAL_MODEL_AUTHORS, type ProviderModel, ProviderRegistry, QUANTIZATION_INFO, type QuantInfo, RECOMMENDATION_TIERS, type RecommendableModel, type RemoteServerConfig, type RemoteServerKind, SIZE_OPTIONS, SORT_OPTIONS, type SizeFilter, type SortOption, VERIFIED_QUANTIZERS, applyFilters, applySort, bestFitScore, createProvider, determineCredibility, extractQuantization, filterAndSort, formatFileSize, getModelFiles, getModelType, hasActiveFilters, initialFilterState, isMMProjFile, modelsByKind, ollamaProvider, openAICompatibleProvider, parseParamCount, recommendForRam, recommendedImageModelId, resolveHuggingFaceModel, searchHuggingFace };

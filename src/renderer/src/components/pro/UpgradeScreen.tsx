@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { ArrowSquareOut, Check, Sparkle, Key, CircleNotch } from '@phosphor-icons/react';
+import { ArrowSquareOut, Check, Sparkle, Key, CircleNotch, DeviceMobile } from '@phosphor-icons/react';
 import { PRO_PAY_URL, PRO_FEATURES, type ProFeature } from './proCatalog';
-
-const PRO_DOWNLOAD_URL = 'https://github.com/off-grid-ai/desktop/releases/latest';
+import { OFF_GRID_MOBILE_URL, openExternal } from '../../constants/links';
 
 // License-key activation. Only meaningful in a pro-capable build (__OFFGRID_PRO__);
 // a core build has no pro code bundled, so entering a key would unlock nothing.
@@ -39,8 +38,8 @@ function LicenseActivation(): React.ReactElement {
   };
 
   return (
-    <div className="mt-2 flex w-full max-w-md flex-col items-stretch gap-2">
-      <label className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-neutral-500">
+    <div className="flex w-full flex-col items-stretch gap-2">
+      <label className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-neutral-500">
         <Key weight="bold" className="h-3.5 w-3.5" /> Already bought Pro? Enter your license key
       </label>
       <div className="flex gap-2">
@@ -92,68 +91,95 @@ export function UpgradeScreen({ feature }: { feature?: ProFeature }): React.Reac
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center gap-6 px-6 text-center font-mono">
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-xs uppercase tracking-wide text-green-400">
-        <Sparkle weight="fill" className="h-3.5 w-3.5" /> Off Grid Pro · Available now
-      </span>
-
-      {f ? (
-        <>
-          <div className="flex flex-col items-center gap-3">
-            <f.icon weight="duotone" className="h-12 w-12 text-green-400" />
-            <h1 className="text-2xl font-semibold text-white">{f.label}</h1>
-            <p className="text-base text-neutral-300">{f.tagline}</p>
-          </div>
-          <p className="max-w-xl text-sm leading-relaxed text-neutral-400">{f.description}</p>
-          <ul className="flex flex-col items-start gap-2 text-left">
-            {f.highlights.map((h) => (
-              <li key={h} className="flex items-start gap-2 text-sm text-neutral-300">
-                <Check weight="bold" className="mt-0.5 h-4 w-4 shrink-0 text-green-400" /> {h}
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : (
-        <div className="flex flex-col items-center gap-3">
-          <h1 className="text-2xl font-semibold text-white">Off Grid Pro is here</h1>
-          <p className="max-w-xl text-sm leading-relaxed text-neutral-400">
-            Pro adds the layer that sees, remembers, and acts — always on, it never forgets,
-            makes everything findable with unified search, and a proactive secretary surfaces
-            what matters and acts for you. Screen capture, your private CRM, meetings, and
-            connectors included. All on-device.
-          </p>
-        </div>
-      )}
-
-      <div className="mt-2 flex flex-col items-center gap-3 sm:flex-row">
-        <button
-          onClick={() => open(PRO_PAY_URL)}
-          className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-green-500"
-        >
-          Get Pro <ArrowSquareOut weight="bold" className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => open(PRO_DOWNLOAD_URL)}
-          className="inline-flex items-center gap-2 rounded-lg border border-neutral-700 px-5 py-2.5 text-sm font-medium text-neutral-200 transition-colors hover:border-green-500/60 hover:text-white"
-        >
-          Download the Pro build <ArrowSquareOut weight="bold" className="h-4 w-4" />
-        </button>
-      </div>
-
-      {__OFFGRID_PRO__ ? (
-        <LicenseActivation />
-      ) : (
-        <p className="max-w-md text-xs leading-relaxed text-neutral-500">
-          Already bought Pro? Download the Pro build above and activate your license key in it.
-        </p>
-      )}
-
-      <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-neutral-600">
-        {PRO_FEATURES.map((x) => (
-          <span key={x.route} className={x.route === f?.route ? 'text-green-400' : ''}>
-            {x.label}
+    <div className="h-full overflow-y-auto px-8 py-10 font-mono lg:px-12">
+      <div className="mx-auto grid max-w-5xl grid-cols-1 items-start gap-x-12 gap-y-8 lg:grid-cols-[1.4fr_minmax(320px,1fr)]">
+        {/* Left — the pitch (left-aligned, desktop reading column) */}
+        <div className="flex flex-col gap-5">
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-[11px] uppercase tracking-wide text-green-400">
+            <Sparkle weight="fill" className="h-3.5 w-3.5" /> Off Grid Pro · Available now
           </span>
-        ))}
+
+          <div className="flex items-start gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900/60">
+              {f ? <f.icon weight="duotone" className="h-7 w-7 text-green-400" /> : <Sparkle weight="duotone" className="h-7 w-7 text-green-400" />}
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-3xl font-semibold tracking-tight text-white">{f ? f.label : 'Off Grid Pro is here'}</h1>
+              {f && <p className="mt-1 text-base text-neutral-300">{f.tagline}</p>}
+            </div>
+          </div>
+
+          <p className="max-w-2xl text-sm leading-relaxed text-neutral-400">
+            {f
+              ? f.description
+              : 'Pro adds the layer that sees, remembers, and acts — always on, it never forgets, makes everything findable with unified search, and a proactive secretary surfaces what matters and acts for you. Screen capture, your private CRM, meetings, and connectors included. All on-device.'}
+          </p>
+
+          {f && (
+            <ul className="grid gap-2 sm:grid-cols-2">
+              {f.highlights.map((h) => (
+                <li key={h} className="flex items-start gap-2 text-sm text-neutral-300">
+                  <Check weight="bold" className="mt-0.5 h-4 w-4 shrink-0 text-green-400" /> {h}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Everything Pro includes — the other gated tabs */}
+          <div className="mt-1 border-t border-neutral-800 pt-4">
+            <div className="mb-2 text-[10px] uppercase tracking-widest text-neutral-600">Everything in Pro</div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-neutral-500">
+              {PRO_FEATURES.map((x) => (
+                <span key={x.route} className={`flex items-center gap-1.5 ${x.route === f?.route ? 'text-green-400' : ''}`}>
+                  <span className={`h-1 w-1 rounded-full ${x.route === f?.route ? 'bg-green-400' : 'bg-neutral-600'}`} />
+                  {x.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Right — action card (buy + activate), the desktop side panel */}
+        <aside className="flex flex-col gap-4 rounded-xl border border-neutral-800 bg-neutral-900/40 p-5 lg:sticky lg:top-10">
+          <div className="text-[10px] uppercase tracking-widest text-neutral-500">Unlock Pro</div>
+          {/* Single build: this app already contains Pro — a valid key unlocks it in
+              place (no separate download). So "Get Pro" (buy) + activate here. */}
+          <button
+            onClick={() => open(PRO_PAY_URL)}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-green-500"
+          >
+            Get Pro <ArrowSquareOut weight="bold" className="h-4 w-4" />
+          </button>
+          <p className="text-[11px] leading-relaxed text-neutral-600">
+            One-time purchase. Runs entirely on your device — no subscription, no cloud, no account.
+          </p>
+
+          {/* Guard kept so a pure-core build (no pro code) wouldn't show an inert box;
+              in the shipped single build __OFFGRID_PRO__ is always true. */}
+          {__OFFGRID_PRO__ ? (
+            <>
+              <div className="border-t border-neutral-800" />
+              <LicenseActivation />
+            </>
+          ) : null}
+
+          {/* Cross-sell: your Pro license spans both products. Mirrors mobile's
+              "Get Off Grid AI Desktop" row on its Pro tab. */}
+          <div className="border-t border-neutral-800" />
+          <button
+            onClick={() => openExternal(OFF_GRID_MOBILE_URL)}
+            className="group flex items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-2.5 text-left transition-colors hover:border-green-500/30"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-700 bg-neutral-800 transition-colors group-hover:border-green-500/30">
+              <DeviceMobile weight="regular" className="h-4 w-4 text-neutral-300 transition-colors group-hover:text-green-400" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-medium text-neutral-200">Get Off Grid AI Mobile</span>
+              <span className="mt-0.5 block text-[11px] leading-tight text-neutral-500">Your license covers your phone too - up to 5 devices, synced over your own network.</span>
+            </span>
+            <ArrowSquareOut weight="bold" className="h-4 w-4 shrink-0 text-neutral-500" />
+          </button>
+        </aside>
       </div>
     </div>
   );

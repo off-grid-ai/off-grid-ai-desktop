@@ -153,6 +153,14 @@ async function connect(c: Connector, interactive: boolean): Promise<{ client: an
     // Interactive: the persistent loopback catches the redirect by state. Start it
     // up front so it's bound even for an instant skip-consent redirect.
     ensureLoopback();
+    // A stored dynamic-client registration can expire server-side (Attio returns
+    // "invalid_client: Client registration has expired; please re-register").
+    // When we're about to do a FRESH interactive auth (no usable token), drop any
+    // stale client so the SDK re-registers cleanly instead of resending a dead
+    // client_id. (Google uses a fixed client — never clear it.)
+    if (!googleConfigForUrl(c.url) && !hasOAuthTokens(c.id)) {
+      authProvider.invalidateCredentials('client');
+    }
     // Runs the OAuth handshake after the SDK opened the browser: wait for the code,
     // exchange it (saves tokens), reconnect with a fresh client + transport.
     const finishOAuth = async (): Promise<void> => {

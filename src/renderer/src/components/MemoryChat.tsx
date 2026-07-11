@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { shouldQueue, enqueue, dequeue, queuedCount, clearQueue } from '@renderer/lib/chat-queue';
+import { waitingLabel } from '@renderer/lib/chat-labels';
+import { timeAgo } from '@renderer/lib/time';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -7,11 +10,13 @@ import { VoiceBubble, stopAllVoicePlayback } from './VoiceBubble';
 import { SkillsPanel } from './SkillsPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { ModelPicker } from './ModelPicker';
+import { standardModelDefaults } from '@offgrid/core/shared/image-defaults';
+import { looksLikeImageRequest, cleanImagePrompt } from '@renderer/lib/image-intent';
 import { Button } from '@renderer/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from '@renderer/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from '@renderer/components/ui/dropdown-menu';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@renderer/components/ui/collapsible';
-import { Plus, Paperclip, Image as ImageIcon, Sparkle as Sparkles, FolderPlus, Wrench, MagnifyingGlass as Search, Plug, SlidersHorizontal, Brain, FolderOpen, CaretDown, Lightning } from '@phosphor-icons/react';
+import { Plus, Paperclip, Image as ImageIcon, Sparkle as Sparkles, FolderPlus, Wrench, MagnifyingGlass as Search, Plug, SlidersHorizontal, Brain, Prohibit, Check, X, FolderOpen, CaretDown, Lightning, WarningCircle } from '@phosphor-icons/react';
 
 type RagContext = {
   masterMemory?: string | null;
@@ -35,7 +40,7 @@ type ChatMessage = {
   toolCalls?: { name: string; result: string }[];
   reasoning?: string;
   streaming?: boolean;
-  activity?: { kind: string; counts?: Record<string, number> };
+  activity?: { kind: string; counts?: Record<string, number>; name?: string };
   attachments?: { name: string; kind: string; text?: string; path?: string }[];
   variants?: string[];      // regenerated answers (navigate with ‹ ›)
   variantIndex?: number;
@@ -66,8 +71,9 @@ const ASK_FENCE = /```ask\s*\n[\s\S]*?```/i;
 const ARTIFACT_FENCE = /```(?:html|svg|mermaid|jsx|tsx|react|image)\s*\n[\s\S]*?```/gi;
 
 // Human label for a live retrieval/activity step shown while the model works.
-function activityLabel(a?: { kind: string; counts?: Record<string, number> }): string {
+function activityLabel(a?: { kind: string; counts?: Record<string, number>; name?: string }): string {
   if (!a) return '';
+  if (a.kind === 'running_tool') return `Running ${a.name || 'tool'}…`;
   if (a.kind === 'reading') return `Reading the page${(a.counts?.urls ?? 0) > 1 ? 's' : ''}…`;
   if (a.kind === 'searching') return 'Searching your memory…';
   if (a.kind === 'memory') {
@@ -107,6 +113,8 @@ interface MemoryChatProps {
   onNavigateToMemory?: (memoryId: number) => void;
   onNavigateToChat?: (sessionId: string) => void;
   onNavigateToEntity?: (entityId: number) => void;
+  /** Open the Replay screen seeked to a capture's moment (epoch ms). */
+  onSeekReplay?: (ts: number) => void;
   /** Open a specific conversation, or start a new one scoped to a project. */
   openTarget?: { conversationId?: string; projectId?: string } | null;
   onTargetConsumed?: () => void;
@@ -120,6 +128,7 @@ function mapRagMessages(raw: any[]): ChatMessage[] {
       role: m.role as 'user' | 'assistant',
       content: m.content,
       context: ctx,
+      toolCalls: Array.isArray(ctx?.toolCalls) ? ctx.toolCalls : undefined,
       image: ctx?.image ? `ogcapture://${ctx.image}` : undefined,
       imagePath: ctx?.image,
       // Attachments persisted on the user turn (clickable chips survive reload).
@@ -173,31 +182,58 @@ const STYLE_PRESETS: { name: string; prompt: string; preview: string; swatch: st
   { name: 'Studio portrait', prompt: 'studio portrait, soft key light, bokeh background', preview: 'a golden retriever dog', swatch: 'from-neutral-600 via-neutral-800 to-neutral-900' },
 ];
 
-function timeAgo(dateStr: string): string {
-  const date = new Date(dateStr + 'Z');
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
+const NEW_CHAT = '__new__'; // bucket key for a fresh, not-yet-saved conversation
+const EMPTY_MSGS: ChatMessage[] = [];
 
-export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToEntity, openTarget, onTargetConsumed }: MemoryChatProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToEntity, onSeekReplay, openTarget, onTargetConsumed }: MemoryChatProps) {
+  // Messages are kept PER CONVERSATION so a background tab keeps its own thread and
+  // an in-flight stream can't leak into whatever tab you switch to. `messages` (below,
+  // after activeConversationId) is the active tab's slice; sends target their own conv.
+  const [messagesByConv, setMessagesByConv] = useState<Record<string, ChatMessage[]>>({});
+  const setConvMessages = useCallback((cid: string | null, updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])): void => {
+    const k = cid ?? NEW_CHAT;
+    setMessagesByConv(prev => ({ ...prev, [k]: typeof updater === 'function' ? (updater as (p: ChatMessage[]) => ChatMessage[])(prev[k] ?? []) : updater }));
+  }, []);
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  // Whether the active chat model can read images. Gate image attachment on this and
+  // re-check periodically (the user can switch models from the Models screen).
+  const [chatVision, setChatVision] = useState(true);
+  const [attachWarn, setAttachWarn] = useState<string | null>(null);
+  useEffect(() => {
+    const check = (): void => { void (window.api as { chatVisionAvailable?: () => Promise<boolean> }).chatVisionAvailable?.().then(v => setChatVision(!!v)).catch(() => {}); };
+    check();
+    const t = setInterval(check, 4000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => { if (chatVision) setAttachWarn(null); }, [chatVision]); // cleared once a vision model is active
   const [skills, setSkills] = useState<{ name: string; description: string }[]>([]);
   const [askSel, setAskSel] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(false);
-  const [generatingConvId, setGeneratingConvId] = useState<string | null>(null); // which tab is generating
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [convSearch, setConvSearch] = useState('');
+  // Conversation ids whose MESSAGE CONTENT matches the sidebar search (title is
+  // matched client-side; content needs a debounced backend query).
+  const [contentMatchIds, setContentMatchIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const q = convSearch.trim();
+    if (!q) { setContentMatchIds(new Set()); return; }
+    let live = true;
+    const t = setTimeout(async () => {
+      try {
+        const ids = (await window.api.searchRagConversationIds?.(q)) as string[] | undefined;
+        if (live) setContentMatchIds(new Set(ids ?? []));
+      } catch { /* keep title-only matches */ }
+    }, 200);
+    return () => { live = false; clearTimeout(t); };
+  }, [convSearch]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  // Active tab's messages (derived) + a shim so the existing active-conversation call
+  // sites keep working. The send path targets its own conv via setConvMessages instead.
+  const messages = messagesByConv[activeConversationId ?? NEW_CHAT] ?? EMPTY_MSGS;
+  const setMessages = useCallback((updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])): void => {
+    setConvMessages(activeConversationId, updater);
+  }, [activeConversationId, setConvMessages]);
   // Voice playback must never carry across chats — stop it whenever the active
   // conversation changes (and on unmount).
   useEffect(() => { stopAllVoicePlayback(); return () => stopAllVoicePlayback(); }, [activeConversationId]);
@@ -207,7 +243,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const [showImageOptions, setShowImageOptions] = useState(false);
   const [imageAvailable, setImageAvailable] = useState(false);
   const [imgSize, setImgSize] = useState(512);
-  const [imgSteps, setImgSteps] = useState(16);
+  const [imgSteps, setImgSteps] = useState(10);
   const [imgSeed, setImgSeed] = useState('');
   const [imgNegative, setImgNegative] = useState('');
   const [imgInit, setImgInit] = useState<string | null>(null);
@@ -218,6 +254,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const [styleThumbs, setStyleThumbs] = useState<Record<string, string>>({});
   const [genThumbsBusy, setGenThumbsBusy] = useState(false);
   const [imgProgress, setImgProgress] = useState<{ step: number; total: number; secPerStep: number; preview?: string; phase?: 'sampling' | 'decoding' } | null>(null);
+  // True while an image is generating (explicit image mode OR an auto-routed chat
+  // request like "draw a dog"), so the image progress/warm-up UI shows even when
+  // the global mode is still 'ask'.
+  const [generatingImage, setGeneratingImage] = useState(false);
   const [projects, setProjects] = useState<ProjectLite[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   // Captured-memory context is a Pro ("remembers") feature; core chats are plain
@@ -228,6 +268,15 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const [, setProjectMenuOpen] = useState(false);
   const [projCreating, setProjCreating] = useState(false);
   const [projNewName, setProjNewName] = useState('');
+  const projInputRef = useRef<HTMLInputElement>(null);
+  // Focus the new-project input AFTER the dropdown returns focus to its trigger,
+  // otherwise Radix's focus-return blurs the input immediately and onBlur tears it
+  // down before the user can type. A short delay lands focus after that hand-off.
+  useEffect(() => {
+    if (!projCreating) return;
+    const t = setTimeout(() => projInputRef.current?.focus(), 80);
+    return () => clearTimeout(t);
+  }, [projCreating]);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [toolsOn, setToolsOn] = useState(false);
@@ -285,10 +334,17 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       window.removeEventListener('keydown', onKey);
     };
   }, []);
-  const [viewer, setViewer] = useState<{ title: string; text: string } | null>(null);
+  const [viewer, setViewer] = useState<{ title: string; text: string; path?: string; kind?: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [lightbox, setLightbox] = useState<{ url: string; path?: string } | null>(null);
+  // Esc closes the open overlay (attachment viewer / image lightbox).
+  useEffect(() => {
+    if (!viewer && !lightbox) return;
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { setViewer(null); setLightbox(null); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [viewer, lightbox]);
   const [canvasArtifact, setCanvasArtifact] = useState<Artifact | null>(null);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
@@ -304,15 +360,31 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const chunksRef = useRef<Blob[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const pendingVariantsRef = useRef<string[] | null>(null); // prior answers to keep when regenerating
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const sendingRef = useRef(false);
-  // Queued sends carry their attachments too, so a message waiting behind an
-  // in-flight generation keeps its image/files when it finally runs.
-  const queueRef = useRef<{ text: string; atts: Attachment[] }[]>([]);
-  const [queued, setQueued] = useState<{ text: string; atts: Attachment[] }[]>([]);
+  // Per-conversation generation lock + queue: a send belongs to its OWN conversation,
+  // never the active tab. generatingRef is the synchronous source of truth for the
+  // queue decision; generatingConvs mirrors it for rendering.
+  const generatingRef = useRef<Set<string>>(new Set());
+  const [generatingConvs, setGeneratingConvs] = useState<Set<string>>(new Set());
+  const markGenerating = useCallback((cid: string, on: boolean): void => {
+    if (on) generatingRef.current.add(cid); else generatingRef.current.delete(cid);
+    setGeneratingConvs(new Set(generatingRef.current));
+  }, []);
+  // Queued sends carry their attachments too, so a message waiting behind an in-flight
+  // generation keeps its image/files when it finally runs — keyed per conversation.
+  const queuedRef = useRef<Record<string, { text: string; atts: Attachment[] }[]>>({});
+  const [queuedByConv, setQueuedByConv] = useState<Record<string, { text: string; atts: Attachment[] }[]>>({});
+  // Map streamId → convId so the onRagStream handler can route tokens to the right
+  // conversation regardless of which tab is active when the event fires.
+  const streamConvRef = useRef<Map<string, string>>(new Map());
+  // Conversations the user hit "stop" on. The in-flight send checks this at each of
+  // its awaits and bails (no error bubble, no persisted junk) instead of finalizing a
+  // turn the user abandoned. Cleared when the conversation's send settles.
+  const cancelledRef = useRef<Set<string>>(new Set());
 
   const markdownComponents: Components = {
     p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>,
@@ -346,8 +418,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           <button
             type="button"
             onClick={() => {
-              if (!u || u.refId == null) return;
-              if (u.kind === 'memory') onNavigateToMemory?.(u.refId);
+              if (!u) return;
+              if (u.kind === 'screen') onSeekReplay?.(u.ts);
+              else if (u.refId == null) return;
+              else if (u.kind === 'memory') onNavigateToMemory?.(u.refId);
               else if (u.kind === 'entity') onNavigateToEntity?.(u.refId);
               else if (u.kind === 'meeting') onNavigateToChat?.(String(u.refId));
             }}
@@ -364,14 +438,31 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
 
   // Load conversations on mount; probe image gen; load projects for scoping.
   useEffect(() => {
-    loadConversations();
-    window.api.imageGenStatus?.().then((s: { available: boolean; models?: string[] }) => {
+    void (async () => {
+      const convos = (await window.api.getRagConversations().catch(() => [])) || [];
+      setConversations(convos);
+      // Open the latest conversation by default (most recent first), unless the shell
+      // asked to open a specific chat/project — then its own effect handles it.
+      if (!openTarget && convos.length > 0) {
+        const first = convos[0];
+        setActiveConversationId(first.id);
+        setActiveProjectId((first as { project_id?: string | null }).project_id ?? null);
+        setOpenTabs([first.id]);
+        try { setConvMessages(first.id, mapRagMessages(await window.api.getRagMessages(first.id))); } catch { setConvMessages(first.id, []); }
+      }
+    })();
+    window.api.imageGenStatus?.().then((s: { available: boolean; models?: string[]; active?: string | null }) => {
       setImageAvailable(!!s?.available);
       const models = s?.models || [];
       setImgModels(models);
-      // Default to the best fit: Z-Image Turbo (2026 flagship) > SDXL-Lightning > SDXL > 2.1 > rest.
-      const preferred = models.find(m => /z[-_]?image/i.test(m)) || models.find(m => /lightning/i.test(m)) || models.find(m => /sdxl|xl/i.test(m)) || models.find(m => /v2-1|v2\.1/i.test(m)) || models[0] || '';
-      setImgModel(prev => prev || preferred);
+      // Default the picker to the ACTIVE image model (what the Active-models panel
+      // shows, e.g. DreamShaper) so the composer never mismatches it. Fall back to a
+      // preference that skips the parked/slow Core ML dir (it would otherwise win on
+      // an "sdxl" name match and default the composer to a non-distilled model).
+      const usable = models.filter(m => !/coreml/i.test(m));
+      const preferred = usable.find(m => /dreamshaper/i.test(m)) || usable.find(m => /lightning|turbo/i.test(m)) || usable.find(m => /z[-_]?image/i.test(m)) || usable.find(m => /sdxl|xl/i.test(m)) || usable[0] || models[0] || '';
+      const active = s?.active || preferred;
+      setImgModel(prev => prev || active);
     }).catch(() => {});
     window.api.listProjects?.().then((p: ProjectLite[]) => setProjects(p || [])).catch(() => {});
     window.api.styleThumbs?.().then((t: Record<string, string>) => setStyleThumbs(t || {})).catch(() => {});
@@ -398,18 +489,15 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     }
   }, [genThumbsBusy, styleThumbs]);
 
-  // Match canvas + steps to the model. Few-step models (Lightning/Turbo) need
-  // very low steps; full models want their native resolution.
+  // Seed the size + steps controls with the model's sensible defaults (from the
+  // SINGLE shared source of truth the main process also uses — so the two layers
+  // can never drift; a stale copy of this logic once defaulted turbo models to 4
+  // steps -> rainbow artifacts). The user can then adjust Size/Steps directly.
   useEffect(() => {
     if (!imgModel) return;
-    const zimage = /z[-_]?image/i.test(imgModel);
-    const lightning = /lightning/i.test(imgModel);
-    const turbo = /turbo/i.test(imgModel) && !zimage;
-    setImgSize(turbo ? 512 : /sdxl|xl/i.test(imgModel) || lightning || zimage ? 1024 : /v2-1|v2\.1/i.test(imgModel) ? 768 : 512);
-    if (zimage) setImgSteps(8);
-    else if (turbo) setImgSteps(4);
-    else if (lightning) setImgSteps(parseInt(imgModel.match(/(\d+)\s*step/i)?.[1] || '4', 10));
-    else setImgSteps(/sdxl|xl/i.test(imgModel) ? 28 : 20);
+    const d = standardModelDefaults(imgModel);
+    setImgSize(d.defaultSize);
+    setImgSteps(d.defaultSteps);
   }, [imgModel]);
 
   const activeProjectName = projects.find(p => p.id === activeProjectId)?.name ?? null;
@@ -420,7 +508,6 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
 
   // Assign the current chat to a project (or clear it). Persists if a conversation exists.
   const assignProject = useCallback(async (projectId: string | null) => {
-    setNoMemory(false); // choosing All-memory or a project turns memory on
     setActiveProjectId(projectId);
     setProjectMenuOpen(false);
     setProjCreating(false);
@@ -450,6 +537,15 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
+  // Opening / switching a chat lands you at the latest message (after it loads).
+  const justSwitched = useRef(false);
+  useEffect(() => { justSwitched.current = true; }, [activeConversationId]);
+  useEffect(() => {
+    if (!justSwitched.current || !messages.length) return;
+    justSwitched.current = false;
+    requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ block: 'end' }));
+  }, [messages, activeConversationId]);
+
   // Live per-step image generation progress (step counter + forming preview).
   useEffect(() => {
     const off = window.api.onImageGenProgress?.((p) => setImgProgress(p));
@@ -472,10 +568,11 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     setActiveProjectId(conversations.find(c => c.id === convId)?.project_id ?? null);
     try {
       const rawMessages = await window.api.getRagMessages(convId);
-      setMessages(mapRagMessages(rawMessages));
+      // Refresh from DB, but never clobber an in-flight stream for this conversation.
+      setMessagesByConv(prev => (prev[convId]?.some(m => m.streaming) ? prev : { ...prev, [convId]: mapRagMessages(rawMessages) }));
     } catch (e) {
       console.error('Failed to load messages:', e);
-      setMessages([]);
+      setMessagesByConv(prev => (prev[convId] ? prev : { ...prev, [convId]: [] }));
     }
   }, [activeConversationId, conversations]);
 
@@ -486,7 +583,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       if (activeConversationId === convId) {
         const fallback = next[next.length - 1];
         if (fallback) void switchConversation(fallback);
-        else { setActiveConversationId(null); setMessages([]); setActiveProjectId(null); }
+        else { setActiveConversationId(null); setConvMessages(null, []); setActiveProjectId(null); }
       }
       return next;
     });
@@ -504,10 +601,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           setOpenTabs(t => (t.includes(convId) ? t : [...t, convId]));
           const conv = await window.api.getRagConversation?.(convId);
           setActiveProjectId((conv as { project_id?: string | null })?.project_id ?? null);
-          setMessages(mapRagMessages(await window.api.getRagMessages(convId)));
+          setConvMessages(convId, mapRagMessages(await window.api.getRagMessages(convId)));
         } else if (openTarget.projectId) {
           setActiveConversationId(null);
-          setMessages([]);
+          setConvMessages(null, []);
           setActiveProjectId(openTarget.projectId);
         }
         await loadConversations();
@@ -522,25 +619,25 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
 
   const startNewConversation = useCallback(() => {
     setActiveConversationId(null);
-    setMessages([]);
+    setConvMessages(null, []); // clear the fresh-chat bucket
     setActiveProjectId(null);
-  }, []);
+  }, [setConvMessages]);
 
   const deleteConversation = useCallback(async (convId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
       await window.api.deleteRagConversation(convId);
-      if (activeConversationId === convId) {
-        setActiveConversationId(null);
-        setMessages([]);
-      }
+      // Drop the deleted conversation's cached messages; reset to a fresh chat if active.
+      setMessagesByConv(prev => { const n = { ...prev }; delete n[convId]; n[NEW_CHAT] = []; return n; });
+      setOpenTabs(t => t.filter(id => id !== convId));
+      if (activeConversationId === convId) setActiveConversationId(null);
       await loadConversations();
     } catch (err) {
       console.error('Failed to delete conversation:', err);
     }
   }, [activeConversationId]);
 
-  const sendMessage = async (override?: string, opts?: { regen?: boolean; voiceClip?: { url: string; duration: number }; atts?: Attachment[] }) => {
+  const sendMessage = async (override?: string, opts?: { regen?: boolean; voiceClip?: { url: string; duration: number }; atts?: Attachment[]; conversationId?: string }) => {
     const isInput = override === undefined;
     // Regenerate/Resend: the user turn already exists in the thread — re-run it
     // in place instead of echoing another user bubble.
@@ -559,14 +656,14 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     if (!typed && atts.length === 0) return;
     // Don't block the user — if a generation is in flight, queue this message and
     // let them keep typing/sending. The queue drains in order when each finishes.
-    if (sendingRef.current) {
+    const targetConv = opts?.conversationId ?? activeConversationId;
+    if (shouldQueue(targetConv, generatingRef.current)) {
       const item = { text: typed, atts };
-      queueRef.current.push(item);
-      setQueued(q => [...q, item]);
+      queuedRef.current = enqueue(queuedRef.current, targetConv as string, item);
+      setQueuedByConv({ ...queuedRef.current });
       if (isInput) { setInput(''); setAttachments([]); }
       return;
     }
-    sendingRef.current = true;
     if (isInput) setAttachments([]);
 
     // Skill invocation: "/skill-name [rest]" prepends that skill's instructions.
@@ -583,7 +680,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       }
     }
 
-    let convId = activeConversationId;
+    // A drained queue item carries its own conversationId; a normal send uses the
+    // active tab. Either way, this send is bound to `convId` end-to-end.
+    let convId = opts?.conversationId ?? activeConversationId;
 
     // Create new conversation if none active
     if (!convId) {
@@ -595,18 +694,21 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         setOpenTabs(t => (t.includes(convId!) ? t : [...t, convId!]));
       } catch (e) {
         console.error('Failed to create conversation:', e);
-        sendingRef.current = false;
         return;
       }
     }
 
+    // From here this send belongs to `convId` — lock + target THAT conversation, so
+    // switching tabs mid-generation never misroutes it. Clear any stale stop flag so a
+    // conversation the user previously stopped can generate again.
+    cancelledRef.current.delete(convId);
+    markGenerating(convId, true);
     if (!regen) {
       const userMessage: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: trimmed, attachments: atts.map(a => ({ name: a.name, kind: a.kind, text: a.text, path: a.path })), audioUrl: opts?.voiceClip?.url, audioDuration: opts?.voiceClip?.duration };
-      setMessages(prev => [...prev, userMessage]);
+      setConvMessages(convId, prev => [...prev, userMessage]);
     }
     setInput('');
     setLoading(true);
-    setGeneratingConvId(convId); // so the thinking indicator only shows in this tab
 
     // Persist user message (skip on regen — it's already in the thread). Stash
     // the attachments in the message context so the clickable chips survive reload.
@@ -632,12 +734,20 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     }
 
     // Image-generation mode: render a prompt → image instead of a memory answer.
-    if (mode === 'image') {
+    // Also auto-route when the user clearly asks for an image in chat ("draw a
+    // dog") so they get a picture instead of the text model refusing. Intent
+    // detection only fires in chat mode when an image model is available.
+    const autoImage = mode !== 'image' && imageAvailable && looksLikeImageRequest(trimmed);
+    if (mode === 'image' || autoImage) {
       setImgProgress(null);
+      setGeneratingImage(true);
       try {
         const seedNum = imgSeed.trim() === '' ? -1 : parseInt(imgSeed, 10);
         const styleObj = STYLE_PRESETS.find(s => s.name === activeStyle);
-        const fullPrompt = styleObj ? `${trimmed}, ${styleObj.prompt}` : trimmed;
+        // In explicit image mode keep the exact prompt (+ any chosen style); on
+        // auto-route strip the "draw/generate an image of" phrasing to the subject.
+        const basePrompt = mode === 'image' ? trimmed : cleanImagePrompt(trimmed);
+        const fullPrompt = styleObj ? `${basePrompt}, ${styleObj.prompt}` : basePrompt;
         const img = await window.api.generateImage({
           prompt: fullPrompt,
           negativePrompt: imgNegative.trim() || undefined,
@@ -648,7 +758,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           model: imgModel || undefined,
           initImage: imgInit || undefined,
           strength: imgInit ? imgStrength : undefined,
-          conversationId: activeConversationId || undefined,
+          conversationId: convId, // the turn's own conversation (activeConversationId can lag for a fresh/queued chat)
           projectId: activeProjectId,
         });
         const assistantMessage: ChatMessage = {
@@ -658,7 +768,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           image: img.dataUrl,
           imagePath: img.path,
         };
-        setMessages(prev => [...prev, assistantMessage]);
+        setConvMessages(convId, prev => [...prev, assistantMessage]);
         try {
           await window.api.addRagMessage(convId, 'assistant', `Generated for: ${trimmed}`, { image: img.path });
         } catch (_) { /* ignore */ }
@@ -667,21 +777,23 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         // User-cancelled: just drop the loading state, no error bubble.
         if (!/cancel/i.test(errorContent)) {
           console.error('Image generation failed', e);
-          setMessages(prev => [...prev, { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }]);
+          setConvMessages(convId, prev => [...prev, { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }]);
           try {
             await window.api.addRagMessage(convId, 'assistant', errorContent);
           } catch (_) { /* ignore */ }
         }
       } finally {
-        sendingRef.current = false;
+        markGenerating(convId, false);
         setLoading(false);
         setImgProgress(null);
+        setGeneratingImage(false);
         await loadConversations();
-        drainQueue();
+        drainQueue(convId);
       }
       return;
     }
 
+    let activeStreamId: string | undefined;
     try {
       // History: on regen the user turn is already in `messages` (drop anything
       // after it); on a normal send, append the new turn.
@@ -695,27 +807,77 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       const history = base.slice(-20).map(m => ({ role: m.role, content: m.content }));
 
       // Agentic tools path (opt-in, non-project). The model calls built-in tools,
-      // plus (when Connectors is on) MCP connector tools — reads run inline, writes
-      // are routed to the approval queue.
+      // plus (when Connectors is on) MCP connector tools. STREAMS like the RAG path:
+      // a streamId placeholder fills in live - thinking, then each tool-call activity
+      // step, then the answer - and the stop button aborts it via rag:cancel.
       if ((toolsOn || connectorsOn) && !activeProjectId) {
-        const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn });
-        const am: ChatMessage = {
-          id: `a-${Date.now()}`,
-          role: 'assistant',
-          content: tr?.answer || 'No response returned.',
-          toolCalls: (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result })),
-        };
-        setMessages(prev => [...prev, am]);
-        if (voiceMode) setAutoPlayId(am.id);
-        try { await window.api.addRagMessage(convId, 'assistant', am.content); } catch (_) { /* ignore */ }
+        if (cancelledRef.current.has(convId)) return;
+        const toolStreamId = `a-${Date.now()}`;
+        activeStreamId = toolStreamId;
+        streamConvRef.current.set(toolStreamId, convId!);
+        setConvMessages(convId, prev => [...prev, { id: toolStreamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
+        const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn, conversationId: convId, images: imagePaths, imageAvailable, streamId: toolStreamId, thinking: thinkingEnabled });
+        const toolCalls = (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result }));
+        const context = tr?.unified?.length ? { unified: tr.unified } : undefined;
+        // Persist the citation sources + tool calls so they survive a reload.
+        const toolCtx = (tr?.unified?.length || toolCalls.length) ? { unified: tr?.unified ?? [], toolCalls } : undefined;
+        if (cancelledRef.current.has(convId)) {
+          const partial = (tr?.answer || '').trim();
+          if (partial) {
+            setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, content: partial, context, toolCalls, activity: undefined, streaming: false } : m)));
+            try { await window.api.addRagMessage(convId, 'assistant', partial, toolCtx); } catch { /* ignore */ }
+          } else {
+            setConvMessages(convId, prev => prev.filter(m => m.id !== toolStreamId));
+          }
+          return;
+        }
+        const answer = tr?.answer || 'No response returned.';
+        // Finalize the streamed placeholder in place (never append a second bubble).
+        setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, content: answer, context, toolCalls, activity: undefined, streaming: false } : m)));
+        if (voiceMode) setAutoPlayId(toolStreamId);
+        // Deferred image generation: the tool loop only RECORDS the prompt (it never
+        // generates inline, which would evict the LLM). Generate + attach here AFTER
+        // the text turn - same path as the ```image fence block below.
+        if (tr?.imageRequest?.prompt && window.api.generateImage && !cancelledRef.current.has(convId)) {
+          try {
+            const img = await window.api.generateImage({ prompt: tr.imageRequest.prompt, conversationId: convId, projectId: activeProjectId });
+            setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, image: img.dataUrl, imagePath: img.path } : m)));
+            try { await window.api.addRagMessage(convId, 'assistant', answer, { ...(toolCtx ?? {}), image: img.path }); } catch (_) { /* ignore */ }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (!/cancel/i.test(msg)) { try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtx); } catch (_) { /* ignore */ } }
+          }
+          return;
+        }
+        try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtx); } catch (_) { /* ignore */ }
         return;
       }
+
+      // User stopped during the pre-stream window (persisting the turn, waiting for the
+      // model) — don't open a stream at all.
+      if (cancelledRef.current.has(convId)) return;
 
       // Placeholder message that fills in live as tokens/reasoning stream in
       // (matched by streamId in the onRagStream subscription).
       const streamId = `a-${Date.now()}`;
-      setMessages(prev => [...prev, { id: streamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
+      activeStreamId = streamId; // expose to finally for cleanup
+      streamConvRef.current.set(streamId, convId!);
+      setConvMessages(convId, prev => [...prev, { id: streamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
       const result = await window.api.ragChat(modelQuery, 'All', history, activeProjectId, convId, noMemory && !activeProjectId, streamId, thinkingEnabled, imagePaths);
+
+      // Stopped mid-stream: the abort keeps whatever streamed so far. Finalize the
+      // partial text if any arrived; otherwise drop the empty placeholder. Never write
+      // the "No response returned." filler or a fresh bubble for a cancelled turn.
+      if (cancelledRef.current.has(convId)) {
+        const partial = (result.answer || '').trim();
+        if (partial) {
+          setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: partial, context: result.context, streaming: false } : m)));
+          try { await window.api.addRagMessage(convId, 'assistant', partial, result.context); } catch { /* ignore */ }
+        } else {
+          setConvMessages(convId, prev => prev.filter(m => m.id !== streamId));
+        }
+        return;
+      }
       const assistantContent = result.answer || 'No response returned.';
 
       // The model decided this is an image request — replace the streamed turn
@@ -723,14 +885,14 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       const imgMatch = assistantContent.match(/```image\s*\n([\s\S]*?)```/i);
       if (imgMatch && window.api.generateImage) {
         const imgPrompt = imgMatch[1].trim();
-        setMessages(prev => prev.map(m => (m.id === streamId ? { ...m, content: 'Generating image…', reasoning: undefined, streaming: false } : m)));
+        setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: 'Generating image…', reasoning: undefined, streaming: false } : m)));
         try {
           const img = await window.api.generateImage({ prompt: imgPrompt, conversationId: convId, projectId: activeProjectId });
-          setMessages(prev => prev.map(m => (m.id === streamId ? { ...m, content: `Generated: ${imgPrompt.slice(0, 80)}`, image: img.dataUrl, imagePath: img.path } : m)));
+          setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: `Generated: ${imgPrompt.slice(0, 80)}`, image: img.dataUrl, imagePath: img.path } : m)));
           try { await window.api.addRagMessage(convId, 'assistant', `Generated: ${imgPrompt.slice(0, 80)}`, { image: img.path }); } catch (_) { /* ignore */ }
         } catch (err) {
           const msg = (err as Error)?.message || 'Image generation failed.';
-          if (!/cancel/i.test(msg)) setMessages(prev => prev.map(m => (m.id === streamId ? { ...m, content: msg, streaming: false } : m)));
+          if (!/cancel/i.test(msg)) setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: msg, streaming: false } : m)));
         }
       } else {
         // Finalize the streamed message — set authoritative text + context, clear streaming.
@@ -738,7 +900,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         const priorVariants = pendingVariantsRef.current;
         pendingVariantsRef.current = null;
         const allVariants = priorVariants ? [...priorVariants, assistantContent] : undefined;
-        setMessages(prev => prev.map(m => (m.id === streamId ? { ...m, content: assistantContent, context: result.context, streaming: false, variants: allVariants, variantIndex: allVariants ? allVariants.length - 1 : undefined } : m)));
+        setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: assistantContent, context: result.context, streaming: false, variants: allVariants, variantIndex: allVariants ? allVariants.length - 1 : undefined } : m)));
         const art = parseArtifact(assistantContent);
         if (art) {
           // Inline-first: don't force the canvas open — the user opens the live
@@ -754,28 +916,66 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         }
       }
     } catch (e) {
+      // User stopped: no error bubble — drop the empty placeholder (any partial text
+      // was already finalized on the cancel path above).
+      if (cancelledRef.current.has(convId)) {
+        const sid = activeStreamId;
+        if (sid) setConvMessages(convId, prev => prev.filter(m => !(m.id === sid && !m.content && !m.reasoning)));
+        return;
+      }
       console.error('RAG chat failed', e);
       const errorContent = 'Sorry, something went wrong while generating a response.';
-      setMessages(prev => [...prev, { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }]);
+      // Update the streaming placeholder to show the error — never append a second bubble.
+      const sid = activeStreamId;
+      setConvMessages(convId, prev => {
+        const hasPlaceholder = sid && prev.some(m => m.id === sid);
+        if (hasPlaceholder) return prev.map(m => m.id === sid ? { ...m, content: errorContent, activity: undefined, streaming: false } : m);
+        return [...prev, { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }];
+      });
       try {
         await window.api.addRagMessage(convId, 'assistant', errorContent);
       } catch (_) { /* ignore */ }
     } finally {
-      sendingRef.current = false;
+      cancelledRef.current.delete(convId);
+      markGenerating(convId, false);
       setLoading(false);
-      setGeneratingConvId(null);
       await loadConversations();
-      drainQueue();
+      drainQueue(convId);
+      if (activeStreamId) streamConvRef.current.delete(activeStreamId);
     }
   };
 
-  // Pull the next queued message (sent while a generation was in flight) and send it.
-  const drainQueue = (): void => {
-    const next = queueRef.current.shift();
-    if (next === undefined) return;
-    setQueued(q => q.slice(1));
-    setTimeout(() => { void sendMessage(next.text || ' ', { atts: next.atts }); }, 30);
+  // Pull the next queued message for THIS conversation (sent while it was generating)
+  // and send it — bound to its own conversation, never the active tab.
+  const drainQueue = (convId: string): void => {
+    const { item, next } = dequeue(queuedRef.current, convId);
+    queuedRef.current = next;
+    setQueuedByConv({ ...next });
+    if (item === undefined) return;
+    setTimeout(() => { void sendMessage(item.text || ' ', { atts: item.atts, conversationId: convId }); }, 30);
   };
+
+  // Stop the in-flight generation for a conversation: abort the model stream (main
+  // keeps whatever streamed so far) or the image job, drop any queued follow-ups, and
+  // return the UI to idle now. The in-flight sendMessage sees cancelledRef and bails at
+  // its next await; this handles both the pre-stream ("Searching your memory…") window
+  // and a live token stream.
+  const stopGeneration = useCallback((cid: string | null): void => {
+    const convId = cid ?? activeConversationId;
+    if (!convId) return;
+    cancelledRef.current.add(convId);
+    const streamingId = (messagesByConv[convId] ?? []).find(m => m.streaming)?.id;
+    if (streamingId) window.api.cancelRag?.(streamingId);
+    window.api.cancelImageGen?.();
+    if (queuedRef.current[convId]?.length) {
+      queuedRef.current = clearQueue(queuedRef.current, convId);
+      setQueuedByConv({ ...queuedRef.current });
+    }
+    markGenerating(convId, false);
+    setLoading(false);
+    setGeneratingImage(false);
+    setImgProgress(null);
+  }, [activeConversationId, messagesByConv, markGenerating]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Slash skill autocomplete: while typing "/name" (before any space), Tab —
@@ -793,6 +993,8 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      // Don't send while an attachment is still processing — it would be dropped.
+      if (attachments.some(a => a.status === 'loading')) return;
       sendMessage();
     }
   };
@@ -935,21 +1137,34 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
 
   // Live streaming: route token/reasoning events to the in-flight assistant
   // message (matched by streamId === message id) so it fills in as it generates.
+  // Use streamConvRef to find the right conversation — setMessages is stale in a
+  // [] effect because it captures activeConversationId at mount time.
   useEffect(() => {
     const off = window.api.onRagStream?.((data) => {
-      setMessages(prev => prev.map(m => {
-        if (m.id !== data.streamId) return m;
-        if (data.type === 'content') return { ...m, content: (m.content || '') + (data.text || '') };
+      const cid = streamConvRef.current.get(data.streamId);
+      if (!cid) return;
+      setConvMessages(cid, prev => prev.map(m => {
+        if (m.id !== data.streamId || !m.streaming) return m;
+        if (data.type === 'content') return { ...m, content: (m.content || '') + (data.text || ''), activity: undefined };
         if (data.type === 'reasoning') return { ...m, reasoning: (m.reasoning || '') + (data.text || '') };
         if (data.type === 'step') return { ...m, activity: data.step as ChatMessage['activity'] };
         return m;
       }));
     });
     return () => off?.();
-  }, []);
+  }, [setConvMessages]);
 
-  const copyText = useCallback((t: string) => {
-    try { void navigator.clipboard.writeText(t); } catch (e) { console.error(e); }
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copyText = useCallback((t: string, key?: string) => {
+    // Electron's renderer navigator.clipboard is flaky (silent reject), so copy via
+    // the main-process clipboard; fall back to navigator if the bridge is missing.
+    const api = window.api as { writeClipboardText?: (s: string) => Promise<boolean> };
+    if (api.writeClipboardText) void api.writeClipboardText(t).catch(() => { try { void navigator.clipboard.writeText(t); } catch { /* ignore */ } });
+    else { try { void navigator.clipboard.writeText(t); } catch (e) { console.error(e); } }
+    // Brief "Copied" confirmation on the button that was pressed.
+    const k = key ?? 'copy';
+    setCopiedKey(k);
+    setTimeout(() => setCopiedKey(prev => (prev === k ? null : prev)), 1500);
   }, []);
 
   // Re-run the user prompt that produced (or precedes) a given message.
@@ -993,7 +1208,13 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
 
   // Process attached files into text (read/parse/caption/transcribe) on the main side.
   const addFiles = useCallback(async (files: FileList | File[]) => {
-    for (const file of Array.from(files)) {
+    const arr = Array.from(files);
+    // The active model can't read images → don't attach them; tell the user why.
+    if (!chatVision && arr.some(f => f.type.startsWith('image/'))) {
+      setAttachWarn("This model can't read images. Switch to a vision model (Gemma E4B or Qwen3-VL 2B) in Models to attach images.");
+    }
+    const usable = chatVision ? arr : arr.filter(f => !f.type.startsWith('image/'));
+    for (const file of usable) {
       const id = `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       // Show images as images straight away (local preview) so an upload reads as
       // an image while it captions in the background, not a generic TEXT box.
@@ -1014,20 +1235,30 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         setAttachments(prev => prev.map(a => (a.id === id ? { ...a, status: 'error' } : a)));
       }
     }
-  }, []);
+  }, [chatVision]);
 
   const removeAttachment = useCallback((id: string) => setAttachments(prev => prev.filter(a => a.id !== id)), []);
 
   // Pasting an image (e.g. a screenshot) attaches it; a large text blob becomes a
   // "PASTED" chip instead of flooding the input.
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const imageFiles = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'));
-    if (imageFiles.length) {
+    const dt = e.clipboardData;
+    // Any real file (image, PDF, doc…) arrives in `files`, or — for a copied image
+    // blob (screenshot) — as a `file` item. Attach all of them rather than falling
+    // through to the filename text.
+    let pasteFiles = Array.from(dt.files);
+    if (!pasteFiles.length) {
+      pasteFiles = Array.from(dt.items || [])
+        .filter(it => it.kind === 'file')
+        .map(it => it.getAsFile())
+        .filter((f): f is File => !!f);
+    }
+    if (pasteFiles.length) {
       e.preventDefault();
-      void addFiles(imageFiles);
+      void addFiles(pasteFiles);
       return;
     }
-    const text = e.clipboardData.getData('text');
+    const text = dt.getData('text');
     if (text && text.length > 1200) {
       e.preventDefault();
       const id = `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -1157,7 +1388,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
             <div className="flex-1 overflow-y-auto px-2 pb-2">
               {(() => {
                 const q = convSearch.trim().toLowerCase();
-                const filtered = q ? conversations.filter(c => (c.title || '').toLowerCase().includes(q)) : conversations;
+                const filtered = q ? conversations.filter(c => (c.title || '').toLowerCase().includes(q) || contentMatchIds.has(c.id)) : conversations;
                 if (conversations.length === 0) return <p className="px-2 py-4 text-center text-xs text-neutral-600">No conversations yet</p>;
                 if (filtered.length === 0) return <p className="px-2 py-4 text-center text-xs text-neutral-600">No matches</p>;
                 const now = new Date();
@@ -1368,6 +1599,45 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                         </CollapsibleContent>
                       </Collapsible>
                     ) : null}
+                    {/* Live thinking + tool activity, ABOVE the answer bubble: reasoning
+                        first (Thinking…), then the current tool-call step (Running <tool>…). */}
+                    {message.role === 'assistant' && message.streaming ? (
+                      <div className="mb-1.5 flex flex-col gap-1.5">
+                        <span className="inline-flex gap-1 text-green-500">
+                          <span className="animate-bounce [animation-delay:-0.3s]">●</span>
+                          <span className="animate-bounce [animation-delay:-0.15s]">●</span>
+                          <span className="animate-bounce">●</span>
+                        </span>
+                        {message.reasoning && message.reasoning.trim() ? (
+                          <Collapsible defaultOpen className="max-w-[85%]">
+                            <CollapsibleTrigger className="group flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-neutral-300">
+                              <span>Thinking…</span>
+                              <svg className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="mt-1 whitespace-pre-wrap border-l-2 border-neutral-800 pl-3 text-xs leading-relaxed text-neutral-500">
+                              {message.reasoning}
+                            </CollapsibleContent>
+                          </Collapsible>
+                        ) : null}
+                        {activityLabel(message.activity) ? (
+                          <span className="text-[11px] text-neutral-500">{activityLabel(message.activity)}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {/* Tool calls as their own entry, between thinking and the answer bubble.
+                        search_memory is shown as interactive Source cards below, so skip its chip. */}
+                    {(() => {
+                      const chips = (message.toolCalls || []).filter((tc) => tc.name !== 'search_memory');
+                      return chips.length > 0 ? (
+                        <div className="mb-1.5 flex max-w-[85%] flex-wrap gap-1">
+                          {chips.map((tc, i) => (
+                            <span key={i} className="rounded-sm border border-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500" title={tc.result}>
+                              {tc.name} → {tc.result.length > 32 ? tc.result.slice(0, 32) + '…' : tc.result}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
                     <div
                       className={
                         message.role === 'assistant' && message.streaming && !message.content.trim()
@@ -1390,7 +1660,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                                 disabled={!viewable}
                                 onClick={() => {
                                   if (att.kind === 'image' && att.path) { closePanels(); setLightbox({ url: `ogcapture://${att.path}`, path: att.path }); }
-                                  else if (att.text) { closePanels(); setViewer({ title: att.kind === 'pasted' ? 'Pasted text' : att.name, text: att.text }); }
+                                  else if (att.text || att.path) { closePanels(); setViewer({ title: att.kind === 'pasted' ? 'Pasted text' : att.name, text: att.text || '', path: att.path, kind: att.kind }); }
                                 }}
                                 title={viewable ? 'Click to view' : undefined}
                                 className="flex items-center gap-1 rounded-md bg-neutral-700/60 px-2 py-1 text-[10px] text-neutral-200 transition-colors enabled:cursor-pointer enabled:hover:bg-neutral-600/60"
@@ -1496,45 +1766,14 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                       ) : null}
                     </div>
 
-                    {message.role === 'assistant' && message.streaming ? (
-                      <div className="mt-1.5 flex flex-col gap-1.5">
-                        <span className="inline-flex gap-1 text-green-500">
-                          <span className="animate-bounce [animation-delay:-0.3s]">●</span>
-                          <span className="animate-bounce [animation-delay:-0.15s]">●</span>
-                          <span className="animate-bounce">●</span>
-                        </span>
-                        {activityLabel(message.activity) ? (
-                          <span className="text-[11px] text-neutral-500">{activityLabel(message.activity)}</span>
-                        ) : null}
-                        {message.reasoning && message.reasoning.trim() ? (
-                          <Collapsible defaultOpen className="max-w-[85%]">
-                            <CollapsibleTrigger className="group flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-neutral-300">
-                              <span>Thinking…</span>
-                              <svg className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent className="mt-1 whitespace-pre-wrap border-l-2 border-neutral-800 pl-3 text-xs leading-relaxed text-neutral-500">
-                              {message.reasoning}
-                            </CollapsibleContent>
-                          </Collapsible>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {message.toolCalls && message.toolCalls.length > 0 ? (
-                      <div className="mt-1.5 flex max-w-[85%] flex-wrap gap-1">
-                        {message.toolCalls.map((tc, i) => (
-                          <span key={i} className="rounded-sm border border-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500" title={tc.result}>
-                            {tc.name} → {tc.result.length > 32 ? tc.result.slice(0, 32) + '…' : tc.result}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-
                     {message.role === 'user' ? (
                       <div className="mt-1.5 flex items-center gap-3">
-                        <button onClick={() => copyText(message.content)} className="flex items-center gap-1 text-[11px] text-neutral-600 transition-colors hover:text-green-500" title="Copy">
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16h8M8 12h8m-7 8h6a2 2 0 002-2V6a2 2 0 00-2-2h-3.586a1 1 0 00-.707.293l-2.414 2.414A1 1 0 009 7.414V18a2 2 0 002 2z" /></svg>
-                          Copy
+                        <button onClick={() => copyText(message.content, message.id)} className={`flex items-center gap-1 text-[11px] transition-colors ${copiedKey === message.id ? 'text-green-500' : 'text-neutral-600 hover:text-green-500'}`} title="Copy">
+                          {copiedKey === message.id ? (
+                            <><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Copied</>
+                          ) : (
+                            <><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16h8M8 12h8m-7 8h6a2 2 0 002-2V6a2 2 0 00-2-2h-3.586a1 1 0 00-.707.293l-2.414 2.414A1 1 0 009 7.414V18a2 2 0 002 2z" /></svg>Copy</>
+                          )}
                         </button>
                         <button onClick={() => regenerate(message.id)} className="flex items-center gap-1 text-[11px] text-neutral-600 transition-colors hover:text-green-500" title="Regenerate the reply to this message">
                           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -1564,12 +1803,15 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                           {speakLoadingId === message.id ? 'Generating…' : speakingId === message.id ? 'Stop' : 'Speak'}
                         </button>
                         <button
-                          onClick={() => copyText(message.content)}
-                          className="flex items-center gap-1 text-[11px] text-neutral-600 transition-colors hover:text-green-500"
+                          onClick={() => copyText(message.content, message.id)}
+                          className={`flex items-center gap-1 text-[11px] transition-colors ${copiedKey === message.id ? 'text-green-500' : 'text-neutral-600 hover:text-green-500'}`}
                           title="Copy"
                         >
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16h8M8 12h8m-7 8h6a2 2 0 002-2V6a2 2 0 00-2-2h-3.586a1 1 0 00-.707.293l-2.414 2.414A1 1 0 009 7.414V18a2 2 0 002 2z" /></svg>
-                          Copy
+                          {copiedKey === message.id ? (
+                            <><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Copied</>
+                          ) : (
+                            <><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16h8M8 12h8m-7 8h6a2 2 0 002-2V6a2 2 0 00-2-2h-3.586a1 1 0 00-.707.293l-2.414 2.414A1 1 0 009 7.414V18a2 2 0 002 2z" /></svg>Copy</>
+                          )}
                         </button>
                         <button
                           onClick={() => regenerate(message.id)}
@@ -1624,20 +1866,27 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                                   key={idx}
                                   type="button"
                                   onClick={() => {
+                                    if (u.kind === 'screen') { onSeekReplay?.(u.ts); return; }
                                     if (u.refId == null) return;
                                     if (u.kind === 'memory') onNavigateToMemory?.(u.refId);
                                     else if (u.kind === 'entity') onNavigateToEntity?.(u.refId);
                                     else if (u.kind === 'meeting') onNavigateToChat?.(String(u.refId));
                                   }}
-                                  title={`${u.kind} · ${u.surface}${u.title ? ' · ' + u.title : ''}`}
-                                  className="flex flex-col gap-1 rounded-md border border-neutral-800 p-2 text-left text-[11px] text-neutral-400 transition-colors hover:border-green-500"
+                                  title={`${u.kind} · ${u.surface}${u.title ? ' · ' + u.title : ''}${u.kind === 'screen' ? ' · open in Replay' : ''}`}
+                                  className="flex flex-col gap-1 overflow-hidden rounded-md border border-neutral-800 p-2 text-left text-[11px] text-neutral-400 transition-colors hover:border-green-500"
                                 >
+                                  {/* Screen captures: show the actual frame, click → Replay seeked to that moment */}
+                                  {u.kind === 'screen' && u.imagePath ? (
+                                    <img src={`ogcapture://${u.imagePath}`} alt="" className="mb-0.5 h-16 w-full rounded border border-neutral-800 object-cover" />
+                                  ) : null}
                                   <div className="flex items-center gap-1.5">
                                     <span className="font-semibold text-green-500">[S{idx + 1}]</span>
                                     <span className="rounded-sm border border-neutral-700 px-1 text-[9px] uppercase tracking-wide text-neutral-500">{u.kind}</span>
                                   </div>
-                                  <span className="line-clamp-2 text-neutral-300">{u.title || u.snippet}</span>
-                                  <span className="truncate text-[10px] text-neutral-600">{u.surface}</span>
+                                  <span className="line-clamp-2 text-neutral-300">{u.title && u.title !== u.surface ? u.title : u.snippet}</span>
+                                  <span className="truncate text-[10px] text-neutral-600">
+                                    {u.surface}{u.kind === 'screen' ? ' · open in Replay →' : ''}
+                                  </span>
                                 </button>
                               ))}
                             </div>
@@ -1739,10 +1988,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   </div>
                   )
                 ))}
-                {loading && generatingConvId === activeConversationId && !messages.some(m => m.streaming) ? (
+                {!!activeConversationId && generatingConvs.has(activeConversationId) && !messages.some(m => m.streaming) ? (
                   <div className="mb-5 flex flex-col items-start">
                     <div className="mb-1 text-[10px] uppercase tracking-wider text-neutral-600">Off Grid</div>
-                    {mode === 'image' ? (
+                    {mode === 'image' || generatingImage ? (
                       <div className="rounded-md border border-neutral-800 bg-neutral-900/40 p-3">
                         {imgProgress?.preview ? (
                           <img src={imgProgress.preview} alt="forming" className="mb-2 w-56 rounded-md border border-neutral-800" />
@@ -1775,7 +2024,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-green-500 [animation-delay:150ms]" />
                           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-green-500 [animation-delay:300ms]" />
                         </span>
-                        <span className="text-xs text-neutral-500">Searching your memory…</span>
+                        <span className="text-xs text-neutral-500">{waitingLabel({ noMemory, hasProject: !!activeProjectId })}</span>
                       </div>
                     )}
                   </div>
@@ -1802,6 +2051,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   <label className="flex items-center gap-1.5">
                     Size
                     <select value={imgSize} onChange={e => setImgSize(Number(e.target.value))} className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500">
+                      <option value={256}>256</option>
                       <option value={512}>512</option>
                       <option value={640}>640</option>
                       <option value={768}>768</option>
@@ -1810,7 +2060,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   </label>
                   <label className="flex items-center gap-1.5">
                     Steps
-                    <input type="number" min={4} max={50} value={imgSteps} onChange={e => setImgSteps(Math.max(4, Math.min(50, Number(e.target.value) || 16)))} className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500" />
+                    <input type="number" min={4} max={50} value={imgSteps} onChange={e => setImgSteps(Math.max(4, Math.min(50, Number(e.target.value) || 16)))} className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
                   </label>
                   <label className="flex items-center gap-1.5">
                     Seed
@@ -1846,7 +2096,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
               {projCreating && (
                 <div className="mb-2">
                   <input
-                    autoFocus
+                    ref={projInputRef}
                     value={projNewName}
                     onChange={(e) => setProjNewName(e.target.value)}
                     onKeyDown={(e) => {
@@ -1860,9 +2110,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                 </div>
               )}
 
-              {queued.length > 0 && (
+              {queuedCount(queuedByConv, activeConversationId) > 0 && (
                 <div className="mb-2 flex flex-col gap-1">
-                  {queued.map((q, i) => (
+                  {(activeConversationId ? queuedByConv[activeConversationId] ?? [] : []).map((q, i) => (
                     <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900/40 px-3 py-1.5 text-[11px] text-neutral-400">
                       <svg className="h-3 w-3 shrink-0 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                       <span className="flex-1 select-text cursor-text whitespace-pre-wrap break-words">{q.text || `(${q.atts.length} attachment${q.atts.length > 1 ? 's' : ''})`}</span>
@@ -1888,10 +2138,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                 onDragOver={(e) => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
                 onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
                 onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) void addFiles(e.dataTransfer.files); }}
-                className={`relative rounded-2xl border bg-neutral-950 shadow-sm transition-colors ${dragOver ? 'border-green-500' : 'border-neutral-800 focus-within:border-neutral-600'}`}
+                className={`relative rounded-xl border bg-neutral-950 shadow-sm transition-colors ${dragOver ? 'border-green-500' : 'border-neutral-800 focus-within:border-neutral-600'}`}
               >
                 {dragOver ? (
-                  <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-2xl bg-neutral-950/80 text-xs text-green-500">Drop files to attach</div>
+                  <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-xl bg-neutral-950/80 text-xs text-green-500">Drop files to attach</div>
                 ) : null}
                 {skillMatches.length > 0 && (
                   <div className="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 py-1 text-sm shadow-lg">
@@ -1918,6 +2168,21 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   className="hidden"
                   onChange={e => { if (e.target.files?.length) void addFiles(e.target.files); e.target.value = ''; }}
                 />
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={e => { if (e.target.files?.length) void addFiles(e.target.files); e.target.value = ''; }}
+                />
+                {attachWarn && (
+                  <div className="mx-3 mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+                    <WarningCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" weight="fill" />
+                    <span className="flex-1">{attachWarn}</span>
+                    <button onClick={() => setAttachWarn(null)} className="shrink-0 text-amber-400/70 hover:text-amber-200">✕</button>
+                  </div>
+                )}
                 {attachments.length > 0 && (
                   <div className="flex flex-wrap gap-2 px-3 pt-3">
                     {attachments.map(a => (
@@ -1939,7 +2204,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                           <button
                             type="button"
                             disabled={!a.text}
-                            onClick={() => { if (a.text) { closePanels(); setViewer({ title: a.kind === 'pasted' ? 'Pasted text' : a.name, text: a.text }); } }}
+                            onClick={() => { if (a.text || a.path) { closePanels(); setViewer({ title: a.kind === 'pasted' ? 'Pasted text' : a.name, text: a.text || '', path: a.path, kind: a.kind }); } }}
                             title={a.text ? 'Click to expand' : undefined}
                             className="line-clamp-3 h-[2.6rem] overflow-hidden text-left text-[10px] leading-snug text-neutral-500 enabled:hover:text-neutral-300"
                           >
@@ -1990,8 +2255,8 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                     className="max-h-52 w-full resize-none overflow-y-auto bg-transparent px-3.5 pt-3 text-sm text-neutral-200 placeholder-neutral-600 outline-none"
                   />
                 )}
-                <div className="flex items-center justify-between gap-2 px-2 pb-2 pt-1">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-2 px-2.5 pb-2.5 pt-1">
+                  <div className="flex min-w-0 items-center gap-2">
                   {/* "+" menu — attach / image / project / tools */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -2001,15 +2266,31 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                       <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
                         <Paperclip /> Attach files
                       </DropdownMenuItem>
-                      <DropdownMenuItem disabled={!imageAvailable} onSelect={async () => { setMode('image'); const p = await window.api.pickImageForGen?.(); if (p) setImgInit(p); }}>
+                      <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
                         <ImageIcon /> Add image
                       </DropdownMenuItem>
                       <DropdownMenuItem disabled={!imageAvailable} onSelect={() => setMode('image')}>
                         <Sparkles /> Generate image
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setProjCreating(true)}>
-                        <FolderPlus /> Add to project
-                      </DropdownMenuItem>
+                      {projects.length > 0 ? (
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger><FolderOpen /> Add to project</DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="max-h-72 w-52 overflow-y-auto">
+                            {projects.map(p => (
+                              <DropdownMenuItem key={p.id} onSelect={() => { setNoMemory(false); assignProject(p.id); }}>
+                                <FolderOpen /> <span className="flex-1 truncate">{p.name}</span>
+                                {activeProjectId === p.id && <Check className="h-3.5 w-3.5 text-primary" />}
+                              </DropdownMenuItem>
+                            ))}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => setProjCreating(true)}><FolderPlus /> New project</DropdownMenuItem>
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      ) : (
+                        <DropdownMenuItem onSelect={() => setProjCreating(true)}>
+                          <FolderPlus /> Add to project
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={() => { closePanels(); setSkillsOpen(true); }}>
                         <Lightning /> Skills
@@ -2034,24 +2315,41 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                         type="button"
                         variant="outline"
                         size="sm"
-                        title="Scope this chat to Off Grid or a project"
-                        className={`h-8 gap-1.5 rounded-full ${activeProjectId ? 'border-green-500 text-primary' : 'text-neutral-400'}`}
+                        title="Choose what this chat can draw on: your memory, nothing, or a project"
+                        className={`h-8 gap-1.5 rounded-full ${activeProjectId || (isPro && !noMemory) ? 'border-green-500 text-primary' : 'text-neutral-400'}`}
                       >
-                        <FolderOpen className="h-3.5 w-3.5" />
-                        <span className="max-w-[9rem] truncate">{activeProjectName ?? 'Off Grid AI'}</span>
+                        {activeProjectId ? <FolderOpen className="h-3.5 w-3.5" /> : <Brain className="h-3.5 w-3.5" />}
+                        <span className="max-w-[9rem] truncate">{activeProjectName ?? (noMemory ? 'No memory' : 'All memory')}</span>
                         <CaretDown className="h-3 w-3 opacity-60" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
-                      <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Scope this chat</DropdownMenuLabel>
-                      <DropdownMenuItem onSelect={() => { setNoMemory(!isPro); assignProject(null); }}>
-                        <span className={`flex-1 ${!activeProjectId ? 'text-primary' : ''}`}>Off Grid AI</span>
-                      </DropdownMenuItem>
-                      {projects.map(p => (
-                        <DropdownMenuItem key={p.id} onSelect={() => { setNoMemory(false); assignProject(p.id); }}>
-                          <span className={`flex-1 truncate ${activeProjectId === p.id ? 'text-primary' : ''}`}>{p.name}</span>
+                      <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Memory for this chat</DropdownMenuLabel>
+                      {isPro && (
+                        <DropdownMenuItem onSelect={() => { setNoMemory(false); assignProject(null); }}>
+                          <Brain />
+                          <span className={`flex-1 ${!activeProjectId && !noMemory ? 'text-primary' : ''}`}>All memory</span>
+                          {!activeProjectId && !noMemory && <Check className="h-3.5 w-3.5 text-primary" />}
                         </DropdownMenuItem>
-                      ))}
+                      )}
+                      <DropdownMenuItem onSelect={() => { setNoMemory(true); assignProject(null); }}>
+                        <Prohibit />
+                        <span className={`flex-1 ${!activeProjectId && noMemory ? 'text-primary' : ''}`}>No memory <span className="text-[10px] text-muted-foreground">· plain chat</span></span>
+                        {!activeProjectId && noMemory && <Check className="h-3.5 w-3.5 text-primary" />}
+                      </DropdownMenuItem>
+                      {projects.length > 0 && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Project memory</DropdownMenuLabel>
+                          {projects.map(p => (
+                            <DropdownMenuItem key={p.id} onSelect={() => { setNoMemory(false); assignProject(p.id); }}>
+                              <FolderOpen />
+                              <span className={`flex-1 truncate ${activeProjectId === p.id ? 'text-primary' : ''}`}>{p.name}</span>
+                              {activeProjectId === p.id && <Check className="h-3.5 w-3.5 text-primary" />}
+                            </DropdownMenuItem>
+                          ))}
+                        </>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={() => setProjCreating(true)}><FolderPlus /> New project</DropdownMenuItem>
                     </DropdownMenuContent>
@@ -2070,19 +2368,36 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                     </TooltipTrigger>
                     <TooltipContent>{thinkingEnabled ? 'Reasoning on — the model thinks step by step (slower)' : 'Reasoning off — direct answers (faster)'}</TooltipContent>
                   </Tooltip>
+                  {/* Image toggle — always available; turning it on makes the next
+                      prompt generate an image instead of a chat reply. */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { const on = mode !== 'image'; setMode(on ? 'image' : 'ask'); if (!on) setShowImageOptions(false); }}
+                        className={`h-8 gap-1.5 rounded-full ${mode === 'image' ? 'border-green-500 text-primary' : 'text-neutral-400'}`}
+                      >
+                        <Sparkles className="h-3.5 w-3.5" /> Image
+                        {mode === 'image' && <X className="h-3.5 w-3.5 opacity-70" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{mode === 'image' ? 'Image mode on — your prompt generates an image (click to return to chat)' : 'Generate an image from your prompt'}</TooltipContent>
+                  </Tooltip>
                   {mode === 'image' && (
                     <Button type="button" variant="outline" size="sm" onClick={() => setShowImageOptions(o => !o)} className={`h-8 gap-1.5 rounded-full ${showImageOptions ? 'text-primary' : ''}`}>
                       <SlidersHorizontal className="h-3.5 w-3.5" /> Image options
                     </Button>
                   )}
-                  {queued.length > 0 && (
+                  {queuedCount(queuedByConv, activeConversationId) > 0 && (
                     <span className="flex h-8 items-center rounded-full border border-neutral-800 px-2.5 text-[11px] text-neutral-400">
-                      {queued.length} queued
+                      {queuedCount(queuedByConv, activeConversationId)} queued
                     </span>
                   )}
                   </div>
 
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex shrink-0 items-center gap-1.5">
                     {!voiceMode && (
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -2106,14 +2421,18 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                       <TooltipContent>{recording ? 'Stop recording' : 'Record voice'}</TooltipContent>
                     </Tooltip>
                     )}
-                    {messages.some(m => m.streaming) && (
+                    {/* Stop shows for the WHOLE generating window — the pre-stream
+                        "Searching your memory…" phase as well as a live token stream —
+                        so an in-flight turn is always cancellable. Image gen has its own
+                        labeled Stop just below, so skip this icon in that mode. */}
+                    {!!activeConversationId && generatingConvs.has(activeConversationId) && !(loading && (mode === 'image' || generatingImage)) && (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
                             type="button"
                             variant="outline"
                             size="icon"
-                            onClick={() => { const s = messages.find(m => m.streaming); if (s) window.api.cancelRag?.(s.id); }}
+                            onClick={() => stopGeneration(activeConversationId)}
                             className="size-8 rounded-full border-red-500/50 text-red-400 hover:bg-red-500/10"
                           >
                             <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
@@ -2122,8 +2441,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                         <TooltipContent>Stop generating</TooltipContent>
                       </Tooltip>
                     )}
-                    {loading && mode === 'image' ? (
-                      <Button type="button" variant="outline" onClick={() => window.api.cancelImageGen?.()} className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10">
+                    {loading && (mode === 'image' || generatingImage) ? (
+                      <Button type="button" variant="outline" onClick={() => { stopGeneration(activeConversationId); window.api.cancelImageGen?.(); }} className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10">
+
                         <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
                         Stop
                       </Button>
@@ -2134,7 +2454,8 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                             type="button"
                             size="icon"
                             onClick={() => sendMessage()}
-                            disabled={!input.trim() && attachments.length === 0}
+                            disabled={(!input.trim() && attachments.length === 0) || attachments.some(a => a.status === 'loading')}
+                            title={attachments.some(a => a.status === 'loading') ? 'Waiting for attachment to finish processing…' : 'Send'}
                             className="size-8 rounded-full"
                           >
                             {/* Always sendable — generating doesn't block; messages queue. */}
@@ -2162,14 +2483,26 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
       {modelPickerOpen && <ModelPicker onClose={() => setModelPickerOpen(false)} />}
 
-      {/* Text viewer — expand a pasted/attached file's full content */}
+      {/* Attachment viewer — same full-screen overlay layout as the image lightbox
+          (floating Download/Close top-right, content centered), for text/PDF/docs. */}
       {viewer && (
-        <div className="fixed right-0 top-0 bottom-0 z-50 flex w-[30vw] min-w-[420px] flex-col border-l border-neutral-800 bg-neutral-950 font-mono shadow-2xl">
-          <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-2.5">
-            <span className="truncate text-sm text-neutral-200">{viewer.title}</span>
-            <button onClick={() => setViewer(null)} className="rounded-md border border-neutral-700 px-3 py-1 text-xs text-neutral-300 transition-colors hover:text-white">Close</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-10 font-mono" onClick={() => setViewer(null)}>
+          <div className="absolute right-4 top-4 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <span className="mr-2 max-w-[40vw] truncate self-center text-xs text-neutral-400">{viewer.title}</span>
+            {viewer.path && (
+              <button
+                onClick={() => downloadImage(viewer.path, viewer.title)}
+                className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:border-green-500 hover:text-green-500"
+              >
+                Download
+              </button>
+            )}
+            <button onClick={() => setViewer(null)} className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:text-white">Close</button>
           </div>
-          <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-4 text-xs leading-relaxed text-neutral-300">{viewer.text}</pre>
+          <pre
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-full w-full max-w-3xl overflow-auto whitespace-pre-wrap break-words rounded-md border border-neutral-800 bg-neutral-950 p-5 text-sm leading-relaxed text-neutral-200"
+          >{viewer.text}</pre>
         </div>
       )}
 

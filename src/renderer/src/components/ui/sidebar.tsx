@@ -95,7 +95,7 @@ export const DesktopSidebar = ({
         )}
         // Constant — width is driven by an explicit open/close toggle, NOT hover.
         animate={{
-          width: animate ? (open ? "260px" : "72px") : "260px",
+          width: animate ? (open ? "220px" : "60px") : "220px",
         }}
         {...props}
       >

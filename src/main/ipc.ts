@@ -1,6 +1,7 @@
-import { ipcMain, BrowserWindow, app } from 'electron';
-import { getDB, getChatSessions, upsertChatSummary, getMemoriesForSession, getMemoryRecordsForSession, getMasterMemory, updateMasterMemory, getAllChatSummaries, upsertEntity, addEntityFact, updateEntitySummary, getEntities, getEntityDetails, upsertEntitySession, rebuildEntityEdgesForSession, getEntityGraph, rebuildEntityEdgesForAllSessions, deleteEntity, deleteMemory, getEntitiesForSession, getDashboardStats, getUserProfile, saveUserProfile, UserProfile, createRagConversation, getRagConversations, getRagConversation, deleteRagConversation, addRagMessage, getRagMessages, updateRagConversationTitle, getSettings, saveSetting, getSetting } from './database';
+import { ipcMain, BrowserWindow, app, clipboard } from 'electron';
+import { getDB, getChatSessions, upsertChatSummary, getMemoriesForSession, getMemoryRecordsForSession, getMasterMemory, updateMasterMemory, getAllChatSummaries, upsertEntity, addEntityFact, updateEntitySummary, getEntities, getEntityDetails, upsertEntitySession, rebuildEntityEdgesForSession, getEntityGraph, rebuildEntityEdgesForAllSessions, deleteEntity, deleteMemory, getEntitiesForSession, getDashboardStats, getUserProfile, saveUserProfile, UserProfile, createRagConversation, getRagConversations, getRagConversation, deleteRagConversation, addRagMessage, getRagMessages, updateRagConversationTitle, searchRagConversationIds, getSettings, saveSetting, getSetting } from './database';
 import { embeddings } from './embeddings';
+import { getResidency, setResidencyMode, type Modality, type ResidencyMode } from './runtime-residency';
 import { getPermissionStatus, requestAccessibilityPermission, requestScreenRecordingPermission, openAccessibilitySettings, openScreenRecordingSettings } from './permissions';
 import { getPrompt, getAllPromptDefs, resetPrompt, getPromptTemplate } from './prompts';
 // import { llm } from './llm'; // Moved to dynamic import to support ESM
@@ -181,17 +182,36 @@ async function streamAnswer(
     images: string[] = [],
 ): Promise<string> {
     const { llm } = await import('./llm');
+    const { modalityQueue } = await import('./modality-queue/queue');
+
+    // Non-stream fallback (no streamId/sender): a single blocking chat turn.
     if (!streamId || !event?.sender) {
-        return (await llm.chat(prompt, images, 300000, 2048, { disableThinking: !thinking })).trim();
+        // Interactive chat is foreground work - Tier 2, a peer of image gen. During
+        // image gen the LLM is evicted so this waits anyway (consistent); background
+        // screen-replay (Tier 3) defers to it. Chat runs ON the 'llm' engine, so it
+        // evicts nothing (evicting 'llm' would evict itself). run()'s finally releases
+        // the slot even if fn throws, so we let errors propagate from inside.
+        return modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, async () =>
+            (await llm.chat(prompt, images, 300000, 2048, { disableThinking: !thinking })).trim(),
+        );
     }
+
     const sender = event.sender;
+    // Register the abort controller BEFORE queuing so a rag:cancel that arrives while
+    // this turn is still WAITING in the queue is honored - the stream then starts with
+    // an already-aborted signal (and resolves immediately) rather than running in full.
     const controller = new AbortController();
     streamControllers.set(streamId, controller);
     try {
-        const answer = await llm.chatStream(prompt, images, (text, kind) => {
-            try { sender.send('rag:stream', { streamId, type: kind, text }); } catch { /* window gone */ }
-        }, { thinking, signal: controller.signal });
-        return answer.trim();
+        // Interactive streaming chat = Tier 2 (see above). Await the full stream inside
+        // the run() callback so the queue slot is held for the whole generation; the
+        // cancel path aborts via the controller registered above.
+        return await modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, async () => {
+            const answer = await llm.chatStream(prompt, images, (text, kind) => {
+                try { sender.send('rag:stream', { streamId, type: kind, text }); } catch { /* window gone */ }
+            }, { thinking, signal: controller.signal });
+            return answer.trim();
+        });
     } finally {
         streamControllers.delete(streamId);
     }
@@ -1078,6 +1098,8 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       return getRagConversations(projectId);
   });
 
+  ipcMain.handle('rag:search-conversation-ids', (_, query: string) => searchRagConversationIds(query));
+
   ipcMain.handle('rag:set-conversation-project', async (_, id: string, projectId: string | null) => {
       const { setRagConversationProject } = await import('./database');
       setRagConversationProject(id, projectId);
@@ -1123,6 +1145,11 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       console.log(`[IPC] Setting saved: ${key} =`, value);
       return true;
   });
+
+  // Per-modality runtime residency (on-demand vs in-memory/resident). The full map
+  // drives the queue's mode-aware re-warm and each engine's job path.
+  ipcMain.handle('runtime:residency:get', () => getResidency());
+  ipcMain.handle('runtime:residency:set', (_e, modality: Modality, mode: ResidencyMode) => setResidencyMode(modality, mode));
 
   // Fleet console IPC (console:*) is a pro feature — registered by pro's
   // activateMain, not here, so the open build doesn't ship it.
@@ -1382,10 +1409,100 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
 
   ipcMain.handle('models:set-active', (_, modelId: string) =>
       import('./models-manager').then((m) => m.setActiveModel(modelId)));
+  // Single activation seam: route any model to the right backend by its kind.
+  ipcMain.handle('models:activate', (_, modelId: string) =>
+      import('./models-manager').then((m) => m.activateModel(modelId)));
   ipcMain.handle('models:get-active', () => import('./models-manager').then((m) => m.getActiveModel()));
+  // Active model ids across ALL modalities — the UI's single "what's active" source.
+  ipcMain.handle('models:active-ids', () => import('./models-manager').then((m) => m.getActiveModelIds()));
   ipcMain.handle('models:set-active-modal', (_, kind: string, modelId: string | null) =>
       import('./models-manager').then((m) => m.setActiveModalChoice(kind, modelId)));
   ipcMain.handle('models:active-modalities', () => import('./models-manager').then((m) => m.getActiveModalities()));
+
+  // Storage + download manager
+  ipcMain.handle('models:storage', () => import('./models-manager').then((m) => m.getStorageInfo()));
+  ipcMain.handle('models:delete-orphans', () => import('./models-manager').then((m) => m.deleteOrphans()));
+  ipcMain.handle('models:downloads', () => import('./models-manager').then((m) => m.listDownloads()));
+  ipcMain.handle('models:retry-download', async (_, modelId: string) => {
+      const { retryDownload } = await import('./models-manager');
+      return retryDownload(modelId, (p) =>
+          BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('model:download-progress', p)));
+  });
+  ipcMain.handle('models:clear-download', (_, modelId: string) =>
+      import('./models-manager').then((m) => m.clearDownload(modelId)));
+  ipcMain.handle('models:clear-downloads', () =>
+      import('./models-manager').then((m) => m.clearInactiveDownloads()));
+  // Import a local .gguf from disk (file picker → validate → copy → register).
+  ipcMain.handle('models:import', async () => {
+      const { dialog } = await import('electron');
+      const r = await dialog.showOpenDialog({
+          title: 'Import a local model',
+          properties: ['openFile'],
+          filters: [{ name: 'GGUF model', extensions: ['gguf'] }],
+      });
+      if (r.canceled || !r.filePaths[0]) return { canceled: true };
+      const { importLocalModel } = await import('./models-manager');
+      return importLocalModel(r.filePaths[0], (p) =>
+          BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('model:download-progress', p)));
+  });
+
+  // --- Setup + system health -----------------------------------------------
+  // One aggregated snapshot of every local component (chat LLM, gateway, vision,
+  // embeddings, STT, TTS, image gen) for the Settings → Health panel.
+  ipcMain.handle('system:health', () => import('./setup').then((m) => m.getSystemHealth()));
+  // Preview what "Configure for me" would pick for a mode (no side effects).
+  ipcMain.handle('setup:recommendation', (_e, mode?: string) =>
+      import('./setup').then((m) => m.getRecommendation(mode as 'conservative' | 'balanced' | 'extreme' | undefined)));
+  // Full setup plan (chat + STT + TTS + image) for a mode, so the UI can list every
+  // model "Configure for me" will download before the user commits.
+  ipcMain.handle('setup:plan', (_e, mode?: string) =>
+      import('./setup').then((m) => m.getSetupPlan(mode as 'conservative' | 'balanced' | 'extreme' | undefined)));
+  // Whether the active chat model can read images (gate image attachments on this).
+  ipcMain.handle('model:chat-vision', () => import('./llm').then((m) => m.llm.hasVision()));
+  // Reliable text→clipboard (the renderer's navigator.clipboard is flaky in Electron).
+  ipcMain.handle('clipboard:write-text', (_e, text: string) => { try { clipboard.writeText(String(text ?? '')); return true; } catch { return false; } });
+  // "Configure for me": pick a RAM-appropriate model, download, activate, start,
+  // verify. Streams progress back to all windows via 'setup:progress'.
+  ipcMain.handle('setup:auto-configure', async () => {
+      const { autoConfigure } = await import('./setup');
+      return autoConfigure((p) =>
+          BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('setup:progress', p)));
+  });
+  // Restart a component. We only ever stop OUR OWN processes — never SIGKILL an
+  // arbitrary PID holding the port (that could kill an unrelated user app, and the
+  // handler is renderer-reachable). llm.restart() tears down our llama-server with
+  // a command-name guard; the gateway just stops + restarts our own server.
+  ipcMain.handle('system:restart', async (_e, id: string) => {
+      if (id === 'chat') {
+          const { llm } = await import('./llm');
+          await llm.restart(); // safely stops our llama-server (guarded) and respawns
+          return { success: true };
+      }
+      if (id === 'gateway') {
+          const { startModelServer, stopModelServer } = await import('./model-server');
+          try { stopModelServer(); } catch { /* not running */ }
+          startModelServer(); // re-listens; if the port is held by a non-Off-Grid process it logs and no-ops
+          return { success: true };
+      }
+      return { success: false, error: `cannot restart "${id}"` };
+  });
+  // Pre-activate RAM fit estimate (for a warning before loading a big model).
+  ipcMain.handle('system:estimate-fit', (_e, modelId: string) =>
+      import('./setup').then((m) => m.estimateModelFit(modelId)));
+
+  // Open an https link in the user's default browser (e.g. a model's HF page).
+  ipcMain.handle('app:open-external', async (_e, url: string) => {
+      if (!/^https:\/\//.test(url)) return { success: false };
+      const { shell } = await import('electron');
+      await shell.openExternal(url);
+      return { success: true };
+  });
+
+  // Data & privacy — see and delete on-device data from one place.
+  ipcMain.handle('data:summary', () => import('./data-privacy').then((m) => m.getDataSummary()));
+  ipcMain.handle('data:clear', (_e, id: string, olderThanDays?: number) =>
+      import('./data-privacy').then((m) => m.clearCategory(id as 'chats' | 'memories' | 'captures' | 'meetings' | 'images', olderThanDays)));
+  ipcMain.handle('data:delete-all', () => import('./data-privacy').then((m) => m.deleteAllData()));
 
   // --- Image generation (stable-diffusion.cpp) ----------------------------
   ipcMain.handle('imagegen:status', async () => {
@@ -1472,9 +1589,32 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       const { setToolEnabled } = await import('./tools');
       setToolEnabled(name, enabled);
   });
-  ipcMain.handle('tools:chat', async (_e, query: string, history?: { role: string; content: string }[], opts?: { connectors?: boolean }) => {
+  ipcMain.handle('tools:chat', async (event, query: string, history?: { role: string; content: string }[], opts?: { connectors?: boolean; conversationId?: string; images?: string[]; imageAvailable?: boolean; streamId?: string; thinking?: boolean }) => {
       const { toolChat } = await import('./tools');
-      return toolChat(query, history || [], opts || {});
+      const { modalityQueue } = await import('./modality-queue/queue');
+      const streamId = opts?.streamId;
+      const sender = event.sender;
+      // Non-stream fallback (no streamId): buffer, no live deltas (matches streamAnswer).
+      if (!streamId) {
+          return modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, () =>
+              toolChat(query, history || [], opts || {}));
+      }
+      // Streaming: same channel/queue/abort as streamAnswer, so a tools turn streams
+      // thinking -> tool-call activity -> answer, and the stop button (rag:cancel) aborts it.
+      const controller = new AbortController();
+      streamControllers.set(streamId, controller);
+      try {
+          return await modalityQueue.run({ tier: 2, label: 'chat', evicts: ['image'] }, () =>
+              toolChat(query, history || [], {
+                  ...opts,
+                  thinking: opts?.thinking,
+                  signal: controller.signal,
+                  onDelta: (text, kind) => { try { sender.send('rag:stream', { streamId, type: kind, text }); } catch { /* window gone */ } },
+                  onStep: (call) => { try { sender.send('rag:stream', { streamId, type: 'step', step: { kind: 'running_tool', name: call.name } }); } catch { /* window gone */ } },
+              }));
+      } finally {
+          streamControllers.delete(streamId);
+      }
   });
 
   // --- LLM inference settings (temperature, context window) ---------------
@@ -1510,6 +1650,25 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
   ipcMain.handle('files:process', async (_e, bytes: ArrayBuffer | Uint8Array, name: string) => {
       const { processUpload } = await import('./files');
       return processUpload(name, bytes);
+  });
+  // An on-disk uploaded file as a data URL, so the chat viewer can render a PDF
+  // natively (Chromium's built-in viewer) instead of dumping parsed text.
+  ipcMain.handle('files:data-url', async (_e, p: string) => {
+      try {
+          const fs = await import('fs');
+          const path = await import('path');
+          const { app } = await import('electron');
+          // Only ever serve files inside the app's uploads dir — this handler is
+          // renderer-reachable, so reading an arbitrary path would be a file-read /
+          // exfiltration primitive. Resolve + boundary-check before touching disk.
+          const root = path.resolve(app.getPath('userData'), 'uploads');
+          const resolved = path.resolve(p ?? '');
+          if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
+          const buf = await fs.promises.readFile(resolved);
+          const ext = (resolved.split('.').pop() || '').toLowerCase();
+          const mime = ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : /^jpe?g$/.test(ext) ? 'image/jpeg' : 'application/octet-stream';
+          return `data:${mime};base64,${buf.toString('base64')}`;
+      } catch { return null; }
   });
 
   // --- Skills (.skills folder, invoked from chat with /skill-name) ---
@@ -1548,18 +1707,27 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       return synthesize(text, chosen);
   });
 
-  // --- Voice input (STT via bundled whisper) ------------------------------
+  // --- Voice input (STT via the active engine: whisper default / Parakeet opt-in) ---
   ipcMain.handle('voice:transcribe', async (_e, audio: ArrayBuffer | Uint8Array, ext = 'webm') => {
       const fs = await import('fs');
       const path = await import('path');
       const os = await import('os');
-      const { desktopExtraction } = await import('./rag/extractors');
-      if (!desktopExtraction.transcribeAudio) throw new Error('Transcription is not available.');
-      const buf = Buffer.from(audio as ArrayBuffer);
-      const tmp = path.join(os.tmpdir(), `offgrid-mic-${Date.now()}.${ext}`);
+      // Route through the active-model-implied engine so a Parakeet selection is honored
+      // (falls back to whisper when Parakeet isn't installed).
+      const { getActiveTranscription } = await import('./transcription/select');
+      const transcriptionService = getActiveTranscription();
+      // Respect a Uint8Array's view bounds (byteOffset/length) — Buffer.from on the
+      // backing ArrayBuffer would copy the WHOLE buffer, corrupting a sliced view.
+      const buf = ArrayBuffer.isView(audio)
+          ? Buffer.from(audio.buffer, audio.byteOffset, audio.byteLength)
+          : Buffer.from(audio as ArrayBuffer);
+      // ext is renderer-controlled — strip anything but alphanumerics so it can't
+      // contain path separators / traversal sequences in the temp filename.
+      const safeExt = (ext || 'webm').replace(/[^a-zA-Z0-9]/g, '').slice(0, 10) || 'webm';
+      const tmp = path.join(os.tmpdir(), `offgrid-mic-${Date.now()}.${safeExt}`);
       await fs.promises.writeFile(tmp, buf);
       try {
-          return await desktopExtraction.transcribeAudio(tmp);
+          return (await transcriptionService.transcribe({ path: tmp })).text;
       } finally {
           fs.promises.unlink(tmp).catch(() => {});
       }

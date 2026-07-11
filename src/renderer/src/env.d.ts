@@ -1,5 +1,9 @@
 /// <reference types="vite/client" />
 
+// DUPLICATE (ambient decl - this file has no top-level import so all interfaces are
+// global; adding an import would break every ambient global in the renderer). Canonical
+// owner: src/main/database.ts `UserProfile`. Keep field-for-field in sync; drift is
+// guarded by src/main/__tests__/ipc-type-parity.test.ts.
 interface UserProfile {
   role?: string;
   companySize?: string;
@@ -20,6 +24,8 @@ interface ProLicenseInfo {
   verifiedAt: number;
 }
 
+// DUPLICATE (ambient decl). Canonical owner: src/main/permissions.ts `PermissionStatus`.
+// Keep in sync; guarded by src/main/__tests__/ipc-type-parity.test.ts.
 interface PermissionStatus {
   accessibility: boolean;
   screenRecording: boolean;
@@ -73,14 +79,20 @@ interface DashboardStats {
   }>;
 }
 
+// DUPLICATE (ambient decl). Canonical owner: src/main/database.ts `RagConversation`.
+// `project_id` scopes a chat to a project - must stay present or project chat routing
+// silently degrades at the preload boundary. Guarded by ipc-type-parity.test.ts.
 interface RagConversation {
   id: string;
   title: string | null;
+  project_id?: string | null;
   created_at: string;
   updated_at: string;
   message_count?: number;
 }
 
+// DUPLICATE (ambient decl). Canonical owner: src/main/database.ts `RagMessage`.
+// Keep in sync; guarded by ipc-type-parity.test.ts.
 interface RagMessage {
   id: number;
   conversation_id: string;
@@ -90,12 +102,16 @@ interface RagMessage {
   created_at: string;
 }
 
+// DUPLICATE (ambient decl). Canonical shape: the `reprocess:progress` IPC payload
+// emitted in src/main/ipc.ts. Keep in sync; guarded by ipc-type-parity.test.ts.
 interface ReprocessProgress {
   phase: string;
   processed: number;
   total: number;
 }
 
+// DUPLICATE (ambient decl). Canonical owner: src/main/database.ts `AppSettings`.
+// Keep in sync; guarded by ipc-type-parity.test.ts.
 interface AppSettings {
   memoryStrictness?: 'lenient' | 'balanced' | 'strict';
   entityStrictness?: 'lenient' | 'balanced' | 'strict';
@@ -206,6 +222,9 @@ interface IElectronAPI {
   onNewApproval: (callback: (data: { approvalId: number; title: string; detail: string; entityName: string | null }) => void) => () => void
   onNewAction: (callback: (data: { actionId: number; text: string; due: string | null; entityName: string | null; sourceApp: string }) => void) => () => void
   onReprocessProgress: (callback: (data: ReprocessProgress) => void) => () => void
+  onUpdateDownloaded: (callback: (data: { version: string }) => void) => () => void
+  getStagedUpdateVersion: () => Promise<string | null>
+  installUpdate: () => Promise<void>
 
   // Permission APIs
   getPermissionStatus: () => Promise<PermissionStatus>

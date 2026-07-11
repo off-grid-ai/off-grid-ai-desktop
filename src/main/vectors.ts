@@ -61,3 +61,36 @@ export async function vectorCount(): Promise<number> {
   const tbl = await table();
   return tbl ? tbl.countRows() : 0;
 }
+
+/** Delete only the rows of the given kinds (screen | meeting | memory | entity |
+ *  fact). Used by data-privacy "clear category" so wiping one category doesn't
+ *  nuke the shared dataset — and operates through the live table handle so the
+ *  cached connection stays valid (no stale/dangling handle). */
+export async function deleteByKinds(kinds: string[]): Promise<void> {
+  if (!kinds.length) return;
+  const tbl = await table();
+  if (!tbl) return;
+  const list = kinds.map((k) => `'${String(k).replace(/'/g, "''")}'`).join(', ');
+  // Let failures propagate: the privacy path must not report success when the
+  // semantic index wasn't actually cleared.
+  await tbl.delete(`kind IN (${list})`);
+}
+
+/** Like deleteByKinds, but only rows older than `cutoffMs` (epoch ms) — for
+ *  age-based retention cleanup so pruned captures/meetings don't leave ghost
+ *  vector hits behind. */
+export async function deleteByKindsOlderThan(kinds: string[], cutoffMs: number): Promise<void> {
+  if (!kinds.length) return;
+  const tbl = await table();
+  if (!tbl) return;
+  const list = kinds.map((k) => `'${String(k).replace(/'/g, "''")}'`).join(', ');
+  await tbl.delete(`kind IN (${list}) AND ts < ${Math.floor(cutoffMs)}`);
+}
+
+/** Drop the cached connection + table handles. Call after the lancedb dir is
+ *  removed out-of-band (e.g. delete-all), so the next access reopens cleanly
+ *  instead of using a dangling handle. */
+export function resetVectors(): void {
+  connPromise = null;
+  tablePromise = null;
+}

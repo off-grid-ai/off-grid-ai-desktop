@@ -1,14 +1,27 @@
 import { useEffect, useState } from 'react';
+import { DEFAULT_CTX_SIZE } from '@offgrid/core/shared/llm-defaults';
 
 // Right-side Settings panel (same pattern as SkillsPanel/ArtifactCanvas).
 // Tabs: Model (inference params), Voice (Kokoro TTS), Tools (built-in, read-only),
 // Connectors (MCP servers — the user's reusable tool library). All on-device.
 
 type Tab = 'model' | 'voice' | 'tools' | 'connectors';
-type LlmSettings = { temperature?: number; ctxSize?: number; topP?: number; topK?: number; minP?: number; repeatPenalty?: number; maxTokens?: number; systemPrompt?: string };
+type KvCacheType = 'f16' | 'q8_0' | 'q4_0';
+type LlmSettings = {
+  temperature?: number; ctxSize?: number; topP?: number; topK?: number; minP?: number;
+  repeatPenalty?: number; maxTokens?: number; systemPrompt?: string;
+  kvCacheType?: KvCacheType; flashAttn?: boolean; gpuLayers?: number; threads?: number; batchSize?: number;
+  effectiveCtxSize?: number; // reported by the backend (RAM-clamped); read-only
+};
 type Connector = { id: number; name: string; url?: string | null; transport?: string; enabled?: number | boolean };
 
 const CTX_OPTIONS = [4096, 8192, 16384, 32768, 65536, 131072];
+// Defaults mirror the backend's LLMService field defaults (for "Reset to defaults").
+const DEFAULTS: LlmSettings = {
+  temperature: 0.7, topP: 0.95, topK: 40, minP: 0.05, repeatPenalty: 1.1,
+  maxTokens: 2048, ctxSize: DEFAULT_CTX_SIZE, systemPrompt: '',
+  kvCacheType: 'f16', flashAttn: false, gpuLayers: 99, threads: 0, batchSize: 512,
+};
 
 function Row({ label, hint, value, children }: { label: string; hint?: string; value?: string; children: React.ReactNode }) {
   return (
@@ -49,6 +62,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const set = (patch: LlmSettings): void => {
     setS(prev => ({ ...prev, ...patch }));
     window.api.setLlmSettings?.(patch);
+  };
+
+  const resetDefaults = (): void => {
+    setS(prev => ({ ...prev, ...DEFAULTS }));
+    window.api.setLlmSettings?.(DEFAULTS);
   };
 
   const pickVoice = (v: string): void => {
@@ -123,14 +141,61 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             <Row label="Max tokens" value={String(s.maxTokens ?? 2048)} hint="Cap on the response length (must fit within the context window).">
               <input type="range" min={256} max={32768} step={256} value={s.maxTokens ?? 2048} onChange={e => set({ maxTokens: Number(e.target.value) })} className="w-full accent-green-500" />
             </Row>
-            <Row label="Context window" hint="Larger holds more history; changing it reloads the model.">
-              <select value={s.ctxSize ?? 32768} onChange={e => set({ ctxSize: Number(e.target.value) })} className="w-full rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-neutral-200 outline-none focus:border-green-500">
+            <Row
+              label="Context window"
+              hint={
+                s.effectiveCtxSize && s.effectiveCtxSize < (s.ctxSize ?? 65536)
+                  ? `Clamped to ${(s.effectiveCtxSize / 1024).toFixed(0)}K for your RAM (a larger value would risk a memory-overcommit freeze). Quantize the KV cache below to raise this.`
+                  : 'Larger holds more history; changing it reloads the model.'
+              }
+            >
+              <select value={s.ctxSize ?? DEFAULT_CTX_SIZE} onChange={e => set({ ctxSize: Number(e.target.value) })} className="w-full rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-neutral-200 outline-none focus:border-green-500">
                 {CTX_OPTIONS.map(c => <option key={c} value={c}>{c >= 1024 ? `${c / 1024}K` : c} tokens{c === 65536 ? ' (default)' : c === 131072 ? ' (max — heavy)' : ''}</option>)}
               </select>
             </Row>
             <Row label="System prompt" hint="Prepended to every chat as a system message. Leave blank for the default.">
               <textarea value={s.systemPrompt ?? ''} onChange={e => set({ systemPrompt: e.target.value })} rows={5} placeholder="e.g. You are a concise, technical assistant." className="w-full resize-none rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-neutral-200 placeholder-neutral-600 outline-none focus:border-green-500" />
             </Row>
+
+            {/* Advanced — launch-time params; changing any reloads the model. */}
+            <div className="mb-3 mt-6 border-t border-neutral-800 pt-4 text-[10px] font-medium uppercase tracking-widest text-neutral-600">
+              Advanced (reloads the model)
+            </div>
+            <Row label="KV cache" hint="Quantize the KV cache to cut memory and allow a larger context. q8_0 ≈ half, q4_0 ≈ quarter of f16. Auto-enables FlashAttention.">
+              <div className="flex gap-1.5">
+                {(['f16', 'q8_0', 'q4_0'] as const).map(t => (
+                  <button
+                    key={t}
+                    onClick={() => set({ kvCacheType: t, ...(t !== 'f16' ? { flashAttn: true } : {}) })}
+                    className={`flex-1 rounded-md border px-2 py-1.5 text-xs transition-colors ${(s.kvCacheType ?? 'f16') === t ? 'border-green-500 text-green-500' : 'border-neutral-800 text-neutral-400 hover:border-neutral-700'}`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </Row>
+            <Row label="FlashAttention" value={s.flashAttn ?? false ? 'On' : 'Off'} hint="Faster, lower memory. Required for a quantized KV cache.">
+              <button
+                onClick={() => set({ flashAttn: !(s.flashAttn ?? false) })}
+                disabled={(s.kvCacheType ?? 'f16') !== 'f16'}
+                className={`w-full rounded-md border px-2 py-1.5 text-xs transition-colors disabled:opacity-50 ${s.flashAttn ? 'border-green-500 text-green-500' : 'border-neutral-800 text-neutral-400 hover:border-neutral-700'}`}
+              >
+                {s.flashAttn ? 'Enabled' : 'Disabled'}
+              </button>
+            </Row>
+            <Row label="GPU layers" value={String(s.gpuLayers ?? 99)} hint="Layers offloaded to the GPU (Metal). 99 = all. Lower only if you hit GPU-memory issues.">
+              <input type="range" min={0} max={99} step={1} value={s.gpuLayers ?? 99} onChange={e => set({ gpuLayers: Number(e.target.value) })} className="w-full accent-green-500" />
+            </Row>
+            <Row label="CPU threads" value={(s.threads ?? 0) === 0 ? 'auto' : String(s.threads)} hint="0 = auto (let llama.cpp choose).">
+              <input type="range" min={0} max={16} step={1} value={s.threads ?? 0} onChange={e => set({ threads: Number(e.target.value) })} className="w-full accent-green-500" />
+            </Row>
+            <Row label="Batch size" value={String(s.batchSize ?? 512)} hint="Tokens processed per batch during prompt ingest.">
+              <input type="range" min={64} max={2048} step={64} value={s.batchSize ?? 512} onChange={e => set({ batchSize: Number(e.target.value) })} className="w-full accent-green-500" />
+            </Row>
+
+            <button onClick={resetDefaults} className="mt-2 w-full rounded-md border border-neutral-800 px-3 py-2 text-xs text-neutral-400 transition-colors hover:border-neutral-700 hover:text-white">
+              Reset to defaults
+            </button>
           </>
         )}
 

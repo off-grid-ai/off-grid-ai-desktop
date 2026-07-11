@@ -1,0 +1,46 @@
+# PR + main verification: typecheck (core + pro), lint, and the full vitest suite
+# (which includes the pro/ tests when the pro repo is checked out alongside).
+#
+# Cross-repo note: pro/ is a separate private repo (paid features). Set the repo
+# secret CI_CROSS_REPO_TOKEN (a PAT with read access to off-grid-ai/desktop-pro)
+# so the pro tests + pro typecheck run here too. Without it, core is still fully
+# verified and the pro steps are skipped gracefully.
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25 # backstop: a hung step fails fast instead of running for hours
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out pro (paid features) into ./pro
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: off-grid-ai/desktop-pro
+          token: ${{ secrets.CI_CROSS_REPO_TOKEN }}
+          path: pro
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24' # node:sqlite (used by integration tests) is available unflagged
+      - run: npm ci
+      # Hard gates: types + the full test suite.
+      - name: Typecheck (core)
+        timeout-minutes: 6
+        run: npm run typecheck
+      - name: Typecheck (pro)
+        if: ${{ hashFiles('pro/tsconfig.json') != '' }}
+        timeout-minutes: 6
+        run: cd pro && npx tsc --noEmit -p tsconfig.json
+      - name: Test
+        timeout-minutes: 10
+        run: npm test
+      # Advisory: lint is enforced locally; bounded + non-blocking here so an
+      # eslint slowdown over the full tree (incl. checked-out pro/) can't wedge CI.
+      - name: Lint
+        timeout-minutes: 8
+        continue-on-error: true
+        run: npm run lint

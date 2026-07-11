@@ -20,11 +20,13 @@ import { renderProView, type ProViewContext } from './bootstrap/proView';
 import { UpgradeScreen } from './components/pro/UpgradeScreen';
 import { getProFeature } from './components/pro/proCatalog';
 import { NotificationProvider, useNotifications } from './hooks/useNotifications';
+import { ToastProvider } from './hooks/useToast';
 import { ReprocessingProvider, useReprocessing } from './hooks/useReprocessing';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { StarsBackground } from './components/ui/stars-background';
-import { ShootingStars } from './components/ui/shooting-stars';
+import { GridBackdrop } from './components/ui/grid-backdrop';
+import { StarfieldBackdrop } from './components/ui/starfield-backdrop';
 import { Sidebar, SidebarBody } from './components/ui/sidebar';
+import { NavThemeToggle } from './components/ThemeToggle';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   IconMessageCircle,
@@ -38,11 +40,15 @@ import {
   IconLayoutSidebarLeftExpand,
   IconLoader2,
   IconArrowLeft,
-  IconArrowRight
+  IconArrowRight,
+  IconActivityHeartbeat,
+  IconDeviceMobile,
+  IconExternalLink
 } from '@tabler/icons-react';
+import { OFF_GRID_MOBILE_URL, openExternal } from './constants/links';
 import { cn } from './lib/utils';
 
-type ViewMode = 'dashboard' | 'day' | 'replay' | 'reflect' | 'actions' | 'connectors' | 'meetings' | 'chats' | 'memories' | 'entities' | 'graph' | 'memory-chat' | 'models' | 'gateway' | 'projects' | 'notifications' | 'settings' | 'search';
+type ViewMode = 'dashboard' | 'day' | 'replay' | 'reflect' | 'actions' | 'connectors' | 'meetings' | 'chats' | 'memories' | 'entities' | 'graph' | 'memory-chat' | 'models' | 'gateway' | 'projects' | 'notifications' | 'settings' | 'search' | 'clipboard' | 'voice' | 'vault';
 
 // Navigation state type for history tracking
 interface NavigationState {
@@ -96,6 +102,50 @@ function ReprocessingBanner() {
   );
 }
 
+// Model-server health dot for the sidebar. Uses the SAME live probe as the System
+// Health panel (system:health → real /health check), not llm.isReady() (an internal
+// flag that lags). Green = running, amber = starting, red = stopped (e.g. a SIGKILL
+// we can't auto-recover) → click goes to Settings to restart.
+type ChatHealth = 'ready' | 'starting' | 'down' | null;
+function ModelStatusDot({ open, onClick }: { open: boolean; onClick: () => void }): React.ReactElement {
+  const [status, setStatus] = useState<ChatHealth>(null);
+  useEffect(() => {
+    let live = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const api = (window as any).api;
+    const poll = async (): Promise<void> => {
+      try {
+        const h = await api?.systemHealth?.();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const chat = h?.components?.find((c: any) => c.id === 'chat');
+        const s: ChatHealth = chat?.status === 'ready' ? 'ready' : chat?.status === 'starting' ? 'starting' : 'down';
+        if (live) setStatus(s);
+      } catch { if (live) setStatus('down'); }
+    };
+    void poll();
+    const id = setInterval(poll, 5000);
+    return () => { live = false; clearInterval(id); };
+  }, []);
+  const color = status == null ? 'text-neutral-500' : status === 'ready' ? 'text-green-500' : status === 'starting' ? 'text-amber-500' : 'text-red-500';
+  const text = status == null ? 'Checking…' : status === 'ready' ? 'Model running' : status === 'starting' ? 'Model starting' : 'Model stopped';
+  // Collapsed: clicking opens the sidebar (the label/restart action lives there).
+  // Expanded: clicking goes to Settings to restart.
+  const label = open
+    ? (status === 'down' ? 'Model server stopped. Open Settings to restart.' : `Model server: ${text.toLowerCase()}`)
+    : `${text} - expand for details`;
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={cn('flex items-center gap-3 rounded-lg py-2 text-sm text-neutral-500 transition-colors hover:bg-neutral-500/10 hover:text-neutral-300', open ? 'px-3' : 'justify-center px-0')}
+    >
+      <IconActivityHeartbeat className={cn('h-5 w-5 shrink-0', color)} />
+      {open && <span className="flex-1 text-left text-xs">{text}</span>}
+    </button>
+  );
+}
+
 function AppContent() {
   const { addNotification } = useNotifications();
 
@@ -115,57 +165,34 @@ function AppContent() {
   const [viewMode, setViewMode] = useState<ViewMode>(isPro ? 'day' : 'models');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedMemoryId, setSelectedMemoryId] = useState<number | null>(null);
+  // Version of a downloaded-and-staged update (null = none). Surfaced as a banner
+  // with a "Restart to update" button — Squirrel only applies on a clean quit, so
+  // we drive the install explicitly instead of waiting for one.
+  const [updateReady, setUpdateReady] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
   const [selectedEntityId, setSelectedEntityId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  // Search filter + sort live here (not in the screen) so they survive navigating
+  // to a result and back.
+  const [searchSources, setSearchSources] = useState<string[]>([]);
+  const [searchSort, setSearchSort] = useState<'relevance' | 'recency' | 'match'>('relevance');
   const [replayTarget, setReplayTarget] = useState<number | null>(null);
   // A search hit can deep-link to a specific meeting; cleared on leaving Meetings.
   const [meetingTarget, setMeetingTarget] = useState<number | null>(null);
   // Which tab the Actions screen opens on when reached via a Day "View all" link.
   const [actionsMode, setActionsMode] = useState<'todo' | 'approvals' | null>(null);
+  // When set, the Actions to-do list opens filtered to this entity (from clicking
+  // a person chip on a to-do — "all to-dos for Ali").
+  const [actionsEntity, setActionsEntity] = useState<{ id: number; name: string } | null>(null);
   // Target chat to open in the main Chat screen (from the Projects tab): an
   // existing conversation, or a request to start a new chat scoped to a project.
   const [chatTarget, setChatTarget] = useState<{ conversationId?: string; projectId?: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [meetingPlatform, setMeetingPlatform] = useState<string | null>(null);
   const rec = useMeetingRecorder();
 
-  // Proactive: a Zoom/Meet/Teams call detected → AUTO-record (visible indicator
-  // in-app + menu bar keeps it transparent).
-  useEffect(() => {
-    // Escape hatch for demo/screenshot captures: skip live meeting auto-record.
-    if (localStorage.getItem('offgrid:disable-capture') === '1') return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = (window as any).api;
-    const offDetected = api.onMeetingDetected?.((platform: string) => {
-      setMeetingPlatform(platform);
-      rec.start(platform);
-    });
-    const offEnded = api.onMeetingEnded?.(() => {
-      setMeetingPlatform(null);
-      rec.stop(); // call ended → finish + transcribe
-    });
-    const offStop = api.onMeetingStop?.(() => rec.stop()); // from the menu-bar tray
-    // Catch a call that was ALREADY in progress when this window loaded — the
-    // detector's edge broadcast can fire before the renderer is listening, so we
-    // ask main for the current state once on mount and auto-record if active.
-    void (async () => {
-      try {
-        const st = await api.meetingGetState?.();
-        if (st?.active && !rec.recording) {
-          setMeetingPlatform(st.platform ?? 'meeting');
-          rec.start(st.platform ?? undefined);
-        }
-      } catch { /* ignore */ }
-    })();
-    return () => { offDetected?.(); offEnded?.(); offStop?.(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Mirror recording state to main so the menu-bar tray can show it.
-  useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).api.meetingSetRecording?.(rec.recording);
-  }, [rec.recording]);
+  // The meeting recording lifecycle (detect → record → warn → stop → finalize) is
+  // owned by the main-process MeetingController. This view just reflects rec.* and
+  // offers a stop command — no detection, no timers, no start/stop decisions here.
 
   // Tell the capture layer which screen is showing, so self-capture can skip the
   // memory-mirror views (Day/Replay/Entities/…) and avoid looping the graph.
@@ -209,12 +236,29 @@ function AppContent() {
       '/projects': 'projects',
       '/notifications': 'notifications',
       '/search': 'search',
-      '/settings': 'settings'
+      '/settings': 'settings',
+      '/voice': 'voice'
     };
 
     if (viewMap[path]) {
       setViewMode(viewMap[path]);
     }
+  }, []);
+
+  // Programmatic navigation from outside the shell (e.g. the first-run gate's
+  // "pick a model yourself" CTA) — switch the active view without a remount.
+  useEffect(() => {
+    const onNav = (e: Event): void => {
+      const v = (e as CustomEvent).detail as ViewMode | undefined;
+      if (v) setViewMode(v);
+    };
+    window.addEventListener('og:navigate', onNav);
+    // Main-driven navigation (tray → a screen).
+    const offNav = window.api.onNavigate?.((v: string) => setViewMode(v as ViewMode));
+    return () => {
+      window.removeEventListener('og:navigate', onNav);
+      offNav?.();
+    };
   }, []);
 
   // Update browser URL when view mode changes
@@ -237,7 +281,10 @@ function AppContent() {
       'projects': '/projects',
       'notifications': '/notifications',
       'search': '/search',
-      'settings': '/settings'
+      'settings': '/settings',
+      'clipboard': '/clipboard',
+      'voice': '/voice',
+      'vault': '/vault'
     };
 
     const newPath = urlMap[viewMode];
@@ -307,6 +354,18 @@ function AppContent() {
           message: where ? `${data.text} (${where})` : data.text,
           actionId: data.actionId,
         });
+      });
+      unsubscribers.push(unsubscribe);
+    }
+
+    // A new version finished downloading and is staged — show the restart banner.
+    // Seed from main too: on macOS the app can keep running with no windows, so a
+    // download that finished before this window existed would otherwise be missed
+    // (the event only reaches windows open at download time).
+    if (window.api?.onUpdateDownloaded) {
+      window.api.getStagedUpdateVersion?.().then((v) => { if (v) setUpdateReady(v); }).catch(() => {});
+      const unsubscribe = window.api.onUpdateDownloaded((data) => {
+        setUpdateReady(data.version);
       });
       unsubscribers.push(unsubscribe);
     }
@@ -382,6 +441,10 @@ function AppContent() {
     if (hit.kind === 'entity' || hit.kind === 'fact') { handleSelectEntity(hit.refId); return; }
     if (hit.kind === 'memory') { handleSelectMemory(hit.refId); return; }
     if (hit.kind === 'meeting') { setMeetingTarget(hit.refId || null); setViewMode('meetings'); return; }
+    // Chat conversation → open that exact chat (its id is carried in `url`).
+    if (hit.kind === 'chat') { setChatTarget(hit.url ? { conversationId: hit.url } : null); setViewMode('memory-chat'); return; }
+    // Knowledge-base doc → open its project (project_id carried in `url`).
+    if (hit.kind === 'doc') { setChatTarget(hit.url ? { projectId: hit.url } : null); setViewMode('memory-chat'); return; }
     // Screen capture → seek Replay to that exact moment (the captured frame is the
     // point; the source URL may be stale/missing).
     setReplayTarget(hit.ts || Date.now());
@@ -390,14 +453,20 @@ function AppContent() {
 
   const openSearch = useCallback((q: string) => { setSearchQuery(q); setViewMode('search'); }, []);
 
-  // Deep-link targets (Replay moment, specific meeting) are one-shot: once we've
-  // left the screen that consumes them, clear them so a later normal visit isn't
-  // pinned to a stale moment. Covers every exit path (nav, back/forward, deep-link).
+  // Deep-link targets (Replay moment, specific meeting) are one-shot: clear them
+  // only when we ACTUALLY LEAVE the screen that consumes them — tracked against the
+  // previous view. Clearing via a viewMode+target dependency raced the navigation
+  // (the target was wiped on the same transition that set it, so Replay opened on
+  // "today"); keying off the transition out fixes that.
+  const prevViewRef = useRef(viewMode);
   useEffect(() => {
-    if (viewMode !== 'replay' && replayTarget !== null) setReplayTarget(null);
-    if (viewMode !== 'meetings' && meetingTarget !== null) setMeetingTarget(null);
-    if (viewMode !== 'actions' && actionsMode !== null) setActionsMode(null);
-  }, [viewMode, replayTarget, meetingTarget, actionsMode]);
+    const prev = prevViewRef.current;
+    prevViewRef.current = viewMode;
+    if (prev === viewMode) return;
+    if (prev === 'replay' && viewMode !== 'replay') setReplayTarget(null);
+    if (prev === 'meetings' && viewMode !== 'meetings') setMeetingTarget(null);
+    if (prev === 'actions' && viewMode !== 'actions') { setActionsMode(null); setActionsEntity(null); }
+  }, [viewMode]);
 
   // Open a project chat in the main Chat screen (existing convo or new-in-project).
   const handleOpenProjectChat = useCallback((target: { conversationId?: string; projectId?: string }) => {
@@ -424,8 +493,16 @@ function AppContent() {
   // static catalogue and are marked locked in the free build (open the
   // UpgradeScreen); core tabs (Projects / Chat / Models / Settings) sit where
   // they always did.
-  const proItem = (route: string): { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } => {
-    const f = getProFeature(route)!;
+  // A missing catalog entry must NEVER blank the whole app — no error boundary
+  // wraps the nav, so a TypeError here white-screens every user on boot (0.0.34).
+  // If a route has no ProFeature, skip that item and warn; a dropped tab is
+  // recoverable, a render-time throw is not.
+  const proItem = (route: string): { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } | null => {
+    const f = getProFeature(route);
+    if (!f) {
+      console.warn(`[nav] no pro catalog entry for "${route}" — skipping nav item`);
+      return null;
+    }
     return {
       label: f.label,
       icon: <f.icon className="h-5 w-5 shrink-0 text-neutral-400" weight="regular" />,
@@ -444,11 +521,14 @@ function AppContent() {
     proItem('entities'),
     { label: 'Projects', icon: <IconFolders className="h-5 w-5 shrink-0" />, view: 'projects' as ViewMode },
     { label: 'Chat', icon: <IconMessageCircle className="h-5 w-5 shrink-0" />, view: 'memory-chat' as ViewMode },
+    proItem('voice'),
+    proItem('vault'),
+    proItem('clipboard'),
     { label: 'Integrations', icon: <IconPlug className="h-5 w-5 shrink-0" />, view: 'connectors' as ViewMode },
     { label: 'Models', icon: <IconDownload className="h-5 w-5 shrink-0" />, view: 'models' as ViewMode },
     { label: 'Gateway', icon: <IconServer2 className="h-5 w-5 shrink-0" />, view: 'gateway' as ViewMode },
     proItem('notifications'),
-  ];
+  ].filter((i): i is { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } => i !== null);
   const bottomNav: { label: string; icon: React.ReactNode; view: ViewMode; locked?: boolean }[] = [
     { label: 'Settings', icon: <IconSettings className="h-5 w-5 shrink-0" />, view: 'settings' as ViewMode },
   ];
@@ -483,22 +563,55 @@ function AppContent() {
       {/* Recording indicator — auto-records detected meetings; always visible. */}
       {(rec.recording || rec.busy) && (
         <button
-          onClick={() => rec.recording && rec.stop()}
+          onClick={() => (rec.warningSecondsLeft > 0 ? rec.keepAlive() : rec.recording && rec.stop())}
           className="absolute left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-red-500/40 bg-neutral-900/95 px-3.5 py-1.5 font-mono text-xs text-neutral-200 shadow-xl backdrop-blur hover:border-red-500"
         >
           {rec.busy ? (
             <><IconLoader2 className="h-3.5 w-3.5 animate-spin text-neutral-400" /> Transcribing meeting…</>
+          ) : rec.warningSecondsLeft > 0 ? (
+            <>
+              <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+              Stopping in {rec.warningSecondsLeft}s - click to keep, or rejoin the meeting
+            </>
           ) : (
             <>
               <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-              Recording {meetingPlatform === 'zoom' ? 'Zoom' : meetingPlatform === 'teams' ? 'Teams' : meetingPlatform === 'meet' ? 'Meet' : 'meeting'} · {Math.floor(rec.elapsed / 60)}:{String(rec.elapsed % 60).padStart(2, '0')} · click to stop
+              Recording {rec.platform === 'zoom' ? 'Zoom' : rec.platform === 'teams' ? 'Teams' : rec.platform === 'meet' ? 'Meet' : 'meeting'} · {Math.floor(rec.elapsed / 60)}:{String(rec.elapsed % 60).padStart(2, '0')} · click to stop
             </>
           )}
         </button>
       )}
-      {/* Background effects */}
-      <StarsBackground className="absolute inset-0 z-0" />
-      <ShootingStars />
+      {/* Update ready — a new version downloaded and is staged. The button drives
+          the install (quit + swap + relaunch); a plain quit/force-kill would leave
+          it unapplied. */}
+      {updateReady && (
+        <div className="absolute right-4 top-4 z-50 flex items-center gap-3 rounded-md border border-green-500/40 bg-neutral-900/95 px-3.5 py-2 font-mono text-xs text-neutral-200 shadow-xl backdrop-blur">
+          <IconDownload className="h-4 w-4 text-green-500" />
+          <span>Update {updateReady} is ready</span>
+          <button
+            onClick={async () => {
+              if (!window.api?.installUpdate) return;
+              setInstalling(true);
+              try {
+                await window.api.installUpdate();
+              } catch {
+                // quitAndInstall normally never returns (the app exits). If it
+                // rejects, unlock the button so the user can retry.
+                setInstalling(false);
+                addNotification({ type: 'info', title: 'Update restart failed', message: 'Try again from the update banner.' });
+              }
+            }}
+            disabled={installing}
+            className="flex items-center gap-1.5 rounded-sm border border-green-500/50 bg-green-500/10 px-2.5 py-1 text-green-400 hover:bg-green-500/20 disabled:opacity-60"
+          >
+            {installing ? <><IconLoader2 className="h-3.5 w-3.5 animate-spin" /> Restarting…</> : 'Restart to update'}
+          </button>
+        </div>
+      )}
+      {/* Background — flat Off Grid terminal grid (theme-aware), with a dark-mode
+          starfield + periodic shooting star layered on top. */}
+      <GridBackdrop className="z-0" />
+      <StarfieldBackdrop className="z-0" />
 
       <div className="flex h-full relative z-10">
         {/* Aceternity Sidebar */}
@@ -524,10 +637,10 @@ function AppContent() {
                   onClick={() => setSidebarOpen(true)}
                   aria-label="Expand sidebar"
                   title="Expand"
-                  className="group/exp flex w-full flex-col items-center gap-1 py-2"
+                  className="group/exp flex w-full flex-col items-center gap-1.5 py-2"
                 >
                   <img src={logo} alt="Off Grid" className="h-8 w-8 shrink-0 rounded-lg" />
-                  <IconLayoutSidebarLeftExpand className="h-4 w-4 text-neutral-500 transition-colors group-hover/exp:text-white" />
+                  <IconLayoutSidebarLeftExpand className="h-5 w-5 text-neutral-500 transition-colors group-hover/exp:text-white" />
                 </button>
               )}
 
@@ -567,7 +680,24 @@ function AppContent() {
 
             {/* Pinned bottom */}
             <div className="flex flex-col gap-1 border-t border-neutral-200 pt-2 dark:border-neutral-800">
+              <ModelStatusDot open={sidebarOpen} onClick={() => (sidebarOpen ? setViewMode('settings') : setSidebarOpen(true))} />
+              <NavThemeToggle expanded={sidebarOpen} />
               {bottomNav.map(renderNavItem)}
+              {/* Cross-sell to the companion phone app — opens the /mobile page
+                  (App Store + Google Play). Mirrors mobile's link back to desktop. */}
+              <button
+                onClick={() => openExternal(OFF_GRID_MOBILE_URL)}
+                title={!sidebarOpen ? 'Get the mobile app' : undefined}
+                className={cn(
+                  'group/nav relative flex items-center gap-3 rounded-lg py-2 text-sm transition-colors',
+                  sidebarOpen ? 'px-3' : 'justify-center px-0',
+                  'text-neutral-500 hover:bg-neutral-500/10 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
+                )}
+              >
+                <IconDeviceMobile className="h-5 w-5 shrink-0" />
+                {sidebarOpen && <span className="flex-1 text-left whitespace-pre">Mobile app</span>}
+                {sidebarOpen && <IconExternalLink className="h-3.5 w-3.5 shrink-0 text-neutral-400/60" />}
+              </button>
             </div>
           </SidebarBody>
         </Sidebar>
@@ -619,6 +749,7 @@ function AppContent() {
                       onNavigateToMemory={handleSelectMemory}
                       onNavigateToChat={handleSelectChat}
                       onNavigateToEntity={handleSelectEntity}
+                      onSeekReplay={(ts) => { setReplayTarget(ts || Date.now()); setViewMode('replay'); }}
                       openTarget={chatTarget}
                       onTargetConsumed={() => setChatTarget(null)}
                     />
@@ -640,12 +771,21 @@ function AppContent() {
                     renderProView(viewMode, {
                       setView: (v) => setViewMode(v as ViewMode),
                       replayTarget,
+                      setReplayTarget,
                       meetingTarget,
                       actionsMode,
                       setActionsMode,
+                      actionsEntity,
+                      setActionsEntity,
                       searchQuery,
+                      onSearchQueryChange: setSearchQuery,
+                      searchSources,
+                      onSearchSourcesChange: setSearchSources,
+                      searchSort,
+                      onSearchSortChange: setSearchSort,
                       selectedMemoryId,
                       setSelectedMemoryId,
+                      selectedEntityId,
                       rec,
                       onSelectEntity: handleSelectEntity,
                       onSelectMemory: handleSelectMemory,
@@ -676,9 +816,11 @@ function App() {
   return (
     <PermissionGate>
       <NotificationProvider>
-        <ReprocessingProvider>
-          <AppContent />
-        </ReprocessingProvider>
+        <ToastProvider>
+          <ReprocessingProvider>
+            <AppContent />
+          </ReprocessingProvider>
+        </ToastProvider>
       </NotificationProvider>
     </PermissionGate>
   );
