@@ -14,7 +14,7 @@ import { DEFAULT_CTX_SIZE } from "../shared/llm-defaults";
 import { MODE_PRESETS, samplingPayload, launchArgsChanged } from "./llm/settings-math";
 import { buildMessages, imageMime, thinkingPayload, type DecodedImage } from "./llm/chat-payload";
 import { parseSseLine, createThinkSplitter, createToolCallAccumulator, type AssembledToolCall } from "./llm/sse-stream";
-import { modelRequestOptions, postCompletionOnce } from "./llm/http-post";
+import { modelRequestOptions, postCompletionOnce, describeServerError } from "./llm/http-post";
 
 export type { KvCacheType, PerformanceMode };
 
@@ -140,6 +140,12 @@ export class LLMService {
       // If anything goes wrong reading sizes, fall back to a universally-safe value.
       return Math.min(requested, 8192);
     }
+  }
+
+  /** The EFFECTIVE (RAM-clamped) context window the server is actually running
+   *  with — the real ceiling for prompt + tools + answer. */
+  effectiveContextSize(): number {
+    return this.safeCtxSize(this.ctxSize);
   }
 
   getSettings(): LlmSettings {
@@ -683,7 +689,16 @@ export class LLMService {
       // Fresh connection per request via the shared contract (llm/http-post.ts) — no keep-alive
       // pool, so the tool loop's back-to-back requests never hit a half-closed socket (ECONNRESET).
       const req = http.request(modelRequestOptions(this.port, Buffer.byteLength(body)), (res) => {
-        if (res.statusCode !== 200) { clearTimeout(timer); reject(new Error(`LLM Server Error: ${res.statusCode}`)); res.resume(); return; }
+        if (res.statusCode !== 200) {
+          // Read the server's error body (small) so B2 can surface an actionable
+          // message (e.g. context overflow from too many connectors) instead of a
+          // bare status code.
+          let err = '';
+          res.setEncoding('utf8');
+          res.on('data', (c: string) => { if (err.length < 4096) err += c; });
+          res.on('end', () => { clearTimeout(timer); if (!timedOut && !aborted) reject(new Error(describeServerError(res.statusCode, err))); });
+          return;
+        }
         res.setEncoding('utf8');
         res.on('data', (chunk: string) => {
           buf += chunk;
@@ -754,7 +769,16 @@ export class LLMService {
       // Fresh connection per request via the shared contract (llm/http-post.ts) — no keep-alive
       // pool, so the tool loop's back-to-back requests never hit a half-closed socket (ECONNRESET).
       const req = http.request(modelRequestOptions(this.port, Buffer.byteLength(body)), (res) => {
-        if (res.statusCode !== 200) { clearTimeout(timer); reject(new Error(`LLM Server Error: ${res.statusCode}`)); res.resume(); return; }
+        if (res.statusCode !== 200) {
+          // Read the server's error body (small) so B2 can surface an actionable
+          // message (e.g. context overflow from too many connectors) instead of a
+          // bare status code.
+          let err = '';
+          res.setEncoding('utf8');
+          res.on('data', (c: string) => { if (err.length < 4096) err += c; });
+          res.on('end', () => { clearTimeout(timer); if (!timedOut && !aborted) reject(new Error(describeServerError(res.statusCode, err))); });
+          return;
+        }
         res.setEncoding('utf8');
         res.on('data', (chunk: string) => {
           buf += chunk;
