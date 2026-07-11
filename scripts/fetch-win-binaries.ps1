@@ -11,9 +11,14 @@
 # On Windows the DLL loader searches the directory of the .exe first, so each
 # runtime's DLLs MUST sit next to its .exe (hence the per-runtime subdirs).
 #
-# Versions are resolved DYNAMICALLY from each project's latest GitHub release, so
-# this script does not go stale. Set OFFGRID_GH_TOKEN (or GITHUB_TOKEN) to avoid
-# the unauthenticated API rate limit (CI sets GITHUB_TOKEN automatically).
+# Most runtimes are resolved DYNAMICALLY from each project's latest GitHub
+# release so the script does not go stale. llama.cpp is the EXCEPTION: it is
+# pinned to the same ref the macOS engine is built from (scripts/build-llama.sh,
+# LLAMA_REF=b9838) so grammar / native tool-call handling is byte-for-byte
+# identical across platforms. 'latest' floats, and upstream builds have shipped
+# that reject the tool-call GBNF the app generates from MCP tool schemas.
+# Set OFFGRID_GH_TOKEN (or GITHUB_TOKEN) to avoid the unauthenticated API rate
+# limit (CI sets GITHUB_TOKEN automatically).
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'  # makes Invoke-WebRequest downloads fast
@@ -34,18 +39,23 @@ $ghHeaders = @{ 'User-Agent' = 'offgrid-fetch-win' }
 $token = if ($env:OFFGRID_GH_TOKEN) { $env:OFFGRID_GH_TOKEN } elseif ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { $null }
 if ($token) { $ghHeaders['Authorization'] = "Bearer $token" }
 
-# Find the download URL of the latest-release asset whose name matches $pattern.
-function Get-LatestAssetUrl($repo, $pattern) {
-  $rel = Invoke-RestMethod -Headers $ghHeaders -Uri "https://api.github.com/repos/$repo/releases/latest"
+# Find the download URL of a release asset whose name matches $pattern. With no
+# $tag it uses the project's LATEST release; with $tag it pins to that exact
+# release (e.g. llama.cpp b9838, to match the macOS source build).
+function Get-AssetUrl($repo, $pattern, $tag) {
+  $uri = if ($tag) { "https://api.github.com/repos/$repo/releases/tags/$tag" }
+         else      { "https://api.github.com/repos/$repo/releases/latest" }
+  $rel = Invoke-RestMethod -Headers $ghHeaders -Uri $uri
   $asset = $rel.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
   if (-not $asset) { throw "no asset matching /$pattern/ in $repo @ $($rel.tag_name)" }
   Write-Host "  $repo @ $($rel.tag_name) -> $($asset.name)"
   return $asset.browser_download_url
 }
 
-# Download + extract a zip asset, return the extraction dir.
-function Expand-Asset($repo, $pattern) {
-  $url = Get-LatestAssetUrl $repo $pattern
+# Download + extract a zip asset, return the extraction dir. Optional $tag pins
+# to a specific release instead of latest.
+function Expand-Asset($repo, $pattern, $tag) {
+  $url = Get-AssetUrl $repo $pattern $tag
   $zip = Join-Path $tmp ([System.IO.Path]::GetRandomFileName() + '.zip')
   Write-Host "  downloading $url"
   Invoke-WebRequest -Headers $ghHeaders -Uri $url -OutFile $zip
@@ -64,9 +74,12 @@ function Copy-Runtime($srcDir, $destName) {
 }
 
 # --- llama.cpp (server + CLIs + ggml DLLs), CPU x64 baseline -----------------
-Write-Host '== llama.cpp =='
+# PINNED to match the macOS engine (scripts/build-llama.sh). Overridable via env
+# for a coordinated cross-platform bump — keep it in lockstep with build-llama.sh.
+$LlamaRef = if ($env:LLAMA_REF) { $env:LLAMA_REF } else { 'b9838' }
+Write-Host "== llama.cpp (pinned $LlamaRef) =="
 try {
-  $x = Expand-Asset 'ggml-org/llama.cpp' 'bin-win-cpu-x64\.zip$'
+  $x = Expand-Asset 'ggml-org/llama.cpp' 'bin-win-cpu-x64\.zip$' $LlamaRef
   Copy-Runtime $x 'llama' | Out-Null
 } catch { Write-Warning "llama.cpp fetch failed: $_" }
 
