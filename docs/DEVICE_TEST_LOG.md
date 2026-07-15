@@ -40,7 +40,7 @@ value had zero coverage.
 
 ## Chat — tools / MCP / modality
 
-- [ ] **D15 ACTION-AFTER-CANCEL** — Pressing Stop mid-round still RUNS the assembled tool — including MCP WRITES (send message / create event) — the loop never checks `signal.aborted` before `runTool`; the executed action is also invisible (bubble cancelled). `tools.ts:378-398`, `stream.ts:106-117`
+- 🔁 **D15 ACTION-AFTER-CANCEL** — FIXED (needs on-device confirm). Stop mid-round still ran the assembled tool (incl. MCP writes — send message/create event), invisibly. Fix: `toolChat` returns immediately after a round if `signal.aborted`, before `runTool`. Test: `tools-abort.test.ts` (fake MCP tool's side effect never fires after abort; red on HEAD → green). **On-device:** connect an MCP write connector (Slack/Calendar), ask something that triggers its tool, hit Stop as it "thinks" → confirm NO message/event is actually created. `tools.ts:374+`
 - [ ] **D16 WRONG/EMPTY** — An image attached to a text-only (no-mmproj) model in tools mode is embedded as `image_url` unconditionally (no main-side `hasVision` guard; the renderer flag is stale) → silent wrong answer or round error. `tools.ts:346-356`
 - [ ] **D17 SILENT-DROP** — A connector shown "connected" whose token expired / refresh fails silently drops its tools from the turn (model says "I can't access that"); the DB status is never updated to error. `mcpConnectorToolExtension.ts:30-33`
 - [ ] **D18 SLOW/STUCK** — Every enabled connector runs a full MCP connect+listTools on EVERY chat turn (no cache / timeout / concurrency), inside the held chat-queue slot → one slow/unreachable connector adds seconds (or hangs) to every turn. `mcpConnectorToolExtension.ts:30-45`
