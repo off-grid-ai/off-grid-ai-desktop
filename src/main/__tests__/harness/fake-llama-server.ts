@@ -85,11 +85,23 @@ export async function startFakeLlamaServer(): Promise<FakeLlamaServer> {
       let body = '';
       req.on('data', (c) => { body += c; });
       req.on('end', () => {
-        try { requests.push(JSON.parse(body)); } catch { requests.push({}); }
+        let parsed: Record<string, unknown> = {};
+        try { parsed = JSON.parse(body); } catch { /* keep {} */ }
+        requests.push(parsed);
         const turn = queue.shift() ?? { content: '' };
         if (turn.errorStatus) {
           res.writeHead(turn.errorStatus, { 'Content-Type': 'application/json' });
           res.end(turn.errorBody ?? JSON.stringify({ error: { message: 'fake error' } }));
+          return;
+        }
+        // Non-streaming path (llm.chat / postCompletionOnce): return ONE OpenAI-shaped
+        // completion. llm.chat reads data.choices[0].message.content.
+        if (parsed.stream !== true) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            choices: [{ message: { content: turn.content ?? '', ...(turn.toolCalls?.length ? { tool_calls: turn.toolCalls.map((tc, i) => ({ index: i, id: tc.id ?? `call_${tc.name}_${i}`, type: 'function', function: { name: tc.name, arguments: tc.argsRaw ?? JSON.stringify(tc.args ?? {}) } })) } : {}) } }],
+            usage: { total_tokens: 0 },
+          }));
           return;
         }
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
