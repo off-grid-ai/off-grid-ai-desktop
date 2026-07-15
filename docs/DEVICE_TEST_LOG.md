@@ -20,7 +20,7 @@ value had zero coverage.
 
 ## Download & storage
 
-- [ ] **D1 CRASH** — Download on a near-full disk (or any write error) crashes the whole app: the download write stream has no `'error'` listener, and the `out.on('finish')` promise never resolves on error (hang). `models-manager.ts:157,176`
+- 🔁 **D1 CRASH** — FIXED (needs on-device confirm). Download write errors (disk full / EIO) emitted an unhandled `'error'` → whole-app crash, and the finish-wait hung. Fix: extracted `pumpToFile` (models/download-pump.ts) owns the error path → rejects → status 'failed'. Test: `download-pump.test.ts` (real write stream; ENOENT → graceful reject; naive version times out = the bug, falsified). **On-device:** fill the disk (or point models dir at a tiny volume), start a large download → it shows Failed, the app stays up (no crash), chat/capture keep working. `models-manager.ts` + `models/download-pump.ts`
 - [ ] **D2 DATA-LOSS** — A truncated / short-read download is promoted to "installed" + activatable (no `written===content-length` or GGUF-magic check before rename) → activating it kills llama-server ("Chat model Down", no reason). `models-manager.ts:179`
 - [ ] **D3 CORRUPT** — Double-clicking Download (or Retry while it's already downloading) runs two writers into one `.part` → corrupt file; Cancel then controls the wrong download. `models-manager.ts:123`
 - [ ] **D4 DISK-LEAK** — Cancel/Clear deletes the `.part` while a writer is still running → an orphan `.part` is recreated, invisible in the Downloads list, silently leaking GBs. `models-manager.ts:525,535`
