@@ -6,12 +6,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const listConnectors = vi.fn();
 const fetchTools = vi.fn();
 const callConnectorTool = vi.fn();
+const setConnectorStatus = vi.fn();
 const callHook = vi.fn();
 
 vi.mock('../../mcp', () => ({
   listConnectors: () => listConnectors(),
   fetchTools: (id: number) => fetchTools(id),
   callConnectorTool: (id: number, tool: string, args: unknown) => callConnectorTool(id, tool, args),
+  setConnectorStatus: (id: number, status: string, detail?: string | null) => setConnectorStatus(id, status, detail),
 }));
 vi.mock('../../bootstrap/hookRegistry', () => ({
   callHook: (name: string, payload: unknown) => callHook(name, payload),

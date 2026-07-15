@@ -85,6 +85,15 @@ export function setConnectorEnabled(id: number, enabled: boolean): void {
   getDB().prepare('UPDATE connectors SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id);
 }
 
+/** Single writer for a connector's health status — so testConnector and the chat
+ *  tool loader can't diverge on how a failure is recorded. When a background load
+ *  can't reach a connector (expired token / server down), this flips its status to
+ *  'error' so the UI shows it needs reconnecting instead of silently going dark. */
+export function setConnectorStatus(id: number, status: 'ok' | 'error' | 'unknown', detail?: string | null): void {
+  ensure();
+  getDB().prepare('UPDATE connectors SET status = ?, status_detail = ? WHERE id = ?').run(status, detail ?? null, id);
+}
+
 export function removeConnector(id: number): void {
   ensure();
   getDB().prepare('DELETE FROM connectors WHERE id = ?').run(id);
@@ -208,22 +217,41 @@ export async function testConnector(id: number): Promise<{ ok: boolean; tools: {
     return { ok: true, tools };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    getDB().prepare("UPDATE connectors SET status='error', status_detail=? WHERE id=?").run(msg, id);
+    setConnectorStatus(id, 'error', msg);
     return { ok: false, tools: [], error: msg };
   }
 }
 
-/** Full tool definitions (incl. inputSchema) for a connected connector. */
+// A background tool load must never hang the chat turn it runs inside: one dead or
+// unreachable connector (no server / stalled OAuth) would otherwise block every
+// send. Bound each connect+list; on timeout the caller drops that connector's tools
+// (and marks it errored) and the turn proceeds.
+const FETCH_TOOLS_TIMEOUT_MS = 8000;
+
+/** Full tool definitions (incl. inputSchema) for a connected connector. Rejects if
+ *  the connect+list exceeds FETCH_TOOLS_TIMEOUT_MS. */
 export async function fetchTools(id: number): Promise<{ name: string; description?: string; inputSchema?: unknown }[]> {
   ensure();
   const c = getConnector(id);
   if (!c) throw new Error('connector not found');
-  const { client, close } = await connect(c, false);
+  const op = (async (): Promise<{ name: string; description?: string; inputSchema?: unknown }[]> => {
+    const { client, close } = await connect(c, false);
+    try {
+      const res = await client.listTools();
+      return (res.tools ?? []) as { name: string; description?: string; inputSchema?: unknown }[];
+    } finally {
+      await close();
+    }
+  })();
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`listing tools for ${c.name} timed out`)), FETCH_TOOLS_TIMEOUT_MS);
+    timer.unref?.();
+  });
   try {
-    const res = await client.listTools();
-    return (res.tools ?? []) as { name: string; description?: string; inputSchema?: unknown }[];
+    return await Promise.race([op, timeout]);
   } finally {
-    await close();
+    clearTimeout(timer!);
   }
 }
 

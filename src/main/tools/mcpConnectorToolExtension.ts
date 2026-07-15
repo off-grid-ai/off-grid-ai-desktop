@@ -7,7 +7,7 @@
 // build no hook is registered, so connector tools just run.
 
 import type { ToolExtension } from '../tools';
-import { listConnectors, fetchTools, callConnectorTool } from '../mcp';
+import { listConnectors, fetchTools, callConnectorTool, setConnectorStatus } from '../mcp';
 import { callHook } from '../bootstrap/hookRegistry';
 
 const MCP_PREFIX = 'mcp__';
@@ -27,9 +27,23 @@ class McpConnectorToolExtension implements ToolExtension {
     const out: unknown[] = [];
     try {
       const enabled = listConnectors().filter((c) => c.enabled);
-      for (const c of enabled) {
-        let tools: { name: string; description?: string; inputSchema?: unknown }[] = [];
-        try { tools = await fetchTools(c.id); } catch (e) { console.error('[mcp-ext] fetchTools', c.name, e); continue; }
+      // Load every connector's tools CONCURRENTLY (each bounded by fetchTools'
+      // timeout) so N connectors don't add up serially on the chat turn.
+      const loaded = await Promise.all(
+        enabled.map(async (c) => {
+          try {
+            return { c, tools: await fetchTools(c.id) };
+          } catch (e) {
+            // A connector shown "connected" whose token expired / server is down
+            // must NOT silently vanish: mark it errored so the UI prompts a
+            // reconnect, rather than the model quietly losing its tools.
+            console.error('[mcp-ext] fetchTools', c.name, e);
+            setConnectorStatus(c.id, 'error', e instanceof Error ? e.message : String(e));
+            return { c, tools: [] as { name: string; description?: string; inputSchema?: unknown }[] };
+          }
+        }),
+      );
+      for (const { c, tools } of loaded) {
         for (const t of tools) {
           const fnName = `${MCP_PREFIX}${c.id}__${t.name}`;
           this.byName.set(fnName, { id: c.id, tool: t.name, connector: c.name });
