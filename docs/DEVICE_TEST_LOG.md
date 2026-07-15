@@ -57,7 +57,7 @@ value had zero coverage.
 
 ## Model settings / activation / residency
 
-- [ ] **D26 SILENT-LOST + DRY** — "Configure for me" NEVER activates TTS: it passes `kind:'voice'` but `isModalKind` accepts only `'speech'` → `setActiveModalChoice` fails, error swallowed; Kokoro shows not-Active though setup claims "voice is set up". `setup.ts:289,295`, `catalog-logic.ts:232`
+- 🔁 **D26 SILENT-LOST + DRY** — FIXED (needs on-device confirm). "Configure for me" passed `kind:'voice'` but `setActiveModalChoice` gated on `isModalKind` (only `'speech'`) → silently failed to activate TTS. Fix: `setActiveModalChoice` normalizes via `modalityForModel` (idempotent on `'speech'`), so `'voice'` and `'speech'` both work. Tests: `active-models.test.ts` (`modalityForKind('speech')==='speech'`, red on HEAD) + `set-active-modal-choice.test.ts` (no isModalKind gate). **On-device:** fresh profile → "Configure for me" → after it completes, Kokoro/TTS shows Active in Models and voice output works. `models-manager.ts`, `active-models.ts`
 - [ ] **D27 SILENT-LOST §A** — An in-flight Steps/size edit is stomped by the `[imgModel,imgParamStore]` re-seed effect on model switch → the field resets to default and the generate call uses the default, not your value. `MemoryChat.tsx:545-550`
 - [ ] **D28 PANEL-DESYNC / DRY (latent)** — Residency UI shows a stale `on-demand` for the locked `llm` modality; the renderer doesn't run `normalizeResidency`'s lock-coercion (the rule is duplicated across main/renderer). `Settings.tsx:146`
 
