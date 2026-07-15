@@ -82,6 +82,24 @@ value had zero coverage.
 - **Data-privacy correctness** (D29, D30, D35): the single most user-critical class — a "wipe" that doesn't wipe, and leftover credentials. Fix + a test that asserts EVERY personal table/store is empty after delete-all.
 - **Open-core** (D31): pro logic in core + a dead registry seam.
 
+## Windows — Pro is "coming soon" (feature, not a bug)
+
+Pro isn't built for Windows yet, so the Windows build ships as a stable free shell and every
+Pro surface says "coming soon". Single rule: renderer `lib/pro-availability.ts`
+`proSurfaceState({isPro,platform})` → `active` | `locked` | `coming-soon` (win32 → always
+coming-soon); main `proEnabled()` returns false on win32 (after the OFFGRID_PRO dev overrides)
+so pro main features never activate and `window.api.isPro` is false → the in-core pro
+sub-behaviours (project captured-memory toggle, permission gate, chat memory scope, skill
+triggers) all degrade to free automatically. Tests: `pro-availability.test.ts`,
+`UpgradeScreen.coming-soon.test.tsx`, `Settings.coming-soon.test.tsx`, `proEnabled.test.ts`
+(all falsified). Dual production build verified (normal + OFFGRID_PRO=0).
+
+**On-device (Windows):** every Pro sidebar tab shows a "Soon" tag and opens the coming-soon
+writeup (no Get Pro / license box); Settings shows the pro sections as "Coming soon" (not the
+"Pro" upgrade lock), even with a license key entered; app lands on Models, and chat / projects /
+models all work as the free shell. **On-device (macOS):** unchanged — free shows upgrade locks,
+licensed shows the real Pro features.
+
 ## Related
 
 - `docs/RELEASE_TEST_CHECKLIST.md` — the branch's intended-change manual checklist (separate from this broken-flow log).
