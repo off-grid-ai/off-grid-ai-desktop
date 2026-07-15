@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { persistToggle } from '@renderer/lib/persist-toggle';
 import { DEFAULT_CTX_SIZE } from '@offgrid/core/shared/llm-defaults';
 
 // Right-side Settings panel (same pattern as SkillsPanel/ArtifactCanvas).
@@ -70,8 +71,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   };
 
   const pickVoice = (v: string): void => {
-    setVoice(v);
-    window.api.saveSetting('ttsVoice', v);
+    void persistToggle(v, voice, setVoice, (val) => window.api.saveSetting('ttsVoice', val));
   };
 
   const testVoice = async (): Promise<void> => {
@@ -225,7 +225,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                       <div className="text-[11px] text-neutral-500">{t.description}</div>
                     </div>
                     <button
-                      onClick={() => { const next = t.enabled === false; window.api.setToolEnabled?.(t.name, next); setTools(prev => prev.map(x => (x.name === t.name ? { ...x, enabled: next } : x))); }}
+                      onClick={() => { const next = t.enabled === false; void persistToggle(tools.map(x => (x.name === t.name ? { ...x, enabled: next } : x)), tools, setTools, () => window.api.setToolEnabled?.(t.name, next)); }}
                       className={`shrink-0 rounded px-2 py-1 text-[11px] ${t.enabled === false ? 'text-neutral-500' : 'text-green-500'}`}
                     >
                       {t.enabled === false ? 'Off' : 'On'}

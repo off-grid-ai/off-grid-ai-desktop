@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { persistToggle } from '@renderer/lib/persist-toggle';
 import { motion } from 'motion/react';
 import { LockKey, X, CheckCircle, Desktop, EnvelopeSimple, CaretDown } from '@phosphor-icons/react';
 import { cn } from '@renderer/lib/utils';
@@ -84,9 +85,7 @@ function ProactiveSection(): React.ReactElement {
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
   const toggle = (): void => {
-    const next = !enabled;
-    setEnabled(next);
-    api.saveSetting?.('proactive:enabled', next);
+    void persistToggle(!enabled, enabled, setEnabled, (v) => api.saveSetting?.('proactive:enabled', v));
   };
   // Body only — the card chrome + title come from SettingsCard.
   return (
@@ -130,9 +129,8 @@ function RuntimeResidencySection(): React.ReactElement {
   }, []);
   const toggle = (modality: string, locked?: boolean): void => {
     if (locked) return; // locked modalities (chat model) stay in-memory — no toggle
-    const next = modes[modality] === 'resident' ? 'on-demand' : 'resident';
-    setModes((prev) => ({ ...prev, [modality]: next }));
-    api.residencySet?.(modality, next);
+    const nextMode = modes[modality] === 'resident' ? 'on-demand' : 'resident';
+    void persistToggle({ ...modes, [modality]: nextMode }, modes, setModes, () => api.residencySet?.(modality, nextMode));
   };
   return (
     <div>
@@ -192,14 +190,11 @@ function SoftwareUpdateSection(): React.ReactElement {
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
   const toggle = (): void => {
-    const next = !auto;
-    setAuto(next);
-    api.updateSetAuto?.(next);
+    void persistToggle(!auto, auto, setAuto, (v) => api.updateSetAuto?.(v));
   };
   const toggleBeta = (): void => {
     const next = !beta;
-    setBeta(next);
-    api.updateSetChannel?.(next ? 'beta' : 'stable');
+    void persistToggle(next, beta, setBeta, () => api.updateSetChannel?.(next ? 'beta' : 'stable'));
     setStatus(next
       ? 'Switched to nightly builds — these ship on every change and are pre-release. Turn this off to return to stable.'
       : 'Back on stable builds. You will move to the latest stable version on the next check.');
