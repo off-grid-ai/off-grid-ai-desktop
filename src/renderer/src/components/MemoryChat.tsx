@@ -2545,6 +2545,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                             type="button"
                             variant="outline"
                             size="icon"
+                            aria-label="Stop generating"
                             onClick={() => stopGeneration(activeConversationId)}
                             className="size-8 rounded-full border-red-500/50 text-red-400 hover:bg-red-500/10"
                           >
