@@ -109,6 +109,11 @@ export async function downloadModel(modelId: string, onProgress?: ProgressCb): P
   const dir = llm.getModelsDir();
   fs.mkdirSync(dir, { recursive: true });
   ensureRegistryLoaded();
+  // Re-entrancy guard (before any status emit / controller registration): a second
+  // download of the same id would write into the SAME .part (interleaved writes →
+  // corrupt file) and overwrite the first's AbortController, so a later cancel/clear
+  // would control the wrong download. If one is already in flight, no-op (D3).
+  if (controllers.has(modelId)) return { success: false, error: 'already downloading' };
   const send = (data: Partial<DownloadProgress>): void => {
     const p: DownloadProgress = { modelId, ...data };
     lastProgress.set(modelId, p);
