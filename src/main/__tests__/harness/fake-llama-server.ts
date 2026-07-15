@@ -16,7 +16,9 @@ export interface FakeToolCall {
   id?: string;
   name: string;
   /** Arguments object; serialized to the JSON string llama-server emits. */
-  args: unknown;
+  args?: unknown;
+  /** Raw arguments string, emitted verbatim — for exercising malformed (non-JSON) args. */
+  argsRaw?: string;
 }
 export interface FakeTurn {
   /** Answer text streamed as content deltas (split into a few frames like the engine). */
@@ -34,6 +36,9 @@ export interface FakeLlamaServer {
   port: number;
   /** Queue the turns the server will replay, in order, one per chat request. */
   enqueue(...turns: FakeTurn[]): void;
+  /** Clear any queued-but-unconsumed turns + the recorded requests — call between tests
+   *  so a case that over-enqueues (e.g. the step-budget cap) can't leak into the next. */
+  reset(): void;
   /** The request bodies received, parsed — for asserting what the REAL llm actually sent. */
   readonly requests: Array<Record<string, unknown>>;
   close(): Promise<void>;
@@ -45,9 +50,11 @@ function sseFramesFor(turn: FakeTurn): string[] {
   if (turn.reasoning) {
     frames.push(delta({ reasoning_content: turn.reasoning }));
   }
-  for (const tc of turn.toolCalls ?? []) {
-    frames.push(delta({ tool_calls: [{ id: tc.id ?? `call_${tc.name}`, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args) } }] }));
-  }
+  turn.toolCalls?.forEach((tc, i) => {
+    const args = tc.argsRaw ?? JSON.stringify(tc.args ?? {});
+    // index so multiple tool_calls in one turn accumulate as distinct calls, like the engine.
+    frames.push(delta({ tool_calls: [{ index: i, id: tc.id ?? `call_${tc.name}_${i}`, type: 'function', function: { name: tc.name, arguments: args } }] }));
+  });
   // Split content into a couple of frames so the real splitter/accumulator is exercised
   // across chunk boundaries, like the engine's token-by-token stream.
   const text = turn.content ?? '';
@@ -99,6 +106,7 @@ export async function startFakeLlamaServer(): Promise<FakeLlamaServer> {
     port,
     requests,
     enqueue: (...turns: FakeTurn[]) => { queue.push(...turns); },
+    reset: () => { queue.length = 0; requests.length = 0; },
     close: () => new Promise<void>((r) => server.close(() => r())),
   };
 }
