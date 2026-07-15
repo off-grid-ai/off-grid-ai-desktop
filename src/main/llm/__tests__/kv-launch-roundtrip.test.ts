@@ -61,7 +61,7 @@ describe('KV-cache launch-args round-trip (persist → restart → launch)', () 
   });
 
   // Fresh module instance per test so each LLMService reads the current env/dir.
-  async function freshService() {
+  async function freshService(): Promise<LLMService> {
     const mod = await import('../../llm');
     return new mod.LLMService();
   }
@@ -69,7 +69,7 @@ describe('KV-cache launch-args round-trip (persist → restart → launch)', () 
   // setSettings respawns on a launch-arg change; with no gguf in the temp dir the
   // respawn's init() rejects with "Models not downloaded" AFTER persist() has already
   // written — so swallow that expected rejection; the persisted round-trip is intact.
-  async function applySettings(svc: LLMService, s: LlmSettings) {
+  async function applySettings(svc: LLMService, s: LlmSettings): Promise<void> {
     await svc.setSettings(s).catch(() => {});
   }
 

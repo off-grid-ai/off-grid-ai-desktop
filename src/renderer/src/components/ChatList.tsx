@@ -65,7 +65,7 @@ function ChatListItem({ session, index, formattedTime, onSelect, onDelete }: Cha
             <p className="mb-3 last:mb-0 text-neutral-200">{children}</p>
         ),
         a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
-            <a href={href} target="_blank" rel="noreferrer" className="text-green-500 underline">
+            <a href={href} target="_blank" rel="noreferrer" className="text-emerald-400 underline">
                 {children}
             </a>
         ),

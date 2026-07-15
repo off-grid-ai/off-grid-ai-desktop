@@ -59,7 +59,7 @@ const markdownComponents: any = {
 
 // Memory card - full version for expanded view
 function MemoryCardFull({ memory, onClick }: { memory: Memory; onClick: () => void }) {
-    const formatTime = (dateStr: string) => parseSqliteUtc(dateStr).toLocaleString();
+    const formatTime = (dateStr: string): string => parseSqliteUtc(dateStr).toLocaleString();
 
     return (
         <motion.div
@@ -112,7 +112,7 @@ function MemoryCard({ memory, onClick }: { memory: Memory; onClick: () => void }
 
 // Entity card - full version for expanded view
 function EntityCardFull({ entity, onClick }: { entity: Entity; onClick: () => void }) {
-    const formatTime = (dateStr: string) => parseSqliteUtc(dateStr).toLocaleString();
+    const formatTime = (dateStr: string): string => parseSqliteUtc(dateStr).toLocaleString();
 
     return (
         <motion.div

@@ -16,6 +16,7 @@ describe('ChatList markdown link — emerald, not cyan', () => {
   });
 
   it('renders the markdown link with the emerald accent token', () => {
-    expect(src).toMatch(/<a[^>]*className="text-green-500 underline"/);
+    // The exact emerald token (DESIGN.md), not the Tailwind green stand-in.
+    expect(src).toMatch(/<a[^>]*className="text-emerald-400 underline"/);
   });
 });

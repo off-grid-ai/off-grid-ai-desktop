@@ -23,7 +23,11 @@ export function parseDataUrl(ref: string, fallbackExt: string): ParsedDataUrl {
   const meta = url.slice(5, comma);
   const ext = /(\w+)\/(\w+)/.exec(meta)?.[2] || fallbackExt;
   const payload = url.slice(comma + 1);
-  if (meta.includes('base64')) {
+  // base64 is a standalone `;`-delimited token per the data-URL grammar (e.g.
+  // `image/png;base64`), NOT any occurrence of the substring — a param value like
+  // `name=mybase64file` must not flip the payload into base64 decoding.
+  const isBase64 = meta.split(';').some((seg) => seg.trim().toLowerCase() === 'base64');
+  if (isBase64) {
     return { data: Buffer.from(payload, 'base64'), ext };
   }
   // A non-base64 payload is a URI-encoded string; a stray '%' makes decodeURIComponent

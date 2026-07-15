@@ -43,6 +43,22 @@ describe('parseDataUrl — decode + extension inference', () => {
     expect(data.length).toBe(0); // no comma -> nothing valid to decode
   });
 
+  it('treats "base64" inside a param VALUE as NOT base64 — token match, not substring', () => {
+    // meta = "text/plain;name=mybase64file": 'base64' is a substring of the filename,
+    // NOT the standalone `;base64` encoding token. The payload must be URI-decoded, not
+    // base64-decoded (which would yield garbage). Guards the includes()->token fix.
+    const url = 'data:text/plain;name=mybase64file,hello%20world';
+    const { data, ext } = parseDataUrl(url, 'bin');
+    expect(ext).toBe('plain');
+    expect(data.toString()).toBe('hello world');
+  });
+
+  it('decodes when `;base64` is present with other params before it', () => {
+    const bytes = Buffer.from('payload');
+    const url = `data:text/plain;charset=utf-8;base64,${bytes.toString('base64')}`;
+    expect(parseDataUrl(url, 'bin').data.equals(bytes)).toBe(true);
+  });
+
   it('a non-base64 payload with a stray % falls back to raw bytes instead of throwing URIError', () => {
     // decodeURIComponent('bad%zz') throws; the guard must catch and return raw bytes.
     expect(() => parseDataUrl('data:text/plain,bad%zz', 'txt')).not.toThrow();

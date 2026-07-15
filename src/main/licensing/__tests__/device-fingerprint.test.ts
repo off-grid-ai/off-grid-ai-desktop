@@ -14,7 +14,7 @@ import * as path from 'path';
 
 let fakeUserData = '';
 vi.mock('electron', () => ({
-  app: { getPath: vi.fn((_key: string) => fakeUserData) },
+  app: { getPath: vi.fn(() => fakeUserData) },
 }));
 
 async function freshModule() {
