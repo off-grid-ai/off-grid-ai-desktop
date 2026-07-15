@@ -30,6 +30,10 @@ export interface FakeTurn {
   /** Force a non-200 to exercise the error path (body is surfaced by describeServerError). */
   errorStatus?: number;
   errorBody?: string;
+  /** Stream the frames then HANG (never send [DONE] / close) — so a client abort fires
+   *  mid-turn. The real engine's socket stays open until the client cancels; this lets a
+   *  test hit Stop after a tool_call has streamed but before the turn completes. */
+  hold?: boolean;
 }
 
 export interface FakeLlamaServer {
@@ -89,6 +93,12 @@ export async function startFakeLlamaServer(): Promise<FakeLlamaServer> {
           return;
         }
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        if (turn.hold) {
+          // Stream everything EXCEPT the terminating [DONE], then hang — the client's
+          // abort (req.destroy) closes it. Lets a test cancel mid-turn.
+          for (const frame of sseFramesFor(turn).filter((f) => !f.includes('[DONE]'))) res.write(frame);
+          return;
+        }
         for (const frame of sseFramesFor(turn)) {
           res.write(frame);
         }

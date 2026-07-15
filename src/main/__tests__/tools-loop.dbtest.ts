@@ -192,6 +192,27 @@ describe('agentic tool loop — real toolChat + real LLMService over a fake llam
     expect(r.answer).toBe('used the connector');
   });
 
+  // --- abort: a cancelled turn runs NO tool side effect (D15) --------------------
+  it('a cancelled turn runs NO tool — Stop after the tool_call streams, before execution', async () => {
+    let ran = false;
+    registerToolExtension({
+      id: 'abort-ext',
+      schemas: () => [{ type: 'function', function: { name: 'abort_tool', description: 'x', parameters: { type: 'object', properties: {} } } }],
+      canHandle: (n) => n === 'abort_tool',
+      execute: async () => { ran = true; return 'should-never-run'; },
+      systemHint: () => '',
+    });
+    // The server streams the tool_call then HANGS; we hit Stop mid-turn — after the call
+    // arrived but before runTool. The real abort guard must skip execution.
+    fake.enqueue({ toolCalls: [{ name: 'abort_tool', args: {} }], hold: true });
+    const ac = new AbortController();
+    const p = toolChat('do the thing', [], { connectors: true, signal: ac.signal });
+    await new Promise((r) => setTimeout(r, 60)); // let the tool_call frame stream + the server hang
+    ac.abort();
+    await p;
+    expect(ran).toBe(false); // the MCP write tool never fired after Stop
+  });
+
   // --- DIP guard: the loop must not re-introduce per-tool-name branching ----------
   it('dispatches every tool uniformly — no c.name special-casing in the loop', () => {
     const src = fs.readFileSync(path.join(__dirname, '../tools.ts'), 'utf8');
