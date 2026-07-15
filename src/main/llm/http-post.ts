@@ -31,27 +31,28 @@ export function modelRequestOptions(port: number, contentLength: number): http.R
 }
 
 /** One non-streaming POST to /v1/chat/completions, resolving the raw body text. Rejects on a
- *  non-200, a transport error, or a timeout. Electron-free so it can be integration-tested. */
-export function postCompletionOnce(port: number, body: string, timeoutMs: number): Promise<string> {
+ *  non-200, a transport error, a timeout, or an abort via `signal`. Electron-free so it can be
+ *  integration-tested. The abort matters: a pre-stream call (intent classify / image-prompt)
+ *  otherwise runs to completion after the user hits Stop, leaving the model busy and blocking
+ *  the next turn. */
+export function postCompletionOnce(port: number, body: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      req.destroy();
-      reject(new Error('LLM request timed out - try a shorter prompt'));
-    }, timeoutMs);
+    if (signal?.aborted) { reject(new Error('aborted')); return; }
+    let done = false;
+    const finish = (fn: () => void): void => { if (done) { return; } done = true; clearTimeout(timer); signal?.removeEventListener('abort', onAbort); fn(); };
+    const onAbort = (): void => { req.destroy(); finish(() => reject(new Error('aborted'))); };
+    const timer = setTimeout(() => { req.destroy(); finish(() => reject(new Error('LLM request timed out - try a shorter prompt'))); }, timeoutMs);
 
     const req = http.request(modelRequestOptions(port, Buffer.byteLength(body)), (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        clearTimeout(timer);
-        if (timedOut) { return; }
+      res.on('end', () => finish(() => {
         if (res.statusCode !== 200) { reject(new Error(`LLM Server Error: ${res.statusCode} ${data}`)); return; }
         resolve(data);
-      });
+      }));
     });
-    req.on('error', (e) => { clearTimeout(timer); if (!timedOut) { reject(e); } });
+    req.on('error', (e) => finish(() => reject(e)));
+    signal?.addEventListener('abort', onAbort, { once: true });
     req.write(body);
     req.end();
   });

@@ -96,8 +96,13 @@ const INTENT_SCHEMA = {
 // JSON), instead of brittle keyword matching: build (runnable artifact), image
 // (generate a picture), or chat. Also pulls out any URLs the user wants read.
 // Falls back to the keyword heuristic if the classifier call fails.
-async function classifyIntent(query: string, history?: { role: string; content: string }[]): Promise<ChatIntent> {
+async function classifyIntent(query: string, history?: { role: string; content: string }[], streamId?: string): Promise<ChatIntent> {
     const regexUrls = (query.match(/https?:\/\/[^\s)<>"']+/g) || []).slice(0, 3);
+    // Register a controller for this pre-stream classify so a rag:cancel during the
+    // "Searching your memory…" window actually aborts the model call (D11) — without
+    // it the classify ran to completion after Stop, holding the model + the next turn.
+    const controller = streamId ? new AbortController() : undefined;
+    if (streamId && controller) streamControllers.set(streamId, controller);
     try {
         const { llm } = await import('./llm');
         const hist = (history ?? []).slice(-4).map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${clipText(m.content, 200)}`).join('\n');
@@ -114,6 +119,7 @@ async function classifyIntent(query: string, history?: { role: string; content: 
         const raw = await llm.chat(prompt, [], 60000, 200, {
             disableThinking: true,
             responseFormat: { type: 'json_schema', json_schema: { name: 'intent', schema: INTENT_SCHEMA, strict: true } },
+            signal: controller?.signal,
         });
         const j = JSON.parse(raw) as Partial<ChatIntent>;
         const intent = j.intent === 'build' || j.intent === 'image' ? j.intent : 'chat';
@@ -122,6 +128,10 @@ async function classifyIntent(query: string, history?: { role: string; content: 
     } catch (e) {
         console.warn('[intent] classifier failed, falling back to heuristic', (e as Error).message);
         return { intent: isGenerativeRequest(query) ? 'build' : 'chat', urls: regexUrls };
+    } finally {
+        // Only remove OUR entry — streamAnswer re-registers its own controller under
+        // the same streamId for the streaming phase.
+        if (streamId && controller && streamControllers.get(streamId) === controller) streamControllers.delete(streamId);
     }
 }
 
@@ -493,7 +503,7 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       // Intelligence layer: a grammar-constrained classifier picks the output
       // format (build / image / chat) and extracts URLs to read — replacing the
       // brittle keyword gate. Skip it in project mode (that path is its own thing).
-      const { intent, urls: intentUrls } = projectId ? { intent: 'chat' as const, urls: [] as string[] } : await classifyIntent(query, conversationHistory);
+      const { intent, urls: intentUrls } = projectId ? { intent: 'chat' as const, urls: [] as string[] } : await classifyIntent(query, conversationHistory, streamId);
 
       // Image request → have the model write a vivid prompt, then the renderer
       // generates it (it already detects an ```image block).

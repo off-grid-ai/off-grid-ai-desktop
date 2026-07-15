@@ -66,6 +66,29 @@ describe('postCompletionOnce over real sockets (the ECONNRESET fix)', () => {
     expect(true).toBe(true);
   });
 
+  // D11 — a pre-stream call (intent classify / image-prompt) must abort when the
+  // user hits Stop, instead of running to completion and holding the model.
+  it('rejects promptly with "aborted" when the signal fires mid-request (D11)', async () => {
+    // A server that receives the request and NEVER responds — like the model still
+    // generating when the user cancels.
+    server = http.createServer((req) => { req.on('data', () => {}); req.on('end', () => { /* never respond */ }); });
+    await new Promise<void>((r) => server!.listen(0, '127.0.0.1', () => r()));
+    const port = (server.address() as import('net').AddressInfo).port;
+
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 50);
+    // Generous request timeout (3s): if the signal were ignored (the HEAD bug) this
+    // would reject with 'timed out', not 'aborted' — so the message discriminates.
+    await expect(postCompletionOnce(port, '{}', 3000, ac.signal)).rejects.toThrow(/aborted/);
+  });
+
+  it('rejects immediately when handed an already-aborted signal', async () => {
+    const port = await startSocketClosingServer();
+    const ac = new AbortController();
+    ac.abort();
+    await expect(postCompletionOnce(port, '{}', 5000, ac.signal)).rejects.toThrow(/aborted/);
+  });
+
   it('modelRequestOptions pins the no-pool contract (single source of truth)', () => {
     const opts = modelRequestOptions(8439, 12);
     expect(opts.agent).toBe(false);

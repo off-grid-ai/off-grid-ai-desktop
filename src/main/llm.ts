@@ -546,8 +546,8 @@ export class LLMService {
   // which kills long-running LLM requests before they can respond. Delegates to the
   // electron-free postCompletionOnce so the fresh-connection contract lives in one place
   // (see llm/http-post.ts) and is integration-tested against a real socket-closing server.
-  private httpPost(body: string, timeoutMs: number): Promise<string> {
-    return postCompletionOnce(this.port, body, timeoutMs);
+  private httpPost(body: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
+    return postCompletionOnce(this.port, body, timeoutMs, signal);
   }
 
   async chat(
@@ -556,7 +556,7 @@ export class LLMService {
     timeoutMs: number = 300000,
     maxTokens?: number,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    opts: { responseFormat?: any; temperature?: number; disableThinking?: boolean } = {}
+    opts: { responseFormat?: any; temperature?: number; disableThinking?: boolean; signal?: AbortSignal } = {}
   ): Promise<string> {
     await this.ensureReady();
 
@@ -580,7 +580,7 @@ export class LLMService {
 
         console.log(`[LLMService] Starting LLM request (timeout: ${timeoutMs/1000}s, body: ${body.length} chars)...`);
 
-        const raw = await this.httpPost(body, timeoutMs);
+        const raw = await this.httpPost(body, timeoutMs, opts.signal);
         const data = JSON.parse(raw);
         console.log('[LLMService] LLM request completed');
         // Best-effort fleet audit: record the local model call if enrolled in a
