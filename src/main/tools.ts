@@ -375,6 +375,12 @@ export async function toolChat(
       tools, toolChoice: 'auto', temperature: 0.3, maxTokens: 1024, thinking: opts.thinking, signal: opts.signal,
     });
 
+    // Stop pressed during the round: streamCompletion resolves with the partial
+    // tool_calls it assembled (it doesn't reject on abort), so we MUST NOT execute
+    // them — a cancelled turn fires no side effects (e.g. an MCP send/create).
+    // Return what we have; the renderer treats the turn as cancelled.
+    if (opts.signal?.aborted) return { answer: content.trim(), toolCalls, unified, imageRequest };
+
     if (calls.length) {
       // Re-add the assistant turn (with its tool_calls) so the model sees what it invoked.
       messages.push({ role: 'assistant', content: content || null, tool_calls: calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })) });
