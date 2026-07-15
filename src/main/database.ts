@@ -1233,6 +1233,9 @@ export function updateRagConversationTitle(id: string, title: string): void {
 
 export function deleteRagConversation(id: string): boolean {
     const db = getDB();
+    // FKs are off (no PRAGMA foreign_keys), so rag_messages' ON DELETE CASCADE never
+    // fires — delete the conversation's messages explicitly or they orphan (D23).
+    db.prepare('DELETE FROM rag_messages WHERE conversation_id = ?').run(id);
     const info = db.prepare('DELETE FROM rag_conversations WHERE id = ?').run(id);
     return info.changes > 0;
 }

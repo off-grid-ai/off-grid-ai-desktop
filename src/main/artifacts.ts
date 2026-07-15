@@ -136,3 +136,13 @@ export function deleteArtifactsForProject(projectId: string): number {
   }
   return n;
 }
+
+/** Delete every artifact scoped to a conversation — called when the conversation
+ *  is deleted so its generated images/docs don't orphan in the library (D23). */
+export function deleteArtifactsForConversation(conversationId: string): number {
+  let n = 0;
+  for (const a of listArtifacts({ conversationId })) {
+    if (deleteArtifact(a.id)) n++;
+  }
+  return n;
+}

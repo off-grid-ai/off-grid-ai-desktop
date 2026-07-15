@@ -960,7 +960,11 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       return true;
   });
 
-  ipcMain.handle('rag:delete-conversation', (_, id: string) => {
+  ipcMain.handle('rag:delete-conversation', async (_, id: string) => {
+      // Clean the conversation's generated artifacts too, so they don't orphan in
+      // the library (D23) — same lifecycle tie deleteProject has for a project.
+      const { deleteArtifactsForConversation } = await import('./artifacts');
+      deleteArtifactsForConversation(id);
       return deleteRagConversation(id);
   });
 
