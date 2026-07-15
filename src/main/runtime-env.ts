@@ -74,19 +74,6 @@ export function exe(name: string): string {
   return process.platform === 'win32' ? `${name}.exe` : name;
 }
 
-/** App/package root (cwd for spawned helpers that resolve their own deps). */
-export function appRoot(): string {
-  if (process.env.OFFGRID_APP_ROOT) return process.env.OFFGRID_APP_ROOT;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { app } = require('electron');
-    if (app?.getAppPath) return app.getAppPath();
-  } catch {
-    /* standalone */
-  }
-  return process.cwd();
-}
-
 /** Resolve a bundled resource file by name across the resource dirs, or null. */
 export function resourceFile(name: string): string | null {
   for (const d of resourceDirs()) {

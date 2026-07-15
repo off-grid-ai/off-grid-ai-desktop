@@ -13,7 +13,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { getActiveModal } from './active-models';
-import { resourceFile, appRoot, onHostQuit } from './runtime-env';
+import { resourceFile, onHostQuit } from './runtime-env';
 import { getResidencyMode } from './runtime-residency';
 import type { ManagedRuntime } from './runtime-manager';
 import { DEFAULT_VOICE, chooseVoice, isTeardownNoise, parseServeLine } from './tts-logic';
@@ -31,8 +31,11 @@ function workerPath(): string {
 // exit code here; callers validate the actual output and ignore the teardown noise.
 function runWorker(args: string[], stdin?: string): Promise<{ out: string; err: string; code: number }> {
   return new Promise((resolve, reject) => {
+    // No `cwd`: the worker gets an ABSOLUTE script path and Node resolves its deps
+    // relative to that file, not cwd. A cwd of the app root breaks the packaged build -
+    // app.getAppPath() is `app.asar` (a FILE), and spawn throws ENOTDIR on a non-dir cwd.
+    // Matches how STT spawns (no cwd). This was the live "spawn ENOTDIR" TTS failure.
     const child = spawn(process.execPath, [workerPath(), ...args], {
-      cwd: appRoot(),
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     });
     let out = '';
@@ -78,8 +81,8 @@ function clearIdleEvict(): void {
 function startServe(): Promise<void> {
   if (serveReady) return serveReady;
   serveReady = new Promise<void>((resolve, reject) => {
+    // No `cwd` - see runWorker: an asar-file cwd throws ENOTDIR in the packaged build.
     const child = spawn(process.execPath, [workerPath(), 'serve'], {
-      cwd: appRoot(),
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     });
     serveChild = child;

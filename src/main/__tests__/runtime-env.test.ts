@@ -11,7 +11,6 @@ import {
   dataDir,
   modelsDir,
   binRoots,
-  appRoot,
   resourceDirs,
   resourceFile,
   isPackaged,
@@ -27,7 +26,6 @@ function resetConfig(): void {
 const ENV_KEYS = [
   'OFFGRID_DATA_DIR',
   'OFFGRID_BIN_DIR',
-  'OFFGRID_APP_ROOT',
   'OFFGRID_RESOURCE_DIR',
   'OFFGRID_PACKAGED',
 ] as const;
@@ -111,17 +109,6 @@ describe('runtime-env', () => {
 
     it('falls back to resources under cwd when nothing is set', () => {
       expect(resourceDirs()).toEqual([path.join(process.cwd(), 'resources')]);
-    });
-  });
-
-  describe('appRoot', () => {
-    it('prefers the OFFGRID_APP_ROOT env var', () => {
-      process.env.OFFGRID_APP_ROOT = '/env/approot';
-      expect(appRoot()).toBe('/env/approot');
-    });
-
-    it('falls back to cwd when no env var and no Electron', () => {
-      expect(appRoot()).toBe(process.cwd());
     });
   });
 
