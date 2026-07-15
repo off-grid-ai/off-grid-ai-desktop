@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { llm } from './llm';
 import { isValidGgufFile } from './models/gguf';
+import { pumpToFile } from './models/download-pump';
 import { getAllActiveModals, setActiveModal as setModal, type Modality } from './active-models';
 import { recordDownloaded, removeDownloaded, findDownloaded, installedDownloadedIds, downloadedProtectedNames, readDownloaded } from './downloaded-models';
 import {
@@ -157,24 +158,19 @@ export async function downloadModel(modelId: string, onProgress?: ProgressCb): P
       const out = fs.createWriteStream(partPath, append ? { flags: 'a' } : {});
       let written = append ? resumeFrom : 0;
       const reader = res.body.getReader();
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          out.write(Buffer.from(value));
-          written += value.length;
-          send({
-            currentFile: file.name,
-            percent: total ? Math.round((written / total) * 100) : 0,
-            downloadedMB: (written / 1048576).toFixed(1),
-            totalMB: total ? (total / 1048576).toFixed(1) : '?',
-            status: 'downloading',
-          });
-        }
-      } finally {
-        out.end();
-        await new Promise<void>((r) => out.on('finish', () => r()));
-      }
+      // pumpToFile owns the write-stream error path: a disk-full/EIO 'error' becomes
+      // a rejection (caught below → status 'failed') instead of crashing the main
+      // process, and never hangs on a 'finish' that won't come.
+      await pumpToFile(reader, out, (n) => {
+        written += n;
+        send({
+          currentFile: file.name,
+          percent: total ? Math.round((written / total) * 100) : 0,
+          downloadedMB: (written / 1048576).toFixed(1),
+          totalMB: total ? (total / 1048576).toFixed(1) : '?',
+          status: 'downloading',
+        });
+      });
       if (controller.signal.aborted) { fs.rmSync(partPath, { force: true }); break; }
       fs.renameSync(partPath, dest);
     }
