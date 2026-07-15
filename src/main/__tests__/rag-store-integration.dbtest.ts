@@ -78,7 +78,7 @@ describe('rag/store.ts - projects CRUD', () => {
     expect(store.projectIncludesMemory('no-such-project')).toBe(true);
   });
 
-  it('deleteProject removes the project and its documents/chunks/threads', async () => {
+  it('deleteProject removes the project and its documents/chunks', async () => {
     store.createProject({ id: 'p-del', name: 'Doomed' });
     const docId = await store.desktopVectorStore.addDocument({
       projectId: 'p-del',
@@ -88,13 +88,10 @@ describe('rag/store.ts - projects CRUD', () => {
       kind: 'text'
     });
     await store.desktopVectorStore.addChunks(docId, [{ content: 'c', position: 0 }], [[0.1, 0.2]]);
-    store.createThread('t-del', 'p-del', 'Thread');
-    store.appendThreadMessage('t-del', 'user', 'hi');
 
     store.deleteProject('p-del');
     expect(store.listProjects().find((x) => x.id === 'p-del')).toBeUndefined();
     expect(await store.desktopVectorStore.listDocuments('p-del')).toHaveLength(0);
-    expect(store.listThreads('p-del')).toHaveLength(0);
     // chunks for the deleted doc are gone.
     const chunks = getDB().prepare('SELECT COUNT(*) AS c FROM rag_chunks WHERE doc_id = ?').get(docId) as { c: number };
     expect(chunks.c).toBe(0);
@@ -216,42 +213,5 @@ describe('rag/store.ts - VectorStore documents + chunks', () => {
   });
 });
 
-describe('rag/store.ts - threads + messages CRUD', () => {
-  it('createThread + listThreads round-trips id/title, default title applied', () => {
-    store.createProject({ id: 'p-th', name: 'Threads' });
-    store.createThread('th-1', 'p-th', 'Named thread');
-    store.createThread('th-2', 'p-th'); // default title
-    const threads = store.listThreads('p-th');
-    const byId = Object.fromEntries(threads.map((t) => [t.id, t.title]));
-    expect(byId['th-1']).toBe('Named thread');
-    expect(byId['th-2']).toBe('New chat');
-  });
-
-  it('renameThread updates the title', () => {
-    store.createProject({ id: 'p-rename', name: 'Rename' });
-    store.createThread('th-rn', 'p-rename', 'before');
-    store.renameThread('th-rn', 'after');
-    expect(store.listThreads('p-rename').find((t) => t.id === 'th-rn')?.title).toBe('after');
-  });
-
-  it('appendThreadMessage + getThreadMessages return messages in insertion order', () => {
-    store.createProject({ id: 'p-msgs', name: 'Msgs' });
-    store.createThread('th-msgs', 'p-msgs');
-    store.appendThreadMessage('th-msgs', 'user', 'question');
-    store.appendThreadMessage('th-msgs', 'assistant', 'answer');
-    const msgs = store.getThreadMessages('th-msgs');
-    expect(msgs).toEqual([
-      { role: 'user', content: 'question' },
-      { role: 'assistant', content: 'answer' }
-    ]);
-  });
-
-  it('deleteThread removes the thread and its messages', () => {
-    store.createProject({ id: 'p-delth', name: 'DelTh' });
-    store.createThread('th-del', 'p-delth');
-    store.appendThreadMessage('th-del', 'user', 'x');
-    store.deleteThread('th-del');
-    expect(store.listThreads('p-delth').find((t) => t.id === 'th-del')).toBeUndefined();
-    expect(store.getThreadMessages('th-del')).toHaveLength(0);
-  });
-});
+// The project_threads/project_messages backend was removed as dead code (D22);
+// its CRUD tests went with it. Project chat runs through rag_conversations.

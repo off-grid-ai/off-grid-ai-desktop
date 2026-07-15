@@ -319,14 +319,6 @@ try {
     toggleProjectDocument: (docId: number, enabled: boolean) =>
       ipcRenderer.invoke('projects:toggle-document', docId, enabled),
     deleteProjectDocument: (docId: number) => ipcRenderer.invoke('projects:delete-document', docId),
-    listProjectThreads: (projectId: string) => ipcRenderer.invoke('projects:list-threads', projectId),
-    createProjectThread: (projectId: string, title?: string) =>
-      ipcRenderer.invoke('projects:create-thread', projectId, title),
-    renameProjectThread: (id: string, title: string) => ipcRenderer.invoke('projects:rename-thread', id, title),
-    deleteProjectThread: (id: string) => ipcRenderer.invoke('projects:delete-thread', id),
-    getProjectThreadMessages: (threadId: string) => ipcRenderer.invoke('projects:thread-messages', threadId),
-    projectChat: (params: { projectId: string; threadId: string; message: string }) =>
-      ipcRenderer.invoke('projects:chat', params),
     onProjectIndexProgress: (callback: (data: any) => void) => {
       const subscription = (_: any, data: any) => callback(data)
       ipcRenderer.on('projects:index-progress', subscription)

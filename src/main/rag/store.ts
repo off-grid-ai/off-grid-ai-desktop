@@ -44,23 +44,6 @@ function migrate(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_rag_chunks_doc ON rag_chunks(doc_id);
     CREATE INDEX IF NOT EXISTS idx_rag_documents_project ON rag_documents(project_id);
-
-    CREATE TABLE IF NOT EXISTS project_threads (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      title TEXT NOT NULL DEFAULT 'New chat',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS project_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      thread_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_project_threads_project ON project_threads(project_id);
-    CREATE INDEX IF NOT EXISTS idx_project_messages_thread ON project_messages(thread_id);
   `);
   migrated = true;
 }
@@ -246,17 +229,11 @@ export function deleteProject(id: string): void {
       db.prepare('DELETE FROM rag_chunks WHERE doc_id = ?').run(d.id);
     }
     db.prepare('DELETE FROM rag_documents WHERE project_id = ?').run(id);
-    const threads = db.prepare('SELECT id FROM project_threads WHERE project_id = ?').all(id) as { id: string }[];
-    for (const t of threads) {
-      db.prepare('DELETE FROM project_messages WHERE thread_id = ?').run(t.id);
-    }
-    db.prepare('DELETE FROM project_threads WHERE project_id = ?').run(id);
-    // Chats scoped to this project live in rag_conversations (+ rag_messages) — a
-    // DIFFERENT table from the project_threads backend above (which the live UI
-    // never writes). Without this they orphan to a now-deleted project id, still
-    // badged to a phantom project and grounding against an empty project. FKs are
-    // off (no PRAGMA foreign_keys), so delete rag_messages explicitly rather than
-    // relying on rag_messages' ON DELETE CASCADE, which never fires.
+    // Chats scoped to this project live in rag_conversations (+ rag_messages).
+    // Without this they orphan to a now-deleted project id, still badged to a
+    // phantom project and grounding against an empty project. FKs are off (no
+    // PRAGMA foreign_keys), so delete rag_messages explicitly rather than relying
+    // on rag_messages' ON DELETE CASCADE, which never fires.
     const convs = db.prepare('SELECT id FROM rag_conversations WHERE project_id = ?').all(id) as { id: string }[];
     for (const c of convs) {
       db.prepare('DELETE FROM rag_messages WHERE conversation_id = ?').run(c.id);
@@ -270,44 +247,3 @@ export function deleteProject(id: string): void {
   deleteArtifactsForProject(id);
 }
 
-export function listThreads(projectId: string): { id: string; title: string; updatedAt: string }[] {
-  migrate();
-  const rows = getDB()
-    .prepare('SELECT id, title, updated_at FROM project_threads WHERE project_id = ? ORDER BY updated_at DESC')
-    .all(projectId) as { id: string; title: string; updated_at: string }[];
-  return rows.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at }));
-}
-
-export function createThread(id: string, projectId: string, title = 'New chat'): void {
-  migrate();
-  getDB().prepare('INSERT INTO project_threads (id, project_id, title) VALUES (?, ?, ?)').run(id, projectId, title);
-}
-
-export function renameThread(id: string, title: string): void {
-  migrate();
-  getDB().prepare("UPDATE project_threads SET title = ?, updated_at = datetime('now') WHERE id = ?").run(title, id);
-}
-
-export function deleteThread(id: string): void {
-  migrate();
-  const db = getDB();
-  const tx = db.transaction(() => {
-    db.prepare('DELETE FROM project_messages WHERE thread_id = ?').run(id);
-    db.prepare('DELETE FROM project_threads WHERE id = ?').run(id);
-  });
-  tx();
-}
-
-export function getThreadMessages(threadId: string): { role: string; content: string }[] {
-  migrate();
-  return getDB()
-    .prepare('SELECT role, content FROM project_messages WHERE thread_id = ? ORDER BY id ASC')
-    .all(threadId) as { role: string; content: string }[];
-}
-
-export function appendThreadMessage(threadId: string, role: string, content: string): void {
-  migrate();
-  const db = getDB();
-  db.prepare('INSERT INTO project_messages (thread_id, role, content) VALUES (?, ?, ?)').run(threadId, role, content);
-  db.prepare("UPDATE project_threads SET updated_at = datetime('now') WHERE id = ?").run(threadId);
-}

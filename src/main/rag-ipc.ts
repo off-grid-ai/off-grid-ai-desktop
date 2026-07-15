@@ -5,16 +5,10 @@ import { ipcMain, dialog, BrowserWindow } from 'electron';
 import fs from 'fs';
 import {
   ragService,
-  projectChat,
   listProjects,
   createProject,
   updateProject,
   deleteProject,
-  listThreads,
-  createThread,
-  renameThread,
-  deleteThread,
-  getThreadMessages,
 } from './rag';
 import { uploadPickerExtensions } from './files-classify';
 
@@ -86,21 +80,4 @@ export function setupRagIPC(): void {
   );
 
   ipcMain.handle('projects:delete-document', (_e, docId: number) => ragService.deleteDocument(docId));
-
-  // --- Threads + chat -------------------------------------------------------
-  ipcMain.handle('projects:list-threads', (_e, projectId: string) => listThreads(projectId));
-
-  ipcMain.handle('projects:create-thread', (_e, projectId: string, title?: string) => {
-    const id = genId('thr');
-    createThread(id, projectId, title);
-    return id;
-  });
-
-  ipcMain.handle('projects:rename-thread', (_e, id: string, title: string) => renameThread(id, title));
-  ipcMain.handle('projects:delete-thread', (_e, id: string) => deleteThread(id));
-  ipcMain.handle('projects:thread-messages', (_e, threadId: string) => getThreadMessages(threadId));
-
-  ipcMain.handle('projects:chat', (_e, params: { projectId: string; threadId: string; message: string }) =>
-    projectChat(params)
-  );
 }

@@ -1201,24 +1201,16 @@ export function getProjectChatHistory(
     limit = 12
 ): { role: string; content: string; title: string | null }[] {
     const db = getDB();
-    // Project memory spans EVERY sibling chat in the project, regardless of which
-    // path stored it — rag_messages (main chat) and project_messages (project
-    // threads). UNION both so context isn't lost across chats in the project.
+    // Project memory spans every sibling chat in the project (rag_conversations),
+    // so context isn't lost across chats in the project.
     const rows = db.prepare(`
-        SELECT role, content, title, created_at FROM (
-            SELECT rm.role AS role, rm.content AS content, rc.title AS title, rm.created_at AS created_at
-            FROM rag_messages rm
-            JOIN rag_conversations rc ON rc.id = rm.conversation_id
-            WHERE rc.project_id = ? AND rm.conversation_id != ?
-            UNION ALL
-            SELECT pm.role AS role, pm.content AS content, pt.title AS title, pm.created_at AS created_at
-            FROM project_messages pm
-            JOIN project_threads pt ON pt.id = pm.thread_id
-            WHERE pt.project_id = ? AND pm.thread_id != ?
-        )
-        ORDER BY created_at DESC
+        SELECT rm.role AS role, rm.content AS content, rc.title AS title, rm.created_at AS created_at
+        FROM rag_messages rm
+        JOIN rag_conversations rc ON rc.id = rm.conversation_id
+        WHERE rc.project_id = ? AND rm.conversation_id != ?
+        ORDER BY rm.created_at DESC
         LIMIT ?
-    `).all(projectId, excludeConversationId, projectId, excludeConversationId, limit) as { role: string; content: string; title: string | null; created_at: string }[];
+    `).all(projectId, excludeConversationId, limit) as { role: string; content: string; title: string | null; created_at: string }[];
     return rows.map(({ role, content, title }) => ({ role, content, title })).reverse();
 }
 
