@@ -343,16 +343,22 @@ export async function toolChat(
 
   // Attached images ride on the current user turn so the vision model can read
   // them even in tools/connectors mode (otherwise they were silently dropped).
+  // Gate on the ACTIVE model's real vision capability — main is the single source
+  // of truth (the renderer's flag is fetched once per mount and can be stale). A
+  // text-only model given image_url parts either ignores them (silent wrong answer)
+  // or errors, so drop the attachments when there's no vision projector.
   const imageDataUrls: string[] = [];
-  for (const p of opts.images ?? []) {
-    try {
-      const base64 = fs.readFileSync(p).toString('base64');
-      // Route through the shared ext->MIME map (image/png fallback) so a .webp
-      // attachment is labelled image/webp, not the old png-or-jpeg guess that
-      // mislabelled webp as image/jpeg (which the vision model may reject).
-      const mime = mimeFromExt(p.split('.').pop() ?? '');
-      imageDataUrls.push(`data:${mime};base64,${base64}`);
-    } catch (e) { console.error('[tools] failed to read image', p, e); }
+  if (opts.images?.length && llm.hasVision()) {
+    for (const p of opts.images) {
+      try {
+        const base64 = fs.readFileSync(p).toString('base64');
+        // Route through the shared ext->MIME map (image/png fallback) so a .webp
+        // attachment is labelled image/webp, not the old png-or-jpeg guess that
+        // mislabelled webp as image/jpeg (which the vision model may reject).
+        const mime = mimeFromExt(p.split('.').pop() ?? '');
+        imageDataUrls.push(`data:${mime};base64,${base64}`);
+      } catch (e) { console.error('[tools] failed to read image', p, e); }
+    }
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const messages: any[] = [
