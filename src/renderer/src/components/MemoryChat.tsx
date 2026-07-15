@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { shouldQueue, enqueue, dequeue, queuedCount, clearQueue } from '@renderer/lib/chat-queue';
+import { buildSendHistory } from '@renderer/lib/chat-history';
 import { waitingLabel } from '@renderer/lib/chat-labels';
 import { timeAgo } from '@renderer/lib/time';
 import ReactMarkdown, { Components } from 'react-markdown';
@@ -879,16 +880,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
 
     let activeStreamId: string | undefined;
     try {
-      // History: on regen the user turn is already in `messages` (drop anything
-      // after it); on a normal send, append the new turn.
-      let base: ChatMessage[];
-      if (regen) {
-        const lastUserIdx = messages.map(m => m.role).lastIndexOf('user');
-        base = lastUserIdx >= 0 ? messages.slice(0, lastUserIdx + 1) : messages;
-      } else {
-        base = [...messages, { id: 'tmp', role: 'user', content: trimmed }];
-      }
-      const history = base.slice(-20).map(m => ({ role: m.role, content: m.content }));
+      // History is built from the TARGET conversation's own messages (never the
+      // active tab's `messages`) — a drained-queue or background send is bound to
+      // `convId`, so its history must come from that conversation (D8).
+      const history = buildSendHistory(messagesByConv[convId] ?? EMPTY_MSGS, !!regen, trimmed);
 
       // Agentic tools path (opt-in, non-project). The model calls built-in tools,
       // plus (when Connectors is on) MCP connector tools. STREAMS like the RAG path:
