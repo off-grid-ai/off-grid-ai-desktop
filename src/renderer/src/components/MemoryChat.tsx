@@ -264,10 +264,14 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   const [styleThumbs, setStyleThumbs] = useState<Record<string, string>>({});
   const [genThumbsBusy, setGenThumbsBusy] = useState(false);
   const [imgProgress, setImgProgress] = useState<{ step: number; total: number; secPerStep: number; preview?: string; phase?: 'sampling' | 'decoding' } | null>(null);
-  // True while an image is generating (explicit image mode OR an auto-routed chat
-  // request like "draw a dog"), so the image progress/warm-up UI shows even when
-  // the global mode is still 'ask'.
-  const [generatingImage, setGeneratingImage] = useState(false);
+  // Which conversation currently owns the in-flight image generation (null = none).
+  // Per-conversation so the image progress/warm-up UI shows ONLY in the conversation
+  // that started it — a global bool bled the spinner + a Stop that cancels it into
+  // whatever tab you switched to while an image was forming (D9).
+  const [imageGenConv, setImageGenConv] = useState<string | null>(null);
+  // The image progress/warm-up UI shows only when the ACTIVE conversation is the one
+  // generating an image — never a background conversation's gen (D9).
+  const generatingImage = imageGenConv !== null && imageGenConv === activeConversationId;
   const [projects, setProjects] = useState<ProjectLite[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   // Captured-memory context is a Pro ("remembers") feature; core chats are plain
@@ -825,7 +829,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     const autoImage = shouldAutoRouteImage({ mode, imageAvailable, agenticActive, text: trimmed });
     if (mode === 'image' || autoImage) {
       setImgProgress(null);
-      setGeneratingImage(true);
+      setImageGenConv(convId);
       try {
         const seedNum = imgSeed.trim() === '' ? -1 : parseInt(imgSeed, 10);
         const styleObj = STYLE_PRESETS.find(s => s.name === activeStyle);
@@ -871,7 +875,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         markGenerating(convId, false);
         setLoading(false);
         setImgProgress(null);
-        setGeneratingImage(false);
+        setImageGenConv((c) => (c === convId ? null : c));
         await loadConversations();
         drainQueue(convId);
       }
@@ -1061,16 +1065,23 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     cancelledRef.current.add(convId);
     const streamingId = (messagesByConv[convId] ?? []).find(m => m.streaming)?.id;
     if (streamingId) window.api.cancelRag(streamingId);
-    window.api.cancelImageGen?.();
     if (queuedRef.current[convId]?.length) {
       queuedRef.current = clearQueue(queuedRef.current, convId);
       setQueuedByConv({ ...queuedRef.current });
     }
     markGenerating(convId, false);
-    setLoading(false);
-    setGeneratingImage(false);
-    setImgProgress(null);
-  }, [activeConversationId, messagesByConv, markGenerating]);
+    // Cancel + clear the image job ONLY if THIS conversation owns it, so stopping
+    // one conversation never kills another's in-flight image (D9). imgProgress is a
+    // shared stream buffer — clear it too when the owner stops.
+    if (imageGenConv === convId) {
+      window.api.cancelImageGen?.();
+      setImageGenConv(null);
+      setImgProgress(null);
+    }
+    // `loading` is the foreground send-flag; clear it when stopping the conversation
+    // on screen (the only conversation whose composer is visible).
+    if (convId === activeConversationId) setLoading(false);
+  }, [activeConversationId, messagesByConv, markGenerating, imageGenConv]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Slash skill autocomplete: while typing "/name" (before any space), Tab —
