@@ -70,4 +70,29 @@ describe('proEnabled', () => {
     expect(proEnabled()).toBe(true);
     expect(isProEntitled).toHaveBeenCalledTimes(1);
   });
+
+  it('win32 forces free even when the license is entitled (Pro not shipped for Windows yet)', () => {
+    vi.stubEnv('OFFGRID_PRO', undefined as unknown as string);
+    isProEntitled.mockReturnValue(true); // a paying user...
+    const orig = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      // ...still gets free on Windows, WITHOUT the license path even being consulted.
+      expect(proEnabled()).toBe(false);
+      expect(isProEntitled).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process, 'platform', { value: orig, configurable: true });
+    }
+  });
+
+  it('win32 + OFFGRID_PRO=1 still forces pro on (contributor building the Windows pro path)', () => {
+    vi.stubEnv('OFFGRID_PRO', '1');
+    const orig = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      expect(proEnabled()).toBe(true);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: orig, configurable: true });
+    }
+  });
 });

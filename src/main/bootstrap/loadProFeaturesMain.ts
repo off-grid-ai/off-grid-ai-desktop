@@ -27,7 +27,13 @@ export interface ProMainApi {
 export function proEnabled(): boolean {
   if (!__OFFGRID_PRO__) return false; // free / core build — no pro code bundled
   if (process.env.OFFGRID_PRO === '0') return false;
-  if (process.env.OFFGRID_PRO === '1') return true;
+  if (process.env.OFFGRID_PRO === '1') return true; // explicit dev override wins on any OS
+  // Pro isn't shipped for Windows yet — the paid license path must NOT activate the
+  // (macOS-oriented) pro main features there, so the Windows build stays a stable
+  // free shell and every pro surface shows "coming soon" (renderer: pro-availability.ts).
+  // The OFFGRID_PRO=1 escape hatch above still lets a contributor force it on to build
+  // the Windows pro path.
+  if (process.platform === 'win32') return false;
   return isProEntitled();
 }
 
