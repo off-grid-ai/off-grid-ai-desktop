@@ -10,11 +10,6 @@ try {
     // pro tabs without an async round-trip. See main/license-ipc.ts (`pro:is-enabled`).
     // Falls back to false if the handler isn't registered (should never happen).
     isPro: ipcRenderer.sendSync('pro:is-enabled') === true,
-    // The OS the app is running on ('darwin' | 'win32' | 'linux'). Read synchronously
-    // at preload so the renderer can gate platform-specific presentation (e.g. Pro
-    // features show "coming soon" on Windows) without an async round-trip. See
-    // renderer lib/pro-availability.ts.
-    platform: process.platform,
     // License (Keygen) activation + status for the upgrade/settings UI.
     license: {
       status: () => ipcRenderer.invoke('license:status'),
