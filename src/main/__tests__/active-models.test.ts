@@ -18,6 +18,10 @@ describe('modalityForKind', () => {
   it('maps non-chat kinds to a modality and chat/unknown kinds to null', () => {
     expect(modalityForKind('image')).toBe('image');
     expect(modalityForKind('voice')).toBe('speech');
+    // Idempotent on the storage vocab too, so setActiveModalChoice accepts BOTH the
+    // setup 'voice' AND the dispatched 'speech' (D26 — "Configure for me" passes
+    // 'voice'; activateModel passes 'speech'; both must activate TTS).
+    expect(modalityForKind('speech')).toBe('speech');
     expect(modalityForKind('transcription')).toBe('transcription');
     expect(modalityForKind('text')).toBeNull();
     expect(modalityForKind('vision')).toBeNull();

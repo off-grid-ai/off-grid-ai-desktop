@@ -18,7 +18,7 @@ export type Modality = 'image' | 'speech' | 'transcription';
 export function modalityForKind(kind?: string | null): Modality | null {
   switch (kind) {
     case 'image': return 'image';
-    case 'voice': return 'speech';
+    case 'voice': case 'speech': return 'speech'; // accept the setup vocab ('voice') AND the storage vocab ('speech')
     case 'transcription': return 'transcription';
     default: return null; // text / vision / local / unknown -> chat LLM, not a modality
   }

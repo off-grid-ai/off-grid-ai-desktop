@@ -17,7 +17,6 @@ import {
   protectedNames,
   scanModelDir,
   modalityForModel,
-  isModalKind,
   isChatLoadable,
   type CatalogEntry,
 } from './models/catalog-logic';
@@ -308,11 +307,16 @@ export async function activateModel(modelId: string): Promise<{ success: boolean
 }
 
 export async function setActiveModalChoice(kind: string, modelId: string | null): Promise<{ success: boolean; error?: string }> {
-  if (isModalKind(kind)) {
+  // Normalize to the storage modality so BOTH vocabularies work — the setup path
+  // passes 'voice', the UI/dispatch pass 'speech'. Before this, the guard only
+  // accepted 'speech', so "Configure for me" (which passes 'voice') silently failed
+  // to activate TTS (D26). One normalizer is the single source of truth.
+  const modal = modalityForModel(kind);
+  if (modal) {
     let stored = modelId;
     // The image resolver loads by FILENAME, but the UI passes a catalog id — map it
     // to the entry's primary filename so an in-app pick (e.g. Juggernaut) takes effect.
-    if (modelId && kind === 'image') {
+    if (modelId && modal === 'image') {
       try {
         const { CATALOG } = await import('@offgrid/models');
         const e = CATALOG.find((m) => m.id === modelId);
@@ -320,7 +324,7 @@ export async function setActiveModalChoice(kind: string, modelId: string | null)
         if (fname) stored = fname;
       } catch { /* keep modelId as-is */ }
     }
-    setModal(kind as Modality, stored);
+    setModal(modal, stored);
     return { success: true };
   }
   return { success: false, error: 'use setActiveModel for the chat LLM (text/vision)' };
