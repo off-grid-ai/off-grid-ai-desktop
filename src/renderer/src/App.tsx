@@ -19,6 +19,7 @@ import { loadProFeaturesRenderer } from './bootstrap/loadProFeaturesRenderer';
 import { renderProView, type ProViewContext } from './bootstrap/proView';
 import { UpgradeScreen } from './components/pro/UpgradeScreen';
 import { getProFeature } from './components/pro/proCatalog';
+import { proSurfaceState, currentPlatform } from './lib/pro-availability';
 import { NotificationProvider, useNotifications } from './hooks/useNotifications';
 import { ToastProvider } from './hooks/useToast';
 import { ReprocessingProvider, useReprocessing } from './hooks/useReprocessing';
@@ -152,6 +153,10 @@ function AppContent() {
   // Pro entitlement (preload reads OFFGRID_PRO; absent submodule => false at runtime).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isPro = !!(window as any).api?.isPro;
+  // How Pro surfaces present here: active (licensed macOS), locked (free macOS),
+  // or coming-soon (Windows — Pro isn't built for it yet). ONE decision, consumed
+  // by the nav items and the pro view-router below. See lib/pro-availability.ts.
+  const proState = proSurfaceState({ isPro, platform: currentPlatform() });
   // Re-render once pro renderer features have activated (registers the view-router).
   const [, setProReady] = useState(false);
   useEffect(() => {
@@ -162,7 +167,7 @@ function AppContent() {
 
   // Free users land on Models (download a model first, with the sidebar to
   // explore); pro lands on Day. Never a locked Pro tab.
-  const [viewMode, setViewMode] = useState<ViewMode>(isPro ? 'day' : 'models');
+  const [viewMode, setViewMode] = useState<ViewMode>(proState === 'active' ? 'day' : 'models');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedMemoryId, setSelectedMemoryId] = useState<number | null>(null);
   // Version of a downloaded-and-staged update (null = none). Surfaced as a banner
@@ -488,7 +493,7 @@ function AppContent() {
   // wraps the nav, so a TypeError here white-screens every user on boot (0.0.34).
   // If a route has no ProFeature, skip that item and warn; a dropped tab is
   // recoverable, a render-time throw is not.
-  const proItem = (route: string): { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } | null => {
+  const proItem = (route: string): { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean; comingSoon: boolean } | null => {
     const f = getProFeature(route);
     if (!f) {
       console.warn(`[nav] no pro catalog entry for "${route}" — skipping nav item`);
@@ -498,11 +503,13 @@ function AppContent() {
       label: f.label,
       icon: <f.icon className="h-5 w-5 shrink-0 text-neutral-400" weight="regular" />,
       view: f.route as ViewMode,
-      locked: !isPro,
+      // Windows shows a "soon" tag instead of the Pro lock (coming-soon, not locked).
+      locked: proState === 'locked',
+      comingSoon: proState === 'coming-soon',
     };
   };
   // Icons take no color — the nav button drives it (emerald when active).
-  const mainNav: { label: string; icon: React.ReactNode; view: ViewMode; locked?: boolean }[] = [
+  const mainNav: { label: string; icon: React.ReactNode; view: ViewMode; locked?: boolean; comingSoon?: boolean }[] = [
     proItem('search'),
     proItem('day'),
     proItem('replay'),
@@ -519,11 +526,11 @@ function AppContent() {
     { label: 'Models', icon: <IconDownload className="h-5 w-5 shrink-0" />, view: 'models' as ViewMode },
     { label: 'Gateway', icon: <IconServer2 className="h-5 w-5 shrink-0" />, view: 'gateway' as ViewMode },
     proItem('notifications'),
-  ].filter((i): i is { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } => i !== null);
-  const bottomNav: { label: string; icon: React.ReactNode; view: ViewMode; locked?: boolean }[] = [
+  ].filter((i): i is { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean; comingSoon: boolean } => i !== null);
+  const bottomNav: { label: string; icon: React.ReactNode; view: ViewMode; locked?: boolean; comingSoon?: boolean }[] = [
     { label: 'Settings', icon: <IconSettings className="h-5 w-5 shrink-0" />, view: 'settings' as ViewMode },
   ];
-  const renderNavItem = (item: { label: string; icon: React.ReactNode; view: ViewMode; locked?: boolean }): React.ReactElement => {
+  const renderNavItem = (item: { label: string; icon: React.ReactNode; view: ViewMode; locked?: boolean; comingSoon?: boolean }): React.ReactElement => {
     const active = viewMode === item.view;
     return (
       <button
@@ -544,6 +551,9 @@ function AppContent() {
         {item.icon}
         {sidebarOpen && <span className="flex-1 text-left whitespace-pre">{item.label}</span>}
         {sidebarOpen && item.locked && <IconLock className="h-3.5 w-3.5 shrink-0 text-neutral-400/60" title="Pro" />}
+        {sidebarOpen && item.comingSoon && (
+          <span className="shrink-0 rounded-full border border-neutral-700 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-neutral-500" title="Coming soon on Windows">Soon</span>
+        )}
       </button>
     );
   };
@@ -755,6 +765,10 @@ function AppContent() {
                     <GatewayScreen />
                   ) : viewMode === 'settings' ? (
                     <Settings />
+                  ) : proState === 'coming-soon' ? (
+                    // Windows: Pro isn't available yet — never render the real pro
+                    // screen (nor call the view-router), just the coming-soon writeup.
+                    <UpgradeScreen feature={getProFeature(viewMode)} comingSoon />
                   ) : (
                     // Pro tabs: render through the pro view-router when active,
                     // otherwise show the upgrade writeup for that feature.
