@@ -77,6 +77,9 @@ export default defineConfig({
         'src/main/mflux.ts',
         'src/main/sd-server.ts',
         'src/main/model-server.ts',
+        // Cross-platform orphan-port reaper: execSync(netstat/lsof/tasklist/ps) + process.kill
+        // — an OS-boundary shell, verified by the real macOS/Windows run, not in-process.
+        'src/main/kill-orphan-port.ts',
         'src/main/media-server.ts',
         'src/main/transcription/whisper-cli.ts',
         'src/main/transcription/parakeet-cli.ts',
