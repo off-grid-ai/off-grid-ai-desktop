@@ -81,9 +81,38 @@ function pruneDanglingMeetings(): void {
   } catch { /* no meetings table (free build) */ }
 }
 
-// Which SQL tables + directories belong to each category.
+// Which SQL tables + directories belong to each UI category.
 const CHAT_TABLES = ['conversations', 'messages', 'rag_conversations', 'rag_messages', 'chat_summaries'];
 const MEMORY_TABLES = ['memories', 'master_memory', 'entities', 'entity_edges', 'entity_facts', 'entity_sessions'];
+
+// The SINGLE source of truth for a FULL erase ("Delete all my data"): every store
+// that holds personal data. deleteAllData iterates this — so a new personal table
+// or directory is erased by REGISTERING it here (or, for a pro feature, via
+// registerPersonalStore from pro's activateMain), never by editing deleteAllData.
+// This is the fix for the drift that let observations/connectors/secrets/RAG docs
+// survive a "full erase": the delete-all set is derived, not a hand-maintained
+// subset. Categories keep their own mapping above (clearCategory/getDataSummary);
+// this set is a superset of them plus the stores that have no UI category.
+interface PersonalStore { tables: string[]; dirs: string[] }
+const CORE_PERSONAL: PersonalStore[] = [
+  { tables: CHAT_TABLES, dirs: ['uploads'] },
+  { tables: MEMORY_TABLES, dirs: ['entity-photos'] },
+  { tables: ['rag_documents', 'rag_chunks'], dirs: [] }, // project knowledge base (uploaded docs + embeddings)
+  { tables: ['connectors', 'secrets'], dirs: [] },       // MCP integrations + their OAuth tokens (must not survive a wipe)
+  { tables: ['user_profile'], dirs: [] },
+  { tables: [], dirs: ['captures'] },
+  { tables: [], dirs: ['meetings'] },
+  { tables: [], dirs: ['generated-images', 'artifacts-library', 'style-thumbs'] },
+];
+const personalStores: PersonalStore[] = [...CORE_PERSONAL];
+
+/** Register a personal-data store (tables + userData-relative dirs) so a FULL erase
+ *  clears it too. Called from pro's activateMain for pro-only tables (observations,
+ *  entity_aliases, secretary_prefs, action_items, clipboard_items, day_journals, …)
+ *  so their names never leak into core source, yet delete-all still wipes them. */
+export function registerPersonalStore(store: PersonalStore): void {
+  personalStores.push(store);
+}
 
 /** Summary of what's stored, per category, for the Delete-my-data screen. */
 export function getDataSummary(): DataCategory[] {
@@ -149,15 +178,13 @@ export async function clearCategory(id: DataCategory['id'], olderThanDays?: numb
   }
 }
 
-/** Delete ALL personal data (every category + the user profile). Leaves installed
- *  models, license, and app preferences intact. */
+/** Delete ALL personal data (every registered store + the user profile). Leaves
+ *  installed models, license, and app preferences intact. Iterates the
+ *  personalStores registry so nothing is missed as tables/dirs are added — the fix
+ *  for the drift that once let captures/connectors/secrets/RAG docs survive here. */
 export function deleteAllData(): { success: boolean } {
-  clearTables(...CHAT_TABLES, ...MEMORY_TABLES, 'user_profile');
-  clearDirs(
-    ud('captures'), ud('meetings'), ud('uploads'),
-    ud('generated-images'), ud('artifacts-library'), ud('style-thumbs'),
-    ud('lancedb'), ud('entity-photos'),
-  );
+  clearTables(...personalStores.flatMap((s) => s.tables));
+  clearDirs(...personalStores.flatMap((s) => s.dirs).map((d) => ud(d)), ud('lancedb'));
   resetVectors(); // the lancedb dir is gone — drop cached handles so it reopens clean
   pruneDanglingMeetings(); // media is gone now → drop all meeting rows (no ghosts)
   return { success: true };
