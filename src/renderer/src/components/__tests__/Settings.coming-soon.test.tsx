@@ -24,8 +24,7 @@ function stubApi(platform: string, isPro: boolean): void {
         // Values read then rendered directly must be their real (string/object) shape.
         if (prop === 'getAppVersion') return () => Promise.resolve('');
         if (prop === 'idGet') return () => Promise.resolve({ name: '', email: '' });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return (..._args: any[]) => Promise.resolve({});
+        return () => Promise.resolve({});
       },
     }
   );
