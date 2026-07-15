@@ -935,8 +935,12 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
             setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, image: img.dataUrl, imagePath: img.path } : m)));
             try { await window.api.addRagMessage(convId, 'assistant', answer, { ...(toolCtxWithReasoning ?? {}), image: img.path }); } catch (_) { /* ignore */ }
           } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            if (!/cancel/i.test(msg)) { try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtxWithReasoning); } catch (_) { /* ignore */ } }
+            // Persist the TEXT answer regardless of why the image failed — including
+            // a cancel. The text turn already finished and is on screen; a cancelled
+            // (or failed) IMAGE must not drop it, or it vanishes on reload (D12). Only
+            // the image is lost.
+            void e;
+            try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtxWithReasoning); } catch (_) { /* ignore */ }
           }
           return;
         }
