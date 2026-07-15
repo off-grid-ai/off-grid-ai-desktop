@@ -17,6 +17,7 @@ import {
   scanModelDir,
   modalityForModel,
   isModalKind,
+  modalSelectionMatches,
   isChatLoadable,
   type CatalogEntry,
   type LocalModelLike,
@@ -256,6 +257,14 @@ describe('dispatch predicates', () => {
     expect(isModalKind('transcription')).toBe(true);
     expect(isModalKind('text')).toBe(false);
     expect(isModalKind('voice')).toBe(false);
+  });
+  it('modalSelectionMatches matches by id AND by primary filename (D6)', () => {
+    // image picks are stored by FILENAME, so deleting by id must still match.
+    expect(modalSelectionMatches('juggernaut-xl.safetensors', 'juggernaut-xl', 'juggernaut-xl.safetensors')).toBe(true);
+    expect(modalSelectionMatches('kokoro', 'kokoro', 'kokoro.onnx')).toBe(true); // stored by id
+    expect(modalSelectionMatches('other.safetensors', 'juggernaut-xl', 'juggernaut-xl.safetensors')).toBe(false);
+    expect(modalSelectionMatches(null, 'juggernaut-xl', 'juggernaut-xl.safetensors')).toBe(false);
+    expect(modalSelectionMatches('juggernaut-xl', 'juggernaut-xl', null)).toBe(true);
   });
   it('isChatLoadable is true only for text/vision', () => {
     expect(isChatLoadable('text')).toBe(true);

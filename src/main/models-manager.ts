@@ -18,6 +18,7 @@ import {
   protectedNames,
   scanModelDir,
   modalityForModel,
+  modalSelectionMatches,
   isChatLoadable,
   type CatalogEntry,
 } from './models/catalog-logic';
@@ -248,10 +249,13 @@ export async function deleteModel(modelId: string): Promise<{ success: boolean; 
     try { fs.rmSync(activeModelFile(), { force: true }); } catch { /* ignore */ }
     llm.reloadModel();
   }
-  // Clear any per-modality selection pointing at it.
+  // Clear any per-modality selection pointing at it — matching the id AND the
+  // primary filename, because image picks are stored by filename (D6: without the
+  // filename match, deleting the active image model left a dangling pointer).
+  const primaryFile = entry.runtime === 'mflux' ? null : primaryFileName(entry as unknown as CatalogEntry);
   const modals = getAllActiveModals();
   (Object.keys(modals) as Modality[]).forEach((k) => {
-    if (modals[k] === modelId) setModal(k, null);
+    if (modalSelectionMatches(modals[k], modelId, primaryFile)) setModal(k, null);
   });
   return { success: true, freedFiles: freed };
 }

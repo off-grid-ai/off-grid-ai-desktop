@@ -233,6 +233,14 @@ export function isModalKind(kind: string): kind is Modality {
   return kind === 'image' || kind === 'speech' || kind === 'transcription';
 }
 
+/** Whether a stored per-modality selection (`chosen`) refers to the model being
+ *  deleted. A selection is stored as the catalog id for most kinds but as the
+ *  PRIMARY FILENAME for image — so deleteModel must match BOTH, or deleting the
+ *  active image model leaves a dangling pointer to gone files (D6). */
+export function modalSelectionMatches(chosen: string | null | undefined, modelId: string, primaryFile?: string | null): boolean {
+  return chosen != null && (chosen === modelId || (!!primaryFile && chosen === primaryFile));
+}
+
 /** Whether a catalog entry is loadable as the chat LLM (text or vision). */
 export function isChatLoadable(kind: string): boolean {
   return kind === 'text' || kind === 'vision';
