@@ -8,11 +8,16 @@
 
 import { execSync } from 'child_process';
 
-/** Parse `netstat -ano -p tcp` output for the PIDs LISTENING on `port`. */
-function parseWindowsListenerPids(netstatOutput: string, port: number): string[] {
+/** Parse `netstat -ano -p tcp` output for the PIDs LISTENING on `port`. Handles both
+ *  IPv4 (`127.0.0.1:8439`) and IPv6 (`[::]:8439`, `[::1]:8439`) local-address rows: the
+ *  pattern anchors the captured port to the LISTENING+PID tail, so the leftmost full match
+ *  is always the local port (never the `:1` inside `::1`, nor the foreign `:0`). Exported
+ *  for the regression test — the win32 branch itself can't run in-process. */
+export function parseWindowsListenerPids(netstatOutput: string, port: number): string[] {
   const pids = new Set<string>();
   for (const line of netstatOutput.split(/\r?\n/)) {
     // "  TCP    127.0.0.1:8439   0.0.0.0:0   LISTENING   12345"
+    // "  TCP    [::1]:8439       [::]:0      LISTENING   12345"
     const m = line.match(/:(\d+)\s+\S+\s+LISTENING\s+(\d+)/i);
     if (m && m[1] === String(port) && m[2]) pids.add(m[2]);
   }
