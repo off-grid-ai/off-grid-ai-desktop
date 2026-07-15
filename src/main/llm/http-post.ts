@@ -11,6 +11,30 @@
 
 import * as http from 'http';
 
+/** Turn a non-200 model-server response into an ACTIONABLE message. llama-server
+ *  returns a JSON body like {"error":{"message":"request (22825 tokens) exceeds
+ *  the available context size (16384 tokens) …"}}; the bare status code alone is
+ *  useless to the user. We surface the common, user-fixable cases in plain
+ *  language and otherwise fall back to the server's own message. */
+export function describeServerError(statusCode: number | undefined, body: string): string {
+  let detail = (body || '').trim();
+  try {
+    const j = JSON.parse(body);
+    const m = j?.error?.message ?? j?.message;
+    if (typeof m === 'string' && m) detail = m;
+  } catch { /* non-JSON body — use the raw text */ }
+  // Context overflow — usually too many connectors enabled at once (their tool
+  // schemas + grammar overflow the context window).
+  if (/exceeds the available context size/i.test(detail)) {
+    return 'The request is larger than the model’s context window — usually too many connectors enabled at once. Disable some connectors, or raise the context window in Settings, then try again.';
+  }
+  // A tool schema that can't be compiled into a valid grammar for the engine.
+  if (/failed to (parse|initialize|compile) (grammar|json ?schema)/i.test(detail)) {
+    return 'A connected tool’s schema couldn’t be turned into a valid grammar for the local model. Disable the most recently added connector and try again.';
+  }
+  return `LLM Server Error: ${statusCode ?? '?'}${detail ? ` ${detail}` : ''}`;
+}
+
 /** The request options that guarantee a fresh, non-pooled connection to the model server.
  *  This is the contract that unbroke the tool loop — defined once, consumed everywhere. */
 export function modelRequestOptions(port: number, contentLength: number): http.RequestOptions {
@@ -47,7 +71,7 @@ export function postCompletionOnce(port: number, body: string, timeoutMs: number
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => finish(() => {
-        if (res.statusCode !== 200) { reject(new Error(`LLM Server Error: ${res.statusCode} ${data}`)); return; }
+        if (res.statusCode !== 200) { reject(new Error(describeServerError(res.statusCode, data))); return; }
         resolve(data);
       }));
     });

@@ -12,7 +12,7 @@ import { getResidencyMode } from './runtime-residency';
 import type { ManagedRuntime } from './runtime-manager';
 import { isMfluxModelId, mfluxAvailable, getMfluxModel, runMflux, cancelMflux, MFLUX_MODELS } from './mflux';
 import { getActiveModal } from './active-models';
-import { binRoots, dataDir, modelsDir } from './runtime-env';
+import { binRoots, dataDir, modelsDir, exe } from './runtime-env';
 import { sdServer } from './sd-server';
 import { standardModelDefaults, taesdFilename } from '../shared/image-defaults';
 import { defaultImageModelFilename } from './image-default';
@@ -24,7 +24,7 @@ import { initialProgressState, reduceProgress } from './imagegen/progress';
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {
-    const p = path.join(r, 'sd', 'sd-cli');
+    const p = path.join(r, 'sd', exe('sd-cli'));
     if (fs.existsSync(p)) return p;
   }
   return null;

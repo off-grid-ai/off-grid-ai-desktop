@@ -20,7 +20,7 @@ const { streamChatMock, initMock, hasVisionMock } = vi.hoisted(() => ({
   initMock: vi.fn().mockResolvedValue(undefined),
   hasVisionMock: vi.fn(() => false),
 }));
-vi.mock('../llm', () => ({ llm: { init: initMock, streamChat: streamChatMock, hasVision: hasVisionMock } }));
+vi.mock('../llm', () => ({ llm: { init: initMock, streamChat: streamChatMock, hasVision: hasVisionMock, effectiveContextSize: () => 8192 } }));
 const { getSettingMock, saveSettingMock } = vi.hoisted(() => ({ getSettingMock: vi.fn(() => [] as string[]), saveSettingMock: vi.fn() }));
 vi.mock('../database', () => ({ getSetting: getSettingMock, saveSetting: saveSettingMock }));
 

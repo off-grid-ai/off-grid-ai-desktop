@@ -7,7 +7,7 @@
 // assembled tool calls (empty for the plain chat path, which sends no tools).
 import http from 'http';
 import { parseSseLine, createThinkSplitter, createToolCallAccumulator, type AssembledToolCall } from './sse-stream';
-import { modelRequestOptions } from './http-post';
+import { modelRequestOptions, describeServerError } from './http-post';
 
 export interface StreamResult {
   content: string;
@@ -63,9 +63,18 @@ export function streamCompletion(
 
     const req = http.request(modelRequestOptions(port, Buffer.byteLength(body)), (res) => {
       if (res.statusCode !== 200) {
-        cleanup();
-        reject(new Error(`LLM Server Error: ${res.statusCode}`));
-        res.resume();
+        // Read the server's error body (small, capped) so we surface an ACTIONABLE
+        // message (e.g. context overflow from too many connectors, or a tool schema
+        // that won't compile to a grammar) instead of a bare status code. B2.
+        let err = '';
+        res.setEncoding('utf8');
+        res.on('data', (c: string) => { if (err.length < 4096) err += c; });
+        res.on('end', () => {
+          cleanup();
+          if (!timedOut && !aborted) {
+            reject(new Error(describeServerError(res.statusCode, err)));
+          }
+        });
         return;
       }
       res.setEncoding('utf8');

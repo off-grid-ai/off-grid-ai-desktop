@@ -22,7 +22,7 @@ import fs from 'fs';
 import os from 'os';
 import { promisify } from 'util';
 import { execFile } from 'child_process';
-import { binRoots, isPackaged } from '../runtime-env';
+import { binRoots, isPackaged, exe } from '../runtime-env';
 import { existing } from './bin-resolution';
 import { whisperModel, ffmpegBin } from './whisper-cli';
 import { decodeToWavArgs, DECODE_TIMEOUT_MS } from './ffmpeg-decode';
@@ -137,8 +137,8 @@ class WhisperServerService {
   /** Resolve the bundled whisper-server binary across dev / packaged layouts. */
   findBinary(): string | null {
     // Shared first-existing-path resolver (bin-resolution), instead of a hand-rolled
-    // existsSync loop that duplicated it.
-    return existing(binRoots().map((r) => path.join(r, 'whisper-server', 'whisper-server')));
+    // existsSync loop that duplicated it. exe() adds the .exe suffix on Windows.
+    return existing(binRoots().map((r) => path.join(r, 'whisper-server', exe('whisper-server'))));
   }
 
   /** Ensure a server is up with EXACTLY this context; restart on a model/thread
@@ -175,7 +175,18 @@ class WhisperServerService {
 
     const args = buildWhisperServerArgs({ ...ctx, port: this.port });
     // cwd at the binary dir so @rpath resolves the co-located libwhisper/libggml dylibs.
-    const proc = spawn(bin, args, { cwd: binDir, env: { ...process.env, DYLD_LIBRARY_PATH: binDir } });
+    const proc = spawn(bin, args, {
+      cwd: binDir,
+      // macOS: rpath for the co-located dylibs. Windows: prepend binDir to PATH so
+      // the ggml/whisper DLLs next to the exe resolve.
+      env: {
+        ...process.env,
+        DYLD_LIBRARY_PATH: binDir,
+        ...(process.platform === 'win32'
+          ? { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` }
+          : {}),
+      },
+    });
     this.server = proc;
     this.stderrTail = [];
     const capture = (d: Buffer): void => {

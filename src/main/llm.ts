@@ -4,7 +4,7 @@ import { Mutex } from "async-mutex";
 import { callHook } from "./bootstrap/hookRegistry";
 import path from "path";
 import * as fs from "fs";
-import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit } from "./runtime-env";
+import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit, exe } from "./runtime-env";
 import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from "./model-sizing";
 import { resolveMaxTokens } from "./llm/gen-params";
 import { classifyLlamaError } from "./llama-error";
@@ -153,6 +153,12 @@ export class LLMService {
       // If anything goes wrong reading sizes, fall back to a universally-safe value.
       return Math.min(requested, 8192);
     }
+  }
+
+  /** The EFFECTIVE (RAM-clamped) context window the server is actually running
+   *  with — the real ceiling for prompt + tools + answer. */
+  effectiveContextSize(): number {
+    return this.safeCtxSize(this.ctxSize);
   }
 
   getSettings(): LlmSettings {
@@ -320,6 +326,22 @@ export class LLMService {
     return getModelsDir();
   }
 
+  /** The active chat/vision model's id (catalog id if known, else the weight
+   *  filename) and whether it has a vision projector — so the gateway's
+   *  /v1/models can list the text model from disk even when the server hasn't
+   *  loaded it yet (otherwise an idle/headless gateway reports no chat model).
+   *  Returns null when no model is downloaded. */
+  activeModelInfo(): { id: string; vision: boolean } | null {
+    this.resolveModel();
+    if (!fs.existsSync(this.modelPath)) return null;
+    let id = path.basename(this.modelPath);
+    try {
+      const cfg = JSON.parse(fs.readFileSync(this.activeModelFile, "utf-8"));
+      if (cfg?.id) id = cfg.id;
+    } catch { /* fall back to the filename */ }
+    return { id, vision: !!this.mmProjPath && fs.existsSync(this.mmProjPath) };
+  }
+
   /** Cheap integrity check: a real GGUF starts with the "GGUF" magic and is more
    *  than a few bytes. Catches truncated/corrupt downloads before we hand the file
    *  to llama-server (which would otherwise crash on load). Delegates to the shared
@@ -378,31 +400,27 @@ export class LLMService {
     // newest model archs (gemma4/qwen35) AND runs on macOS 13+. The old dual-
     // engine setup shipped a second, older binary as a "fallback" that silently
     // couldn't load those models — removed.
+    // Engines to try, IN ORDER. On Windows we ship a Vulkan (GPU) build in
+    // bin/llama and a CPU-only fallback in bin/llama-cpu: if the Vulkan server
+    // can't start (e.g. no Vulkan loader on the box) we fall through to CPU. On
+    // macOS/Linux only bin/llama exists, so this is a single-entry list and the
+    // behaviour is unchanged.
     const roots = binRoots();
-    const candidates = roots.map((r) => path.join(r, "llama", "llama-server"));
-    const serverPath = candidates.find((p) => fs.existsSync(p)) ?? "";
-    if (!serverPath) {
-        console.error(`[LLMService] llama-server binary not found. Looked in:\n${candidates.join("\n")}`);
+    const serverPaths = roots.flatMap((r) => [
+        path.join(r, "llama", exe("llama-server")),
+        path.join(r, "llama-cpu", exe("llama-server")),
+        path.join(r, exe("llama-server")),
+    ]).filter((p) => fs.existsSync(p));
+    if (!serverPaths.length) {
+        console.error(`[LLMService] llama-server binary not found under: ${roots.join(", ")}`);
         return;
     }
 
-    console.log(`[LLMService] Starting llama-server from ${serverPath}`);
     console.log(`[LLMService] Model: ${this.modelPath}`);
 
-    // Strip macOS quarantine attributes on production builds (downloaded DMGs get quarantined)
-    if (isPackaged() && process.platform === 'darwin') {
-        try {
-            const binDir = path.dirname(serverPath);
-            execSync(`xattr -cr "${binDir}"`, { stdio: 'ignore' });
-            execSync(`chmod +x "${serverPath}"`, { stdio: 'ignore' });
-            console.log('[LLMService] Cleared quarantine attributes from bin directory');
-        } catch (e) {
-            console.warn('[LLMService] Could not clear quarantine attributes:', e);
-        }
-    }
-
-    const binDir = path.dirname(serverPath);
-
+    // launchArgs() (settings-math buildLaunchArgs) is the single source of truth for
+    // the llama-server launch args — ctx/ngl/flash-attn/kv-cache/threads/batch. The
+    // per-engine quarantine strip + binDir live in launchServer() below.
     const args = this.launchArgs();
     // Kill any lingering server before spawning (defends against a crashed or
     // orphaned instance still holding the port / RAM).
@@ -412,36 +430,72 @@ export class LLMService {
     }
     // ALSO kill an ORPHANED server from a previous app process — when the app
     // restarts, the old llama-server keeps holding the port, so a new spawn can't
-    // bind and config changes (ctx size, model) silently never take effect. Find
-    // whatever owns the port and kill it.
-    try {
-      const pids = execSync(`lsof -ti tcp:${this.port}`, { encoding: "utf-8" }).trim().split("\n").filter(Boolean);
-      let killed = 0;
-      for (const pid of pids) {
-        // ONLY kill a process we recognize as our own llama-server. The port is
-        // ours by convention, not by reservation — blindly SIGKILLing whatever
-        // holds it would take down an unrelated app that happened to bind it.
-        let cmd = "";
-        try { cmd = execSync(`ps -p ${pid} -o command=`, { encoding: "utf-8" }).trim(); } catch { continue; /* already gone */ }
-        if (!/llama-server/i.test(cmd)) {
-          console.warn(`[LLMService] port ${this.port} held by non-llama process ${pid} (${cmd.slice(0, 80)}) — leaving it alone`);
-          continue;
-        }
-        try { process.kill(Number(pid), "SIGKILL"); killed++; console.log(`[LLMService] killed orphaned llama-server ${pid} on port ${this.port}`); } catch { /* gone */ }
-      }
-      if (killed) await new Promise((r) => setTimeout(r, 400)); // let the port free
-    } catch { /* nothing on the port */ }
+    // bind and config changes (ctx size, model) silently never take effect. Worse,
+    // waitForReady would then talk to the ORPHAN (which may serve no/stale model),
+    // marking us "ready" with an empty /v1/models. Find whatever owns the port
+    // and kill it first.
+    if (this.killOrphansOnPort(this.port) > 0) {
+      await new Promise((r) => setTimeout(r, 400)); // let the port free
+    }
 
-    const proc = spawn(serverPath, args, {
-      env: {
-        ...process.env,
-        DYLD_LIBRARY_PATH: binDir,
-      },
-    });
+    for (let i = 0; i < serverPaths.length; i++) {
+      const serverPath = serverPaths[i];
+      if (!serverPath) continue;
+      if (await this.launchServer(serverPath, args)) return; // ready
+      if (i < serverPaths.length - 1) {
+        console.warn(`[LLMService] engine at ${serverPath} failed to start; trying fallback engine`);
+        // launchServer already tore its process down; free the port before retry.
+        if (this.killOrphansOnPort(this.port) > 0) await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+    console.error('[LLMService] all llama-server engines failed to start');
+  }
+
+  /** Spawn ONE llama-server binary and wait until the model is loaded. Returns
+   *  true when it's ready, false when it fails to start — so _doInit can fall
+   *  through to the next engine (Windows Vulkan -> CPU). A failed process is torn
+   *  down with its close handler neutralized so it can't trigger a crash-restart. */
+  private async launchServer(serverPath: string, args: string[]): Promise<boolean> {
+    const binDir = path.dirname(serverPath);
+    console.log(`[LLMService] Starting llama-server from ${serverPath}`);
+    // Strip macOS quarantine attributes on production builds (downloaded DMGs get quarantined)
+    if (isPackaged() && process.platform === 'darwin') {
+        try {
+            execSync(`xattr -cr "${binDir}"`, { stdio: 'ignore' });
+            execSync(`chmod +x "${serverPath}"`, { stdio: 'ignore' });
+            console.log('[LLMService] Cleared quarantine attributes from bin directory');
+        } catch (e) {
+            console.warn('[LLMService] Could not clear quarantine attributes:', e);
+        }
+    }
+
+    let proc: ChildProcess;
+    try {
+      proc = spawn(serverPath, args, {
+        env: {
+          ...process.env,
+          // macOS: rpath for the co-located dylibs. Windows: the loader already
+          // searches the exe's own dir for DLLs, but prepend binDir to PATH so the
+          // ggml/llama DLLs resolve even if that behaviour is restricted.
+          DYLD_LIBRARY_PATH: binDir,
+          ...(process.platform === 'win32'
+            ? { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` }
+            : {}),
+        },
+      });
+    } catch (e) {
+      console.error(`[LLMService] failed to spawn ${serverPath}:`, e);
+      return false;
+    }
     this.server = proc;
     this.stderrTail = [];
+    let abandoned = false; // set when we give up on this proc so its close handler is inert
 
-    proc.stderr.on("data", (data) => {
+    // A spawn/load error (e.g. a missing Vulkan loader on Windows) surfaces here;
+    // swallow it (waitForReady will fail and we fall back) so it isn't unhandled.
+    proc.on("error", (e) => { console.error(`[LLMService] llama-server process error:`, e); });
+
+    proc.stderr?.on("data", (data) => {
       const text = String(data);
       console.log(`[llama-server] ${text}`);
       // Keep a rolling tail so we can classify a load failure after it exits.
@@ -451,10 +505,9 @@ export class LLMService {
 
     proc.on("close", (code, signal) => {
         console.log(`[llama-server] exited with code ${code} signal ${signal}`);
-        // Ignore the close of a PROCESS WE'VE ALREADY REPLACED: on restart/reload,
-        // stop() kills the old proc and init() spawns a new one; the old proc's
-        // close event fires async and must not null out the live server.
-        if (this.server !== proc) return;
+        // Ignore the close of a PROCESS WE'VE ALREADY REPLACED (restart/reload) or
+        // one we deliberately abandoned during engine fallback.
+        if (this.server !== proc || abandoned) return;
         const wasIntentional = this.intentionalStop;
         this.intentionalStop = false;
         this.server = null;
@@ -482,9 +535,16 @@ export class LLMService {
         console.log("[LLMService] Vision server ready!");
         this.initialized = true;
         this.lastErrorMsg = null; // healthy again — clear any prior failure reason
+        return true;
     } catch (e) {
-        console.error("[LLMService] Failed to start server:", e);
-        this.stop();
+        console.error(`[LLMService] engine at ${binDir} failed to start:`, e);
+        // Tear down WITHOUT going through stop() (which sets intentionalStop and
+        // would suppress crash-recovery for the NEXT engine). Neutralize this
+        // proc's close handler so the fallback isn't misread as a crash.
+        abandoned = true;
+        try { proc.kill("SIGKILL"); } catch { /* already gone */ }
+        if (this.server === proc) { this.server = null; this.initialized = false; }
+        return false;
     }
   }
 
@@ -498,6 +558,47 @@ export class LLMService {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- init() flips `initialized` across the await; TS narrows the field to its pre-await `false` and can't see the mutation.
       if (!this.initialized) throw new Error('LLM Service not ready');
     }
+  }
+
+  // Kill an orphaned llama-server still holding our port (from a crashed/previous
+  // app process). ONLY kills a process we recognize as our own llama-server — the
+  // port is ours by convention, not reservation, so we never SIGKILL an unrelated
+  // app that happened to bind it. Cross-platform: lsof/ps on macOS+Linux,
+  // netstat/tasklist/taskkill on Windows. Returns how many we killed.
+  private killOrphansOnPort(port: number): number {
+    let killed = 0;
+    try {
+      if (process.platform === "win32") {
+        // "  TCP    127.0.0.1:8439   0.0.0.0:0   LISTENING   12345"
+        const out = execSync("netstat -ano -p tcp", { encoding: "utf-8" });
+        const pids = new Set<string>();
+        for (const line of out.split(/\r?\n/)) {
+          const m = line.match(/:(\d+)\s+\S+\s+LISTENING\s+(\d+)/i);
+          if (m && m[1] === String(port) && m[2]) pids.add(m[2]);
+        }
+        for (const pid of pids) {
+          let img = "";
+          try { img = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: "utf-8" }); } catch { continue; /* gone */ }
+          if (!/llama-server/i.test(img)) {
+            console.warn(`[LLMService] port ${port} held by non-llama PID ${pid} — leaving it alone`);
+            continue;
+          }
+          try { execSync(`taskkill /PID ${pid} /F /T`, { stdio: "ignore" }); killed++; console.log(`[LLMService] killed orphaned llama-server.exe ${pid} on port ${port}`); } catch { /* gone */ }
+        }
+      } else {
+        const pids = execSync(`lsof -ti tcp:${port}`, { encoding: "utf-8" }).trim().split("\n").filter(Boolean);
+        for (const pid of pids) {
+          let cmd = "";
+          try { cmd = execSync(`ps -p ${pid} -o command=`, { encoding: "utf-8" }).trim(); } catch { continue; /* already gone */ }
+          if (!/llama-server/i.test(cmd)) {
+            console.warn(`[LLMService] port ${port} held by non-llama process ${pid} (${cmd.slice(0, 80)}) — leaving it alone`);
+            continue;
+          }
+          try { process.kill(Number(pid), "SIGKILL"); killed++; console.log(`[LLMService] killed orphaned llama-server ${pid} on port ${port}`); } catch { /* gone */ }
+        }
+      }
+    } catch { /* nothing on the port */ }
+    return killed;
   }
 
   /** Auto-recover from an unexpected llama-server crash. Backs off, and on repeated
@@ -530,16 +631,34 @@ export class LLMService {
     this.init().catch(() => {});
   }
 
+  // Ready = the model is actually LOADED, not merely that the server answers.
+  // /health can report OK before the weights finish loading, and an orphan server
+  // on this port would answer /health while serving NO model — which surfaced as
+  // a 200 server with an empty /v1/models. So we additionally require /v1/models
+  // to list a model before declaring ready, and we bail immediately if the server
+  // process exits (a model that fails to load takes the process down with it).
   private async waitForReady(timeout = 60000): Promise<void> {
     const start = Date.now();
+    let healthOk = false;
     while (Date.now() - start < timeout) {
+      // The server died during startup (e.g. model load failure) — stop waiting.
+      if (!this.server) throw new Error("llama-server exited during startup — model failed to load");
       try {
-        const res = await fetch(`http://127.0.0.1:${this.port}/health`);
-        if (res.ok) return;
-      } catch {}
+        if (!healthOk) {
+          const res = await fetch(`http://127.0.0.1:${this.port}/health`);
+          healthOk = res.ok;
+        }
+        if (healthOk) {
+          const res = await fetch(`http://127.0.0.1:${this.port}/v1/models`);
+          if (res.ok) {
+            const body = await res.json().catch(() => null);
+            if (Array.isArray(body?.data) && body.data.length > 0) return;
+          }
+        }
+      } catch { /* not up yet */ }
       await new Promise((r) => setTimeout(r, 500));
     }
-    throw new Error("Server failed to start");
+    throw new Error("Server started but no model was loaded within the timeout");
   }
 
   // Use Node http module instead of fetch to avoid undici's headersTimeout (300s)
@@ -732,13 +851,17 @@ export class LLMService {
   }
 
   /** Hard restart: kill the server and spawn it fresh (picks up a model swap or
-   *  recovers a crashed/hung instance). Used by "Configure for me" and the
-   *  Health panel's restart action. */
+   *  recovers a crashed/hung instance). Used by "Configure for me", the Health
+   *  panel's restart action, and the Models screen dev control. Clears `paused`
+   *  so a manual restart always recovers even while paused for image gen, and
+   *  throws if the server fails to come back up so the caller can surface it. */
   async restart(): Promise<void> {
+      this.paused = false;
       this.stop();
       this.initialized = false;
       this.resolveModel();
       await this.init();
+      if (!this.initialized) throw new Error("Server did not come back up — check the model is downloaded");
   }
 }
 
