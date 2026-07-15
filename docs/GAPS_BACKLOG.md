@@ -7,8 +7,22 @@ how to reproduce, and the fix direction. Close with evidence; never hide.
 
 ## OPEN
 
-_None._ The data-layer/presentation-layer drift sweep (2026-07-09) is fully closed - see RESOLVED
-below. No open bugs or regressions tracked.
+- **search_memory tests still mock our `universalSearch` (test-quality gap).** The agentic tool
+  loop is now a REAL integration test (`tools-loop.dbtest.ts`: real toolChat + real LLMService over
+  a fake llama socket + real DB, no mocked code). The 3 remaining `search_memory` citation cases in
+  `tools-stream.test.ts` still `vi.mock('../search')` because `universalSearch` spans the FULL app
+  schema - CORE FTS tables (summary_fts, entity_fts, …) AND PRO-created ones
+  (observations/observation_fts), plus lancedb vectors + the @xenova/transformers embedding model.
+  Fix direction: a shared dbtest harness that bootstraps the complete core+pro schema (incl. the pro
+  capture tables), runs REAL universalSearch (real keyword FTS + real lancedb temp dir), faking ONLY
+  @xenova/transformers at the external boundary; then port the 3 cases and delete the mock. Also noted:
+  core `universalSearch` querying pro-created tables (observations) is a mild open-core smell.
+- **~15 pro CRM `*.integration.test.ts` mock `llm.chat` with canned distillation.** They already use a
+  real in-memory DB (good) but replace the LLM with a canned string. Fix direction: repoint the real llm
+  at the fake llama socket (same harness/seam as `tools-loop.dbtest.ts`) and enqueue the distillation
+  responses so the real distill/summarize logic runs. Batch rollout.
+
+The data-layer/presentation-layer drift sweep (2026-07-09) is fully closed - see RESOLVED below.
 
 ---
 

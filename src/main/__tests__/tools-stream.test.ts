@@ -3,10 +3,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // INTERIM — the agentic tool loop is now covered as a REAL integration test in
 // tools-loop.dbtest.ts (real toolChat + real LLMService over a fake llama socket + real
 // DB, no mocked code). The ONLY cases left here are the search_memory citation
-// side-channel, pending BATCH 2: run the REAL universalSearch (real keyword FTS + real
-// lancedb) with only @xenova/transformers (the embedding model) faked at the external
-// boundary. Until then these keep the loop's citation dedup/self-exclusion/empty paths
-// under test via a faked search leaf. Everything else moved to the real dbtest.
+// side-channel. Converting these to real is a bigger harness job than the rest:
+// universalSearch spans the FULL app schema — CORE FTS tables (summary_fts, entity_fts, …)
+// AND PRO-created ones (observations/observation_fts), plus lancedb vectors + the
+// @xenova/transformers embedding model. A faithful test needs the whole core+pro schema
+// bootstrapped with the embedding leaf faked (logged in docs/GAPS_BACKLOG.md). Until then
+// these keep the loop's citation dedup/empty paths under test via a faked search leaf —
+// the ONE remaining our-code mock. Everything else moved to tools-loop.dbtest.ts (real).
 const { streamChatMock, initMock } = vi.hoisted(() => ({
   streamChatMock: vi.fn(),
   initMock: vi.fn().mockResolvedValue(undefined),
