@@ -125,10 +125,14 @@ export function streamCompletion(
         resolve(done());
       };
       if (opts.signal.aborted) {
+        // Already aborted before we sent anything (the tool loop reuses one signal and a
+        // later round can start already-cancelled). onAbort() destroyed the request, so
+        // return WITHOUT write/end — writing to a destroyed request fires a doomed socket
+        // write whose 'error' is then swallowed by the aborted guard. cleanup() already ran.
         onAbort();
-      } else {
-        opts.signal.addEventListener('abort', onAbort);
+        return;
       }
+      opts.signal.addEventListener('abort', onAbort);
     }
     req.write(body);
     req.end();
