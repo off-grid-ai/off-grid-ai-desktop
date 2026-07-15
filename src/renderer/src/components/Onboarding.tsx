@@ -4,6 +4,7 @@ import { LampContainer } from './ui/lamp';
 import { OrbitingCircles } from './ui/orbiting-circles';
 import { GridBackdrop } from './ui/grid-backdrop';
 import { cn } from '@renderer/lib/utils';
+import { deviceNoun } from '@renderer/lib/device';
 import logo from '@/assets/logo.png';
 import {
   ArrowRight,
@@ -87,7 +88,7 @@ const PRO_GRID = [
   { icon: MagnifyingGlass, label: 'Memory', line: 'One search across everything you have seen, said, and saved, so you never lose a thing twice.' },
   { icon: Graph, label: 'Entities', line: 'Builds a record of every person and project on its own, so you walk into any call knowing where you left off.' },
   { icon: CalendarBlank, label: 'Day', line: 'Lays out your day from your work and the calendars you connect, so you start oriented instead of scrambling.' },
-  { icon: ShieldCheck, label: 'Vault', line: 'Encrypts passwords, keys, and secret files with a key that never leaves this Mac, so they stay yours alone.' },
+  { icon: ShieldCheck, label: 'Vault', line: `Encrypts passwords, keys, and secret files with a key that never leaves this ${deviceNoun()}, so they stay yours alone.` },
   { icon: Waveform, label: 'Voice', line: 'Hold Option+Space and talk - transcribed locally and pasted at your cursor, so you type with your voice anywhere.' },
 ];
 
@@ -134,7 +135,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             <GridBackdrop className="opacity-70" />
             <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-6">
               <div className="mb-6 text-center">
-                <TextGenerate words="One app. Every model. On your Mac." className="text-3xl font-semibold tracking-tight text-white md:text-5xl" delay={0} />
+                <TextGenerate words={`One app. Every model. On your ${deviceNoun()}.`} className="text-3xl font-semibold tracking-tight text-white md:text-5xl" delay={0} />
                 <div className="mt-4">
                   <TextGenerate words="Download open models and chat, see, draw, listen, and speak — all on-device." className="text-neutral-400" delay={0.4} />
                 </div>
@@ -219,7 +220,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
           <motion.div key="step-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative flex h-full w-full flex-col items-center justify-center bg-neutral-950 px-6">
             <GridBackdrop className="opacity-70" />
             <div className="relative z-10 mx-auto max-w-2xl text-center">
-              <TextGenerate words="It all runs in your Mac's RAM." className="text-3xl font-semibold tracking-tight text-white md:text-5xl" delay={0} />
+              <TextGenerate words={`It all runs in your ${deviceNoun()}'s RAM.`} className="text-3xl font-semibold tracking-tight text-white md:text-5xl" delay={0} />
               <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="mx-auto mt-5 max-w-xl text-neutral-400">
                 No account, no API key, no telemetry. Inference happens on your CPU and GPU. Turn off wifi and it keeps working. You can verify it yourself.
               </motion.p>

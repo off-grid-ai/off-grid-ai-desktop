@@ -18,6 +18,7 @@ import {
   IconStarFilled,
 } from '@tabler/icons-react';
 import { StoragePanel } from './setup/StoragePanel';
+import { deviceNoun } from '@renderer/lib/device';
 import {
   filterAndSort,
   parseParamCount,
@@ -86,7 +87,7 @@ const USE_CASES: UseCase[] = [
   { id: 'general', label: 'General', blurb: 'Everyday questions, drafting, and brainstorming.', match: () => true },
   { id: 'coding', label: 'Coding', blurb: 'Code generation — larger models reason better.', match: (m) => (m.params ?? 0) >= 4 },
   { id: 'writing', label: 'Writing', blurb: 'Long-form drafting — long context helps.', match: (m) => (m.params ?? 0) >= 2 },
-  { id: 'legal', label: 'Legal', blurb: 'Dense docs, careful reasoning — on-device, nothing leaves your Mac.', match: (m) => (m.params ?? 0) >= 7 },
+  { id: 'legal', label: 'Legal', blurb: `Dense docs, careful reasoning — on-device, nothing leaves your ${deviceNoun()}.`, match: (m) => (m.params ?? 0) >= 7 },
   { id: 'vision', label: 'Vision', blurb: 'Understand images, screenshots, documents.', match: (m) => m.kind === 'vision' },
   { id: 'lightweight', label: 'Lightweight', blurb: 'Fast, low-memory — for modest machines.', match: (m) => (m.params ?? 0) <= 4 },
 ];
@@ -667,7 +668,7 @@ export function ModelsScreen() {
                 </dl>
                 {ramGb && bytes > 0 && (
                   <p className="mt-4 text-[10px] text-neutral-500">
-                    {bytes / 1e9 <= ramGb * 0.38 ? 'Comfortable fit on your Mac.' : bytes / 1e9 <= ramGb * 0.55 ? 'Tight on RAM — context will be reduced.' : 'Large for your Mac — may run slowly.'}
+                    {bytes / 1e9 <= ramGb * 0.38 ? `Comfortable fit on your ${deviceNoun()}.` : bytes / 1e9 <= ramGb * 0.55 ? 'Tight on RAM — context will be reduced.' : `Large for your ${deviceNoun()} — may run slowly.`}
                   </p>
                 )}
                 {m.imageModes && m.imageModes.length > 0 && (

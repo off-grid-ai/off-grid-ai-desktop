@@ -4,7 +4,7 @@
 // (the free build renders locked nav items straight from this data, so a malformed
 // entry ships a broken upsell tab).
 import { describe, it, expect } from 'vitest';
-import { getProFeature, PRO_FEATURES, PRO_PAY_URL } from '../../components/pro/proCatalog';
+import { getProFeature, proComingSoonHere, proFeatureComingSoon, PRO_FEATURES, PRO_PAY_URL } from '../../components/pro/proCatalog';
 
 describe('getProFeature', () => {
   it('returns the matching feature for a known route', () => {
@@ -25,6 +25,53 @@ describe('getProFeature', () => {
   it('resolves every route present in the catalog', () => {
     for (const feature of PRO_FEATURES) {
       expect(getProFeature(feature.route)).toBe(feature);
+    }
+  });
+});
+
+describe('proComingSoonHere (base rule: Pro is macOS-tested only for now)', () => {
+  it('is true for a Pro subscriber on any non-Mac platform', () => {
+    expect(proComingSoonHere('win32', true)).toBe(true);
+    expect(proComingSoonHere('linux', true)).toBe(true);
+    expect(proComingSoonHere('unknown', true)).toBe(true);
+  });
+
+  it('is false on macOS', () => {
+    expect(proComingSoonHere('darwin', true)).toBe(false);
+  });
+
+  it('is false for free users everywhere (they get the upsell)', () => {
+    expect(proComingSoonHere('win32', false)).toBe(false);
+    expect(proComingSoonHere('darwin', false)).toBe(false);
+  });
+});
+
+describe('proFeatureComingSoon (Pro is macOS-tested only for now)', () => {
+  const aRoute = PRO_FEATURES[0].route;
+
+  it('shows coming-soon for a Pro subscriber on a non-Mac platform', () => {
+    expect(proFeatureComingSoon(aRoute, 'win32', true)).toBe(true);
+    expect(proFeatureComingSoon(aRoute, 'linux', true)).toBe(true);
+  });
+
+  it('never shows coming-soon on macOS (Pro works there)', () => {
+    expect(proFeatureComingSoon(aRoute, 'darwin', true)).toBe(false);
+  });
+
+  it('never shows coming-soon to a free user (they get the upsell instead)', () => {
+    expect(proFeatureComingSoon(aRoute, 'win32', false)).toBe(false);
+    expect(proFeatureComingSoon(aRoute, 'linux', false)).toBe(false);
+  });
+
+  it('only applies to real Pro routes, not core/unknown views', () => {
+    expect(proFeatureComingSoon('models', 'win32', true)).toBe(false);
+    expect(proFeatureComingSoon('does-not-exist', 'win32', true)).toBe(false);
+    expect(proFeatureComingSoon('', 'win32', true)).toBe(false);
+  });
+
+  it('gates every catalog route for a Windows Pro subscriber', () => {
+    for (const f of PRO_FEATURES) {
+      expect(proFeatureComingSoon(f.route, 'win32', true), `coming-soon for ${f.route}`).toBe(true);
     }
   });
 });

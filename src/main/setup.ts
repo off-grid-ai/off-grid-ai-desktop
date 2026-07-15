@@ -12,6 +12,7 @@ import { llm } from './llm';
 import { decideChatStatus } from './chat-health';
 import { getActiveModel, downloadModel, listInstalled, setActiveModel, setActiveModalChoice } from './models-manager';
 import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports';
+import { deviceNoun } from '../shared/device';
 import type { RecMode } from './models/setup-types';
 import {
   normalizeMode,
@@ -242,7 +243,7 @@ export async function getSetupPlan(mode?: RecMode): Promise<SetupPlan> {
 export async function autoConfigure(onProgress?: SetupProgressCb): Promise<{ success: boolean; error?: string; modelId?: string; modelName?: string }> {
   const emit = (p: SetupProgress): void => { try { onProgress?.(p); } catch { /* ignore */ } };
 
-  emit({ phase: 'select', message: 'Picking a model that fits your Mac…' });
+  emit({ phase: 'select', message: `Picking a model that fits your ${deviceNoun(process.platform)}…` });
   const model = await recommendChatModel();
   if (!model) { emit({ phase: 'error', message: 'No suitable model found.' }); return { success: false, error: 'no suitable model found' }; }
 
