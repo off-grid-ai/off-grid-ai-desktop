@@ -7,6 +7,7 @@ import path from 'path';
 import { llm } from './llm';
 import { isValidGgufFile } from './models/gguf';
 import { pumpToFile } from './models/download-pump';
+import { downloadIntegrityError } from './models/download-verify';
 import { getAllActiveModals, setActiveModal as setModal, type Modality } from './active-models';
 import { recordDownloaded, removeDownloaded, findDownloaded, installedDownloadedIds, downloadedProtectedNames, readDownloaded } from './downloaded-models';
 import {
@@ -171,6 +172,10 @@ export async function downloadModel(modelId: string, onProgress?: ProgressCb): P
         });
       });
       if (controller.signal.aborted) { fs.rmSync(partPath, { force: true }); break; }
+      // Verify the file is complete + valid BEFORE promoting it — never mark a
+      // truncated/corrupt download installed (it loads as a blank "Chat model Down").
+      const integrityErr = downloadIntegrityError(file.name, written, total, partPath);
+      if (integrityErr) throw new Error(integrityErr);
       fs.renameSync(partPath, dest);
     }
     if (controller.signal.aborted) { send({ status: 'cancelled' }); return { success: false, error: 'cancelled' }; }
