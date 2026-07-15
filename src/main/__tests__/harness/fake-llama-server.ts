@@ -1,0 +1,104 @@
+// Behaviour-faithful fake of the bundled llama-server, at its REAL boundary: a live
+// http.createServer on a loopback port speaking the OpenAI-compatible endpoints the
+// LLMService actually calls (/health, /v1/models, streaming /v1/chat/completions).
+// Integration tests run the REAL LLMService + REAL toolChat over this socket — the
+// model's TOKENS are faked at the wire (the one true external boundary: the native
+// engine process), everything above it is our real code. NOT a mock of our code.
+//
+// A "turn" is one queued response the server replays for the next chat request, as
+// real SSE `data:` frames + `[DONE]`. Queue several to drive a multi-round tool loop
+// (round 1 emits a tool_call, round 2 emits the final answer) exactly as llama-server
+// would. Requests beyond the queue get an empty-content turn (loop terminator).
+import * as http from 'http';
+import type { AddressInfo } from 'net';
+
+export interface FakeToolCall {
+  id?: string;
+  name: string;
+  /** Arguments object; serialized to the JSON string llama-server emits. */
+  args: unknown;
+}
+export interface FakeTurn {
+  /** Answer text streamed as content deltas (split into a few frames like the engine). */
+  content?: string;
+  /** Reasoning streamed on the reasoning_content channel before the answer. */
+  reasoning?: string;
+  /** Tool calls emitted on this turn (the agentic loop then runs them and calls back). */
+  toolCalls?: FakeToolCall[];
+  /** Force a non-200 to exercise the error path (body is surfaced by describeServerError). */
+  errorStatus?: number;
+  errorBody?: string;
+}
+
+export interface FakeLlamaServer {
+  port: number;
+  /** Queue the turns the server will replay, in order, one per chat request. */
+  enqueue(...turns: FakeTurn[]): void;
+  /** The request bodies received, parsed — for asserting what the REAL llm actually sent. */
+  readonly requests: Array<Record<string, unknown>>;
+  close(): Promise<void>;
+}
+
+function sseFramesFor(turn: FakeTurn): string[] {
+  const frames: string[] = [];
+  const delta = (d: Record<string, unknown>): string => `data: ${JSON.stringify({ choices: [{ delta: d }] })}\n\n`;
+  if (turn.reasoning) {
+    frames.push(delta({ reasoning_content: turn.reasoning }));
+  }
+  for (const tc of turn.toolCalls ?? []) {
+    frames.push(delta({ tool_calls: [{ id: tc.id ?? `call_${tc.name}`, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args) } }] }));
+  }
+  // Split content into a couple of frames so the real splitter/accumulator is exercised
+  // across chunk boundaries, like the engine's token-by-token stream.
+  const text = turn.content ?? '';
+  if (text) {
+    const mid = Math.ceil(text.length / 2);
+    frames.push(delta({ content: text.slice(0, mid) }));
+    frames.push(delta({ content: text.slice(mid) }));
+  }
+  frames.push('data: [DONE]\n\n');
+  return frames;
+}
+
+export async function startFakeLlamaServer(): Promise<FakeLlamaServer> {
+  const queue: FakeTurn[] = [];
+  const requests: Array<Record<string, unknown>> = [];
+
+  const server = http.createServer((req, res) => {
+    if (req.method === 'GET' && (req.url === '/health' || req.url === '/v1/models')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(req.url === '/health' ? { status: 'ok' } : { data: [{ id: 'fake' }] }));
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/v1/chat/completions') {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        try { requests.push(JSON.parse(body)); } catch { requests.push({}); }
+        const turn = queue.shift() ?? { content: '' };
+        if (turn.errorStatus) {
+          res.writeHead(turn.errorStatus, { 'Content-Type': 'application/json' });
+          res.end(turn.errorBody ?? JSON.stringify({ error: { message: 'fake error' } }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        for (const frame of sseFramesFor(turn)) {
+          res.write(frame);
+        }
+        res.end();
+      });
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+  const port = (server.address() as AddressInfo).port;
+  return {
+    port,
+    requests,
+    enqueue: (...turns: FakeTurn[]) => { queue.push(...turns); },
+    close: () => new Promise<void>((r) => server.close(() => r())),
+  };
+}
