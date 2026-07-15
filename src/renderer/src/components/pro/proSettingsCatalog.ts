@@ -24,6 +24,15 @@ export interface ProSettingsSlot {
 // and "Data & privacy").
 export const PRO_SETTINGS_SLOTS: ProSettingsSlot[] = [
   {
+    id: 'capture',
+    delay: 0.14,
+    placeholder: {
+      title: 'Capture',
+      description:
+        'See whether screen capture is running, and pause, resume, or restart it - a control that works even if the menu-bar icon is unavailable.',
+    },
+  },
+  {
     id: 'identity',
     delay: 0.15,
     placeholder: {
