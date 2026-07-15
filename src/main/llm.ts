@@ -6,6 +6,7 @@ import path from "path";
 import * as fs from "fs";
 import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit } from "./runtime-env";
 import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from "./model-sizing";
+import { resolveMaxTokens } from "./llm/gen-params";
 import { classifyLlamaError } from "./llama-error";
 import type { ManagedRuntime } from "./runtime-manager";
 import { LLAMA_SERVER_PORT } from "../shared/ports";
@@ -553,7 +554,7 @@ export class LLMService {
     message: string,
     images: string[] = [],
     timeoutMs: number = 300000,
-    maxTokens: number = 2048,
+    maxTokens?: number,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     opts: { responseFormat?: any; temperature?: number; disableThinking?: boolean } = {}
   ): Promise<string> {
@@ -565,7 +566,7 @@ export class LLMService {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const payload: any = {
             messages: messages,
-            max_tokens: maxTokens,
+            max_tokens: resolveMaxTokens(maxTokens, this.maxTokens),
             temperature: opts.temperature ?? this.temperature,
             ...this.samplingPayload(),
         };
@@ -609,7 +610,7 @@ export class LLMService {
     onDelta: (text: string, kind: 'content' | 'reasoning') => void,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     opts: { temperature?: number; thinking?: boolean; signal?: AbortSignal } = {},
-    maxTokens: number = 2048,
+    maxTokens?: number,
     timeoutMs: number = 300000,
   ): Promise<string> {
     await this.ensureReady();
@@ -618,7 +619,7 @@ export class LLMService {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {
       messages,
-      max_tokens: this.maxTokens || maxTokens,
+      max_tokens: resolveMaxTokens(maxTokens, this.maxTokens),
       temperature: opts.temperature ?? this.temperature,
       ...this.samplingPayload(),
       stream: true,
@@ -653,7 +654,7 @@ export class LLMService {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {
       messages,
-      max_tokens: opts.maxTokens ?? this.maxTokens,
+      max_tokens: resolveMaxTokens(opts.maxTokens, this.maxTokens),
       temperature: opts.temperature ?? this.temperature,
       ...this.samplingPayload(),
       stream: true,
