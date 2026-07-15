@@ -5,6 +5,7 @@ import { callHook } from "./bootstrap/hookRegistry";
 import path from "path";
 import * as fs from "fs";
 import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit, exe } from "./runtime-env";
+import { killOrphansOnPort as reapOrphansOnPort } from "./kill-orphan-port";
 import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from "./model-sizing";
 import { resolveMaxTokens } from "./llm/gen-params";
 import { classifyLlamaError } from "./llama-error";
@@ -560,45 +561,12 @@ export class LLMService {
     }
   }
 
-  // Kill an orphaned llama-server still holding our port (from a crashed/previous
-  // app process). ONLY kills a process we recognize as our own llama-server — the
-  // port is ours by convention, not reservation, so we never SIGKILL an unrelated
-  // app that happened to bind it. Cross-platform: lsof/ps on macOS+Linux,
-  // netstat/tasklist/taskkill on Windows. Returns how many we killed.
+  // Kill an orphaned llama-server still holding our port (from a crashed/previous app
+  // process). Delegates to the shared cross-platform reaper (kill-orphan-port.ts) —
+  // matched by name so we only ever kill a llama-server, never an unrelated app that
+  // happened to bind the port.
   private killOrphansOnPort(port: number): number {
-    let killed = 0;
-    try {
-      if (process.platform === "win32") {
-        // "  TCP    127.0.0.1:8439   0.0.0.0:0   LISTENING   12345"
-        const out = execSync("netstat -ano -p tcp", { encoding: "utf-8" });
-        const pids = new Set<string>();
-        for (const line of out.split(/\r?\n/)) {
-          const m = line.match(/:(\d+)\s+\S+\s+LISTENING\s+(\d+)/i);
-          if (m && m[1] === String(port) && m[2]) pids.add(m[2]);
-        }
-        for (const pid of pids) {
-          let img = "";
-          try { img = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: "utf-8" }); } catch { continue; /* gone */ }
-          if (!/llama-server/i.test(img)) {
-            console.warn(`[LLMService] port ${port} held by non-llama PID ${pid} — leaving it alone`);
-            continue;
-          }
-          try { execSync(`taskkill /PID ${pid} /F /T`, { stdio: "ignore" }); killed++; console.log(`[LLMService] killed orphaned llama-server.exe ${pid} on port ${port}`); } catch { /* gone */ }
-        }
-      } else {
-        const pids = execSync(`lsof -ti tcp:${port}`, { encoding: "utf-8" }).trim().split("\n").filter(Boolean);
-        for (const pid of pids) {
-          let cmd = "";
-          try { cmd = execSync(`ps -p ${pid} -o command=`, { encoding: "utf-8" }).trim(); } catch { continue; /* already gone */ }
-          if (!/llama-server/i.test(cmd)) {
-            console.warn(`[LLMService] port ${port} held by non-llama process ${pid} (${cmd.slice(0, 80)}) — leaving it alone`);
-            continue;
-          }
-          try { process.kill(Number(pid), "SIGKILL"); killed++; console.log(`[LLMService] killed orphaned llama-server ${pid} on port ${port}`); } catch { /* gone */ }
-        }
-      }
-    } catch { /* nothing on the port */ }
-    return killed;
+    return reapOrphansOnPort(port, (c) => /llama-server/i.test(c), 'llama-server');
   }
 
   /** Auto-recover from an unexpected llama-server crash. Backs off, and on repeated

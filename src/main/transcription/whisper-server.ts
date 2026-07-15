@@ -27,6 +27,7 @@ import { existing } from './bin-resolution';
 import { whisperModel, ffmpegBin } from './whisper-cli';
 import { decodeToWavArgs, DECODE_TIMEOUT_MS } from './ffmpeg-decode';
 import type { TranscriptionService, Transcript, TranscribeOptions } from './types';
+import { killOrphansOnPort as reapOrphansOnPort } from '../kill-orphan-port';
 
 const execFileAsync = promisify(execFile);
 
@@ -279,20 +280,18 @@ class WhisperServerService {
   }
 
   private killOrphanOnPort(): void {
-    // Only ever kill an orphan of OUR OWN bundled binary - match the full path,
-    // not the bare name, so a user's separately-run whisper-server (or any
-    // unrelated process holding the port) is left untouched. Mirrors sd-server.ts.
+    // Shared cross-platform reaper (kill-orphan-port.ts) — adds the Windows branch this
+    // used to lack (a crashed whisper-server would keep holding the port after a restart).
+    // Match policy: posix matches our OWN bundled binary by FULL PATH (a user's separately
+    // run whisper-server is left untouched); win32's tasklist only exposes the image name,
+    // so match the exe name there.
     const ownBin = this.findBinary();
     if (!ownBin) return;
-    try {
-      const pids = execSync(`lsof -ti tcp:${this.port}`, { encoding: 'utf-8' }).trim().split('\n').filter(Boolean);
-      for (const pid of pids) {
-        let cmd = '';
-        try { cmd = execSync(`ps -p ${pid} -o command=`, { encoding: 'utf-8' }).trim(); } catch { continue; }
-        if (!cmd.includes(ownBin)) continue; // our bundled binary only, never a foreign process
-        try { process.kill(Number(pid), 'SIGKILL'); } catch { /* gone */ }
-      }
-    } catch { /* nothing on the port */ }
+    reapOrphansOnPort(
+      this.port,
+      (info) => (process.platform === 'win32' ? /whisper-server/i.test(info) : info.includes(ownBin)),
+      'whisper-server',
+    );
   }
 }
 

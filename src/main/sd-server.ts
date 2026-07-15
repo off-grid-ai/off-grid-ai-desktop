@@ -22,6 +22,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { binRoots, isPackaged, exe } from './runtime-env';
+import { killOrphansOnPort as reapOrphansOnPort } from './kill-orphan-port';
 
 /** Off the LLM's 8439 so both engines can bind (they never run at once, but a
  *  lingering LLM shouldn't block the image server's port either). */
@@ -359,20 +360,17 @@ class SdServerService {
   }
 
   private killOrphanOnPort(): void {
-    // Only ever kill an orphan of OUR OWN bundled binary — match the full path,
-    // not the bare name, so a user's separately-run sd-server (or any unrelated
-    // process that happens to hold the port) is left untouched.
+    // Shared cross-platform reaper (kill-orphan-port.ts) — adds the Windows branch this
+    // used to lack (a crashed sd-server would keep holding the port after a restart).
+    // posix matches our OWN bundled binary by FULL PATH (a user's separately-run sd-server
+    // is left untouched); win32's tasklist only exposes the image name, so match that.
     const ownBin = this.findBinary();
     if (!ownBin) return;
-    try {
-      const pids = execSync(`lsof -ti tcp:${this.port}`, { encoding: 'utf-8' }).trim().split('\n').filter(Boolean);
-      for (const pid of pids) {
-        let cmd = '';
-        try { cmd = execSync(`ps -p ${pid} -o command=`, { encoding: 'utf-8' }).trim(); } catch { continue; }
-        if (!cmd.includes(ownBin)) continue; // our bundled binary only, never a foreign process
-        try { process.kill(Number(pid), 'SIGKILL'); } catch { /* gone */ }
-      }
-    } catch { /* nothing on the port */ }
+    reapOrphansOnPort(
+      this.port,
+      (info) => (process.platform === 'win32' ? /sd-server/i.test(info) : info.includes(ownBin)),
+      'sd-server',
+    );
   }
 }
 
