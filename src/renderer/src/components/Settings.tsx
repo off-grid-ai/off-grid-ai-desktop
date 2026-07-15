@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react';
 import { persistToggle } from '@renderer/lib/persist-toggle';
 import { motion } from 'motion/react';
-import { LockKey, X, CheckCircle, Desktop, EnvelopeSimple, CaretDown } from '@phosphor-icons/react';
+import { LockKey, CaretDown } from '@phosphor-icons/react';
 import { cn } from '@renderer/lib/utils';
 import { ProgressiveBlur } from './ui/progressive-blur';
 import { SetupPanel } from './setup/SetupPanel';
 import { StoragePanel } from './setup/StoragePanel';
 import { DataPrivacyPanel } from './setup/DataPrivacyPanel';
+import { getRegisteredSettingsSections } from '../bootstrap/sectionRegistry';
+import { PRO_SETTINGS_SLOTS } from './pro/proSettingsCatalog';
 
 // Collapsible Settings card: same chrome as before, but the body is hidden until
 // the user expands it (closed by default). The header shows the title always and a
 // one-line summary while collapsed, with a chevron that flips when open. Keeps the
 // long Settings sections scannable.
-function SettingsCard({
+export function SettingsCard({
   title,
   summary,
   defaultOpen = false,
@@ -52,7 +54,7 @@ function SettingsCard({
 
 // A Pro section shown (disabled) in the free build: title + description + a
 // "Pro" badge, dimmed and non-interactive.
-function ProPlaceholder({ title, description, delay = 0.18 }: { title: string; description: string; delay?: number }): React.ReactElement {
+export function ProPlaceholder({ title, description, delay = 0.18 }: { title: string; description: string; delay?: number }): React.ReactElement {
   return (
     <motion.div
       className="relative rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6"
@@ -66,42 +68,6 @@ function ProPlaceholder({ title, description, delay = 0.18 }: { title: string; d
       <h3 className="mb-1 pr-28 text-base font-medium text-neutral-300">{title}</h3>
       <p className="text-sm text-neutral-600">{description}</p>
     </motion.div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Proactive delivery — let Off Grid reach out unprompted
-// ---------------------------------------------------------------------------
-
-function ProactiveSection(): React.ReactElement {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const api = (window as any).api;
-  const [enabled, setEnabled] = useState(true);
-  useEffect(() => {
-    api.getSettings?.().then((s: Record<string, unknown>) => {
-      // default ON unless explicitly disabled
-      setEnabled(s['proactive:enabled'] !== false);
-    });
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, []);
-  const toggle = (): void => {
-    void persistToggle(!enabled, enabled, setEnabled, (v) => api.saveSetting?.('proactive:enabled', v));
-  };
-  // Body only — the card chrome + title come from SettingsCard.
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <p className="text-neutral-500 text-sm">
-        Off Grid reaches out on its own - a morning briefing of your day and a heads-up ~20 min before each meeting with who is in it and your open items. Delivered as native notifications, even when the window is closed.
-      </p>
-      <button
-        onClick={toggle}
-        role="switch"
-        aria-checked={enabled}
-        className={`relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${enabled ? 'bg-emerald-500' : 'bg-neutral-700'}`}
-      >
-        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
-      </button>
-    </div>
   );
 }
 
@@ -258,169 +224,22 @@ function SoftwareUpdateSection(): React.ReactElement {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Secretary — what Off Grid has learned from your dismissals
-// ---------------------------------------------------------------------------
-
-function SecretaryPrefs(): React.ReactElement {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const api = (window as any).api;
-  const [doc, setDoc] = useState('');
-  const load = (): void => {
-    api.secretaryPrefsGet?.().then((p: { doc?: string }) => setDoc(p.doc ?? ''));
-  };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-
-  // The doc is distilled by the assistant (auto-refreshes ~hourly). The user's
-  // only manual control is REMOVING individual lines they disagree with — there's
-  // no free-form editing. Always persist as normalized "- " bullet lines.
-  const lines = doc.split('\n').map((l) => l.trim()).filter(Boolean);
-  const toBullets = (ls: string[]): string =>
-    ls.map((l) => l.replace(/^[-•*]\s*/, '').trim()).filter(Boolean).map((t) => `- ${t}`).join('\n');
-  const removeLine = async (idx: number): Promise<void> => {
-    const next = toBullets(lines.filter((_, i) => i !== idx));
-    setDoc(next);
-    await api.secretaryPrefsSet?.(next);
-  };
-  const clear = async (): Promise<void> => { setDoc(''); await api.secretaryPrefsSet?.(''); };
-
-  // Body only — the card chrome + title come from SettingsCard.
-  return (
-    <div>
-      <p className="text-neutral-500 text-sm mb-4">
-        Preferences distilled from the reasons you give when you dismiss a suggestion. This is the only learned text fed back to the assistant - it refreshes about once an hour, and raw notes are never used directly. You can remove any line you disagree with.
-      </p>
-      {lines.length ? (
-        <ul className="divide-y divide-neutral-800/60 overflow-hidden rounded-xl border border-neutral-700/50 bg-neutral-800/40">
-          {lines.map((line, i) => (
-            <li key={i} className="group flex items-start gap-2 px-3 py-2">
-              <span className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-neutral-300">{line}</span>
-              <button
-                onClick={() => removeLine(i)}
-                aria-label="Remove this line"
-                title="Remove"
-                className="mt-0.5 shrink-0 rounded p-0.5 text-neutral-600 transition-colors hover:bg-red-500/10 hover:text-red-400"
-              >
-                <X className="h-3.5 w-3.5" weight="bold" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="rounded-xl border border-neutral-700/50 bg-neutral-800/40 p-3 text-sm text-neutral-600">
-          Nothing learned yet. When you dismiss a suggestion, tell Off Grid why - it generalizes the useful ones here.
-        </p>
-      )}
-      {lines.length > 0 && (
-        <div className="mt-3">
-          <button onClick={clear} className="rounded-lg px-3 py-1.5 text-xs text-neutral-500 hover:text-white">Clear all</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-const MAX_DEVICES = 5;
-interface PlanInfo { isPro: boolean; tier: 'lifetime' | 'monthly' | null; expiry: string | null }
-interface PlanDevice { id: string; name?: string; platform?: string; lastSeen?: string }
-
-// Pro plan + devices, mirroring mobile's ProManageSection. Read-only device list
-// (the cap is fixed, no self-service removal); for monthly, the cancel/update path
-// is the link in the purchase/renewal email (no in-app billing portal).
-function ProPlanSection(): React.ReactElement {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const api = (window as any).api;
-  const [info, setInfo] = useState<PlanInfo | null>(null);
-  const [devices, setDevices] = useState<PlanDevice[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let live = true;
-    void Promise.all([api?.license?.status?.(), api?.license?.listDevices?.()])
-      .then(([i, d]: [PlanInfo, PlanDevice[]]) => { if (!live) return; setInfo(i); setDevices(Array.isArray(d) ? d : []); })
-      .catch(() => {})
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
-  }, [api]);
-
-  const fmt = (iso?: string | null): string => {
-    if (!iso) return '';
-    try { return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return iso; }
-  };
-  const statusLine = info?.tier === 'lifetime' ? 'Lifetime · never expires'
-    : info?.tier === 'monthly' ? `Monthly · active until ${fmt(info.expiry)}`
-    : 'Pro active';
-
-  // Body only — the card chrome + title come from SettingsCard.
-  return (
-    <div>
-      {loading ? (
-        <p className="text-sm text-neutral-600">Loading…</p>
-      ) : (
-        <>
-          <div className="flex items-center gap-2 text-sm text-neutral-200">
-            <CheckCircle weight="fill" className="h-4 w-4 text-green-500" /> {statusLine}
-          </div>
-
-          <div className="mt-5">
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Devices ({devices.length} of {MAX_DEVICES})</div>
-            <p className="mt-0.5 text-[11px] text-neutral-600">A license works on up to {MAX_DEVICES} devices. This limit is fixed.</p>
-            <ul className="mt-2 divide-y divide-neutral-800/60 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/40">
-              {devices.length === 0 ? (
-                <li className="px-3 py-2 text-sm text-neutral-600">No devices registered yet.</li>
-              ) : devices.map((m) => (
-                <li key={m.id} className="flex items-center gap-2.5 px-3 py-2">
-                  <Desktop className="h-4 w-4 shrink-0 text-neutral-500" />
-                  <span className="min-w-0 flex-1 truncate text-sm text-neutral-300">{m.name || m.platform || 'Device'}</span>
-                  {m.lastSeen && <span className="shrink-0 text-[11px] text-neutral-600">Added {fmt(m.lastSeen)}</span>}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {info?.tier === 'monthly' && (
-            <div className="mt-5">
-              <div className="text-[11px] uppercase tracking-wide text-neutral-500">Manage subscription</div>
-              <p className="mt-1 flex items-start gap-2 text-[11px] text-neutral-500">
-                <EnvelopeSimple className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                To cancel or update your payment method, use the link in your Off Grid purchase or renewal email - one is sent with every payment.
-              </p>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 
 export function Settings() {
-  // Pro/core aware: the proactive / secretary / fleet-console sections are Pro
-  // and are hidden in the free build.
+  // Pro/core aware: the pro Settings sections (identity / proactive / secretary /
+  // plan) render only when the pro package has registered them (section registry);
+  // the free build shows the catalogued placeholders. isPro still drives the header
+  // subtitle copy.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isPro = !!(window as any).api?.isPro;
-  const [idName, setIdName] = useState('');
-  const [idEmail, setIdEmail] = useState('');
+  // Pro sections registered by the pro renderer at activation (empty in free build).
+  const registeredSections = getRegisteredSettingsSections();
   const [appVersion, setAppVersion] = useState('');
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window.api as any).getAppVersion?.().then((v: string) => setAppVersion(v || '')).catch(() => {});
   }, []);
-
-  // Load identity on mount (Pro only — the handler lives in the pro layer).
-  useEffect(() => {
-    if (!isPro) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window.api as any).idGet?.().then((id: { name: string; email: string }) => {
-      setIdName(id.name || '');
-      setIdEmail(id.email || '');
-    }).catch(() => {});
-  }, [isPro]);
-
-  const saveIdentity = (): void => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window.api as any).idSet?.({ name: idName.trim(), email: idEmail.trim() });
-  };
 
   return (
     <div className="relative flex h-full flex-col">
@@ -455,41 +274,22 @@ export function Settings() {
             </div>
           </SettingsCard>
 
-          {/* Identity — who you are (Pro: foundation for the act pillar) */}
-          {isPro ? (
-            <SettingsCard title="You" summary="Who you are, so Off Grid can attribute your messages and calendar." delay={0.15}>
-              <p className="text-neutral-500 text-sm mb-4">
-                Tells Off Grid who you are - so it can tell your messages and commitments apart from everyone else&apos;s. Used to attribute action items and to make sense of your email and calendar.
-              </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <input value={idName} onChange={(e) => setIdName(e.target.value)} onBlur={saveIdentity} onKeyDown={(e) => { if (e.key === 'Enter') saveIdentity(); }} placeholder="Your name" className="rounded-xl bg-neutral-950 border border-neutral-800 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-neutral-600" />
-                <input value={idEmail} onChange={(e) => setIdEmail(e.target.value)} onBlur={saveIdentity} onKeyDown={(e) => { if (e.key === 'Enter') saveIdentity(); }} placeholder="you@email.com" className="rounded-xl bg-neutral-950 border border-neutral-800 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-neutral-600" />
-              </div>
-            </SettingsCard>
-          ) : (
-            <ProPlaceholder delay={0.15} title="You" description="Tell Off Grid who you are so it can attribute your messages, commitments, and calendar - part of the Pro intelligence layer." />
-          )}
-
-          {/* Pro sections — shown but disabled in the free build. */}
-          {isPro ? (
-            <SettingsCard title="Proactive delivery" summary="A morning briefing and a heads-up before each meeting." delay={0.18}>
-              <ProactiveSection />
-            </SettingsCard>
-          ) : (
-            <ProPlaceholder title="Proactive delivery" description="A morning briefing and a heads-up before each meeting - native notifications, even when the window is closed." />
-          )}
-          {isPro ? (
-            <SettingsCard title="What Off Grid has learned" summary="Preferences distilled from your dismissals, fed back to the assistant." delay={0.22}>
-              <SecretaryPrefs />
-            </SettingsCard>
-          ) : (
-            <ProPlaceholder title="What Off Grid has learned" description="Preferences distilled from the suggestions you dismiss, fed back to your assistant so it gets sharper over time." />
-          )}
-          {isPro && (
-            <SettingsCard title="Your Pro plan" summary="Your subscription, devices, and how to cancel." delay={0.3}>
-              <ProPlanSection />
-            </SettingsCard>
-          )}
+          {/* Pro Settings sections (You / Proactive delivery / What Off Grid has
+              learned / Your Pro plan). The pro package registers the real section
+              components via the section registry; the free build shows the catalogued
+              placeholders. Slot list, order, and placeholder copy live in
+              proSettingsCatalog — core owns the inert shell, pro owns the logic. */}
+          {PRO_SETTINGS_SLOTS.map((slot) => {
+            const section = registeredSections.find((s) => s.id === slot.id);
+            if (section) {
+              const Section = section.component;
+              return <Section key={slot.id} />;
+            }
+            if (!slot.placeholder) return null;
+            return (
+              <ProPlaceholder key={slot.id} delay={slot.delay} title={slot.placeholder.title} description={slot.placeholder.description} />
+            );
+          })}
 
           {/* Data & privacy — one place to delete on-device data. */}
           <SettingsCard title="Data & privacy" summary="See and delete on-device data, per category or all at once." delay={0.42}>
