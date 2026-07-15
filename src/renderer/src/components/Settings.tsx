@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { persistToggle } from '@renderer/lib/persist-toggle';
 import { motion } from 'motion/react';
-import { LockKey, X, CheckCircle, Desktop, EnvelopeSimple, CaretDown } from '@phosphor-icons/react';
+import { LockKey, X, CheckCircle, Desktop, EnvelopeSimple, CaretDown, Clock } from '@phosphor-icons/react';
 import { cn } from '@renderer/lib/utils';
 import { ProgressiveBlur } from './ui/progressive-blur';
 import { SetupPanel } from './setup/SetupPanel';
 import { StoragePanel } from './setup/StoragePanel';
 import { DataPrivacyPanel } from './setup/DataPrivacyPanel';
+import { proSurfaceState, currentPlatform } from '../lib/pro-availability';
 
 // Collapsible Settings card: same chrome as before, but the body is hidden until
 // the user expands it (closed by default). The header shows the title always and a
@@ -52,7 +53,7 @@ function SettingsCard({
 
 // A Pro section shown (disabled) in the free build: title + description + a
 // "Pro" badge, dimmed and non-interactive.
-function ProPlaceholder({ title, description, delay = 0.18 }: { title: string; description: string; delay?: number }): React.ReactElement {
+function ProPlaceholder({ title, description, delay = 0.18, comingSoon = false }: { title: string; description: string; delay?: number; comingSoon?: boolean }): React.ReactElement {
   return (
     <motion.div
       className="relative rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6"
@@ -61,10 +62,17 @@ function ProPlaceholder({ title, description, delay = 0.18 }: { title: string; d
       transition={{ duration: 0.6, delay }}
     >
       <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-green-400">
-        <LockKey weight="bold" className="h-3 w-3" /> Pro
+        {comingSoon ? (
+          <><Clock weight="bold" className="h-3 w-3" /> Coming soon</>
+        ) : (
+          <><LockKey weight="bold" className="h-3 w-3" /> Pro</>
+        )}
       </span>
       <h3 className="mb-1 pr-28 text-base font-medium text-neutral-300">{title}</h3>
-      <p className="text-sm text-neutral-600">{description}</p>
+      <p className="text-sm text-neutral-600">
+        {description}
+        {comingSoon && <span className="mt-1 block text-neutral-500">On Windows soon - available today on macOS.</span>}
+      </p>
     </motion.div>
   );
 }
@@ -398,6 +406,9 @@ export function Settings() {
   // and are hidden in the free build.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isPro = !!(window as any).api?.isPro;
+  // Windows shows every pro section as "coming soon" rather than the real section
+  // or the upgrade lock — same single rule the nav + view-router use.
+  const proState = proSurfaceState({ isPro, platform: currentPlatform() });
   const [idName, setIdName] = useState('');
   const [idEmail, setIdEmail] = useState('');
   const [appVersion, setAppVersion] = useState('');
@@ -434,7 +445,7 @@ export function Settings() {
         </div>
         <div>
           <h2 className="text-lg font-semibold text-white">Settings</h2>
-          <p className="text-sm text-neutral-500">{isPro ? 'Who you are, what Off Grid has learned, and your devices' : 'Personalization & automation unlock with Pro'}</p>
+          <p className="text-sm text-neutral-500">{proState === 'active' ? 'Who you are, what Off Grid has learned, and your devices' : proState === 'coming-soon' ? 'Personalization & automation - coming soon on Windows' : 'Personalization & automation unlock with Pro'}</p>
         </div>
       </div>
 
@@ -456,7 +467,7 @@ export function Settings() {
           </SettingsCard>
 
           {/* Identity — who you are (Pro: foundation for the act pillar) */}
-          {isPro ? (
+          {proState === 'active' ? (
             <SettingsCard title="You" summary="Who you are, so Off Grid can attribute your messages and calendar." delay={0.15}>
               <p className="text-neutral-500 text-sm mb-4">
                 Tells Off Grid who you are - so it can tell your messages and commitments apart from everyone else&apos;s. Used to attribute action items and to make sense of your email and calendar.
@@ -467,25 +478,25 @@ export function Settings() {
               </div>
             </SettingsCard>
           ) : (
-            <ProPlaceholder delay={0.15} title="You" description="Tell Off Grid who you are so it can attribute your messages, commitments, and calendar - part of the Pro intelligence layer." />
+            <ProPlaceholder delay={0.15} comingSoon={proState === 'coming-soon'} title="You" description="Tell Off Grid who you are so it can attribute your messages, commitments, and calendar - part of the Pro intelligence layer." />
           )}
 
-          {/* Pro sections — shown but disabled in the free build. */}
-          {isPro ? (
+          {/* Pro sections — placeholder in the free build, "coming soon" on Windows. */}
+          {proState === 'active' ? (
             <SettingsCard title="Proactive delivery" summary="A morning briefing and a heads-up before each meeting." delay={0.18}>
               <ProactiveSection />
             </SettingsCard>
           ) : (
-            <ProPlaceholder title="Proactive delivery" description="A morning briefing and a heads-up before each meeting - native notifications, even when the window is closed." />
+            <ProPlaceholder comingSoon={proState === 'coming-soon'} title="Proactive delivery" description="A morning briefing and a heads-up before each meeting - native notifications, even when the window is closed." />
           )}
-          {isPro ? (
+          {proState === 'active' ? (
             <SettingsCard title="What Off Grid has learned" summary="Preferences distilled from your dismissals, fed back to the assistant." delay={0.22}>
               <SecretaryPrefs />
             </SettingsCard>
           ) : (
-            <ProPlaceholder title="What Off Grid has learned" description="Preferences distilled from the suggestions you dismiss, fed back to your assistant so it gets sharper over time." />
+            <ProPlaceholder comingSoon={proState === 'coming-soon'} title="What Off Grid has learned" description="Preferences distilled from the suggestions you dismiss, fed back to your assistant so it gets sharper over time." />
           )}
-          {isPro && (
+          {proState === 'active' && (
             <SettingsCard title="Your Pro plan" summary="Your subscription, devices, and how to cancel." delay={0.3}>
               <ProPlanSection />
             </SettingsCard>
