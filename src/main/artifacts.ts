@@ -126,3 +126,13 @@ export function deleteArtifact(id: string): boolean {
     return false;
   }
 }
+
+/** Delete every artifact scoped to a project — called when the project is deleted
+ *  so its generated images/docs don't orphan in the library. Returns the count. */
+export function deleteArtifactsForProject(projectId: string): number {
+  let n = 0;
+  for (const a of listArtifacts({ projectId })) {
+    if (deleteArtifact(a.id)) n++;
+  }
+  return n;
+}

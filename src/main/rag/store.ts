@@ -5,6 +5,7 @@
 // files and what Off Grid has seen (the KB-sources decision).
 
 import { getDB } from '../database';
+import { deleteArtifactsForProject } from '../artifacts';
 import type { VectorStore, ChunkCandidate } from '@offgrid/rag';
 import type { MediaKind, Project, RagDocument } from '@offgrid/rag';
 
@@ -250,9 +251,23 @@ export function deleteProject(id: string): void {
       db.prepare('DELETE FROM project_messages WHERE thread_id = ?').run(t.id);
     }
     db.prepare('DELETE FROM project_threads WHERE project_id = ?').run(id);
+    // Chats scoped to this project live in rag_conversations (+ rag_messages) — a
+    // DIFFERENT table from the project_threads backend above (which the live UI
+    // never writes). Without this they orphan to a now-deleted project id, still
+    // badged to a phantom project and grounding against an empty project. FKs are
+    // off (no PRAGMA foreign_keys), so delete rag_messages explicitly rather than
+    // relying on rag_messages' ON DELETE CASCADE, which never fires.
+    const convs = db.prepare('SELECT id FROM rag_conversations WHERE project_id = ?').all(id) as { id: string }[];
+    for (const c of convs) {
+      db.prepare('DELETE FROM rag_messages WHERE conversation_id = ?').run(c.id);
+    }
+    db.prepare('DELETE FROM rag_conversations WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM projects WHERE id = ?').run(id);
   });
   tx();
+  // Artifacts (generated images/docs) are files, not DB rows — clean them outside
+  // the transaction so a deleted project's artifacts don't linger in the library.
+  deleteArtifactsForProject(id);
 }
 
 export function listThreads(projectId: string): { id: string; title: string; updatedAt: string }[] {
