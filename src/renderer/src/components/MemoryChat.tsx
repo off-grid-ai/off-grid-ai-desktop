@@ -728,6 +728,11 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     // Regenerate/Resend: the user turn already exists in the thread — re-run it
     // in place instead of echoing another user bubble.
     const regen = opts?.regen ?? false;
+    // Lock the project for THIS send at send-time, like convId — every attribution
+    // below (RAG scope, saved artifacts, generated images) uses it. Reading the live
+    // `activeProjectId` at each await instead let a mid-stream project switch land
+    // this turn's output in the WRONG project (D21).
+    const projectId = activeProjectId;
     // Attachments (pasted blocks + processed files) ride along on a normal send
     // from the composer, or on a drained queue item (opts.atts) — not on
     // resend/regenerate/example.
@@ -775,7 +780,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       convId = `rag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const title = trimmed.length > 50 ? trimmed.slice(0, 47) + '...' : trimmed;
       try {
-        await window.api.createRagConversation(convId, title, activeProjectId);
+        await window.api.createRagConversation(convId, title, projectId);
         setActiveConversationId(convId);
         setOpenTabs(t => (t.includes(convId!) ? t : [...t, convId!]));
       } catch (e) {
@@ -812,9 +817,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     if (!regen) {
       for (const a of atts) {
         if (a.kind === 'image' && a.path) {
-          try { void window.api.saveArtifact({ kind: 'image', code: a.path, title: a.name, conversationId: convId, projectId: activeProjectId }); } catch { /* ignore */ }
+          try { void window.api.saveArtifact({ kind: 'image', code: a.path, title: a.name, conversationId: convId, projectId: projectId }); } catch { /* ignore */ }
         } else if (a.text) {
-          try { void window.api.saveArtifact({ kind: 'text', code: a.text, title: a.name, conversationId: convId, projectId: activeProjectId }); } catch { /* ignore */ }
+          try { void window.api.saveArtifact({ kind: 'text', code: a.text, title: a.name, conversationId: convId, projectId: projectId }); } catch { /* ignore */ }
         }
       }
     }
@@ -825,7 +830,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     // route is SUPPRESSED when the agentic tools/connectors path owns the turn:
     // there, image generation is a tool the model calls, so the renderer must not
     // pre-decide (that double decision hijacked "draw ..." away from the tool loop).
-    const agenticActive = (toolsOn || connectorsOn) && !activeProjectId;
+    const agenticActive = (toolsOn || connectorsOn) && !projectId;
     const autoImage = shouldAutoRouteImage({ mode, imageAvailable, agenticActive, text: trimmed });
     if (mode === 'image' || autoImage) {
       setImgProgress(null);
@@ -848,7 +853,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           initImage: imgInit || undefined,
           strength: imgInit ? imgStrength : undefined,
           conversationId: convId, // the turn's own conversation (activeConversationId can lag for a fresh/queued chat)
-          projectId: activeProjectId,
+          projectId: projectId,
         });
         const assistantMessage: ChatMessage = {
           id: `a-${Date.now()}`,
@@ -931,7 +936,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         // the text turn - same path as the ```image fence block below.
         if (tr?.imageRequest?.prompt && window.api.generateImage && !cancelledRef.current.has(convId)) {
           try {
-            const img = await window.api.generateImage({ prompt: tr.imageRequest.prompt, conversationId: convId, projectId: activeProjectId });
+            const img = await window.api.generateImage({ prompt: tr.imageRequest.prompt, conversationId: convId, projectId: projectId });
             setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, image: img.dataUrl, imagePath: img.path } : m)));
             try { await window.api.addRagMessage(convId, 'assistant', answer, { ...(toolCtxWithReasoning ?? {}), image: img.path }); } catch (_) { /* ignore */ }
           } catch (e) {
@@ -958,7 +963,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       activeStreamId = streamId; // expose to finally for cleanup
       streamConvRef.current.set(streamId, convId!);
       setConvMessages(convId, prev => [...prev, { id: streamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
-      const result = await window.api.ragChat(modelQuery, 'All', history, activeProjectId, convId, noMemory && !activeProjectId, streamId, thinkingEnabled, imagePaths);
+      const result = await window.api.ragChat(modelQuery, 'All', history, projectId, convId, noMemory && !projectId, streamId, thinkingEnabled, imagePaths);
 
       // Stopped mid-stream: the abort keeps whatever streamed so far. Finalize the
       // partial text if any arrived; otherwise drop the empty placeholder. Never write
@@ -982,7 +987,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         const imgPrompt = imgMatch[1]!.trim();
         setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: 'Generating image…', reasoning: undefined, streaming: false } : m)));
         try {
-          const img = await window.api.generateImage({ prompt: imgPrompt, conversationId: convId, projectId: activeProjectId });
+          const img = await window.api.generateImage({ prompt: imgPrompt, conversationId: convId, projectId: projectId });
           setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: `Generated: ${imgPrompt.slice(0, 80)}`, image: img.dataUrl, imagePath: img.path } : m)));
           try { await window.api.addRagMessage(convId, 'assistant', `Generated: ${imgPrompt.slice(0, 80)}`, { image: img.path }); } catch (_) { /* ignore */ }
         } catch (err) {
@@ -1009,7 +1014,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           // Inline-first: don't force the canvas open — the user opens the live
           // preview via the artifact card when they want it. Still save it, scoped
           // to this chat + project so the gallery can filter.
-          try { void window.api.saveArtifact({ kind: art.kind, code: art.code, conversationId: convId, projectId: activeProjectId }); } catch { /* ignore */ }
+          try { void window.api.saveArtifact({ kind: art.kind, code: art.code, conversationId: convId, projectId: projectId }); } catch { /* ignore */ }
         }
         if (voiceMode) setAutoPlayId(streamId);
         try {
