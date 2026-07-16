@@ -37,6 +37,7 @@ export function queuedCount(byConv: Record<string, unknown[]>, convId: string | 
  *  touching other conversations' queues. Immutable. */
 export function clearQueue<T>(byConv: Record<string, T[]>, convId: string): Record<string, T[]> {
   if (!(convId in byConv)) return byConv
-  const { [convId]: _dropped, ...rest } = byConv
-  return rest
+  const next = { ...byConv }
+  delete next[convId]
+  return next
 }

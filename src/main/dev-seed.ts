@@ -295,7 +295,7 @@ export async function seedDemo(live = false): Promise<void> {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .slice(0, 28)
-    let models = live
+    const models = live
       ? listImageModels().filter((m) => /\.(gguf|safetensors)$/i.test(m) && !/^ae\./i.test(m))
       : []
     let madeAny = false

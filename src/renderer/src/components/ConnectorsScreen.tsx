@@ -402,8 +402,8 @@ export function ConnectorsScreen() {
                 </div>
                 {dNotReady && (
                   <p className="text-[11px] text-neutral-500">
-                    This integration isn't verified yet — connect/test/sync are disabled. You can
-                    remove this entry.
+                    This integration isn&apos;t verified yet — connect/test/sync are disabled. You
+                    can remove this entry.
                   </p>
                 )}
                 {!dNotReady && detail.status === 'error' && detail.status_detail && (

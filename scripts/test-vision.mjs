@@ -127,7 +127,9 @@ async function waitForServer(port) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/health`)
       if (res.ok) return
-    } catch {}
+    } catch {
+      // Server is still starting.
+    }
     await new Promise((r) => setTimeout(r, 500))
   }
   throw new Error('Timeout waiting for server')

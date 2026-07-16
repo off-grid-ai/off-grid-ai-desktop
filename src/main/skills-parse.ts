@@ -58,7 +58,7 @@ export function parseSkill(md: string, fallbackName: string): Skill {
   let triggerConfig = ''
   let action = ''
   let connectors = true
-  const fm = /^﻿?---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/.exec(md)
+  const fm = /^\uFEFF?---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/.exec(md)
   if (fm) {
     // fm matched a 2-group pattern, so groups 1 and 2 are always present.
     body = fm[2]!

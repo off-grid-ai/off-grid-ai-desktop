@@ -964,6 +964,9 @@ export class LLMService {
     this.initialized = false
     this.resolveModel()
     await this.init()
+    // init() mutates `initialized` across an await; TypeScript cannot observe that
+    // mutation and incorrectly treats this runtime failure guard as redundant.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!this.initialized)
       throw new Error('Server did not come back up — check the model is downloaded')
   }

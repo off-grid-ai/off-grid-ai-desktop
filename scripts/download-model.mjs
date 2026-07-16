@@ -1,10 +1,7 @@
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import https from 'https'
 import os from 'os'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // Model storage location - user's app support directory
 function getModelsDir() {

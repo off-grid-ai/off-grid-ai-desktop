@@ -6,7 +6,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { execSync } from 'child_process'
-import type { ClipboardBridge, ClipboardItem, ClipboardRead, ContentType } from '../types'
+import type { ClipboardBridge, ClipboardItem, ClipboardRead } from '../types'
 
 /** Minimal shape of Electron's nativeImage instances we use. */
 interface ElectronImage {

@@ -1225,7 +1225,7 @@ export function MemoryChat({
           await window.api.addRagMessage(convId, 'assistant', `Generated for: ${trimmed}`, {
             image: img.path
           })
-        } catch (_) {
+        } catch {
           /* ignore */
         }
       } catch (e) {
@@ -1239,7 +1239,7 @@ export function MemoryChat({
           ])
           try {
             await window.api.addRagMessage(convId, 'assistant', errorContent)
-          } catch (_) {
+          } catch {
             /* ignore */
           }
         }
@@ -1359,7 +1359,7 @@ export function MemoryChat({
                 ...(toolCtxWithReasoning ?? {}),
                 image: img.path
               })
-            } catch (_) {
+            } catch {
               /* ignore */
             }
           } catch (e) {
@@ -1370,7 +1370,7 @@ export function MemoryChat({
             void e
             try {
               await window.api.addRagMessage(convId, 'assistant', answer, toolCtxWithReasoning)
-            } catch (_) {
+            } catch {
               /* ignore */
             }
           }
@@ -1378,7 +1378,7 @@ export function MemoryChat({
         }
         try {
           await window.api.addRagMessage(convId, 'assistant', answer, toolCtxWithReasoning)
-        } catch (_) {
+        } catch {
           /* ignore */
         }
         return
@@ -1471,7 +1471,7 @@ export function MemoryChat({
               `Generated: ${imgPrompt.slice(0, 80)}`,
               { image: img.path }
             )
-          } catch (_) {
+          } catch {
             /* ignore */
           }
         } catch (err) {
@@ -1560,7 +1560,7 @@ export function MemoryChat({
       })
       try {
         await window.api.addRagMessage(convId, 'assistant', errorContent)
-      } catch (_) {
+      } catch {
         /* ignore */
       }
     } finally {

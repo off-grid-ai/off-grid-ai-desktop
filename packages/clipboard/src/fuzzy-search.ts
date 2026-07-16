@@ -104,7 +104,7 @@ function findBestMatch(pattern: string, text: string): FuzzyMatchResult | null {
 }
 
 function isWordBoundary(char: string): boolean {
-  return /[\s\-_.,;:!?()[\]{}'"\/\\]/.test(char)
+  return /[\s\-_.,;:!?()[\]{}'"/\\]/.test(char)
 }
 
 function isUpperCase(char: string): boolean {

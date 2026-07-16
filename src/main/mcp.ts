@@ -302,7 +302,7 @@ export async function fetchTools(
       () => reject(new Error(`listing tools for ${c.name} timed out`)),
       FETCH_TOOLS_TIMEOUT_MS
     )
-    timer.unref?.()
+    timer.unref()
   })
   try {
     return await Promise.race([op, timeout])

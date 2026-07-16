@@ -243,13 +243,26 @@ export function updateProject(
   const db = getDB()
   const sets: string[] = []
   const args: unknown[] = []
-  if (patch.name !== undefined) (sets.push('name = ?'), args.push(patch.name))
-  if (patch.description !== undefined) (sets.push('description = ?'), args.push(patch.description))
-  if (patch.systemPrompt !== undefined)
-    (sets.push('system_prompt = ?'), args.push(patch.systemPrompt))
-  if (patch.icon !== undefined) (sets.push('icon = ?'), args.push(patch.icon))
-  if (patch.includeMemory !== undefined)
-    (sets.push('include_memory = ?'), args.push(patch.includeMemory ? 1 : 0))
+  if (patch.name !== undefined) {
+    sets.push('name = ?')
+    args.push(patch.name)
+  }
+  if (patch.description !== undefined) {
+    sets.push('description = ?')
+    args.push(patch.description)
+  }
+  if (patch.systemPrompt !== undefined) {
+    sets.push('system_prompt = ?')
+    args.push(patch.systemPrompt)
+  }
+  if (patch.icon !== undefined) {
+    sets.push('icon = ?')
+    args.push(patch.icon)
+  }
+  if (patch.includeMemory !== undefined) {
+    sets.push('include_memory = ?')
+    args.push(patch.includeMemory ? 1 : 0)
+  }
   if (!sets.length) return
   sets.push("updated_at = datetime('now')")
   args.push(id)

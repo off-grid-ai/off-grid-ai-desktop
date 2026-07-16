@@ -30,6 +30,9 @@ export async function pumpToFile(
   })
   try {
     for (;;) {
+      // The stream error callback mutates writeErr asynchronously; TypeScript
+      // cannot observe that mutation inside this loop.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (writeErr) throw writeErr
       const { done, value } = await reader.read()
       if (done || !value) break

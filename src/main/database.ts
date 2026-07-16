@@ -68,7 +68,7 @@ function cosineSimilarity(v1Str: string, v2Str: string): number {
 
     if (normA === 0 || normB === 0) return 0
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB))
-  } catch (e) {
+  } catch {
     return 0
   }
 }
@@ -329,21 +329,21 @@ export function getDB(): Database.Database {
     db.exec("INSERT INTO summary_fts(summary_fts) VALUES('rebuild')")
     db.exec("INSERT INTO entity_fts(entity_fts) VALUES('rebuild')")
     db.exec("INSERT INTO entity_fact_fts(entity_fact_fts) VALUES('rebuild')")
-  } catch (e) {
+  } catch {
     // Ignore rebuild errors
   }
 
   // Migration: Add timestamp column to messages if it doesn't exist
   try {
     db.exec(`ALTER TABLE messages ADD COLUMN timestamp TEXT`)
-  } catch (e) {
+  } catch {
     // Column already exists, ignore
   }
 
   // Migration: Add message_id column to memories if it doesn't exist
   try {
     db.exec(`ALTER TABLE memories ADD COLUMN message_id INTEGER`)
-  } catch (e) {
+  } catch {
     // Column already exists, ignore
   }
 
@@ -352,14 +352,14 @@ export function getDB(): Database.Database {
   // Migration: Add name column to memories if it doesn't exist
   try {
     db.exec(`ALTER TABLE memories ADD COLUMN name TEXT`)
-  } catch (e) {
+  } catch {
     // Column already exists, ignore
   }
 
   // Migration: Add project_id to rag_conversations (chats can be scoped to a project)
   try {
     db.exec(`ALTER TABLE rag_conversations ADD COLUMN project_id TEXT`)
-  } catch (e) {
+  } catch {
     // Column already exists, ignore
   }
 

@@ -14,43 +14,6 @@
 import type { MediaKind } from './types'
 import type { ExtractionBridges } from './bridges'
 
-const TEXT_EXT = new Set([
-  'txt',
-  'md',
-  'markdown',
-  'csv',
-  'json',
-  'xml',
-  'html',
-  'htm',
-  'log',
-  'rtf',
-  'py',
-  'js',
-  'ts',
-  'tsx',
-  'jsx',
-  'java',
-  'c',
-  'cpp',
-  'h',
-  'hpp',
-  'cs',
-  'swift',
-  'kt',
-  'go',
-  'rs',
-  'rb',
-  'php',
-  'sql',
-  'sh',
-  'yaml',
-  'yml',
-  'toml',
-  'ini',
-  'cfg',
-  'conf'
-])
 const AUDIO_EXT = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wma'])
 const VIDEO_EXT = new Set(['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v', 'mpg', 'mpeg'])
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'heic'])
