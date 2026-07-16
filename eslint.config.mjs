@@ -66,12 +66,38 @@ const sonarProWarn = {
   }
 }
 
+// Wednesday-solutions gold-standard structural + style rules (CLAUDE.md "Pending hygiene
+// adoption", part 2), introduced at WARN as a RATCHET: many current files exceed the caps
+// (MemoryChat ~2.6k lines, ipc.ts ~1.7k, …), so failing the build on them now would be
+// pointless noise. They surface as warnings and tighten to `error` as the god-files
+// decompose — never loosened to pass. `complexity` starts loose (15) per CLAUDE.md and
+// ratchets toward the gold standard (5). Product code only; tests are exempt (intentionally
+// explicit/repetitive). Formatting is prettier's job (eslintConfigPrettier), not these.
+const goldStandardRatchet = {
+  name: 'wednesday gold-standard (warn ratchet)',
+  files: ['src/**/*.{ts,tsx}', 'pro/**/*.{ts,tsx}'],
+  ignores: ['**/*.{test,spec,dbtest}.{ts,tsx}', '**/__tests__/**', '**/*.d.ts'],
+  rules: {
+    curly: ['warn', 'all'],
+    'no-else-return': 'warn',
+    'no-empty': 'warn',
+    'prefer-template': 'warn',
+    'no-console': ['warn', { allow: ['error', 'warn'] }],
+    'max-params': ['warn', 3],
+    complexity: ['warn', 15],
+    'max-lines-per-function': ['warn', 250],
+    'max-lines': ['warn', 350],
+    '@typescript-eslint/no-shadow': 'warn'
+  }
+}
+
 export default defineConfig(
   { ignores: ['**/node_modules', '**/dist', '**/out'] },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],
   sonarProWarn,
+  goldStandardRatchet,
   typedDeadBranchWarn,
   {
     settings: {
