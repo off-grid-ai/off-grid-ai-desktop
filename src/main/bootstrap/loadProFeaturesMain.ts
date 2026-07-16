@@ -8,6 +8,7 @@ import { llm } from '../llm'
 import { registerHook } from './hookRegistry'
 import { registerToolExtension } from '../tools'
 import { isProEntitled } from '../licensing/license-service'
+import { getForcedProActivation } from './pro-activation'
 
 // What the pro main entry receives. Pro registers IPC handlers + intervals +
 // tool extensions itself, using these core helpers (no core→pro imports).
@@ -25,10 +26,7 @@ export interface ProMainApi {
  *    OFFGRID_PRO=1 → force pro on without a license (working on pro features),
  *    unset/other   → license-gated (the real paid path; see license-service). */
 export function proEnabled(): boolean {
-  if (!__OFFGRID_PRO__) return false // free / core build — no pro code bundled
-  if (process.env.OFFGRID_PRO === '0') return false
-  if (process.env.OFFGRID_PRO === '1') return true
-  return isProEntitled()
+  return getForcedProActivation(__OFFGRID_PRO__, process.env.OFFGRID_PRO) ?? isProEntitled()
 }
 
 export async function loadProFeaturesMain(): Promise<void> {

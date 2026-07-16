@@ -1,73 +1,22 @@
-/**
- * Unit tests for proEnabled() — the gate deciding whether pro main-process features
- * activate. High blast radius: it decides free vs pro for the whole main process.
- *
- * Contract (per source):
- *   - __OFFGRID_PRO__ false (core build, no pro code bundled) → always false
- *   - OFFGRID_PRO === '0' → force free  (false)
- *   - OFFGRID_PRO === '1' → force pro   (true)
- *   - unset / any other value → delegate to isProEntitled()
- *
- * The dynamic-import loader body (loadProFeaturesMain) is untested shell. The module's
- * IO collaborators are mocked so the import doesn't pull Electron/DB into the unit run;
- * only isProEntitled matters here and its return is controlled per case.
- */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { getForcedProActivation } from '../pro-activation'
 
-const isProEntitled = vi.fn()
-
-// Mock every IO collaborator the module imports so loading it stays Electron-free.
-vi.mock('../../licensing/license-service', () => ({ isProEntitled: () => isProEntitled() }))
-vi.mock('../../database', () => ({ getDB: vi.fn(), runMigration: vi.fn() }))
-vi.mock('../../llm', () => ({ llm: {} }))
-vi.mock('../../tools', () => ({ registerToolExtension: vi.fn() }))
-vi.mock('../hookRegistry', () => ({ registerHook: vi.fn() }))
-
-import { proEnabled } from '../loadProFeaturesMain'
-
-describe('proEnabled', () => {
-  beforeEach(() => {
-    isProEntitled.mockReset()
-    // Pro code is bundled in this test build; the free-build branch (__OFFGRID_PRO__
-    // false) is a compile-time define we can't flip at runtime without a re-import.
-    vi.stubGlobal('__OFFGRID_PRO__', true)
+describe('getForcedProActivation', () => {
+  it('always disables pro when the private package is not bundled', () => {
+    expect(getForcedProActivation(false, undefined)).toBe(false)
+    expect(getForcedProActivation(false, '1')).toBe(false)
   })
 
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
+  it('forces free mode when OFFGRID_PRO is 0', () => {
+    expect(getForcedProActivation(true, '0')).toBe(false)
   })
 
-  it('OFFGRID_PRO="0" forces free (false) without consulting the license', () => {
-    vi.stubEnv('OFFGRID_PRO', '0')
-    expect(proEnabled()).toBe(false)
-    expect(isProEntitled).not.toHaveBeenCalled()
+  it('forces pro mode when OFFGRID_PRO is 1', () => {
+    expect(getForcedProActivation(true, '1')).toBe(true)
   })
 
-  it('OFFGRID_PRO="1" forces pro (true) without consulting the license', () => {
-    vi.stubEnv('OFFGRID_PRO', '1')
-    expect(proEnabled()).toBe(true)
-    expect(isProEntitled).not.toHaveBeenCalled()
-  })
-
-  it('unset env delegates to isProEntitled — true path', () => {
-    vi.stubEnv('OFFGRID_PRO', undefined as unknown as string)
-    isProEntitled.mockReturnValue(true)
-    expect(proEnabled()).toBe(true)
-    expect(isProEntitled).toHaveBeenCalledTimes(1)
-  })
-
-  it('unset env delegates to isProEntitled — false path', () => {
-    vi.stubEnv('OFFGRID_PRO', undefined as unknown as string)
-    isProEntitled.mockReturnValue(false)
-    expect(proEnabled()).toBe(false)
-    expect(isProEntitled).toHaveBeenCalledTimes(1)
-  })
-
-  it('any other value (e.g. "yes") also delegates to isProEntitled', () => {
-    vi.stubEnv('OFFGRID_PRO', 'yes')
-    isProEntitled.mockReturnValue(true)
-    expect(proEnabled()).toBe(true)
-    expect(isProEntitled).toHaveBeenCalledTimes(1)
+  it('defers to license entitlement when no recognized override exists', () => {
+    expect(getForcedProActivation(true, undefined)).toBeUndefined()
+    expect(getForcedProActivation(true, 'yes')).toBeUndefined()
   })
 })
