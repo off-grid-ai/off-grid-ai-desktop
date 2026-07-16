@@ -118,7 +118,8 @@ async function extractContent(path, fileName, bridges, opts = {}) {
       text = await bridges.extractPdf(path, maxChars);
       break;
     case "docx":
-      if (!bridges.extractDocx) throw new Error("DOCX extraction is not available on this platform.");
+      if (!bridges.extractDocx)
+        throw new Error("DOCX extraction is not available on this platform.");
       text = await bridges.extractDocx(path, maxChars);
       break;
     case "audio":

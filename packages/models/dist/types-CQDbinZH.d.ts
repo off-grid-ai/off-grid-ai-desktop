@@ -111,4 +111,4 @@ interface ModelStore {
     remove(modelId: string): void;
 }
 
-export { type DownloadBridge as D, type ImageGenMode as I, type ModelEntry as M, type ModelKind as a, type ModelRecommendationTier as b, type ModelStore as c, type DownloadProgress as d, type DownloadStatus as e, type ImageGenProvider as f, type ImageGenRequest as g, type ImageGenResult as h, type ModelFile as i, supportsMode as s, validateImageGenRequest as v };
+export { type DownloadBridge as D, type ImageGenMode as I, type ModelEntry as M, type ModelKind as a, type ModelRecommendationTier as b, type ModelStore as c, type DownloadProgress as d, type ImageGenRequest as e, type ImageGenResult as f, type ImageGenProvider as g, type ModelFile as h, type DownloadStatus as i, supportsMode as s, validateImageGenRequest as v };

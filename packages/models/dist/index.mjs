@@ -25,7 +25,14 @@ var CATALOG = [
     minRamGb: 3,
     quant: "Q4_K_M",
     releaseDate: "2026-03-01",
-    files: [{ name: "Qwen3.5-0.8B-Q4_K_M.gguf", url: resolve("unsloth/Qwen3.5-0.8B-GGUF", "Qwen3.5-0.8B-Q4_K_M.gguf"), sizeBytes: 53e7, role: "primary" }]
+    files: [
+      {
+        name: "Qwen3.5-0.8B-Q4_K_M.gguf",
+        url: resolve("unsloth/Qwen3.5-0.8B-GGUF", "Qwen3.5-0.8B-Q4_K_M.gguf"),
+        sizeBytes: 53e7,
+        role: "primary"
+      }
+    ]
   },
   {
     id: "unsloth/Qwen3.5-2B-GGUF",
@@ -37,7 +44,14 @@ var CATALOG = [
     minRamGb: 4,
     quant: "Q4_K_M",
     releaseDate: "2026-02-28",
-    files: [{ name: "Qwen3.5-2B-Q4_K_M.gguf", url: resolve("unsloth/Qwen3.5-2B-GGUF", "Qwen3.5-2B-Q4_K_M.gguf"), sizeBytes: 128e7, role: "primary" }]
+    files: [
+      {
+        name: "Qwen3.5-2B-Q4_K_M.gguf",
+        url: resolve("unsloth/Qwen3.5-2B-GGUF", "Qwen3.5-2B-Q4_K_M.gguf"),
+        sizeBytes: 128e7,
+        role: "primary"
+      }
+    ]
   },
   {
     id: "unsloth/Qwen3.5-4B-GGUF",
@@ -50,7 +64,14 @@ var CATALOG = [
     quant: "Q4_K_M",
     tags: ["Challenger"],
     releaseDate: "2026-03-02",
-    files: [{ name: "Qwen3.5-4B-Q4_K_M.gguf", url: resolve("unsloth/Qwen3.5-4B-GGUF", "Qwen3.5-4B-Q4_K_M.gguf"), sizeBytes: 274e7, role: "primary" }]
+    files: [
+      {
+        name: "Qwen3.5-4B-Q4_K_M.gguf",
+        url: resolve("unsloth/Qwen3.5-4B-GGUF", "Qwen3.5-4B-Q4_K_M.gguf"),
+        sizeBytes: 274e7,
+        role: "primary"
+      }
+    ]
   },
   {
     id: "unsloth/Qwen3.5-9B-GGUF",
@@ -63,7 +84,14 @@ var CATALOG = [
     quant: "Q4_K_M",
     tags: ["Challenger"],
     releaseDate: "2026-02-28",
-    files: [{ name: "Qwen3.5-9B-Q4_K_M.gguf", url: resolve("unsloth/Qwen3.5-9B-GGUF", "Qwen3.5-9B-Q4_K_M.gguf"), sizeBytes: 568e7, role: "primary" }]
+    files: [
+      {
+        name: "Qwen3.5-9B-Q4_K_M.gguf",
+        url: resolve("unsloth/Qwen3.5-9B-GGUF", "Qwen3.5-9B-Q4_K_M.gguf"),
+        sizeBytes: 568e7,
+        role: "primary"
+      }
+    ]
   },
   {
     id: "unsloth/Qwen3.5-27B-GGUF",
@@ -75,7 +103,14 @@ var CATALOG = [
     minRamGb: 24,
     quant: "Q4_K_M",
     releaseDate: "2026-02-24",
-    files: [{ name: "Qwen3.5-27B-Q4_K_M.gguf", url: resolve("unsloth/Qwen3.5-27B-GGUF", "Qwen3.5-27B-Q4_K_M.gguf"), sizeBytes: 1674e7, role: "primary" }]
+    files: [
+      {
+        name: "Qwen3.5-27B-Q4_K_M.gguf",
+        url: resolve("unsloth/Qwen3.5-27B-GGUF", "Qwen3.5-27B-Q4_K_M.gguf"),
+        sizeBytes: 1674e7,
+        role: "primary"
+      }
+    ]
   },
   {
     id: "unsloth/gemma-4-E2B-it-GGUF",
@@ -87,7 +122,14 @@ var CATALOG = [
     minRamGb: 5,
     quant: "Q4_K_M",
     releaseDate: "2026-04-01",
-    files: [{ name: "gemma-4-E2B-it-Q4_K_M.gguf", url: resolve("unsloth/gemma-4-E2B-it-GGUF", "gemma-4-E2B-it-Q4_K_M.gguf"), sizeBytes: 311e7, role: "primary" }]
+    files: [
+      {
+        name: "gemma-4-E2B-it-Q4_K_M.gguf",
+        url: resolve("unsloth/gemma-4-E2B-it-GGUF", "gemma-4-E2B-it-Q4_K_M.gguf"),
+        sizeBytes: 311e7,
+        role: "primary"
+      }
+    ]
   },
   {
     id: "unsloth/gemma-4-12b-it-GGUF",
@@ -100,7 +142,14 @@ var CATALOG = [
     quant: "Q4_K_M",
     tags: ["Challenger"],
     releaseDate: "2026-05-29",
-    files: [{ name: "gemma-4-12b-it-Q4_K_M.gguf", url: resolve("unsloth/gemma-4-12b-it-GGUF", "gemma-4-12b-it-Q4_K_M.gguf"), sizeBytes: 712e7, role: "primary" }]
+    files: [
+      {
+        name: "gemma-4-12b-it-Q4_K_M.gguf",
+        url: resolve("unsloth/gemma-4-12b-it-GGUF", "gemma-4-12b-it-Q4_K_M.gguf"),
+        sizeBytes: 712e7,
+        role: "primary"
+      }
+    ]
   },
   {
     id: "unsloth/gemma-4-26B-A4B-it-GGUF",
@@ -113,7 +162,14 @@ var CATALOG = [
     quant: "Q4_K_M",
     tags: ["Challenger"],
     releaseDate: "2026-04-01",
-    files: [{ name: "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf", url: resolve("unsloth/gemma-4-26B-A4B-it-GGUF", "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"), sizeBytes: 1695e7, role: "primary" }]
+    files: [
+      {
+        name: "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf",
+        url: resolve("unsloth/gemma-4-26B-A4B-it-GGUF", "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"),
+        sizeBytes: 1695e7,
+        role: "primary"
+      }
+    ]
   },
   {
     id: "unsloth/gemma-4-31B-it-GGUF",
@@ -125,7 +181,14 @@ var CATALOG = [
     minRamGb: 24,
     quant: "Q4_K_M",
     releaseDate: "2026-04-01",
-    files: [{ name: "gemma-4-31B-it-Q4_K_M.gguf", url: resolve("unsloth/gemma-4-31B-it-GGUF", "gemma-4-31B-it-Q4_K_M.gguf"), sizeBytes: 1832e7, role: "primary" }]
+    files: [
+      {
+        name: "gemma-4-31B-it-Q4_K_M.gguf",
+        url: resolve("unsloth/gemma-4-31B-it-GGUF", "gemma-4-31B-it-Q4_K_M.gguf"),
+        sizeBytes: 1832e7,
+        role: "primary"
+      }
+    ]
   },
   // --- vision (multimodal LLM) ---
   {
@@ -140,8 +203,18 @@ var CATALOG = [
     tags: ["Challenger"],
     releaseDate: "2026-04-01",
     files: [
-      { name: "gemma-4-E4B-it-Q4_K_M.gguf", url: resolve("unsloth/gemma-4-E4B-it-GGUF", "gemma-4-E4B-it-Q4_K_M.gguf"), sizeBytes: 498e7, role: "primary" },
-      { name: "mmproj-gemma-4-E4B-it-F16.gguf", url: resolve("unsloth/gemma-4-E4B-it-GGUF", "mmproj-F16.gguf"), sizeBytes: 99e7, role: "mmproj" }
+      {
+        name: "gemma-4-E4B-it-Q4_K_M.gguf",
+        url: resolve("unsloth/gemma-4-E4B-it-GGUF", "gemma-4-E4B-it-Q4_K_M.gguf"),
+        sizeBytes: 498e7,
+        role: "primary"
+      },
+      {
+        name: "mmproj-gemma-4-E4B-it-F16.gguf",
+        url: resolve("unsloth/gemma-4-E4B-it-GGUF", "mmproj-F16.gguf"),
+        sizeBytes: 99e7,
+        role: "mmproj"
+      }
     ]
   },
   {
@@ -155,8 +228,21 @@ var CATALOG = [
     quant: "Q4_K_M",
     releaseDate: "2025-04-21",
     files: [
-      { name: "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf", url: resolve("ggml-org/SmolVLM2-2.2B-Instruct-GGUF", "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf"), sizeBytes: 111e7, role: "primary" },
-      { name: "mmproj-SmolVLM2-2.2B-Instruct-f16.gguf", url: resolve("ggml-org/SmolVLM2-2.2B-Instruct-GGUF", "mmproj-SmolVLM2-2.2B-Instruct-f16.gguf"), sizeBytes: 87e7, role: "mmproj" }
+      {
+        name: "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
+        url: resolve("ggml-org/SmolVLM2-2.2B-Instruct-GGUF", "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf"),
+        sizeBytes: 111e7,
+        role: "primary"
+      },
+      {
+        name: "mmproj-SmolVLM2-2.2B-Instruct-f16.gguf",
+        url: resolve(
+          "ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
+          "mmproj-SmolVLM2-2.2B-Instruct-f16.gguf"
+        ),
+        sizeBytes: 87e7,
+        role: "mmproj"
+      }
     ]
   },
   {
@@ -170,8 +256,18 @@ var CATALOG = [
     quant: "Q4_K_M",
     releaseDate: "2025-10-30",
     files: [
-      { name: "Qwen3-VL-2B-Instruct-Q4_K_M.gguf", url: resolve("unsloth/Qwen3-VL-2B-Instruct-GGUF", "Qwen3-VL-2B-Instruct-Q4_K_M.gguf"), sizeBytes: 111e7, role: "primary" },
-      { name: "mmproj-Qwen3-VL-2B-Instruct-F16.gguf", url: resolve("unsloth/Qwen3-VL-2B-Instruct-GGUF", "mmproj-BF16.gguf"), sizeBytes: 82e7, role: "mmproj" }
+      {
+        name: "Qwen3-VL-2B-Instruct-Q4_K_M.gguf",
+        url: resolve("unsloth/Qwen3-VL-2B-Instruct-GGUF", "Qwen3-VL-2B-Instruct-Q4_K_M.gguf"),
+        sizeBytes: 111e7,
+        role: "primary"
+      },
+      {
+        name: "mmproj-Qwen3-VL-2B-Instruct-F16.gguf",
+        url: resolve("unsloth/Qwen3-VL-2B-Instruct-GGUF", "mmproj-BF16.gguf"),
+        sizeBytes: 82e7,
+        role: "mmproj"
+      }
     ]
   },
   {
@@ -185,8 +281,18 @@ var CATALOG = [
     quant: "Q4_K_M",
     releaseDate: "2025-10-30",
     files: [
-      { name: "Qwen3-VL-8B-Instruct-Q4_K_M.gguf", url: resolve("unsloth/Qwen3-VL-8B-Instruct-GGUF", "Qwen3-VL-8B-Instruct-Q4_K_M.gguf"), sizeBytes: 503e7, role: "primary" },
-      { name: "mmproj-Qwen3-VL-8B-Instruct-F16.gguf", url: resolve("unsloth/Qwen3-VL-8B-Instruct-GGUF", "mmproj-BF16.gguf"), sizeBytes: 116e7, role: "mmproj" }
+      {
+        name: "Qwen3-VL-8B-Instruct-Q4_K_M.gguf",
+        url: resolve("unsloth/Qwen3-VL-8B-Instruct-GGUF", "Qwen3-VL-8B-Instruct-Q4_K_M.gguf"),
+        sizeBytes: 503e7,
+        role: "primary"
+      },
+      {
+        name: "mmproj-Qwen3-VL-8B-Instruct-F16.gguf",
+        url: resolve("unsloth/Qwen3-VL-8B-Instruct-GGUF", "mmproj-BF16.gguf"),
+        sizeBytes: 116e7,
+        role: "mmproj"
+      }
     ]
   },
   // --- image generation — 2026 / fast few-step models only (open weight) ---
@@ -257,7 +363,12 @@ var CATALOG = [
     minRamGb: 8,
     imageModes: ["txt2img", "img2img"],
     files: [
-      { name: "sd_xl_turbo_1.0.q8_0.gguf", url: resolve("OlegSkutte/sdxl-turbo-GGUF", "sd_xl_turbo_1.0.q8_0.gguf"), role: "primary", sizeBytes: 41e8 }
+      {
+        name: "sd_xl_turbo_1.0.q8_0.gguf",
+        url: resolve("OlegSkutte/sdxl-turbo-GGUF", "sd_xl_turbo_1.0.q8_0.gguf"),
+        role: "primary",
+        sizeBytes: 41e8
+      }
     ]
   },
   // SDXL finetunes — Off Grid GGUF builds (q8). The community GGUF quants of these
@@ -274,7 +385,14 @@ var CATALOG = [
     quant: "Q8_0",
     releaseDate: "2024-08-05",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "realvisxl-v5.0-Q8_0.gguf", url: resolve("offgrid-ai/realvisxl-v5.0-GGUF", "realvisxl-v5.0-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
+    files: [
+      {
+        name: "realvisxl-v5.0-Q8_0.gguf",
+        url: resolve("offgrid-ai/realvisxl-v5.0-GGUF", "realvisxl-v5.0-Q8_0.gguf"),
+        role: "primary",
+        sizeBytes: 418e7
+      }
+    ]
   },
   {
     // Light (Q4_K) sibling — ~35% less memory, runs on a 16GB Mac. Tagged 'Light'
@@ -289,7 +407,14 @@ var CATALOG = [
     quant: "Q4_K",
     releaseDate: "2024-08-05",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "realvisxl-v5.0-Q4_K.gguf", url: resolve("offgrid-ai/realvisxl-v5.0-GGUF", "realvisxl-v5.0-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
+    files: [
+      {
+        name: "realvisxl-v5.0-Q4_K.gguf",
+        url: resolve("offgrid-ai/realvisxl-v5.0-GGUF", "realvisxl-v5.0-Q4_K.gguf"),
+        role: "primary",
+        sizeBytes: 28e8
+      }
+    ]
   },
   {
     id: "offgrid-ai/realvisxl-v5.0-lightning-GGUF",
@@ -304,7 +429,17 @@ var CATALOG = [
     quant: "Q8_0",
     releaseDate: "2024-09-02",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "realvisxl-v5.0-lightning-Q8_0.gguf", url: resolve("offgrid-ai/realvisxl-v5.0-lightning-GGUF", "realvisxl-v5.0-lightning-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
+    files: [
+      {
+        name: "realvisxl-v5.0-lightning-Q8_0.gguf",
+        url: resolve(
+          "offgrid-ai/realvisxl-v5.0-lightning-GGUF",
+          "realvisxl-v5.0-lightning-Q8_0.gguf"
+        ),
+        role: "primary",
+        sizeBytes: 418e7
+      }
+    ]
   },
   {
     // Light (Q4_K) sibling — few-step photoreal, ~35% less memory, 16GB-friendly.
@@ -318,7 +453,17 @@ var CATALOG = [
     quant: "Q4_K",
     releaseDate: "2024-09-02",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "realvisxl-v5.0-lightning-Q4_K.gguf", url: resolve("offgrid-ai/realvisxl-v5.0-lightning-GGUF", "realvisxl-v5.0-lightning-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
+    files: [
+      {
+        name: "realvisxl-v5.0-lightning-Q4_K.gguf",
+        url: resolve(
+          "offgrid-ai/realvisxl-v5.0-lightning-GGUF",
+          "realvisxl-v5.0-lightning-Q4_K.gguf"
+        ),
+        role: "primary",
+        sizeBytes: 28e8
+      }
+    ]
   },
   {
     id: "offgrid-ai/dreamshaper-xl-v2-turbo-GGUF",
@@ -333,7 +478,17 @@ var CATALOG = [
     quant: "Q8_0",
     releaseDate: "2024-02-07",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "dreamshaper-xl-v2-turbo-Q8_0.gguf", url: resolve("offgrid-ai/dreamshaper-xl-v2-turbo-GGUF", "dreamshaper-xl-v2-turbo-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
+    files: [
+      {
+        name: "dreamshaper-xl-v2-turbo-Q8_0.gguf",
+        url: resolve(
+          "offgrid-ai/dreamshaper-xl-v2-turbo-GGUF",
+          "dreamshaper-xl-v2-turbo-Q8_0.gguf"
+        ),
+        role: "primary",
+        sizeBytes: 418e7
+      }
+    ]
   },
   {
     // Lighter Q4_K quant of the same distilled turbo model — ~35% less memory
@@ -351,7 +506,17 @@ var CATALOG = [
     quant: "Q4_K",
     releaseDate: "2024-02-07",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "dreamshaper-xl-v2-turbo-Q4_K.gguf", url: resolve("offgrid-ai/dreamshaper-xl-v2-turbo-GGUF", "dreamshaper-xl-v2-turbo-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
+    files: [
+      {
+        name: "dreamshaper-xl-v2-turbo-Q4_K.gguf",
+        url: resolve(
+          "offgrid-ai/dreamshaper-xl-v2-turbo-GGUF",
+          "dreamshaper-xl-v2-turbo-Q4_K.gguf"
+        ),
+        role: "primary",
+        sizeBytes: 28e8
+      }
+    ]
   },
   {
     id: "offgrid-ai/juggernaut-xl-v9-GGUF",
@@ -364,7 +529,14 @@ var CATALOG = [
     quant: "Q8_0",
     releaseDate: "2024-02-18",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "juggernaut-xl-v9-Q8_0.gguf", url: resolve("offgrid-ai/juggernaut-xl-v9-GGUF", "juggernaut-xl-v9-Q8_0.gguf"), role: "primary", sizeBytes: 435e7 }]
+    files: [
+      {
+        name: "juggernaut-xl-v9-Q8_0.gguf",
+        url: resolve("offgrid-ai/juggernaut-xl-v9-GGUF", "juggernaut-xl-v9-Q8_0.gguf"),
+        role: "primary",
+        sizeBytes: 435e7
+      }
+    ]
   },
   {
     // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
@@ -378,7 +550,14 @@ var CATALOG = [
     quant: "Q4_K",
     releaseDate: "2024-02-18",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "juggernaut-xl-v9-Q4_K.gguf", url: resolve("offgrid-ai/juggernaut-xl-v9-GGUF", "juggernaut-xl-v9-Q4_K.gguf"), role: "primary", sizeBytes: 29e8 }]
+    files: [
+      {
+        name: "juggernaut-xl-v9-Q4_K.gguf",
+        url: resolve("offgrid-ai/juggernaut-xl-v9-GGUF", "juggernaut-xl-v9-Q4_K.gguf"),
+        role: "primary",
+        sizeBytes: 29e8
+      }
+    ]
   },
   {
     id: "offgrid-ai/animagine-xl-4.0-GGUF",
@@ -391,7 +570,14 @@ var CATALOG = [
     quant: "Q8_0",
     releaseDate: "2025-01-10",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "animagine-xl-4.0-Q8_0.gguf", url: resolve("offgrid-ai/animagine-xl-4.0-GGUF", "animagine-xl-4.0-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
+    files: [
+      {
+        name: "animagine-xl-4.0-Q8_0.gguf",
+        url: resolve("offgrid-ai/animagine-xl-4.0-GGUF", "animagine-xl-4.0-Q8_0.gguf"),
+        role: "primary",
+        sizeBytes: 418e7
+      }
+    ]
   },
   {
     // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
@@ -405,7 +591,14 @@ var CATALOG = [
     quant: "Q4_K",
     releaseDate: "2025-01-10",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "animagine-xl-4.0-Q4_K.gguf", url: resolve("offgrid-ai/animagine-xl-4.0-GGUF", "animagine-xl-4.0-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
+    files: [
+      {
+        name: "animagine-xl-4.0-Q4_K.gguf",
+        url: resolve("offgrid-ai/animagine-xl-4.0-GGUF", "animagine-xl-4.0-Q4_K.gguf"),
+        role: "primary",
+        sizeBytes: 28e8
+      }
+    ]
   },
   {
     id: "offgrid-ai/illustrious-xl-v2.0-GGUF",
@@ -418,7 +611,14 @@ var CATALOG = [
     quant: "Q8_0",
     releaseDate: "2025-04-18",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "illustrious-xl-v2.0-Q8_0.gguf", url: resolve("offgrid-ai/illustrious-xl-v2.0-GGUF", "illustrious-xl-v2.0-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
+    files: [
+      {
+        name: "illustrious-xl-v2.0-Q8_0.gguf",
+        url: resolve("offgrid-ai/illustrious-xl-v2.0-GGUF", "illustrious-xl-v2.0-Q8_0.gguf"),
+        role: "primary",
+        sizeBytes: 418e7
+      }
+    ]
   },
   {
     // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
@@ -432,7 +632,14 @@ var CATALOG = [
     quant: "Q4_K",
     releaseDate: "2025-04-18",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "illustrious-xl-v2.0-Q4_K.gguf", url: resolve("offgrid-ai/illustrious-xl-v2.0-GGUF", "illustrious-xl-v2.0-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
+    files: [
+      {
+        name: "illustrious-xl-v2.0-Q4_K.gguf",
+        url: resolve("offgrid-ai/illustrious-xl-v2.0-GGUF", "illustrious-xl-v2.0-Q4_K.gguf"),
+        role: "primary",
+        sizeBytes: 28e8
+      }
+    ]
   },
   {
     id: "offgrid-ai/pony-diffusion-v6-xl-GGUF",
@@ -445,7 +652,14 @@ var CATALOG = [
     quant: "Q8_0",
     releaseDate: "2024-05-25",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "pony-diffusion-v6-xl-Q8_0.gguf", url: resolve("offgrid-ai/pony-diffusion-v6-xl-GGUF", "pony-diffusion-v6-xl-Q8_0.gguf"), role: "primary", sizeBytes: 418e7 }]
+    files: [
+      {
+        name: "pony-diffusion-v6-xl-Q8_0.gguf",
+        url: resolve("offgrid-ai/pony-diffusion-v6-xl-GGUF", "pony-diffusion-v6-xl-Q8_0.gguf"),
+        role: "primary",
+        sizeBytes: 418e7
+      }
+    ]
   },
   {
     // Light (Q4_K) sibling — ~35% less memory, 16GB-friendly.
@@ -459,7 +673,14 @@ var CATALOG = [
     quant: "Q4_K",
     releaseDate: "2024-05-25",
     imageModes: ["txt2img", "img2img"],
-    files: [{ name: "pony-diffusion-v6-xl-Q4_K.gguf", url: resolve("offgrid-ai/pony-diffusion-v6-xl-GGUF", "pony-diffusion-v6-xl-Q4_K.gguf"), role: "primary", sizeBytes: 28e8 }]
+    files: [
+      {
+        name: "pony-diffusion-v6-xl-Q4_K.gguf",
+        url: resolve("offgrid-ai/pony-diffusion-v6-xl-GGUF", "pony-diffusion-v6-xl-Q4_K.gguf"),
+        role: "primary",
+        sizeBytes: 28e8
+      }
+    ]
   },
   // --- voice (TTS); open models, ONNX runtime (no Python) ---
   {
@@ -494,7 +715,10 @@ var CATALOG = [
       },
       {
         name: "en_US-lessac-medium.onnx.json",
-        url: resolve("rhasspy/piper-voices", "en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"),
+        url: resolve(
+          "rhasspy/piper-voices",
+          "en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
+        ),
         role: "aux"
       }
     ]
@@ -507,7 +731,14 @@ var CATALOG = [
     org: "ggerganov",
     description: "Fastest, smallest \u2014 lowest accuracy",
     minRamGb: 2,
-    files: [{ name: "ggml-tiny.bin", url: resolve("ggerganov/whisper.cpp", "ggml-tiny.bin"), role: "primary", sizeBytes: 777e5 }]
+    files: [
+      {
+        name: "ggml-tiny.bin",
+        url: resolve("ggerganov/whisper.cpp", "ggml-tiny.bin"),
+        role: "primary",
+        sizeBytes: 777e5
+      }
+    ]
   },
   {
     id: "ggerganov/whisper.cpp/base",
@@ -516,7 +747,14 @@ var CATALOG = [
     org: "ggerganov",
     description: "Offline speech-to-text (base) \u2014 good speed/quality default",
     minRamGb: 3,
-    files: [{ name: "ggml-base.bin", url: resolve("ggerganov/whisper.cpp", "ggml-base.bin"), role: "primary", sizeBytes: 147951e3 }]
+    files: [
+      {
+        name: "ggml-base.bin",
+        url: resolve("ggerganov/whisper.cpp", "ggml-base.bin"),
+        role: "primary",
+        sizeBytes: 147951e3
+      }
+    ]
   },
   {
     id: "ggerganov/whisper.cpp/small",
@@ -525,7 +763,14 @@ var CATALOG = [
     org: "ggerganov",
     description: "Offline speech-to-text (higher accuracy)",
     minRamGb: 4,
-    files: [{ name: "ggml-small.bin", url: resolve("ggerganov/whisper.cpp", "ggml-small.bin"), role: "primary", sizeBytes: 487601e3 }]
+    files: [
+      {
+        name: "ggml-small.bin",
+        url: resolve("ggerganov/whisper.cpp", "ggml-small.bin"),
+        role: "primary",
+        sizeBytes: 487601e3
+      }
+    ]
   },
   {
     id: "ggerganov/whisper.cpp/medium",
@@ -534,7 +779,14 @@ var CATALOG = [
     org: "ggerganov",
     description: "High accuracy; slower",
     minRamGb: 6,
-    files: [{ name: "ggml-medium.bin", url: resolve("ggerganov/whisper.cpp", "ggml-medium.bin"), role: "primary", sizeBytes: 1533e6 }]
+    files: [
+      {
+        name: "ggml-medium.bin",
+        url: resolve("ggerganov/whisper.cpp", "ggml-medium.bin"),
+        role: "primary",
+        sizeBytes: 1533e6
+      }
+    ]
   },
   {
     id: "ggerganov/whisper.cpp/large-v3-turbo",
@@ -543,7 +795,14 @@ var CATALOG = [
     org: "ggerganov",
     description: "Near-large accuracy, much faster \u2014 recommended",
     minRamGb: 6,
-    files: [{ name: "ggml-large-v3-turbo.bin", url: resolve("ggerganov/whisper.cpp", "ggml-large-v3-turbo.bin"), role: "primary", sizeBytes: 1624e6 }]
+    files: [
+      {
+        name: "ggml-large-v3-turbo.bin",
+        url: resolve("ggerganov/whisper.cpp", "ggml-large-v3-turbo.bin"),
+        role: "primary",
+        sizeBytes: 1624e6
+      }
+    ]
   },
   {
     id: "ggerganov/whisper.cpp/large-v3",
@@ -552,7 +811,14 @@ var CATALOG = [
     org: "ggerganov",
     description: "Highest accuracy (large); needs more RAM",
     minRamGb: 8,
-    files: [{ name: "ggml-large-v3.bin", url: resolve("ggerganov/whisper.cpp", "ggml-large-v3.bin"), role: "primary", sizeBytes: 3095e6 }]
+    files: [
+      {
+        name: "ggml-large-v3.bin",
+        url: resolve("ggerganov/whisper.cpp", "ggml-large-v3.bin"),
+        role: "primary",
+        sizeBytes: 3095e6
+      }
+    ]
   },
   // --- transcription (Parakeet, NVIDIA NeMo) — sherpa-onnx offline transducer (ONNX).
   // A model is 4 files (encoder/decoder/joiner/tokens); on-disk names are slug-prefixed
@@ -568,10 +834,30 @@ var CATALOG = [
     minRamGb: 4,
     tags: ["Accurate", "English"],
     files: [
-      { name: "parakeet-v2.encoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "encoder.int8.onnx"), role: "primary", sizeBytes: 652e6 },
-      { name: "parakeet-v2.decoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "decoder.int8.onnx"), role: "aux", sizeBytes: 726e4 },
-      { name: "parakeet-v2.joiner.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "joiner.int8.onnx"), role: "aux", sizeBytes: 174e4 },
-      { name: "parakeet-v2.tokens.txt", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "tokens.txt"), role: "tokenizer", sizeBytes: 9600 }
+      {
+        name: "parakeet-v2.encoder.int8.onnx",
+        url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "encoder.int8.onnx"),
+        role: "primary",
+        sizeBytes: 652e6
+      },
+      {
+        name: "parakeet-v2.decoder.int8.onnx",
+        url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "decoder.int8.onnx"),
+        role: "aux",
+        sizeBytes: 726e4
+      },
+      {
+        name: "parakeet-v2.joiner.int8.onnx",
+        url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "joiner.int8.onnx"),
+        role: "aux",
+        sizeBytes: 174e4
+      },
+      {
+        name: "parakeet-v2.tokens.txt",
+        url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "tokens.txt"),
+        role: "tokenizer",
+        sizeBytes: 9600
+      }
     ]
   },
   {
@@ -585,10 +871,30 @@ var CATALOG = [
     isNew: true,
     tags: ["Accurate", "Multilingual"],
     files: [
-      { name: "parakeet-v3.encoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "encoder.int8.onnx"), role: "primary", sizeBytes: 652e6 },
-      { name: "parakeet-v3.decoder.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "decoder.int8.onnx"), role: "aux", sizeBytes: 726e4 },
-      { name: "parakeet-v3.joiner.int8.onnx", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "joiner.int8.onnx"), role: "aux", sizeBytes: 174e4 },
-      { name: "parakeet-v3.tokens.txt", url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "tokens.txt"), role: "tokenizer", sizeBytes: 9600 }
+      {
+        name: "parakeet-v3.encoder.int8.onnx",
+        url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "encoder.int8.onnx"),
+        role: "primary",
+        sizeBytes: 652e6
+      },
+      {
+        name: "parakeet-v3.decoder.int8.onnx",
+        url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "decoder.int8.onnx"),
+        role: "aux",
+        sizeBytes: 726e4
+      },
+      {
+        name: "parakeet-v3.joiner.int8.onnx",
+        url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "joiner.int8.onnx"),
+        role: "aux",
+        sizeBytes: 174e4
+      },
+      {
+        name: "parakeet-v3.tokens.txt",
+        url: resolve("csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8", "tokens.txt"),
+        role: "tokenizer",
+        sizeBytes: 9600
+      }
     ]
   }
 ];
@@ -615,8 +921,7 @@ var ModelDownloader = class {
     return this.store.isInstalled(modelId);
   }
   cancel(modelId) {
-    var _a;
-    (_a = this.aborts.get(modelId)) == null ? void 0 : _a.abort();
+    this.aborts.get(modelId)?.abort();
   }
   emit(p) {
     for (const l of this.listeners) l(p);
@@ -678,16 +983,66 @@ var ModelDownloader = class {
 
 // src/quant.ts
 var QUANTIZATION_INFO = {
-  Q2_K: { bitsPerWeight: 2.625, quality: "Low", description: "Extreme compression, noticeable quality loss", recommended: false },
-  Q3_K_S: { bitsPerWeight: 3.4375, quality: "Low-Medium", description: "High compression, some quality loss", recommended: false },
-  Q3_K_M: { bitsPerWeight: 3.4375, quality: "Medium", description: "Good compression with acceptable quality", recommended: false },
-  Q4_0: { bitsPerWeight: 4, quality: "Medium", description: "Basic 4-bit quantization", recommended: false },
-  Q4_K_S: { bitsPerWeight: 4.5, quality: "Medium-Good", description: "Good balance of size and quality", recommended: true },
-  Q4_K_M: { bitsPerWeight: 4.5, quality: "Good", description: "Optimal balance - best for most devices", recommended: true },
-  Q5_K_S: { bitsPerWeight: 5.5, quality: "Good-High", description: "Higher quality, larger size", recommended: false },
-  Q5_K_M: { bitsPerWeight: 5.5, quality: "High", description: "Near original quality", recommended: false },
-  Q6_K: { bitsPerWeight: 6.5, quality: "Very High", description: "Minimal quality loss", recommended: false },
-  Q8_0: { bitsPerWeight: 8, quality: "Excellent", description: "Best quality, largest size", recommended: false }
+  Q2_K: {
+    bitsPerWeight: 2.625,
+    quality: "Low",
+    description: "Extreme compression, noticeable quality loss",
+    recommended: false
+  },
+  Q3_K_S: {
+    bitsPerWeight: 3.4375,
+    quality: "Low-Medium",
+    description: "High compression, some quality loss",
+    recommended: false
+  },
+  Q3_K_M: {
+    bitsPerWeight: 3.4375,
+    quality: "Medium",
+    description: "Good compression with acceptable quality",
+    recommended: false
+  },
+  Q4_0: {
+    bitsPerWeight: 4,
+    quality: "Medium",
+    description: "Basic 4-bit quantization",
+    recommended: false
+  },
+  Q4_K_S: {
+    bitsPerWeight: 4.5,
+    quality: "Medium-Good",
+    description: "Good balance of size and quality",
+    recommended: true
+  },
+  Q4_K_M: {
+    bitsPerWeight: 4.5,
+    quality: "Good",
+    description: "Optimal balance - best for most devices",
+    recommended: true
+  },
+  Q5_K_S: {
+    bitsPerWeight: 5.5,
+    quality: "Good-High",
+    description: "Higher quality, larger size",
+    recommended: false
+  },
+  Q5_K_M: {
+    bitsPerWeight: 5.5,
+    quality: "High",
+    description: "Near original quality",
+    recommended: false
+  },
+  Q6_K: {
+    bitsPerWeight: 6.5,
+    quality: "Very High",
+    description: "Minimal quality loss",
+    recommended: false
+  },
+  Q8_0: {
+    bitsPerWeight: 8,
+    quality: "Excellent",
+    description: "Best quality, largest size",
+    recommended: false
+  }
 };
 function extractQuantization(fileName) {
   const upper = fileName.toUpperCase();
@@ -754,9 +1109,17 @@ var VERIFIED_QUANTIZERS = {
   "lmstudio-ai": "Community GGUF"
 };
 var CREDIBILITY_LABELS = {
-  offgrid: { label: "Off Grid", description: "Curated & converted by Off Grid \u2014 verified to run on-device", color: "#34D399" },
+  offgrid: {
+    label: "Off Grid",
+    description: "Curated & converted by Off Grid \u2014 verified to run on-device",
+    color: "#34D399"
+  },
   official: { label: "Official", description: "From the original model creator", color: "#22C55E" },
-  "verified-quantizer": { label: "Verified", description: "From a trusted quantization provider", color: "#A78BFA" },
+  "verified-quantizer": {
+    label: "Verified",
+    description: "From a trusted quantization provider",
+    color: "#A78BFA"
+  },
   community: { label: "Community", description: "Community contributed model", color: "#64748B" }
 };
 function determineCredibility(author) {
@@ -810,7 +1173,9 @@ function parseParamCount(nameOrId) {
 function getModelType(name, tags = []) {
   const n = name.toLowerCase();
   const t = tags.map((x) => x.toLowerCase());
-  if (t.some((x) => x.includes("diffusion") || x.includes("text-to-image") || x.includes("image-generation") || x.includes("diffusers")) || n.includes("stable-diffusion") || n.includes("sd-") || n.includes("sdxl") || n.includes("flux"))
+  if (t.some(
+    (x) => x.includes("diffusion") || x.includes("text-to-image") || x.includes("image-generation") || x.includes("diffusers")
+  ) || n.includes("stable-diffusion") || n.includes("sd-") || n.includes("sdxl") || n.includes("flux"))
     return "image-gen";
   if (t.some((x) => x.includes("vision") || x.includes("multimodal") || x.includes("image-text")) || n.includes("vision") || n.includes("vlm") || n.includes("-vl") || n.includes("llava"))
     return "vision";
@@ -890,25 +1255,38 @@ async function searchHuggingFace(query, opts = {}) {
   if (!kind || GGUF_KINDS.has(kind)) params.set("filter", "gguf");
   else if (kind) params.set("pipeline_tag", KIND_PIPELINE[kind]);
   if (query) params.set("search", query);
-  const res = await fetchImpl(`${HF_API}/models?${params.toString()}`, { headers: { Accept: "application/json" } });
+  const res = await fetchImpl(`${HF_API}/models?${params.toString()}`, {
+    headers: { Accept: "application/json" }
+  });
   if (!res.ok) throw new Error(`Hugging Face search failed: HTTP ${res.status}`);
   const data = await res.json();
   let out = data.map((m) => {
     const id = m.id ?? m.modelId ?? "";
     const org = id.split("/")[0] ?? "";
-    return { id, name: baseName(id), org, downloads: m.downloads, likes: m.likes, lastModified: m.lastModified, credibility: determineCredibility(org) };
+    return {
+      id,
+      name: baseName(id),
+      org,
+      downloads: m.downloads,
+      likes: m.likes,
+      lastModified: m.lastModified,
+      credibility: determineCredibility(org)
+    };
   });
-  if (kind === "text") out = out.filter((m) => {
-    const t = getModelType(m.name);
-    return t === "text" || t === "code";
-  });
+  if (kind === "text")
+    out = out.filter((m) => {
+      const t = getModelType(m.name);
+      return t === "text" || t === "code";
+    });
   else if (kind === "vision") out = out.filter((m) => getModelType(m.name) === "vision");
   else if (kind === "image") out = out.filter((m) => getModelType(m.name) === "image-gen");
   return out.slice(0, opts.limit ?? 30);
 }
 async function getModelFiles(repoId, opts = {}) {
   const fetchImpl = opts.fetchImpl ?? defaultFetch;
-  const res = await fetchImpl(`${HF_API}/models/${repoId}`, { headers: { Accept: "application/json" } });
+  const res = await fetchImpl(`${HF_API}/models/${repoId}`, {
+    headers: { Accept: "application/json" }
+  });
   if (!res.ok) return [];
   const data = await res.json();
   const gguf = (data.siblings ?? []).filter((f) => f.rfilename.endsWith(".gguf"));
@@ -932,8 +1310,8 @@ async function getModelFiles(repoId, opts = {}) {
     return {
       fileName: baseName(f.rfilename),
       quant,
-      quality: (info == null ? void 0 : info.quality) ?? "Unknown",
-      recommended: (info == null ? void 0 : info.recommended) ?? false,
+      quality: info?.quality ?? "Unknown",
+      recommended: info?.recommended ?? false,
       sizeBytes: f.size ?? 0,
       downloadUrl: url(f.rfilename),
       mmproj: matchMmproj(f.rfilename)
@@ -942,7 +1320,9 @@ async function getModelFiles(repoId, opts = {}) {
 }
 async function resolveHuggingFaceModel(repoId, opts = {}) {
   const fetchImpl = opts.fetchImpl ?? defaultFetch;
-  const res = await fetchImpl(`${HF_API}/models/${repoId}`, { headers: { Accept: "application/json" } });
+  const res = await fetchImpl(`${HF_API}/models/${repoId}`, {
+    headers: { Accept: "application/json" }
+  });
   if (!res.ok) return null;
   const data = await res.json();
   const siblings = data.siblings ?? [];
@@ -956,15 +1336,35 @@ async function resolveHuggingFaceModel(repoId, opts = {}) {
       name: baseName(repoId),
       kind: "transcription",
       org,
-      files: [{ name: baseName(pick.rfilename), url: url(pick.rfilename), sizeBytes: pick.size, role: "primary" }]
+      files: [
+        {
+          name: baseName(pick.rfilename),
+          url: url(pick.rfilename),
+          sizeBytes: pick.size,
+          role: "primary"
+        }
+      ]
     };
   }
   const onnx = siblings.filter((f) => /\.onnx$/i.test(f.rfilename));
   if (onnx.length > 0 && siblings.every((f) => !f.rfilename.endsWith(".gguf"))) {
     const pick = onnx.find((f) => /quant/i.test(f.rfilename)) ?? onnx[0];
-    const files2 = [{ name: baseName(pick.rfilename), url: url(pick.rfilename), sizeBytes: pick.size, role: "primary" }];
+    const files2 = [
+      {
+        name: baseName(pick.rfilename),
+        url: url(pick.rfilename),
+        sizeBytes: pick.size,
+        role: "primary"
+      }
+    ];
     const cfg = siblings.find((f) => f.rfilename === `${pick.rfilename}.json`);
-    if (cfg) files2.push({ name: baseName(cfg.rfilename), url: url(cfg.rfilename), sizeBytes: cfg.size, role: "aux" });
+    if (cfg)
+      files2.push({
+        name: baseName(cfg.rfilename),
+        url: url(cfg.rfilename),
+        sizeBytes: cfg.size,
+        role: "aux"
+      });
     return { id: repoId, name: baseName(repoId), kind: "voice", org, files: files2 };
   }
   const gguf = siblings.filter((f) => f.rfilename.endsWith(".gguf"));
@@ -974,10 +1374,20 @@ async function resolveHuggingFaceModel(repoId, opts = {}) {
   const primary = weights.find((f) => /q4_k_m/i.test(f.rfilename)) ?? weights[0] ?? gguf[0];
   if (!primary) return null;
   const files = [
-    { name: baseName(primary.rfilename), url: url(primary.rfilename), sizeBytes: primary.size, role: "primary" }
+    {
+      name: baseName(primary.rfilename),
+      url: url(primary.rfilename),
+      sizeBytes: primary.size,
+      role: "primary"
+    }
   ];
   if (mmprojFiles[0]) {
-    files.push({ name: baseName(mmprojFiles[0].rfilename), url: url(mmprojFiles[0].rfilename), sizeBytes: mmprojFiles[0].size, role: "mmproj" });
+    files.push({
+      name: baseName(mmprojFiles[0].rfilename),
+      url: url(mmprojFiles[0].rfilename),
+      sizeBytes: mmprojFiles[0].size,
+      role: "mmproj"
+    });
   }
   return {
     id: repoId,
@@ -1013,24 +1423,25 @@ function openAICompatibleProvider(cfg) {
     id: cfg.id,
     name: cfg.name,
     async listModels() {
-      const res = await f(`${cfg.endpoint}/models`, { headers: { Accept: "application/json", ...authHeaders(cfg.apiKey) } });
+      const res = await f(`${cfg.endpoint}/models`, {
+        headers: { Accept: "application/json", ...authHeaders(cfg.apiKey) }
+      });
       if (!res.ok) throw new Error(`listModels failed: HTTP ${res.status}`);
       const data = await res.json();
       return (data.data ?? []).map((m) => ({ id: m.id, name: m.id }));
     },
     async *chat(messages, opts) {
-      var _a, _b, _c;
       const res = await f(`${cfg.endpoint}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders(cfg.apiKey) },
         body: JSON.stringify({
-          model: opts == null ? void 0 : opts.model,
+          model: opts?.model,
           messages,
           stream: true,
-          temperature: opts == null ? void 0 : opts.temperature,
-          max_tokens: opts == null ? void 0 : opts.maxTokens
+          temperature: opts?.temperature,
+          max_tokens: opts?.maxTokens
         }),
-        signal: opts == null ? void 0 : opts.signal
+        signal: opts?.signal
       });
       if (!res.ok || !res.body) throw new Error(`chat failed: HTTP ${res.status}`);
       for await (const line of lines(res.body)) {
@@ -1040,7 +1451,7 @@ function openAICompatibleProvider(cfg) {
         if (data === "[DONE]") return;
         try {
           const j = JSON.parse(data);
-          const c = (_c = (_b = (_a = j.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.delta) == null ? void 0 : _c.content;
+          const c = j.choices?.[0]?.delta?.content;
           if (c) yield c;
         } catch {
         }
@@ -1060,12 +1471,11 @@ function ollamaProvider(cfg) {
       return (data.models ?? []).map((m) => ({ id: m.name, name: m.name }));
     },
     async *chat(messages, opts) {
-      var _a;
       const res = await f(`${cfg.endpoint}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: opts == null ? void 0 : opts.model, messages, stream: true }),
-        signal: opts == null ? void 0 : opts.signal
+        body: JSON.stringify({ model: opts?.model, messages, stream: true }),
+        signal: opts?.signal
       });
       if (!res.ok || !res.body) throw new Error(`chat failed: HTTP ${res.status}`);
       for await (const line of lines(res.body)) {
@@ -1073,7 +1483,7 @@ function ollamaProvider(cfg) {
         if (!t) continue;
         try {
           const j = JSON.parse(t);
-          if ((_a = j.message) == null ? void 0 : _a.content) yield j.message.content;
+          if (j.message?.content) yield j.message.content;
           if (j.done) return;
         } catch {
         }
@@ -1083,9 +1493,20 @@ function ollamaProvider(cfg) {
 }
 function createProvider(server, fetchImpl) {
   if (server.kind === "ollama") {
-    return ollamaProvider({ id: server.id, name: server.name, endpoint: server.endpoint, fetchImpl });
+    return ollamaProvider({
+      id: server.id,
+      name: server.name,
+      endpoint: server.endpoint,
+      fetchImpl
+    });
   }
-  return openAICompatibleProvider({ id: server.id, name: server.name, endpoint: server.endpoint, apiKey: server.apiKey, fetchImpl });
+  return openAICompatibleProvider({
+    id: server.id,
+    name: server.name,
+    endpoint: server.endpoint,
+    apiKey: server.apiKey,
+    fetchImpl
+  });
 }
 var ProviderRegistry = class {
   providers = /* @__PURE__ */ new Map();

@@ -58,4 +58,4 @@ interface ClipboardStore {
     count(): number;
 }
 
-export type { ClipboardBridge as C, SearchResult as S, ClipboardRead as a, ClipboardItem as b, ClipboardStore as c, ClipboardItemDisplay as d, ContentType as e };
+export type { ClipboardBridge as C, SearchResult as S, ClipboardStore as a, ClipboardItem as b, ClipboardItemDisplay as c, ContentType as d, ClipboardRead as e };

@@ -1,5 +1,5 @@
-import { C as ClipboardBridge, c as ClipboardStore, b as ClipboardItem, d as ClipboardItemDisplay, S as SearchResult } from './types-hjEscIvQ.mjs';
-export { a as ClipboardRead, e as ContentType } from './types-hjEscIvQ.mjs';
+import { C as ClipboardBridge, a as ClipboardStore, b as ClipboardItem, c as ClipboardItemDisplay, S as SearchResult } from './types-B7DdTBPa.mjs';
+export { e as ClipboardRead, d as ContentType } from './types-B7DdTBPa.mjs';
 
 interface ClipboardEngineOptions {
     bridge: ClipboardBridge;
