@@ -10,6 +10,7 @@
 
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { createRequire } from 'module'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -19,6 +20,7 @@ import { whisperModel, ffmpegBin } from '../transcription/whisper-cli'
 import { getActiveTranscription } from '../transcription/select'
 
 const execFileAsync = promisify(execFile)
+const loadCjsDependency = createRequire(import.meta.url)
 
 // Binary/model resolvers now live in ../transcription/whisper-cli (single source
 // of truth). Re-exported here so existing importers of '@offgrid/core/main/rag/
@@ -35,7 +37,7 @@ export const desktopExtraction: ExtractionBridges = {
 
   async extractPdf(p, maxChars) {
     // pdf-parse has a debug side-effect on import, so load it only when needed.
-    const { default: pdfParse } = await import('pdf-parse')
+    const pdfParse = loadCjsDependency('pdf-parse') as (b: Buffer) => Promise<{ text: string }>
     const buf = await fs.promises.readFile(p)
     const { text } = await pdfParse(buf)
     return maxChars ? text.slice(0, maxChars) : text
