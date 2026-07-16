@@ -158,6 +158,8 @@ export default defineConfig({
         'pro/main/scraper.ts',
         'pro/main/console.ts',
         'pro/main/google-rest.ts',
+        // Core settings composition; IdentityService rules are measured in identity.ts.
+        'pro/main/identity-store.ts',
         'pro/main/dev-seed.ts',
         'pro/main/services.ts',
         'pro/main/dictation/overlay.ts',
