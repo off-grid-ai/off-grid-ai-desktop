@@ -15,17 +15,20 @@ GW="${OFFGRID_GATEWAY_URL:-http://127.0.0.1:7878}"
 # predictable name and lets concurrent runs coexist. Cleaned up on any exit.
 MODELS_JSON="$(mktemp -t smoke_models.XXXXXX)"
 STREAM_TXT="$(mktemp -t smoke_stream.XXXXXX)"
-trap 'rm -f "$MODELS_JSON" "$STREAM_TXT"' EXIT
+TTS_WAV="$(mktemp -t smoke_tts.XXXXXX)"
+trap 'rm -f "$MODELS_JSON" "$STREAM_TXT" "$TTS_WAV"' EXIT
 
 fail() { echo "  FAIL: $1"; exit 1; }
 ok() { echo "  ok: $1"; }
 
 echo "[smoke] gateway = $GW"
 
-# 0. Gateway reachable + model catalog (models-manager path)
+# 0. Gateway reachable + model catalog (models-manager path). Parse the body via
+# JSON.parse (NOT require() - require on a temp file with no .json extension parses it as
+# JS and throws on a JSON object, which silently broke this check).
 curl -s -m 5 "$GW/v1/models" >"$MODELS_JSON" 2>&1 || fail "gateway not reachable - start the app first (npm run dev)"
-MODELS_JSON="$MODELS_JSON" node -e 'const j=require(process.env.MODELS_JSON);if(!j.data||!j.data.length)process.exit(1);console.log("  models:",j.data.map(m=>m.id).join(", "))' \
-  < /dev/null 2>/dev/null || fail "/v1/models returned no models"
+MODELS_JSON="$MODELS_JSON" node -e 'const fs=require("fs");const j=JSON.parse(fs.readFileSync(process.env.MODELS_JSON,"utf8"));if(!j.data||!j.data.length)process.exit(1);console.log("  models:",j.data.map(m=>m.id).join(", "))' \
+  || fail "/v1/models returned no models"
 ok "/v1/models"
 
 # 1. Chat non-stream (model-server proxy + llm payload path)
@@ -44,6 +47,21 @@ ok "chat stream"
 curl -s -m 60 "$GW/v1/embeddings" -H 'Content-Type: application/json' -d '{"input":"hello world"}' \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s).data?.[0]?.embedding;if(!Array.isArray(v)||!v.length)process.exit(1);console.log("  dims:",v.length)})' || fail "embeddings returned no vector"
 ok "embeddings"
+
+# 3b. TTS (kokoro /v1/audio/speech). THE endpoint that shipped broken - a `spawn ENOTDIR`
+# from an asar-file cwd - while chat/stream/embeddings were all green. Assert a real WAV.
+curl -s -m 90 "$GW/v1/audio/speech" -H 'Content-Type: application/json' \
+  -d '{"input":"off grid","voice":"af_heart"}' -o "$TTS_WAV"
+{ [ "$(head -c 4 "$TTS_WAV" 2>/dev/null)" = "RIFF" ] && [ "$(wc -c < "$TTS_WAV")" -gt 1000 ]; } \
+  || fail "TTS (voice) did not return a real WAV - $(head -c 200 "$TTS_WAV")"
+ok "TTS (voice) -> WAV ($(wc -c < "$TTS_WAV" | tr -d ' ') bytes)"
+
+# 3c. STT (whisper /v1/audio/transcriptions) - round-trip the TTS WAV back to text, so one
+# step proves BOTH audio engines end-to-end (synth -> transcribe).
+curl -s -m 120 "$GW/v1/audio/transcriptions" -F "file=@$TTS_WAV;type=audio/wav" -F "model=whisper" \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const t=JSON.parse(s).text;if(typeof t!=="string")process.exit(1);console.log("  transcript:",JSON.stringify(t).slice(0,60))})' \
+  || fail "STT returned no transcript"
+ok "STT (transcribe)"
 
 # 4. Image generation (imagegen args/memory-guard/progress) - opt-in
 if [ "${SMOKE_IMAGE:-0}" = "1" ]; then

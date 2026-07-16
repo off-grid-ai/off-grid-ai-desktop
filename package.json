@@ -31,6 +31,7 @@
     "build:linux": "electron-vite build && electron-builder --linux",
     "test:e2e": "electron-vite build && playwright test",
     "smoke": "bash scripts/smoke-api.sh",
+    "smoke:packaged": "bash scripts/smoke-packaged.sh",
     "test:swift": "cd swift-tests/TextExtractorKit && swift test",
     "test:db": "bash scripts/test-db.sh",
     "depcruise": "depcruise --config .dependency-cruiser.cjs \"src/**/*.ts\" \"src/**/*.tsx\"",
