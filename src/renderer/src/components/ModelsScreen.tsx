@@ -45,7 +45,7 @@ function Sel({
   options: readonly { key: string; label: string }[]
   allLabel?: string
   prefix?: string
-}) {
+}): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -191,10 +191,19 @@ function featureRank(
 
 const MODE_LABELS: Record<string, string> = { txt2img: 'Text→Image', img2img: 'Image→Image' }
 
+function withoutProgressEntry(
+  progress: Record<string, { percent: number; status?: string }>,
+  modelId: string
+): Record<string, { percent: number; status?: string }> {
+  const next = { ...progress }
+  delete next[modelId]
+  return next
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const api = (window as any).api
 
-export function ModelsScreen() {
+export function ModelsScreen(): React.JSX.Element {
   const [kinds, setKinds] = useState<string[]>([])
   const [models, setModels] = useState<ModelEntry[]>([])
   const [installed, setInstalled] = useState<string[]>([])
@@ -282,10 +291,7 @@ export function ModelsScreen() {
     const off = api.onModelProgress?.(
       (d: { modelId: string; percent?: number; status?: string }) => {
         if (d.status === 'cancelled') {
-          setProgress((p) => {
-            const { [d.modelId]: _drop, ...rest } = p
-            return rest
-          })
+          setProgress((p) => withoutProgressEntry(p, d.modelId))
           return
         }
         setProgress((p) => ({
@@ -350,10 +356,7 @@ export function ModelsScreen() {
 
   const cancelDownload = (id: string): void => {
     void api.cancelModelDownload?.(id)
-    setProgress((p) => {
-      const { [id]: _drop, ...rest } = p
-      return rest
-    })
+    setProgress((p) => withoutProgressEntry(p, id))
   }
   const download = (id: string): void => {
     setProgress((p) => ({ ...p, [id]: { percent: 0, status: 'downloading' } }))
@@ -370,7 +373,7 @@ export function ModelsScreen() {
       setDeleting(null)
     }
   }
-  const useModel = async (id: string): Promise<void> => {
+  const activateModel = async (id: string): Promise<void> => {
     if (switching) return
     try {
       const fit = await api.estimateModelFit?.(id)
@@ -451,7 +454,8 @@ export function ModelsScreen() {
     )
     .sort((a, b) => {
       // Active first, then other installed, then available — within each tier keep feature rank.
-      const rank = (x: { id: string }) => (isActive(x.id) ? 0 : installed.includes(x.id) ? 1 : 2)
+      const rank = (x: { id: string }): number =>
+        isActive(x.id) ? 0 : installed.includes(x.id) ? 1 : 2
       return (
         rank(a) - rank(b) || featureRank(a, recommendedImageId) - featureRank(b, recommendedImageId)
       )
@@ -477,7 +481,7 @@ export function ModelsScreen() {
   const renderCard = (
     m: ModelEntry & { credibility?: string; params?: number; org?: string },
     isHf = false
-  ) => {
+  ): React.JSX.Element => {
     const isInstalled = installed.includes(m.id)
     const active = isActive(m.id)
     const prog = progress[m.id]
@@ -584,7 +588,7 @@ export function ModelsScreen() {
             // Includes a downloaded HF model (registered as installed), so its search
             // card flips from Download to Use instead of resetting.
             <button
-              onClick={() => useModel(m.id)}
+              onClick={() => activateModel(m.id)}
               disabled={!!switching}
               className="flex items-center gap-1 rounded border border-neutral-700 px-2.5 py-1 text-[10px] text-neutral-300 transition-all duration-150 hover:border-green-500 hover:text-green-400 active:scale-95 disabled:opacity-40"
             >
@@ -852,7 +856,9 @@ export function ModelsScreen() {
             {searchingMode ? (
               <>
                 {displayed.length === 0 && !searching && (
-                  <p className="px-6 py-4 text-xs text-neutral-600">No results for "{query}".</p>
+                  <p className="px-6 py-4 text-xs text-neutral-600">
+                    No results for &quot;{query}&quot;.
+                  </p>
                 )}
                 <div className={GRID}>
                   {displayed.map((r) =>
@@ -1016,7 +1022,7 @@ export function ModelsScreen() {
                     <>
                       <button
                         onClick={() => {
-                          void useModel(m.id)
+                          void activateModel(m.id)
                           closeDetail()
                         }}
                         disabled={!!switching}
