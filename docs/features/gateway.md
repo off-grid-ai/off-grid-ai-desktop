@@ -7,16 +7,16 @@ you've downloaded. Point any OpenAI SDK at `…/v1` with any (ignored) key.
 
 ![Gateway](../screenshots/06-gateway.png)
 
-| Capability | Method · Endpoint | Notes |
-|---|---|---|
-| Chat (text) | `POST /v1/chat/completions` | streaming via `stream:true` |
-| Vision | `POST /v1/chat/completions` | `image_url` content parts (data URL or http) |
-| Text → Image | `POST /v1/images` · `/v1/images/generations` | `{prompt, aspect_ratio?, resolution?, seed?}` |
-| Image → Image | `POST /v1/images` · `/v1/images/edits` | `input_references:[{image_url:{url}}]` |
-| Speech → Text | `POST /v1/audio/transcriptions` | multipart `file` (whisper) |
-| Text → Speech | `POST /v1/audio/speech` | `{input, voice?}` → `audio/wav` (Kokoro) |
-| Embeddings | `POST /v1/embeddings` | local `all-MiniLM-L6-v2`, 384-dim |
-| Models | `GET /v1/models` | the active model per modality |
+| Capability    | Method · Endpoint                            | Notes                                         |
+| ------------- | -------------------------------------------- | --------------------------------------------- |
+| Chat (text)   | `POST /v1/chat/completions`                  | streaming via `stream:true`                   |
+| Vision        | `POST /v1/chat/completions`                  | `image_url` content parts (data URL or http)  |
+| Text → Image  | `POST /v1/images` · `/v1/images/generations` | `{prompt, aspect_ratio?, resolution?, seed?}` |
+| Image → Image | `POST /v1/images` · `/v1/images/edits`       | `input_references:[{image_url:{url}}]`        |
+| Speech → Text | `POST /v1/audio/transcriptions`              | multipart `file` (whisper)                    |
+| Text → Speech | `POST /v1/audio/speech`                      | `{input, voice?}` → `audio/wav` (Kokoro)      |
+| Embeddings    | `POST /v1/embeddings`                        | local `all-MiniLM-L6-v2`, 384-dim             |
+| Models        | `GET /v1/models`                             | the active model per modality                 |
 
 - **Interactive docs**: `GET /docs` (Scalar) · **spec**: `GET /openapi.json`.
 - **Load-on-demand**: models load when a request needs them and offload after — long

@@ -9,12 +9,12 @@ dpm++2m, `--diffusion-fa`.
 
 Two independent costs stack up, and only the second is quality-optional:
 
-| Steps | Quality | Wall clock (768²) |
-|------:|---------|-------------------|
-| 4  | blank / blob (unusable) | ~19s |
-| 8  | garbage (rainbow banding) | ~47s |
-| 12 | usable | ~64s |
-| 20 | good (the target) | ~105s |
+| Steps | Quality                   | Wall clock (768²) |
+| ----: | ------------------------- | ----------------- |
+|     4 | blank / blob (unusable)   | ~19s              |
+|     8 | garbage (rainbow banding) | ~47s              |
+|    12 | usable                    | ~64s              |
+|    20 | good (the target)         | ~105s             |
 
 - **Sampling (UNet) dominates:** ~4.2-4.6 s/step at 768² cfg 7. 20 steps ≈ 92s.
   This is the wall. It's the `ggml_conv_2d` operator - the 2D convolutions in the
@@ -40,16 +40,16 @@ actually beats the ANE - so ANE is not the desktop ceiling either.)
 
 ## Levers evaluated
 
-| Lever | Result | Status |
-|-------|--------|--------|
-| **Persistent `sd-server`** (keep model resident) | Warm images skip the ~13s Metal shader warmup + ~5s model reload | **DONE** - `src/main/sd-server.ts`, wired into `imagegen.ts`, tested |
-| **taesd fast VAE** (`--taesd taesdxl`) | VAE decode 1.47s vs ~10-16s (verified live, non-black) | **DONE** - opt-in `fastVae` param, wired both paths, tested. Needs `taesdxl.safetensors` in models dir |
-| **Rebuild from latest upstream** (6314af4 vs bundled 92a3b73) | 4.15-4.5 s/step - NO speedup. Same generic conv kernels | **Ruled out** for perf (would still bring newer model support) |
-| **Winograd conv fork** (arXiv 2412.05781, `SealAILab/stable-diffusion-cpp`, claimed 3-4.79× SDXL on Metal) | Repo is 404 / org gone - not publicly available | **Unavailable**; implementing Winograd in ggml ourselves is a major effort |
-| **`--conv-direct`** flags | 9× SLOWER (33 s/step) - ggml's direct conv is worse | **Rejected** |
-| **f16 instead of q8_0** | Untested (needs ~13GB f16 GGUF, not in our repo) | **Open** - may cut per-step (no dequant); worth a benchmark if a file is produced |
-| **Fewer steps** on the full model | Unusable below ~12 steps | **Rejected** (quality) |
-| **Distilled model** (Lightning/DMD2) | Not yet produced | **Open - the real quality-preserving speed answer** |
+| Lever                                                                                                      | Result                                                           | Status                                                                                                 |
+| ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Persistent `sd-server`** (keep model resident)                                                           | Warm images skip the ~13s Metal shader warmup + ~5s model reload | **DONE** - `src/main/sd-server.ts`, wired into `imagegen.ts`, tested                                   |
+| **taesd fast VAE** (`--taesd taesdxl`)                                                                     | VAE decode 1.47s vs ~10-16s (verified live, non-black)           | **DONE** - opt-in `fastVae` param, wired both paths, tested. Needs `taesdxl.safetensors` in models dir |
+| **Rebuild from latest upstream** (6314af4 vs bundled 92a3b73)                                              | 4.15-4.5 s/step - NO speedup. Same generic conv kernels          | **Ruled out** for perf (would still bring newer model support)                                         |
+| **Winograd conv fork** (arXiv 2412.05781, `SealAILab/stable-diffusion-cpp`, claimed 3-4.79× SDXL on Metal) | Repo is 404 / org gone - not publicly available                  | **Unavailable**; implementing Winograd in ggml ourselves is a major effort                             |
+| **`--conv-direct`** flags                                                                                  | 9× SLOWER (33 s/step) - ggml's direct conv is worse              | **Rejected**                                                                                           |
+| **f16 instead of q8_0**                                                                                    | Untested (needs ~13GB f16 GGUF, not in our repo)                 | **Open** - may cut per-step (no dequant); worth a benchmark if a file is produced                      |
+| **Fewer steps** on the full model                                                                          | Unusable below ~12 steps                                         | **Rejected** (quality)                                                                                 |
+| **Distilled model** (Lightning/DMD2)                                                                       | Not yet produced                                                 | **Open - the real quality-preserving speed answer**                                                    |
 
 ## Net effect of what shipped tonight
 
@@ -86,7 +86,7 @@ re-quantize) and wiring it as the "Fast" image model, keeping full animagine as 
 
 Tried to bake SDXL-Lightning into animagine to ship a few-step q8 Fast model:
 
-- **sd.cpp's runtime LoRA for SDXL is broken.** LCM *and* Lightning both report
+- **sd.cpp's runtime LoRA for SDXL is broken.** LCM _and_ Lightning both report
   `2364/2364 tensors applied` but produce corrupted (banded) output - proven across
   q8 AND f16-GGUF, Metal AND CPU, with/without flash-attn. Same models with no LoRA
   are clean. So a runtime LoRA is a dead end here; distillation must be baked into the

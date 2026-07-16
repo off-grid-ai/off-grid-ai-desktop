@@ -5,21 +5,23 @@
 
 export interface ParsedSessionId {
   /** The model segment before the first dash, if any. */
-  modelName?: string;
+  modelName?: string
   /** Title with dashes turned to spaces, lowercased. */
-  chatTitle: string;
+  chatTitle: string
   /** Title capitalized for display; falls back to the raw id when empty. */
-  readableTitle: string;
+  readableTitle: string
   /** Model label with -/_ turned to spaces, or 'LLM' when there's no model. */
-  llmLabel: string;
+  llmLabel: string
 }
 
 export function parseSessionId(sessionId: string): ParsedSessionId {
-  const firstDashIndex = sessionId.indexOf('-');
-  const modelName = firstDashIndex > 0 ? sessionId.slice(0, firstDashIndex) : undefined;
-  const chatTitleRaw = firstDashIndex > 0 ? sessionId.slice(firstDashIndex + 1) : sessionId;
-  const chatTitle = chatTitleRaw.split('-').join(' ').toLowerCase();
-  const readableTitle = chatTitle ? `${chatTitle.charAt(0).toUpperCase()}${chatTitle.slice(1)}` : sessionId;
-  const llmLabel = modelName ? modelName.replace(/[-_]/g, ' ') : 'LLM';
-  return { modelName, chatTitle, readableTitle, llmLabel };
+  const firstDashIndex = sessionId.indexOf('-')
+  const modelName = firstDashIndex > 0 ? sessionId.slice(0, firstDashIndex) : undefined
+  const chatTitleRaw = firstDashIndex > 0 ? sessionId.slice(firstDashIndex + 1) : sessionId
+  const chatTitle = chatTitleRaw.split('-').join(' ').toLowerCase()
+  const readableTitle = chatTitle
+    ? `${chatTitle.charAt(0).toUpperCase()}${chatTitle.slice(1)}`
+    : sessionId
+  const llmLabel = modelName ? modelName.replace(/[-_]/g, ' ') : 'LLM'
+  return { modelName, chatTitle, readableTitle, llmLabel }
 }

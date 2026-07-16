@@ -1,12 +1,12 @@
 // better-sqlite3-multiple-ciphers is a drop-in superset of better-sqlite3 that
 // adds SQLCipher-style `PRAGMA key` encryption. Same API surface + types.
-import Database from 'better-sqlite3-multiple-ciphers';
-import { app, safeStorage } from 'electron';
-import path from 'path';
-import fs from 'fs';
-import crypto from 'crypto';
+import Database from 'better-sqlite3-multiple-ciphers'
+import { app, safeStorage } from 'electron'
+import path from 'path'
+import fs from 'fs'
+import crypto from 'crypto'
 
-let db: Database.Database | null = null;
+let db: Database.Database | null = null
 
 // --- Encryption at rest (new DBs only) -------------------------------------
 // The DB key can't live inside the DB (it gates opening it), so it's stored as a
@@ -17,31 +17,31 @@ let db: Database.Database | null = null;
 // If the OS can't provide real encryption (no Keychain), we fall back to plaintext
 // so the app still works rather than refusing to open.
 function loadOrCreateKey(dbPath: string): string | null {
-  const keyFile = path.join(path.dirname(dbPath), '.dbkey');
+  const keyFile = path.join(path.dirname(dbPath), '.dbkey')
   try {
     if (fs.existsSync(keyFile)) {
-      const blob = fs.readFileSync(keyFile);
-      return safeStorage.decryptString(blob);
+      const blob = fs.readFileSync(keyFile)
+      return safeStorage.decryptString(blob)
     }
   } catch (e) {
-    console.error('[db] failed to read DB key — opening without encryption', e);
-    return null;
+    console.error('[db] failed to read DB key — opening without encryption', e)
+    return null
   }
   // No key yet. Only create one (→ encrypted DB) if there's no existing DB to
   // migrate and the OS gives us real encryption.
-  if (fs.existsSync(dbPath)) return null; // legacy plaintext DB — leave it
+  if (fs.existsSync(dbPath)) return null // legacy plaintext DB — leave it
   try {
     if (!safeStorage.isEncryptionAvailable()) {
-      console.warn('[db] OS encryption unavailable — creating plaintext DB');
-      return null;
+      console.warn('[db] OS encryption unavailable — creating plaintext DB')
+      return null
     }
-    const key = crypto.randomBytes(32).toString('hex');
-    fs.writeFileSync(keyFile, safeStorage.encryptString(key), { mode: 0o600 });
-    console.log('[db] created encrypted database key');
-    return key;
+    const key = crypto.randomBytes(32).toString('hex')
+    fs.writeFileSync(keyFile, safeStorage.encryptString(key), { mode: 0o600 })
+    console.log('[db] created encrypted database key')
+    return key
   } catch (e) {
-    console.error('[db] failed to create DB key — creating plaintext DB', e);
-    return null;
+    console.error('[db] failed to create DB key — creating plaintext DB', e)
+    return null
   }
 }
 
@@ -49,52 +49,54 @@ function loadOrCreateKey(dbPath: string): string | null {
 // Returns similarity between 0 and 1 (1 = identical)
 function cosineSimilarity(v1Str: string, v2Str: string): number {
   try {
-    const v1 = JSON.parse(v1Str) as number[];
-    const v2 = JSON.parse(v2Str) as number[];
+    const v1 = JSON.parse(v1Str) as number[]
+    const v2 = JSON.parse(v2Str) as number[]
 
-    if (v1.length !== v2.length) return 0;
+    if (v1.length !== v2.length) return 0
 
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
+    let dotProduct = 0
+    let normA = 0
+    let normB = 0
 
     for (let i = 0; i < v1.length; i++) {
-        // i < v1.length === v2.length (checked above), so both reads are in-bounds.
-        dotProduct += v1[i]! * v2[i]!;
-        normA += v1[i]! * v1[i]!;
-        normB += v2[i]! * v2[i]!;
+      // i < v1.length === v2.length (checked above), so both reads are in-bounds.
+      dotProduct += v1[i]! * v2[i]!
+      normA += v1[i]! * v1[i]!
+      normB += v2[i]! * v2[i]!
     }
 
-    if (normA === 0 || normB === 0) return 0;
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    if (normA === 0 || normB === 0) return 0
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB))
   } catch (e) {
-    return 0;
+    return 0
   }
 }
 
 export function getDB(): Database.Database {
-  if (db) return db;
+  if (db) return db
 
-  const dbPath = path.join(app.getPath('userData'), 'memories.db');
-  console.log("Opening database at:", dbPath);
+  const dbPath = path.join(app.getPath('userData'), 'memories.db')
+  console.log('Opening database at:', dbPath)
 
-  const key = loadOrCreateKey(dbPath);
-  db = new Database(dbPath);
+  const key = loadOrCreateKey(dbPath)
+  db = new Database(dbPath)
   // PRAGMA key MUST run before any other access (it unlocks the file).
   if (key) {
-    db.pragma(`key = '${key}'`);
-    console.log('[db] opened with encryption at rest');
+    db.pragma(`key = '${key}'`)
+    console.log('[db] opened with encryption at rest')
   }
-  db.pragma('journal_mode = WAL');
+  db.pragma('journal_mode = WAL')
 
   // Register custom function for vector search. Declare the two params EXPLICITLY:
   // better-sqlite3 derives the SQL arity from fn.length, and a rest param
   // (...args) has length 0 — so it registered as a 0-arg function and every
   // 2-arg call ("SELECT cosine_similarity(embedding, ?)") threw "wrong number of
   // arguments to function cosine_similarity()".
-  db.function('cosine_similarity', (a: unknown, b: unknown) => cosineSimilarity(a as string, b as string));
+  db.function('cosine_similarity', (a: unknown, b: unknown) =>
+    cosineSimilarity(a as string, b as string)
+  )
 
-    // Initialize Schema
+  // Initialize Schema
   db.exec(`
     CREATE TABLE IF NOT EXISTS conversations (
         id TEXT PRIMARY KEY, -- UUID or "app-slug"
@@ -203,7 +205,7 @@ export function getDB(): Database.Database {
       FOREIGN KEY(source_entity_id) REFERENCES entities(id) ON DELETE CASCADE,
       FOREIGN KEY(target_entity_id) REFERENCES entities(id) ON DELETE CASCADE
     );
-  `);
+  `)
 
   // Create Chat Summaries Table if not exists (migrating to conversations table eventually)
   db.exec(`
@@ -213,7 +215,7 @@ export function getDB(): Database.Database {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-  `);
+  `)
 
   // Create Master Memory Table - cumulative summary of all summaries
   db.exec(`
@@ -222,7 +224,7 @@ export function getDB(): Database.Database {
       content TEXT,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-  `);
+  `)
 
   // User Profile Table - stores onboarding questionnaire data as JSON
   db.exec(`
@@ -232,7 +234,7 @@ export function getDB(): Database.Database {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-  `);
+  `)
 
   // RAG Conversations Table - stores chat sessions with the memory assistant
   db.exec(`
@@ -242,7 +244,7 @@ export function getDB(): Database.Database {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-  `);
+  `)
 
   // RAG Messages Table - stores messages in RAG conversations
   db.exec(`
@@ -255,7 +257,7 @@ export function getDB(): Database.Database {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(conversation_id) REFERENCES rag_conversations(id) ON DELETE CASCADE
     );
-  `);
+  `)
 
   // App Settings Table - stores application settings as key-value pairs
   db.exec(`
@@ -264,7 +266,7 @@ export function getDB(): Database.Database {
       value TEXT NOT NULL,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-  `);
+  `)
 
   // Triggers to keep FTS in sync
   const triggers = [
@@ -322,69 +324,67 @@ export function getDB(): Database.Database {
       INSERT INTO entity_fact_fts(entity_fact_fts, rowid, fact, entity_id) VALUES('delete', old.id, old.fact, old.entity_id);
       INSERT INTO entity_fact_fts(rowid, fact, entity_id) VALUES (new.id, new.fact, new.entity_id);
     END;`
-  ];
+  ]
 
-  for(const trigger of triggers) {
-      db.exec(trigger);
+  for (const trigger of triggers) {
+    db.exec(trigger)
   }
 
-    try {
-      db.exec("INSERT INTO message_fts(message_fts) VALUES('rebuild')");
-      db.exec("INSERT INTO summary_fts(summary_fts) VALUES('rebuild')");
-      db.exec("INSERT INTO entity_fts(entity_fts) VALUES('rebuild')");
-      db.exec("INSERT INTO entity_fact_fts(entity_fact_fts) VALUES('rebuild')");
-    } catch (e) {
-      // Ignore rebuild errors
-    }
-
-
+  try {
+    db.exec("INSERT INTO message_fts(message_fts) VALUES('rebuild')")
+    db.exec("INSERT INTO summary_fts(summary_fts) VALUES('rebuild')")
+    db.exec("INSERT INTO entity_fts(entity_fts) VALUES('rebuild')")
+    db.exec("INSERT INTO entity_fact_fts(entity_fact_fts) VALUES('rebuild')")
+  } catch (e) {
+    // Ignore rebuild errors
+  }
 
   // Migration: Add timestamp column to messages if it doesn't exist
   try {
-    db.exec(`ALTER TABLE messages ADD COLUMN timestamp TEXT`);
+    db.exec(`ALTER TABLE messages ADD COLUMN timestamp TEXT`)
   } catch (e) {
     // Column already exists, ignore
   }
 
   // Migration: Add message_id column to memories if it doesn't exist
   try {
-    db.exec(`ALTER TABLE memories ADD COLUMN message_id INTEGER`);
+    db.exec(`ALTER TABLE memories ADD COLUMN message_id INTEGER`)
   } catch (e) {
     // Column already exists, ignore
   }
 
-  db.exec('CREATE INDEX IF NOT EXISTS idx_memories_message_id ON memories(message_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_memories_message_id ON memories(message_id)')
 
   // Migration: Add name column to memories if it doesn't exist
   try {
-    db.exec(`ALTER TABLE memories ADD COLUMN name TEXT`);
+    db.exec(`ALTER TABLE memories ADD COLUMN name TEXT`)
   } catch (e) {
     // Column already exists, ignore
   }
 
   // Migration: Add project_id to rag_conversations (chats can be scoped to a project)
   try {
-    db.exec(`ALTER TABLE rag_conversations ADD COLUMN project_id TEXT`);
+    db.exec(`ALTER TABLE rag_conversations ADD COLUMN project_id TEXT`)
   } catch (e) {
     // Column already exists, ignore
   }
 
-  return db;
+  return db
 }
 
 /** Run an idempotent schema migration (CREATE TABLE IF NOT EXISTS …) on the
  *  shared DB. Exposed so the pro package can create its own tables (observations,
  *  entities, approvals, …) without core knowing about them. */
 export function runMigration(sql: string): void {
-  getDB().exec(sql);
+  getDB().exec(sql)
 }
 
 // === NEW API ACCESSORS ===
 
 export function getChatSessions(appName?: string) {
-    const db = getDB();
-    // Query conversations with memory and entity counts instead of message count
-    let query = `
+  const db = getDB()
+  // Query conversations with memory and entity counts instead of message count
+  let query = `
         SELECT 
             c.id as session_id,
             c.title,
@@ -394,77 +394,83 @@ export function getChatSessions(appName?: string) {
             (SELECT COUNT(DISTINCT es.entity_id) FROM entity_sessions es WHERE es.session_id = c.id) as entity_count,
             (SELECT summary FROM chat_summaries cs WHERE cs.session_id = c.id) as summary
         FROM conversations c
-    `;
-    
-    if (appName && appName !== 'All') {
-        query += ` WHERE c.app_name LIKE ? `;
-    }
-    
-    query += ` ORDER BY c.updated_at DESC`;
+    `
 
-    const stmt = db.prepare(query);
-    if (appName && appName !== 'All') {
-        return stmt.all(`%${appName}%`);
-    } else {
-        return stmt.all();
-    }
+  if (appName && appName !== 'All') {
+    query += ` WHERE c.app_name LIKE ? `
+  }
+
+  query += ` ORDER BY c.updated_at DESC`
+
+  const stmt = db.prepare(query)
+  if (appName && appName !== 'All') {
+    return stmt.all(`%${appName}%`)
+  } else {
+    return stmt.all()
+  }
 }
 
 export function upsertChatSummary(sessionId: string, summary: string) {
-    const db = getDB();
-    const stmt = db.prepare(`
+  const db = getDB()
+  const stmt = db.prepare(`
         INSERT INTO chat_summaries (session_id, summary, updated_at)
         VALUES (?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(session_id) DO UPDATE SET
             summary = excluded.summary,
             updated_at = excluded.updated_at
-    `);
-    stmt.run(sessionId, summary);
+    `)
+  stmt.run(sessionId, summary)
 }
 
 export function getMemoriesForSession(sessionId: string, limit: number = 200) {
-    const db = getDB();
-    // Fetch from new 'messages' table
-    const stmt = db.prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ?');
-    const messages = stmt.all(sessionId, limit);
-    
-    // Map to old Memory interface shape if needed by UI, or UI updates? 
-    // UI expects { id, content, raw_text, source_app, created_at, role? }
-    // We added 'role' to messages.
-    return messages;
+  const db = getDB()
+  // Fetch from new 'messages' table
+  const stmt = db.prepare(
+    'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ?'
+  )
+  const messages = stmt.all(sessionId, limit)
+
+  // Map to old Memory interface shape if needed by UI, or UI updates?
+  // UI expects { id, content, raw_text, source_app, created_at, role? }
+  // We added 'role' to messages.
+  return messages
 }
 
-  export function getMemoryRecordsForSession(sessionId: string, limit: number = 200) {
-    const db = getDB();
-    const stmt = db.prepare('SELECT * FROM memories WHERE session_id = ? ORDER BY created_at ASC LIMIT ?');
-    return stmt.all(sessionId, limit);
-  }
+export function getMemoryRecordsForSession(sessionId: string, limit: number = 200) {
+  const db = getDB()
+  const stmt = db.prepare(
+    'SELECT * FROM memories WHERE session_id = ? ORDER BY created_at ASC LIMIT ?'
+  )
+  return stmt.all(sessionId, limit)
+}
 
 export function checkMessageExists(hash: string, conversationId: string): boolean {
-    const db = getDB();
-    const stmt = db.prepare('SELECT id FROM messages WHERE conversation_id = ? AND hash = ? LIMIT 1');
-    const result = stmt.get(conversationId, hash);
-    return !!result;
+  const db = getDB()
+  const stmt = db.prepare('SELECT id FROM messages WHERE conversation_id = ? AND hash = ? LIMIT 1')
+  const result = stmt.get(conversationId, hash)
+  return !!result
 }
 
 // === MASTER MEMORY ===
 
 export function getMasterMemory(): { content: string | null; updated_at: string | null } {
-    const db = getDB();
-    const result = db.prepare('SELECT content, updated_at FROM master_memory WHERE id = 1').get() as { content: string; updated_at: string } | undefined;
-    return result || { content: null, updated_at: null };
+  const db = getDB()
+  const result = db.prepare('SELECT content, updated_at FROM master_memory WHERE id = 1').get() as
+    | { content: string; updated_at: string }
+    | undefined
+  return result || { content: null, updated_at: null }
 }
 
 export function updateMasterMemory(content: string) {
-    const db = getDB();
-    const stmt = db.prepare(`
+  const db = getDB()
+  const stmt = db.prepare(`
         INSERT INTO master_memory (id, content, updated_at)
         VALUES (1, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             content = excluded.content,
             updated_at = excluded.updated_at
-    `);
-    stmt.run(content);
+    `)
+  stmt.run(content)
 }
 
 // One-shot, idempotent purge of the legacy "My Memories" data: the AI-chat
@@ -476,118 +482,146 @@ export function updateMasterMemory(content: string) {
 // entity_facts, OR observation_entities. Once the legacy conversations are gone
 // this finds nothing and is a no-op, so it's safe to call on every startup.
 export function purgeLegacyChatImports(): Record<string, number> | null {
-    const db = getDB();
-    const legacy = db.prepare(`
+  const db = getDB()
+  const legacy = db
+    .prepare(
+      `
         SELECT id FROM conversations
         WHERE app_name IN ('Claude.ai','ChatGPT','Gemini')
            OR LOWER(app_name) LIKE '%claude%'
            OR LOWER(app_name) LIKE '%chatgpt%'
            OR LOWER(app_name) LIKE '%gemini%'
-    `).all() as { id: string }[];
-    const ids = legacy.map((r) => r.id);
-    if (ids.length === 0) return null;
+    `
+    )
+    .all() as { id: string }[]
+  const ids = legacy.map((r) => r.id)
+  if (ids.length === 0) return null
 
-    const ph = ids.map(() => '?').join(',');
-    const hasObsEntities = !!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='observation_entities'`).get();
+  const ph = ids.map(() => '?').join(',')
+  const hasObsEntities = !!db
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='observation_entities'`)
+    .get()
 
-    const run = db.transaction(() => {
-        const counts: Record<string, number> = {};
-        const messages = db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE conversation_id IN (${ph})`).get(...ids) as { c: number };
-        counts.messages = messages.c;
-        counts.memories = db.prepare(`DELETE FROM memories WHERE session_id IN (${ph})`).run(...ids).changes;
-        counts.summaries = db.prepare(`DELETE FROM chat_summaries WHERE session_id IN (${ph})`).run(...ids).changes;
-        counts.entityFacts = db.prepare(`DELETE FROM entity_facts WHERE source_session_id IN (${ph})`).run(...ids).changes;
-        // Cascades messages + entity_sessions (both FK conversations ON DELETE CASCADE).
-        counts.conversations = db.prepare(`DELETE FROM conversations WHERE id IN (${ph})`).run(...ids).changes;
-        // Drop entities now orphaned across every link table (keeps current-capture entities).
-        const orphanGuard = hasObsEntities
-            ? `id NOT IN (SELECT entity_id FROM entity_sessions)
+  const run = db.transaction(() => {
+    const counts: Record<string, number> = {}
+    const messages = db
+      .prepare(`SELECT COUNT(*) AS c FROM messages WHERE conversation_id IN (${ph})`)
+      .get(...ids) as { c: number }
+    counts.messages = messages.c
+    counts.memories = db
+      .prepare(`DELETE FROM memories WHERE session_id IN (${ph})`)
+      .run(...ids).changes
+    counts.summaries = db
+      .prepare(`DELETE FROM chat_summaries WHERE session_id IN (${ph})`)
+      .run(...ids).changes
+    counts.entityFacts = db
+      .prepare(`DELETE FROM entity_facts WHERE source_session_id IN (${ph})`)
+      .run(...ids).changes
+    // Cascades messages + entity_sessions (both FK conversations ON DELETE CASCADE).
+    counts.conversations = db
+      .prepare(`DELETE FROM conversations WHERE id IN (${ph})`)
+      .run(...ids).changes
+    // Drop entities now orphaned across every link table (keeps current-capture entities).
+    const orphanGuard = hasObsEntities
+      ? `id NOT IN (SELECT entity_id FROM entity_sessions)
                AND id NOT IN (SELECT entity_id FROM entity_facts)
                AND id NOT IN (SELECT entity_id FROM observation_entities)`
-            : `id NOT IN (SELECT entity_id FROM entity_sessions)
-               AND id NOT IN (SELECT entity_id FROM entity_facts)`;
-        counts.entitiesDeleted = hasObsEntities
-            ? db.prepare(`DELETE FROM entities WHERE ${orphanGuard}`).run().changes
-            : 0; // without obs links we can't tell current from legacy — leave them
-        // The stale consolidated profile is gone for good.
-        counts.masterMemory = db.prepare(`DELETE FROM master_memory`).run().changes;
-        // Rebuild external-content FTS indexes so they don't point at deleted rows.
-        for (const t of ['memory_fts', 'message_fts', 'summary_fts', 'entity_fts', 'entity_fact_fts']) {
-            try { db.prepare(`INSERT INTO ${t}(${t}) VALUES('rebuild')`).run(); } catch { /* table may be absent */ }
-        }
-        return counts;
-    });
-    const result = run();
-    console.log('[DB] Purged legacy My Memories chat imports:', result);
-    return result;
+      : `id NOT IN (SELECT entity_id FROM entity_sessions)
+               AND id NOT IN (SELECT entity_id FROM entity_facts)`
+    counts.entitiesDeleted = hasObsEntities
+      ? db.prepare(`DELETE FROM entities WHERE ${orphanGuard}`).run().changes
+      : 0 // without obs links we can't tell current from legacy — leave them
+    // The stale consolidated profile is gone for good.
+    counts.masterMemory = db.prepare(`DELETE FROM master_memory`).run().changes
+    // Rebuild external-content FTS indexes so they don't point at deleted rows.
+    for (const t of ['memory_fts', 'message_fts', 'summary_fts', 'entity_fts', 'entity_fact_fts']) {
+      try {
+        db.prepare(`INSERT INTO ${t}(${t}) VALUES('rebuild')`).run()
+      } catch {
+        /* table may be absent */
+      }
+    }
+    return counts
+  })
+  const result = run()
+  console.log('[DB] Purged legacy My Memories chat imports:', result)
+  return result
 }
 
 export function getAllChatSummaries(): { session_id: string; summary: string }[] {
-    const db = getDB();
-    const stmt = db.prepare('SELECT session_id, summary FROM chat_summaries WHERE summary IS NOT NULL');
-    return stmt.all() as { session_id: string; summary: string }[];
+  const db = getDB()
+  const stmt = db.prepare(
+    'SELECT session_id, summary FROM chat_summaries WHERE summary IS NOT NULL'
+  )
+  return stmt.all() as { session_id: string; summary: string }[]
 }
 
 // === ENTITIES ===
 
 export function upsertEntity(name: string, type: string = 'Unknown'): number {
-    const db = getDB();
-    const stmt = db.prepare(`
+  const db = getDB()
+  const stmt = db.prepare(`
       INSERT INTO entities (name, type, updated_at)
       VALUES (?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(name, type) DO UPDATE SET updated_at = excluded.updated_at
-    `);
-    stmt.run(name.trim(), type.trim() || 'Unknown');
+    `)
+  stmt.run(name.trim(), type.trim() || 'Unknown')
 
-    const row = db.prepare('SELECT id FROM entities WHERE name = ? AND type = ?').get(name.trim(), type.trim() || 'Unknown') as { id: number } | undefined;
-    return row?.id || 0;
+  const row = db
+    .prepare('SELECT id FROM entities WHERE name = ? AND type = ?')
+    .get(name.trim(), type.trim() || 'Unknown') as { id: number } | undefined
+  return row?.id || 0
 }
 
 export function updateEntitySummary(entityId: number, summary: string) {
-    const db = getDB();
-    const stmt = db.prepare(`
+  const db = getDB()
+  const stmt = db.prepare(`
       UPDATE entities SET summary = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `);
-    stmt.run(summary, entityId);
+    `)
+  stmt.run(summary, entityId)
 }
 
 export function addEntityFact(entityId: number, fact: string, sessionId?: string): boolean {
-    const db = getDB();
-    const stmt = db.prepare(`
+  const db = getDB()
+  const stmt = db.prepare(`
       INSERT OR IGNORE INTO entity_facts (entity_id, fact, source_session_id)
       VALUES (?, ?, ?)
-    `);
-    const info = stmt.run(entityId, fact.trim(), sessionId || null);
-    return info.changes > 0;
+    `)
+  const info = stmt.run(entityId, fact.trim(), sessionId || null)
+  return info.changes > 0
 }
 
 export function upsertEntitySession(entityId: number, sessionId: string): void {
-    const db = getDB();
-    const stmt = db.prepare(`
+  const db = getDB()
+  const stmt = db.prepare(`
       INSERT OR IGNORE INTO entity_sessions (entity_id, session_id)
       VALUES (?, ?)
-    `);
-    stmt.run(entityId, sessionId);
+    `)
+  stmt.run(entityId, sessionId)
 }
 
 function normalizeEdgePair(a: number, b: number): [number, number] {
-    return a < b ? [a, b] : [b, a];
+  return a < b ? [a, b] : [b, a]
 }
 
 function escapeRegExp(input: string): string {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 export function rebuildEntityEdgesForSession(sessionId: string): void {
-    const db = getDB();
-    const entities = db.prepare(`
+  const db = getDB()
+  const entities = db
+    .prepare(
+      `
       SELECT entity_id FROM entity_sessions WHERE session_id = ?
-    `).all(sessionId) as { entity_id: number }[];
+    `
+    )
+    .all(sessionId) as { entity_id: number }[]
 
-    const entityIds = entities.map(e => e.entity_id).filter(Boolean);
-    if (entityIds.length < 2) return;
+  const entityIds = entities.map((e) => e.entity_id).filter(Boolean)
+  if (entityIds.length < 2) return
 
-    const upsertEdge = db.prepare(`
+  const upsertEdge = db.prepare(`
       INSERT INTO entity_edges (source_entity_id, target_entity_id, type, weight, evidence_count, last_session_id, updated_at)
       VALUES (?, ?, 'cooccurrence', 1, 1, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(source_entity_id, target_entity_id, type) DO UPDATE SET
@@ -595,31 +629,35 @@ export function rebuildEntityEdgesForSession(sessionId: string): void {
         evidence_count = entity_edges.evidence_count + 1,
         last_session_id = excluded.last_session_id,
         updated_at = excluded.updated_at
-    `);
+    `)
 
-    for (let i = 0; i < entityIds.length; i++) {
-        for (let j = i + 1; j < entityIds.length; j++) {
-            const [sourceId, targetId] = normalizeEdgePair(entityIds[i]!, entityIds[j]!);
-            upsertEdge.run(sourceId, targetId, sessionId);
-        }
+  for (let i = 0; i < entityIds.length; i++) {
+    for (let j = i + 1; j < entityIds.length; j++) {
+      const [sourceId, targetId] = normalizeEdgePair(entityIds[i]!, entityIds[j]!)
+      upsertEdge.run(sourceId, targetId, sessionId)
     }
+  }
 }
 
-  function rebuildEntityEdgesFromMentions(): void {
-    const db = getDB();
-    const entities = db.prepare(`
+function rebuildEntityEdgesFromMentions(): void {
+  const db = getDB()
+  const entities = db
+    .prepare(
+      `
       SELECT id, name, summary FROM entities
-    `).all() as { id: number; name: string; summary: string | null }[];
+    `
+    )
+    .all() as { id: number; name: string; summary: string | null }[]
 
-    if (entities.length < 2) return;
+  if (entities.length < 2) return
 
-    const matchers = entities.map(e => ({
-      id: e.id,
-      name: e.name,
-      regex: new RegExp(`\\b${escapeRegExp(e.name)}\\b`, 'i')
-    }));
+  const matchers = entities.map((e) => ({
+    id: e.id,
+    name: e.name,
+    regex: new RegExp(`\\b${escapeRegExp(e.name)}\\b`, 'i')
+  }))
 
-    const upsertMention = db.prepare(`
+  const upsertMention = db.prepare(`
       INSERT INTO entity_edges (source_entity_id, target_entity_id, type, weight, evidence_count, last_session_id, updated_at)
       VALUES (?, ?, 'mention', 1, 1, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(source_entity_id, target_entity_id, type) DO UPDATE SET
@@ -627,59 +665,67 @@ export function rebuildEntityEdgesForSession(sessionId: string): void {
       evidence_count = entity_edges.evidence_count + 1,
       last_session_id = COALESCE(excluded.last_session_id, entity_edges.last_session_id),
       updated_at = excluded.updated_at
-    `);
+    `)
 
-    const facts = db.prepare(`
+  const facts = db
+    .prepare(
+      `
       SELECT entity_id, fact, source_session_id FROM entity_facts
-    `).all() as { entity_id: number; fact: string; source_session_id: string | null }[];
+    `
+    )
+    .all() as { entity_id: number; fact: string; source_session_id: string | null }[]
 
-    for (const factRow of facts) {
-      const text = factRow.fact || '';
-      if (!text) continue;
-      for (const matcher of matchers) {
-        if (matcher.id === factRow.entity_id) continue;
-        if (matcher.regex.test(text)) {
-          const [sourceId, targetId] = normalizeEdgePair(factRow.entity_id, matcher.id);
-          upsertMention.run(sourceId, targetId, factRow.source_session_id || null);
-        }
-      }
-    }
-
-    for (const entity of entities) {
-      const text = entity.summary || '';
-      if (!text) continue;
-      for (const matcher of matchers) {
-        if (matcher.id === entity.id) continue;
-        if (matcher.regex.test(text)) {
-          const [sourceId, targetId] = normalizeEdgePair(entity.id, matcher.id);
-          upsertMention.run(sourceId, targetId, null);
-        }
+  for (const factRow of facts) {
+    const text = factRow.fact || ''
+    if (!text) continue
+    for (const matcher of matchers) {
+      if (matcher.id === factRow.entity_id) continue
+      if (matcher.regex.test(text)) {
+        const [sourceId, targetId] = normalizeEdgePair(factRow.entity_id, matcher.id)
+        upsertMention.run(sourceId, targetId, factRow.source_session_id || null)
       }
     }
   }
 
-  export function rebuildEntityEdgesForAllSessions(): void {
-    const db = getDB();
-    db.prepare(`
+  for (const entity of entities) {
+    const text = entity.summary || ''
+    if (!text) continue
+    for (const matcher of matchers) {
+      if (matcher.id === entity.id) continue
+      if (matcher.regex.test(text)) {
+        const [sourceId, targetId] = normalizeEdgePair(entity.id, matcher.id)
+        upsertMention.run(sourceId, targetId, null)
+      }
+    }
+  }
+}
+
+export function rebuildEntityEdgesForAllSessions(): void {
+  const db = getDB()
+  db.prepare(
+    `
       INSERT OR IGNORE INTO entity_sessions (entity_id, session_id)
       SELECT entity_id, source_session_id
       FROM entity_facts
       WHERE source_session_id IS NOT NULL
-    `).run();
+    `
+  ).run()
 
-    db.prepare('DELETE FROM entity_edges').run();
+  db.prepare('DELETE FROM entity_edges').run()
 
-    const sessions = db.prepare('SELECT DISTINCT session_id FROM entity_sessions').all() as { session_id: string }[];
-    for (const row of sessions) {
-      rebuildEntityEdgesForSession(row.session_id);
-    }
-
-    rebuildEntityEdgesFromMentions();
+  const sessions = db.prepare('SELECT DISTINCT session_id FROM entity_sessions').all() as {
+    session_id: string
+  }[]
+  for (const row of sessions) {
+    rebuildEntityEdgesForSession(row.session_id)
   }
 
+  rebuildEntityEdgesFromMentions()
+}
+
 export function getEntities(appName?: string) {
-    const db = getDB();
-    let query = `
+  const db = getDB()
+  let query = `
       SELECT 
         e.id,
         e.name,
@@ -692,43 +738,43 @@ export function getEntities(appName?: string) {
       LEFT JOIN entity_facts f ON f.entity_id = e.id
       LEFT JOIN entity_sessions es ON es.entity_id = e.id
       LEFT JOIN conversations c ON es.session_id = c.id
-    `;
+    `
 
-    const params: any[] = [];
-    if (appName && appName !== 'All') {
-        query += ` WHERE c.app_name LIKE ? `;
-        params.push(`%${appName}%`);
-    }
+  const params: any[] = []
+  if (appName && appName !== 'All') {
+    query += ` WHERE c.app_name LIKE ? `
+    params.push(`%${appName}%`)
+  }
 
-    query += ` GROUP BY e.id ORDER BY e.updated_at DESC`;
-    const stmt = db.prepare(query);
-    return stmt.all(...params);
+  query += ` GROUP BY e.id ORDER BY e.updated_at DESC`
+  const stmt = db.prepare(query)
+  return stmt.all(...params)
 }
 
 export function getEntityDetails(entityId: number, appName?: string) {
-    const db = getDB();
-    const entity = db.prepare('SELECT * FROM entities WHERE id = ?').get(entityId);
+  const db = getDB()
+  const entity = db.prepare('SELECT * FROM entities WHERE id = ?').get(entityId)
 
-    let factsQuery = `
+  let factsQuery = `
       SELECT f.id, f.fact, f.source_session_id, f.created_at
       FROM entity_facts f
       LEFT JOIN conversations c ON f.source_session_id = c.id
       WHERE f.entity_id = ?
-    `;
-    const params: any[] = [entityId];
-    if (appName && appName !== 'All') {
-        factsQuery += ` AND c.app_name LIKE ? `;
-        params.push(`%${appName}%`);
-    }
-    factsQuery += ` ORDER BY f.created_at DESC`;
+    `
+  const params: any[] = [entityId]
+  if (appName && appName !== 'All') {
+    factsQuery += ` AND c.app_name LIKE ? `
+    params.push(`%${appName}%`)
+  }
+  factsQuery += ` ORDER BY f.created_at DESC`
 
-    const facts = db.prepare(factsQuery).all(...params);
-    return { entity, facts };
+  const facts = db.prepare(factsQuery).all(...params)
+  return { entity, facts }
 }
 
 export function getEntitiesForSession(sessionId: string) {
-    const db = getDB();
-    const stmt = db.prepare(`
+  const db = getDB()
+  const stmt = db.prepare(`
       SELECT e.id, e.name, e.type, e.summary, e.updated_at,
              COUNT(DISTINCT f.id) as fact_count
       FROM entities e
@@ -737,131 +783,146 @@ export function getEntitiesForSession(sessionId: string) {
       WHERE es.session_id = ?
       GROUP BY e.id
       ORDER BY e.updated_at DESC
-    `);
-    return stmt.all(sessionId);
+    `)
+  return stmt.all(sessionId)
 }
 
-  export function getEntityGraph(appName?: string, focusEntityId?: number, edgeLimit: number = 200, factsPerNode: number = 3) {
-    const db = getDB();
+export function getEntityGraph(
+  appName?: string,
+  focusEntityId?: number,
+  edgeLimit: number = 200,
+  factsPerNode: number = 3
+) {
+  const db = getDB()
 
-    let allowedEntityIds: number[] | null = null;
-    if (appName && appName !== 'All') {
-      const rows = db.prepare(`
+  let allowedEntityIds: number[] | null = null
+  if (appName && appName !== 'All') {
+    const rows = db
+      .prepare(
+        `
         SELECT DISTINCT es.entity_id
         FROM entity_sessions es
         JOIN conversations c ON es.session_id = c.id
         WHERE c.app_name LIKE ?
-      `).all(`%${appName}%`) as { entity_id: number }[];
-      allowedEntityIds = rows.map(r => r.entity_id);
-      if (allowedEntityIds.length === 0) {
-        return { nodes: [], edges: [] };
-      }
+      `
+      )
+      .all(`%${appName}%`) as { entity_id: number }[]
+    allowedEntityIds = rows.map((r) => r.entity_id)
+    if (allowedEntityIds.length === 0) {
+      return { nodes: [], edges: [] }
     }
+  }
 
-    const edgeParams: any[] = [];
-    let edgeQuery = `
+  const edgeParams: any[] = []
+  let edgeQuery = `
       SELECT source_entity_id as source, target_entity_id as target, type, weight, evidence_count, updated_at
       FROM entity_edges
-    `;
+    `
 
-    const whereClauses: string[] = [];
-    if (typeof focusEntityId === 'number') {
-      whereClauses.push('(source_entity_id = ? OR target_entity_id = ?)');
-      edgeParams.push(focusEntityId, focusEntityId);
-    }
+  const whereClauses: string[] = []
+  if (typeof focusEntityId === 'number') {
+    whereClauses.push('(source_entity_id = ? OR target_entity_id = ?)')
+    edgeParams.push(focusEntityId, focusEntityId)
+  }
 
-    if (allowedEntityIds) {
-      const placeholders = allowedEntityIds.map(() => '?').join(',');
-      whereClauses.push(`source_entity_id IN (${placeholders})`);
-      whereClauses.push(`target_entity_id IN (${placeholders})`);
-      edgeParams.push(...allowedEntityIds, ...allowedEntityIds);
-    }
+  if (allowedEntityIds) {
+    const placeholders = allowedEntityIds.map(() => '?').join(',')
+    whereClauses.push(`source_entity_id IN (${placeholders})`)
+    whereClauses.push(`target_entity_id IN (${placeholders})`)
+    edgeParams.push(...allowedEntityIds, ...allowedEntityIds)
+  }
 
-    if (whereClauses.length > 0) {
-      edgeQuery += ` WHERE ${whereClauses.join(' AND ')}`;
-    }
+  if (whereClauses.length > 0) {
+    edgeQuery += ` WHERE ${whereClauses.join(' AND ')}`
+  }
 
-    edgeQuery += ` ORDER BY weight DESC LIMIT ?`;
-    edgeParams.push(edgeLimit);
+  edgeQuery += ` ORDER BY weight DESC LIMIT ?`
+  edgeParams.push(edgeLimit)
 
-    const edges = db.prepare(edgeQuery).all(...edgeParams) as {
-      source: number;
-      target: number;
-      type: string;
-      weight: number;
-      evidence_count: number;
-      updated_at: string;
-    }[];
+  const edges = db.prepare(edgeQuery).all(...edgeParams) as {
+    source: number
+    target: number
+    type: string
+    weight: number
+    evidence_count: number
+    updated_at: string
+  }[]
 
-    if (edges.length === 0 && typeof focusEntityId !== 'number') {
-      let nodeQuery = `
+  if (edges.length === 0 && typeof focusEntityId !== 'number') {
+    let nodeQuery = `
         SELECT e.id, e.name, e.type, e.summary, e.updated_at,
            COUNT(DISTINCT f.id) as fact_count,
            COUNT(DISTINCT es.session_id) as session_count
         FROM entities e
         LEFT JOIN entity_facts f ON f.entity_id = e.id
         LEFT JOIN entity_sessions es ON es.entity_id = e.id
-      `;
-      const nodeParams: any[] = [];
-      if (allowedEntityIds) {
-        const placeholders = allowedEntityIds.map(() => '?').join(',');
-        nodeQuery += ` WHERE e.id IN (${placeholders}) `;
-        nodeParams.push(...allowedEntityIds);
-      }
-      nodeQuery += ` GROUP BY e.id ORDER BY e.updated_at DESC LIMIT 50`;
+      `
+    const nodeParams: any[] = []
+    if (allowedEntityIds) {
+      const placeholders = allowedEntityIds.map(() => '?').join(',')
+      nodeQuery += ` WHERE e.id IN (${placeholders}) `
+      nodeParams.push(...allowedEntityIds)
+    }
+    nodeQuery += ` GROUP BY e.id ORDER BY e.updated_at DESC LIMIT 50`
 
-      const nodes = db.prepare(nodeQuery).all(...nodeParams) as {
-        id: number;
-        name: string;
-        type: string;
-        summary: string | null;
-        updated_at: string;
-        fact_count: number;
-        session_count: number;
-      }[];
+    const nodes = db.prepare(nodeQuery).all(...nodeParams) as {
+      id: number
+      name: string
+      type: string
+      summary: string | null
+      updated_at: string
+      fact_count: number
+      session_count: number
+    }[]
 
-      const nodeIds = nodes.map(n => n.id);
-      if (nodeIds.length === 0) return { nodes: [], edges: [] };
+    const nodeIds = nodes.map((n) => n.id)
+    if (nodeIds.length === 0) return { nodes: [], edges: [] }
 
-      const nodePlaceholders = nodeIds.map(() => '?').join(',');
-      const facts = db.prepare(`
+    const nodePlaceholders = nodeIds.map(() => '?').join(',')
+    const facts = db
+      .prepare(
+        `
         SELECT entity_id, fact, created_at
         FROM entity_facts
         WHERE entity_id IN (${nodePlaceholders})
         ORDER BY created_at DESC
-      `).all(...nodeIds) as { entity_id: number; fact: string; created_at: string }[];
+      `
+      )
+      .all(...nodeIds) as { entity_id: number; fact: string; created_at: string }[]
 
-      const factsByEntity = new Map<number, string[]>();
-      for (const row of facts) {
-        const list = factsByEntity.get(row.entity_id) || [];
-        if (list.length < factsPerNode) {
-          list.push(row.fact);
-          factsByEntity.set(row.entity_id, list);
-        }
+    const factsByEntity = new Map<number, string[]>()
+    for (const row of facts) {
+      const list = factsByEntity.get(row.entity_id) || []
+      if (list.length < factsPerNode) {
+        list.push(row.fact)
+        factsByEntity.set(row.entity_id, list)
       }
-
-      const nodesWithFacts = nodes.map(n => ({
-        ...n,
-        facts: factsByEntity.get(n.id) || []
-      }));
-
-      return { nodes: nodesWithFacts, edges: [] };
     }
 
-    const nodeIdSet = new Set<number>();
-    edges.forEach(e => {
-      nodeIdSet.add(e.source);
-      nodeIdSet.add(e.target);
-    });
-    if (typeof focusEntityId === 'number') nodeIdSet.add(focusEntityId);
+    const nodesWithFacts = nodes.map((n) => ({
+      ...n,
+      facts: factsByEntity.get(n.id) || []
+    }))
 
-    const nodeIds = Array.from(nodeIdSet);
-    if (nodeIds.length === 0) {
-      return { nodes: [], edges: [] };
-    }
+    return { nodes: nodesWithFacts, edges: [] }
+  }
 
-    const nodePlaceholders = nodeIds.map(() => '?').join(',');
-    const nodes = db.prepare(`
+  const nodeIdSet = new Set<number>()
+  edges.forEach((e) => {
+    nodeIdSet.add(e.source)
+    nodeIdSet.add(e.target)
+  })
+  if (typeof focusEntityId === 'number') nodeIdSet.add(focusEntityId)
+
+  const nodeIds = Array.from(nodeIdSet)
+  if (nodeIds.length === 0) {
+    return { nodes: [], edges: [] }
+  }
+
+  const nodePlaceholders = nodeIds.map(() => '?').join(',')
+  const nodes = db
+    .prepare(
+      `
       SELECT e.id, e.name, e.type, e.summary, e.updated_at,
          COUNT(DISTINCT f.id) as fact_count,
          COUNT(DISTINCT es.session_id) as session_count
@@ -870,126 +931,164 @@ export function getEntitiesForSession(sessionId: string) {
       LEFT JOIN entity_sessions es ON es.entity_id = e.id
       WHERE e.id IN (${nodePlaceholders})
       GROUP BY e.id
-    `).all(...nodeIds) as {
-      id: number;
-      name: string;
-      type: string;
-      summary: string | null;
-      updated_at: string;
-      fact_count: number;
-      session_count: number;
-    }[];
+    `
+    )
+    .all(...nodeIds) as {
+    id: number
+    name: string
+    type: string
+    summary: string | null
+    updated_at: string
+    fact_count: number
+    session_count: number
+  }[]
 
-    const facts = db.prepare(`
+  const facts = db
+    .prepare(
+      `
       SELECT entity_id, fact, created_at
       FROM entity_facts
       WHERE entity_id IN (${nodePlaceholders})
       ORDER BY created_at DESC
-    `).all(...nodeIds) as { entity_id: number; fact: string; created_at: string }[];
+    `
+    )
+    .all(...nodeIds) as { entity_id: number; fact: string; created_at: string }[]
 
-    const factsByEntity = new Map<number, string[]>();
-    for (const row of facts) {
-      const list = factsByEntity.get(row.entity_id) || [];
-      if (list.length < factsPerNode) {
-        list.push(row.fact);
-        factsByEntity.set(row.entity_id, list);
-      }
+  const factsByEntity = new Map<number, string[]>()
+  for (const row of facts) {
+    const list = factsByEntity.get(row.entity_id) || []
+    if (list.length < factsPerNode) {
+      list.push(row.fact)
+      factsByEntity.set(row.entity_id, list)
     }
-
-    const nodesWithFacts = nodes.map(n => ({
-      ...n,
-      facts: factsByEntity.get(n.id) || []
-    }));
-
-    return { nodes: nodesWithFacts, edges };
   }
+
+  const nodesWithFacts = nodes.map((n) => ({
+    ...n,
+    facts: factsByEntity.get(n.id) || []
+  }))
+
+  return { nodes: nodesWithFacts, edges }
+}
 
 // === DELETE FUNCTIONS ===
 
 export function deleteEntity(entityId: number): boolean {
-    const db = getDB();
-    // Foreign key cascade will handle entity_facts, entity_sessions, entity_edges
-    const stmt = db.prepare('DELETE FROM entities WHERE id = ?');
-    const info = stmt.run(entityId);
-    console.log(`Deleted entity ${entityId}, changes: ${info.changes}`);
-    return info.changes > 0;
+  const db = getDB()
+  // Foreign key cascade will handle entity_facts, entity_sessions, entity_edges
+  const stmt = db.prepare('DELETE FROM entities WHERE id = ?')
+  const info = stmt.run(entityId)
+  console.log(`Deleted entity ${entityId}, changes: ${info.changes}`)
+  return info.changes > 0
 }
 
 export function deleteMemory(memoryId: number): boolean {
-    const db = getDB();
-    const stmt = db.prepare('DELETE FROM memories WHERE id = ?');
-    const info = stmt.run(memoryId);
-    console.log(`Deleted memory ${memoryId}, changes: ${info.changes}`);
-    return info.changes > 0;
+  const db = getDB()
+  const stmt = db.prepare('DELETE FROM memories WHERE id = ?')
+  const info = stmt.run(memoryId)
+  console.log(`Deleted memory ${memoryId}, changes: ${info.changes}`)
+  return info.changes > 0
 }
 
 // === DASHBOARD STATS ===
 
 export interface DashboardStats {
-    totalChats: number;
-    totalMemories: number;
-    totalEntities: number;
-    totalRelationships: number;
-    totalMessages: number;
-    todayChats: number;
-    todayMemories: number;
-    todayEntities: number;
-    totalFacts: number;
-    recentChats: Array<{
-        session_id: string;
-        title: string | null;
-        app_name: string;
-        memory_count: number;
-        entity_count: number;
-        updated_at: string;
-    }>;
-    recentMemories: Array<{
-        id: number;
-        content: string;
-        source_app: string;
-        created_at: string;
-    }>;
-    topEntities: Array<{
-        id: number;
-        name: string;
-        type: string;
-        fact_count: number;
-        session_count: number;
-    }>;
-    entityTypeCounts: Array<{
-        type: string;
-        count: number;
-    }>;
-    appDistribution: Array<{
-        app_name: string;
-        chat_count: number;
-        memory_count: number;
-    }>;
-    activityByDay: Array<{
-        date: string;
-        chats: number;
-        memories: number;
-    }>;
+  totalChats: number
+  totalMemories: number
+  totalEntities: number
+  totalRelationships: number
+  totalMessages: number
+  todayChats: number
+  todayMemories: number
+  todayEntities: number
+  totalFacts: number
+  recentChats: Array<{
+    session_id: string
+    title: string | null
+    app_name: string
+    memory_count: number
+    entity_count: number
+    updated_at: string
+  }>
+  recentMemories: Array<{
+    id: number
+    content: string
+    source_app: string
+    created_at: string
+  }>
+  topEntities: Array<{
+    id: number
+    name: string
+    type: string
+    fact_count: number
+    session_count: number
+  }>
+  entityTypeCounts: Array<{
+    type: string
+    count: number
+  }>
+  appDistribution: Array<{
+    app_name: string
+    chat_count: number
+    memory_count: number
+  }>
+  activityByDay: Array<{
+    date: string
+    chats: number
+    memories: number
+  }>
 }
 
 export function getDashboardStats(): DashboardStats {
-    const db = getDB();
+  const db = getDB()
 
-    // Total counts
-    const totalChats = (db.prepare('SELECT COUNT(*) as count FROM conversations').get() as { count: number }).count;
-    const totalMemories = (db.prepare('SELECT COUNT(*) as count FROM memories').get() as { count: number }).count;
-    const totalEntities = (db.prepare('SELECT COUNT(*) as count FROM entities').get() as { count: number }).count;
-    const totalRelationships = (db.prepare('SELECT COUNT(*) as count FROM entity_edges').get() as { count: number }).count;
-    const totalMessages = (db.prepare('SELECT COUNT(*) as count FROM messages').get() as { count: number }).count;
-    const totalFacts = (db.prepare('SELECT COUNT(*) as count FROM entity_facts').get() as { count: number }).count;
+  // Total counts
+  const totalChats = (
+    db.prepare('SELECT COUNT(*) as count FROM conversations').get() as { count: number }
+  ).count
+  const totalMemories = (
+    db.prepare('SELECT COUNT(*) as count FROM memories').get() as { count: number }
+  ).count
+  const totalEntities = (
+    db.prepare('SELECT COUNT(*) as count FROM entities').get() as { count: number }
+  ).count
+  const totalRelationships = (
+    db.prepare('SELECT COUNT(*) as count FROM entity_edges').get() as { count: number }
+  ).count
+  const totalMessages = (
+    db.prepare('SELECT COUNT(*) as count FROM messages').get() as { count: number }
+  ).count
+  const totalFacts = (
+    db.prepare('SELECT COUNT(*) as count FROM entity_facts').get() as { count: number }
+  ).count
 
-    // Today's activity (convert stored timestamps to localtime before comparing)
-    const todayChats = (db.prepare(`SELECT COUNT(*) as count FROM conversations WHERE date(updated_at, 'localtime') = date('now', 'localtime')`).get() as { count: number }).count;
-    const todayMemories = (db.prepare(`SELECT COUNT(*) as count FROM memories WHERE date(created_at, 'localtime') = date('now', 'localtime')`).get() as { count: number }).count;
-    const todayEntities = (db.prepare(`SELECT COUNT(*) as count FROM entities WHERE date(created_at, 'localtime') = date('now', 'localtime')`).get() as { count: number }).count;
+  // Today's activity (convert stored timestamps to localtime before comparing)
+  const todayChats = (
+    db
+      .prepare(
+        `SELECT COUNT(*) as count FROM conversations WHERE date(updated_at, 'localtime') = date('now', 'localtime')`
+      )
+      .get() as { count: number }
+  ).count
+  const todayMemories = (
+    db
+      .prepare(
+        `SELECT COUNT(*) as count FROM memories WHERE date(created_at, 'localtime') = date('now', 'localtime')`
+      )
+      .get() as { count: number }
+  ).count
+  const todayEntities = (
+    db
+      .prepare(
+        `SELECT COUNT(*) as count FROM entities WHERE date(created_at, 'localtime') = date('now', 'localtime')`
+      )
+      .get() as { count: number }
+  ).count
 
-    // Recent chats (top 5)
-    const recentChats = db.prepare(`
+  // Recent chats (top 5)
+  const recentChats = db
+    .prepare(
+      `
         SELECT 
             c.id as session_id,
             c.title,
@@ -1000,18 +1099,26 @@ export function getDashboardStats(): DashboardStats {
         FROM conversations c
         ORDER BY c.updated_at DESC
         LIMIT 5
-    `).all() as DashboardStats['recentChats'];
+    `
+    )
+    .all() as DashboardStats['recentChats']
 
-    // Recent memories (top 5)
-    const recentMemories = db.prepare(`
+  // Recent memories (top 5)
+  const recentMemories = db
+    .prepare(
+      `
         SELECT id, content, source_app, created_at
         FROM memories
         ORDER BY created_at DESC
         LIMIT 5
-    `).all() as DashboardStats['recentMemories'];
+    `
+    )
+    .all() as DashboardStats['recentMemories']
 
-    // Top entities by fact count
-    const topEntities = db.prepare(`
+  // Top entities by fact count
+  const topEntities = db
+    .prepare(
+      `
         SELECT 
             e.id,
             e.name,
@@ -1024,19 +1131,27 @@ export function getDashboardStats(): DashboardStats {
         GROUP BY e.id
         ORDER BY fact_count DESC
         LIMIT 6
-    `).all() as DashboardStats['topEntities'];
+    `
+    )
+    .all() as DashboardStats['topEntities']
 
-    // Entity type distribution
-    const entityTypeCounts = db.prepare(`
+  // Entity type distribution
+  const entityTypeCounts = db
+    .prepare(
+      `
         SELECT type, COUNT(*) as count
         FROM entities
         GROUP BY type
         ORDER BY count DESC
         LIMIT 8
-    `).all() as DashboardStats['entityTypeCounts'];
+    `
+    )
+    .all() as DashboardStats['entityTypeCounts']
 
-    // App distribution
-    const appDistribution = db.prepare(`
+  // App distribution
+  const appDistribution = db
+    .prepare(
+      `
         SELECT 
             COALESCE(c.app_name, 'Unknown') as app_name,
             COUNT(DISTINCT c.id) as chat_count,
@@ -1045,10 +1160,14 @@ export function getDashboardStats(): DashboardStats {
         LEFT JOIN memories m ON m.session_id = c.id
         GROUP BY c.app_name
         ORDER BY chat_count DESC
-    `).all() as DashboardStats['appDistribution'];
+    `
+    )
+    .all() as DashboardStats['appDistribution']
 
-    // Activity by day (last 14 days, using localtime)
-    const activityByDay = db.prepare(`
+  // Activity by day (last 14 days, using localtime)
+  const activityByDay = db
+    .prepare(
+      `
         WITH RECURSIVE dates(date) AS (
             SELECT date('now', 'localtime', '-13 days')
             UNION ALL
@@ -1062,99 +1181,116 @@ export function getDashboardStats(): DashboardStats {
             (SELECT COUNT(*) FROM memories WHERE date(created_at, 'localtime') = dates.date) as memories
         FROM dates
         ORDER BY dates.date ASC
-    `).all() as DashboardStats['activityByDay'];
+    `
+    )
+    .all() as DashboardStats['activityByDay']
 
-    return {
-        totalChats,
-        totalMemories,
-        totalEntities,
-        totalRelationships,
-        totalMessages,
-        totalFacts,
-        todayChats,
-        todayMemories,
-        todayEntities,
-        recentChats,
-        recentMemories,
-        topEntities,
-        entityTypeCounts,
-        appDistribution,
-        activityByDay,
-    };
+  return {
+    totalChats,
+    totalMemories,
+    totalEntities,
+    totalRelationships,
+    totalMessages,
+    totalFacts,
+    todayChats,
+    todayMemories,
+    todayEntities,
+    recentChats,
+    recentMemories,
+    topEntities,
+    entityTypeCounts,
+    appDistribution,
+    activityByDay
+  }
 }
 
 // === USER PROFILE ===
 
 export interface UserProfile {
-    role?: string;
-    companySize?: string;
-    aiUsageFrequency?: string;
-    primaryTools?: string[];
-    painPoints?: string[];
-    primaryUseCase?: string;
-    privacyConcern?: string;
-    expectedBenefit?: string;
-    referralSource?: string;
-    completedAt?: string;
+  role?: string
+  companySize?: string
+  aiUsageFrequency?: string
+  primaryTools?: string[]
+  painPoints?: string[]
+  primaryUseCase?: string
+  privacyConcern?: string
+  expectedBenefit?: string
+  referralSource?: string
+  completedAt?: string
 }
 
 export function getUserProfile(): UserProfile | null {
-    const db = getDB();
-    const row = db.prepare('SELECT data FROM user_profile WHERE id = 1').get() as { data: string } | undefined;
-    if (!row) return null;
-    try {
-        return JSON.parse(row.data) as UserProfile;
-    } catch {
-        return null;
-    }
+  const db = getDB()
+  const row = db.prepare('SELECT data FROM user_profile WHERE id = 1').get() as
+    | { data: string }
+    | undefined
+  if (!row) return null
+  try {
+    return JSON.parse(row.data) as UserProfile
+  } catch {
+    return null
+  }
 }
 
 export function saveUserProfile(profile: UserProfile): void {
-    const db = getDB();
-    const now = new Date().toISOString();
-    const dataWithTimestamp = { ...profile, completedAt: now };
-    const json = JSON.stringify(dataWithTimestamp);
-    
-    db.prepare(`
+  const db = getDB()
+  const now = new Date().toISOString()
+  const dataWithTimestamp = { ...profile, completedAt: now }
+  const json = JSON.stringify(dataWithTimestamp)
+
+  db.prepare(
+    `
         INSERT INTO user_profile (id, data, updated_at)
         VALUES (1, ?, ?)
         ON CONFLICT(id) DO UPDATE SET data = ?, updated_at = ?
-    `).run(json, now, json, now);
+    `
+  ).run(json, now, json, now)
 }
 
 // === RAG CONVERSATIONS ===
 
 export interface RagConversation {
-    id: string;
-    title: string | null;
-    project_id?: string | null;
-    created_at: string;
-    updated_at: string;
-    message_count?: number;
+  id: string
+  title: string | null
+  project_id?: string | null
+  created_at: string
+  updated_at: string
+  message_count?: number
 }
 
 export interface RagMessage {
-    id: number;
-    conversation_id: string;
-    role: 'user' | 'assistant';
-    content: string;
-    context: string | null;
-    created_at: string;
+  id: number
+  conversation_id: string
+  role: 'user' | 'assistant'
+  content: string
+  context: string | null
+  created_at: string
 }
 
-export function createRagConversation(id: string, title?: string, projectId?: string | null): string {
-    const db = getDB();
-    db.prepare(`
+export function createRagConversation(
+  id: string,
+  title?: string,
+  projectId?: string | null
+): string {
+  const db = getDB()
+  db.prepare(
+    `
         INSERT INTO rag_conversations (id, title, project_id, created_at, updated_at)
         VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `).run(id, title || null, projectId || null);
-    return id;
+    `
+  ).run(id, title || null, projectId || null)
+  return id
 }
 
 export function getRagConversations(projectId?: string | null): RagConversation[] {
-    const db = getDB();
-    const where = projectId === undefined ? '' : projectId === null ? 'WHERE rc.project_id IS NULL' : 'WHERE rc.project_id = ?';
-    const stmt = db.prepare(`
+  const db = getDB()
+  const where =
+    projectId === undefined
+      ? ''
+      : projectId === null
+        ? 'WHERE rc.project_id IS NULL'
+        : 'WHERE rc.project_id = ?'
+  const stmt = db.prepare(`
         SELECT
             rc.id,
             rc.title,
@@ -1165,34 +1301,40 @@ export function getRagConversations(projectId?: string | null): RagConversation[
         FROM rag_conversations rc
         ${where}
         ORDER BY rc.updated_at DESC
-    `);
-    return (projectId ? stmt.all(projectId) : stmt.all()) as RagConversation[];
+    `)
+  return (projectId ? stmt.all(projectId) : stmt.all()) as RagConversation[]
 }
 
 export function getRagConversation(id: string): RagConversation | null {
-    const db = getDB();
-    return db.prepare(`
+  const db = getDB()
+  return db
+    .prepare(
+      `
         SELECT id, title, project_id, created_at, updated_at
         FROM rag_conversations
         WHERE id = ?
-    `).get(id) as RagConversation | null;
+    `
+    )
+    .get(id) as RagConversation | null
 }
 
 export function setRagConversationProject(id: string, projectId: string | null): void {
-    const db = getDB();
-    db.prepare(`UPDATE rag_conversations SET project_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(projectId, id);
+  const db = getDB()
+  db.prepare(
+    `UPDATE rag_conversations SET project_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+  ).run(projectId, id)
 }
 
 /** Conversation ids whose MESSAGE CONTENT matches a query (all terms, AND) — so the
  *  chat-list search can match what was said, not just the title. */
 export function searchRagConversationIds(query: string): string[] {
-    const terms = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).slice(0, 6);
-    if (!terms.length) return [];
-    const where = terms.map(() => 'lower(content) LIKE ?').join(' AND ');
-    const rows = getDB()
-        .prepare(`SELECT DISTINCT conversation_id FROM rag_messages WHERE ${where}`)
-        .all(...terms.map((t) => `%${t}%`)) as { conversation_id: string }[];
-    return rows.map((r) => r.conversation_id);
+  const terms = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).slice(0, 6)
+  if (!terms.length) return []
+  const where = terms.map(() => 'lower(content) LIKE ?').join(' AND ')
+  const rows = getDB()
+    .prepare(`SELECT DISTINCT conversation_id FROM rag_messages WHERE ${where}`)
+    .all(...terms.map((t) => `%${t}%`)) as { conversation_id: string }[]
+  return rows.map((r) => r.conversation_id)
 }
 
 /**
@@ -1200,133 +1342,162 @@ export function searchRagConversationIds(query: string): string[] {
  * reference what was discussed in sibling conversations. Returns chronological.
  */
 export function getProjectChatHistory(
-    projectId: string,
-    excludeConversationId: string,
-    limit = 12
+  projectId: string,
+  excludeConversationId: string,
+  limit = 12
 ): { role: string; content: string; title: string | null }[] {
-    const db = getDB();
-    // Project memory spans every sibling chat in the project (rag_conversations),
-    // so context isn't lost across chats in the project.
-    const rows = db.prepare(`
+  const db = getDB()
+  // Project memory spans every sibling chat in the project (rag_conversations),
+  // so context isn't lost across chats in the project.
+  const rows = db
+    .prepare(
+      `
         SELECT rm.role AS role, rm.content AS content, rc.title AS title, rm.created_at AS created_at
         FROM rag_messages rm
         JOIN rag_conversations rc ON rc.id = rm.conversation_id
         WHERE rc.project_id = ? AND rm.conversation_id != ?
         ORDER BY rm.created_at DESC
         LIMIT ?
-    `).all(projectId, excludeConversationId, limit) as { role: string; content: string; title: string | null; created_at: string }[];
-    return rows.map(({ role, content, title }) => ({ role, content, title })).reverse();
+    `
+    )
+    .all(projectId, excludeConversationId, limit) as {
+    role: string
+    content: string
+    title: string | null
+    created_at: string
+  }[]
+  return rows.map(({ role, content, title }) => ({ role, content, title })).reverse()
 }
 
 export function updateRagConversationTitle(id: string, title: string): void {
-    const db = getDB();
-    db.prepare(`
+  const db = getDB()
+  db.prepare(
+    `
         UPDATE rag_conversations 
         SET title = ?, updated_at = CURRENT_TIMESTAMP 
         WHERE id = ?
-    `).run(title, id);
+    `
+  ).run(title, id)
 }
 
 export function deleteRagConversation(id: string): boolean {
-    const db = getDB();
-    // FKs are off (no PRAGMA foreign_keys), so rag_messages' ON DELETE CASCADE never
-    // fires — delete the conversation's messages explicitly or they orphan (D23).
-    db.prepare('DELETE FROM rag_messages WHERE conversation_id = ?').run(id);
-    const info = db.prepare('DELETE FROM rag_conversations WHERE id = ?').run(id);
-    return info.changes > 0;
+  const db = getDB()
+  // FKs are off (no PRAGMA foreign_keys), so rag_messages' ON DELETE CASCADE never
+  // fires — delete the conversation's messages explicitly or they orphan (D23).
+  db.prepare('DELETE FROM rag_messages WHERE conversation_id = ?').run(id)
+  const info = db.prepare('DELETE FROM rag_conversations WHERE id = ?').run(id)
+  return info.changes > 0
 }
 
 export function addRagMessage(
-    conversationId: string,
-    role: 'user' | 'assistant',
-    content: string,
-    context?: any
+  conversationId: string,
+  role: 'user' | 'assistant',
+  content: string,
+  context?: any
 ): number {
-    const db = getDB();
-    const contextJson = context ? JSON.stringify(context) : null;
-    
-    const info = db.prepare(`
+  const db = getDB()
+  const contextJson = context ? JSON.stringify(context) : null
+
+  const info = db
+    .prepare(
+      `
         INSERT INTO rag_messages (conversation_id, role, content, context, created_at)
         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).run(conversationId, role, content, contextJson);
-    
-    // Update conversation updated_at timestamp
-    db.prepare(`
+    `
+    )
+    .run(conversationId, role, content, contextJson)
+
+  // Update conversation updated_at timestamp
+  db.prepare(
+    `
         UPDATE rag_conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `).run(conversationId);
-    
-    return Number(info.lastInsertRowid);
+    `
+  ).run(conversationId)
+
+  return Number(info.lastInsertRowid)
 }
 
 // Keep the first `keepCount` messages of a conversation (chronological) and
 // delete the rest — used by regenerate/edit so old answers don't pile up.
 export function truncateRagMessages(conversationId: string, keepCount: number): number {
-    const db = getDB();
-    const rows = db.prepare(`SELECT id FROM rag_messages WHERE conversation_id = ? ORDER BY id ASC`).all(conversationId) as { id: number }[];
-    const toDelete = rows.slice(Math.max(0, keepCount)).map((r) => r.id);
-    if (!toDelete.length) return 0;
-    const ph = toDelete.map(() => '?').join(',');
-    return db.prepare(`DELETE FROM rag_messages WHERE id IN (${ph})`).run(...toDelete).changes;
+  const db = getDB()
+  const rows = db
+    .prepare(`SELECT id FROM rag_messages WHERE conversation_id = ? ORDER BY id ASC`)
+    .all(conversationId) as { id: number }[]
+  const toDelete = rows.slice(Math.max(0, keepCount)).map((r) => r.id)
+  if (!toDelete.length) return 0
+  const ph = toDelete.map(() => '?').join(',')
+  return db.prepare(`DELETE FROM rag_messages WHERE id IN (${ph})`).run(...toDelete).changes
 }
 
 export function getRagMessages(conversationId: string): RagMessage[] {
-    const db = getDB();
-    return db.prepare(`
+  const db = getDB()
+  return db
+    .prepare(
+      `
         SELECT id, conversation_id, role, content, context, created_at
         FROM rag_messages
         WHERE conversation_id = ?
         ORDER BY created_at ASC
-    `).all(conversationId) as RagMessage[];
+    `
+    )
+    .all(conversationId) as RagMessage[]
 }
 
 // === APP SETTINGS ===
 
 export interface AppSettings {
-    memoryStrictness?: 'lenient' | 'balanced' | 'strict';
-    entityStrictness?: 'lenient' | 'balanced' | 'strict';
-    [key: string]: any;
+  memoryStrictness?: 'lenient' | 'balanced' | 'strict'
+  entityStrictness?: 'lenient' | 'balanced' | 'strict'
+  [key: string]: any
 }
 
 export function getSettings(): AppSettings {
-    const db = getDB();
-    const rows = db.prepare('SELECT key, value FROM app_settings').all() as { key: string; value: string }[];
-    const settings: AppSettings = {};
-    for (const row of rows) {
-        try {
-            settings[row.key] = JSON.parse(row.value);
-        } catch {
-            settings[row.key] = row.value;
-        }
+  const db = getDB()
+  const rows = db.prepare('SELECT key, value FROM app_settings').all() as {
+    key: string
+    value: string
+  }[]
+  const settings: AppSettings = {}
+  for (const row of rows) {
+    try {
+      settings[row.key] = JSON.parse(row.value)
+    } catch {
+      settings[row.key] = row.value
     }
-    // Set defaults if not present
-    if (!settings.memoryStrictness) settings.memoryStrictness = 'balanced';
-    if (!settings.entityStrictness) settings.entityStrictness = 'balanced';
-    return settings;
+  }
+  // Set defaults if not present
+  if (!settings.memoryStrictness) settings.memoryStrictness = 'balanced'
+  if (!settings.entityStrictness) settings.entityStrictness = 'balanced'
+  return settings
 }
 
 export function saveSetting(key: string, value: any): void {
-    const db = getDB();
-    const valueJson = JSON.stringify(value);
-    db.prepare(`
+  const db = getDB()
+  const valueJson = JSON.stringify(value)
+  db.prepare(
+    `
         INSERT INTO app_settings (key, value, updated_at)
         VALUES (?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
-    `).run(key, valueJson, valueJson);
+    `
+  ).run(key, valueJson, valueJson)
 }
 
 export function getSetting<T>(key: string, defaultValue: T): T {
-    const db = getDB();
-    const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key) as { value: string } | undefined;
-    if (!row) return defaultValue;
-    try {
-        return JSON.parse(row.value) as T;
-    } catch {
-        return defaultValue;
-    }
+  const db = getDB()
+  const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined
+  if (!row) return defaultValue
+  try {
+    return JSON.parse(row.value) as T
+  } catch {
+    return defaultValue
+  }
 }
 
 export function deleteSetting(key: string): void {
-    const db = getDB();
-    db.prepare('DELETE FROM app_settings WHERE key = ?').run(key);
+  const db = getDB()
+  db.prepare('DELETE FROM app_settings WHERE key = ?').run(key)
 }
-

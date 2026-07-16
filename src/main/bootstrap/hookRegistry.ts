@@ -8,25 +8,28 @@
 // own default behaviour. Mirrors mobile/src/bootstrap/hookRegistry.ts.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type HookFn = (...args: any[]) => any;
+type HookFn = (...args: any[]) => any
 
-const hooks: Record<string, HookFn> = {};
+const hooks: Record<string, HookFn> = {}
 
 export function registerHook(name: string, fn: HookFn): void {
-  hooks[name] = fn;
+  hooks[name] = fn
 }
 
 /** Call a hook if registered; returns its result, or undefined when absent. */
 export function callHook<R = unknown>(name: string, ...args: unknown[]): R | undefined {
-  const fn = hooks[name];
-  return fn ? (fn(...args) as R) : undefined;
+  const fn = hooks[name]
+  return fn ? (fn(...args) as R) : undefined
 }
 
 /** Await a hook if registered; returns its resolved result, or undefined. */
-export async function callHookAsync<R = unknown>(name: string, ...args: unknown[]): Promise<R | undefined> {
-  const fn = hooks[name];
-  if (!fn) return undefined;
-  return (await fn(...args)) as R;
+export async function callHookAsync<R = unknown>(
+  name: string,
+  ...args: unknown[]
+): Promise<R | undefined> {
+  const fn = hooks[name]
+  if (!fn) return undefined
+  return (await fn(...args)) as R
 }
 
 /** Known hook names, centralised so core and pro stay in sync. */
@@ -35,5 +38,5 @@ export const HOOKS = {
    *  system/context with captured memory + entity/observation context (pro). */
   chatAugmentContext: 'chat.augmentContext',
   /** () => Promise<SearchSource[]> — extra universal-search sources (pro). */
-  searchExtraSources: 'search.extraSources',
-} as const;
+  searchExtraSources: 'search.extraSources'
+} as const

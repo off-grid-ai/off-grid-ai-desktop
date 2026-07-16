@@ -2,4 +2,4 @@
 // shell (setup.ts) can both import RecMode without a circular dependency.
 
 /** Resource-usage mode "Configure for me" picks for: light, default, or maximal. */
-export type RecMode = 'conservative' | 'balanced' | 'extreme';
+export type RecMode = 'conservative' | 'balanced' | 'extreme'

@@ -8,5 +8,5 @@
  *  capped at the setting no matter what the turn asked for (D10). This makes the
  *  requested value authoritative when given, with the setting as the fallback. */
 export function resolveMaxTokens(requested: number | undefined, setting: number): number {
-  return requested ?? setting;
+  return requested ?? setting
 }

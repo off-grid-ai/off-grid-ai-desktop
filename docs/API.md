@@ -45,18 +45,18 @@ speech are always ready (models download on first use). Image generation/edit re
 
 ## Capabilities at a glance
 
-| Modality | Endpoint | Method | Backend |
-|---|---|---|---|
-| Text → Text | `/v1/chat/completions` | POST | llama-server (bundled VLM) |
-| Image → Text (vision) | `/v1/chat/completions` | POST | llama-server (VLM + mmproj) |
-| Text completion (legacy) | `/v1/completions` | POST | llama-server |
-| Embeddings | `/v1/embeddings` | POST | llama-server |
-| List models | `/v1/models` | GET | llama-server |
-| Speech → Text (STT) | `/v1/audio/transcriptions` | POST | whisper.cpp |
-| Text → Speech (TTS) | `/v1/audio/speech` | POST | Kokoro-82M (ONNX) |
-| List TTS voices | `/v1/audio/voices` | GET | Kokoro-82M |
-| Text → Image | `/v1/images` (or `/v1/images/generations`) | POST | stable-diffusion.cpp / Core ML |
-| Image → Image | `/v1/images` (or `/v1/images/edits`) | POST | stable-diffusion.cpp |
+| Modality                 | Endpoint                                   | Method | Backend                        |
+| ------------------------ | ------------------------------------------ | ------ | ------------------------------ |
+| Text → Text              | `/v1/chat/completions`                     | POST   | llama-server (bundled VLM)     |
+| Image → Text (vision)    | `/v1/chat/completions`                     | POST   | llama-server (VLM + mmproj)    |
+| Text completion (legacy) | `/v1/completions`                          | POST   | llama-server                   |
+| Embeddings               | `/v1/embeddings`                           | POST   | llama-server                   |
+| List models              | `/v1/models`                               | GET    | llama-server                   |
+| Speech → Text (STT)      | `/v1/audio/transcriptions`                 | POST   | whisper.cpp                    |
+| Text → Speech (TTS)      | `/v1/audio/speech`                         | POST   | Kokoro-82M (ONNX)              |
+| List TTS voices          | `/v1/audio/voices`                         | GET    | Kokoro-82M                     |
+| Text → Image             | `/v1/images` (or `/v1/images/generations`) | POST   | stable-diffusion.cpp / Core ML |
+| Image → Image            | `/v1/images` (or `/v1/images/edits`)       | POST   | stable-diffusion.cpp           |
 
 This surface follows the [OpenRouter multimodal](https://openrouter.ai/docs/guides/overview/multimodal/overview)
 conventions: images go in as `image_url` content parts (data URLs **or** `http(s)://` /
@@ -92,7 +92,14 @@ grammar-constrained `response_format` and disable thinking:
 ```json
 {
   "messages": [{ "role": "user", "content": "..." }],
-  "response_format": { "type": "json_schema", "json_schema": { "schema": { /* ... */ } } },
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "schema": {
+        /* ... */
+      }
+    }
+  },
   "chat_template_kwargs": { "enable_thinking": false }
 }
 ```
@@ -108,12 +115,12 @@ print(r.choices[0].message.content)
 ```
 
 ```javascript
-import OpenAI from "openai";
-const client = new OpenAI({ baseURL: "http://127.0.0.1:7878/v1", apiKey: "not-needed" });
+import OpenAI from 'openai'
+const client = new OpenAI({ baseURL: 'http://127.0.0.1:7878/v1', apiKey: 'not-needed' })
 const r = await client.chat.completions.create({
-  model: "local",
-  messages: [{ role: "user", content: "hello" }],
-});
+  model: 'local',
+  messages: [{ role: 'user', content: 'hello' }]
+})
 ```
 
 ---
@@ -196,11 +203,11 @@ converted to 16 kHz mono via ffmpeg and transcribed with auto language detection
 
 **Form fields**
 
-| Field | Required | Notes |
-|---|---|---|
-| `file` | yes | Audio file (wav, mp3, m4a, …). Max 200 MB. |
-| `response_format` | no | `json` (default) or `text`. |
-| `model` | no | Accepted for compatibility; the installed whisper model is used. |
+| Field             | Required | Notes                                                            |
+| ----------------- | -------- | ---------------------------------------------------------------- |
+| `file`            | yes      | Audio file (wav, mp3, m4a, …). Max 200 MB.                       |
+| `response_format` | no       | `json` (default) or `text`.                                      |
+| `model`           | no       | Accepted for compatibility; the installed whisper model is used. |
 
 ```bash
 curl http://127.0.0.1:7878/v1/audio/transcriptions \
@@ -223,12 +230,12 @@ onnxruntime. **Returns raw `audio/wav` bytes** by default (like OpenAI).
 
 **JSON body**
 
-| Field | Required | Notes |
-|---|---|---|
-| `input` | yes | Text to speak. Capped at ~2000 chars per call. (`text` also accepted.) |
-| `voice` | no | Voice id, default `af_heart`. See `/v1/audio/voices`. |
-| `response_format` | no | Omit/`wav` → raw WAV bytes. `json`/`b64_json` → `{ "audio": "data:audio/wav;base64,…", "format": "wav" }`. |
-| `model` | no | Accepted for compatibility. |
+| Field             | Required | Notes                                                                                                      |
+| ----------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `input`           | yes      | Text to speak. Capped at ~2000 chars per call. (`text` also accepted.)                                     |
+| `voice`           | no       | Voice id, default `af_heart`. See `/v1/audio/voices`.                                                      |
+| `response_format` | no       | Omit/`wav` → raw WAV bytes. `json`/`b64_json` → `{ "audio": "data:audio/wav;base64,…", "format": "wav" }`. |
+| `model`           | no       | Accepted for compatibility.                                                                                |
 
 ```bash
 # Raw WAV to a file
@@ -250,7 +257,7 @@ curl http://127.0.0.1:7878/v1/audio/voices
 
 ---
 
-## 6. Text → Image  &  Image → Image (`/v1/images`)
+## 6. Text → Image & Image → Image (`/v1/images`)
 
 `POST /v1/images` — one JSON endpoint for both text-to-image and image-to-image, matching
 OpenRouter's image API. On-device diffusion via stable-diffusion.cpp (GGUF / safetensors)
@@ -258,21 +265,21 @@ or the Core ML ANE helper. Returns base64 PNG.
 
 **JSON body**
 
-| Field | Required | Notes |
-|---|---|---|
-| `prompt` | yes | Text prompt. |
-| `input_references` | no | Array — **presence makes it image-to-image.** Each item is `{ "type": "image_url", "image_url": { "url": "…" } }` (or a bare URL string). The `url` may be a data URL, `http(s)://`, or `file://`. The first reference is used as the init image. |
-| `strength` | no | img2img only. 0–1, how far from the init image (default ~0.75). Lower = closer to original. |
-| `aspect_ratio` | no | e.g. `"16:9"`, `"1:1"`. Combined with `resolution`. |
-| `resolution` | no | `"1K"` (default), `"2K"`, or `"512"` — sets the long edge. |
-| `size` | no | OpenAI-style `"WIDTHxHEIGHT"`, e.g. `"1024x1024"`. |
-| `width` / `height` | no | Explicit dimensions (numbers); override the above. |
-| `negative_prompt` | no | Things to avoid. A sensible default is applied if omitted. |
-| `steps` | no | Sampling steps. Per-model default (few-step turbo/lightning models use ~4–8). |
-| `seed` | no | Integer seed; omit or `-1` for random. The resolved seed is returned. |
-| `cfg_scale` | no | Guidance scale. Per-model default. |
-| `model` | no | Model filename in the models dir; otherwise the preferred installed model. |
-| `response_format` | no | `b64_json` (default) → base64 PNG. `url` → `file://` path on disk. |
+| Field              | Required | Notes                                                                                                                                                                                                                                             |
+| ------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prompt`           | yes      | Text prompt.                                                                                                                                                                                                                                      |
+| `input_references` | no       | Array — **presence makes it image-to-image.** Each item is `{ "type": "image_url", "image_url": { "url": "…" } }` (or a bare URL string). The `url` may be a data URL, `http(s)://`, or `file://`. The first reference is used as the init image. |
+| `strength`         | no       | img2img only. 0–1, how far from the init image (default ~0.75). Lower = closer to original.                                                                                                                                                       |
+| `aspect_ratio`     | no       | e.g. `"16:9"`, `"1:1"`. Combined with `resolution`.                                                                                                                                                                                               |
+| `resolution`       | no       | `"1K"` (default), `"2K"`, or `"512"` — sets the long edge.                                                                                                                                                                                        |
+| `size`             | no       | OpenAI-style `"WIDTHxHEIGHT"`, e.g. `"1024x1024"`.                                                                                                                                                                                                |
+| `width` / `height` | no       | Explicit dimensions (numbers); override the above.                                                                                                                                                                                                |
+| `negative_prompt`  | no       | Things to avoid. A sensible default is applied if omitted.                                                                                                                                                                                        |
+| `steps`            | no       | Sampling steps. Per-model default (few-step turbo/lightning models use ~4–8).                                                                                                                                                                     |
+| `seed`             | no       | Integer seed; omit or `-1` for random. The resolved seed is returned.                                                                                                                                                                             |
+| `cfg_scale`        | no       | Guidance scale. Per-model default.                                                                                                                                                                                                                |
+| `model`            | no       | Model filename in the models dir; otherwise the preferred installed model.                                                                                                                                                                        |
+| `response_format`  | no       | `b64_json` (default) → base64 PNG. `url` → `file://` path on disk.                                                                                                                                                                                |
 
 **Text-to-image:**
 
@@ -301,9 +308,7 @@ curl http://127.0.0.1:7878/v1/images \
 ```json
 {
   "created": 1750000000,
-  "data": [
-    { "b64_json": "iVBORw0KGgo...", "seed": 42, "model": "z-image-turbo.gguf" }
-  ],
+  "data": [{ "b64_json": "iVBORw0KGgo...", "seed": 42, "model": "z-image-turbo.gguf" }],
   "usage": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 }
 }
 ```
@@ -344,13 +349,13 @@ Errors use the OpenAI shape:
 { "error": { "message": "…", "type": "invalid_request_error" } }
 ```
 
-| Status | Meaning |
-|---|---|
-| `400` | Bad request (missing field, wrong content type, invalid JSON). |
-| `413` | Upload exceeds the 200 MB cap. |
-| `500` | The model run failed (see `message`). |
-| `501` | Modality not installed (e.g. no diffusion model, transcription runtime missing). |
-| `502` | llama-server not ready (chat/embeddings upstream unavailable). |
+| Status | Meaning                                                                          |
+| ------ | -------------------------------------------------------------------------------- |
+| `400`  | Bad request (missing field, wrong content type, invalid JSON).                   |
+| `413`  | Upload exceeds the 200 MB cap.                                                   |
+| `500`  | The model run failed (see `message`).                                            |
+| `501`  | Modality not installed (e.g. no diffusion model, transcription runtime missing). |
+| `502`  | llama-server not ready (chat/embeddings upstream unavailable).                   |
 
 ---
 
@@ -392,7 +397,7 @@ curl http://127.0.0.1:7878/v1/requests/cee1c78f-…
 {
   "request_id": "cee1c78f-…",
   "kind": "image",
-  "status": "completed",          // queued | running | completed | failed
+  "status": "completed", // queued | running | completed | failed
   "created_at": 1782191813736,
   "updated_at": 1782191840000,
   "result": { "created": 1782191840, "data": [{ "b64_json": "…" }] }
@@ -423,12 +428,12 @@ memory carefully (Apple Silicon shares RAM between CPU/GPU/ANE):
 
 ## Backends & ports
 
-| Service | Where | Used by |
-|---|---|---|
-| `llama-server` | `127.0.0.1:8439` (long-running) | chat, vision, completions, embeddings, models |
-| `whisper.cpp` (`whisper-cli`) | one-shot subprocess | transcription |
-| Kokoro-82M via `kokoro-js` | in-process (onnxruntime) | speech, voices |
-| `sd-cli` / `coreml-sd` | one-shot subprocess | image generation & edits |
+| Service                       | Where                           | Used by                                       |
+| ----------------------------- | ------------------------------- | --------------------------------------------- |
+| `llama-server`                | `127.0.0.1:8439` (long-running) | chat, vision, completions, embeddings, models |
+| `whisper.cpp` (`whisper-cli`) | one-shot subprocess             | transcription                                 |
+| Kokoro-82M via `kokoro-js`    | in-process (onnxruntime)        | speech, voices                                |
+| `sd-cli` / `coreml-sd`        | one-shot subprocess             | image generation & edits                      |
 
 The gateway (`src/main/model-server.ts`) is the only port you call (`7878`); it proxies
 or invokes the right backend per route. Models live in the app's `userData/models`

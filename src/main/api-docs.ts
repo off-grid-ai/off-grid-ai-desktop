@@ -9,7 +9,7 @@
 // The playground calls the live gateway directly — CORS is open on the server.
 
 export function docsText(port: number): string {
-  const b = `http://127.0.0.1:${port}`;
+  const b = `http://127.0.0.1:${port}`
   return `Off Grid AI — Local Model Gateway
 OpenAI-compatible. Base URL: ${b}/v1  (no API key required)
 
@@ -24,12 +24,12 @@ IMAGE -> IMAGE        POST ${b}/v1/images              {prompt, input_references
   (OpenAI aliases)    POST ${b}/v1/images/generations  |  POST ${b}/v1/images/edits (multipart)
 
 Open ${b}/docs in a browser for the interactive playground. Repo: docs/API.md.
-`;
+`
 }
 
 /** Interactive docs shell (Scalar API Reference) pointed at /openapi.json. */
 export function docsHtml(port: number): string {
-  const b = `http://127.0.0.1:${port}`;
+  const b = `http://127.0.0.1:${port}`
   return `<!doctype html>
 <html lang="en"><head>
   <meta charset="utf-8"/>
@@ -53,7 +53,7 @@ export function docsHtml(port: number): string {
   <script id="api-reference" data-url="${b}/openapi.json"
           data-configuration='{"theme":"none","darkMode":true,"hideDownloadButton":false,"defaultHttpClient":{"targetKey":"shell","clientKey":"curl"},"hiddenClients":["c","clojure","csharp","go","http","java","kotlin","objc","ocaml","php","powershell","r","ruby","swift","httpie","wget","undici","axios","ofetch","unirest","nsurlsession","asynchttp","nethttp","okhttp","restsharp","native","cohttp","webrequest","jquery","xhr"]}'></script>
   <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
-</body></html>`;
+</body></html>`
 }
 
 /** OpenAPI 3.1 spec. `modalities`/`imageModels` come from live gateway state. */
@@ -62,8 +62,8 @@ export function openApiSpec(
   modalities: Record<string, string>,
   imageModels: string[]
 ): unknown {
-  const ready = (k: string): string => (modalities[k] === 'ready' ? 'ready' : 'not installed');
-  const imgEnum = imageModels.length ? { enum: imageModels } : {};
+  const ready = (k: string): string => (modalities[k] === 'ready' ? 'ready' : 'not installed')
+  const imgEnum = imageModels.length ? { enum: imageModels } : {}
 
   // Opt-in async: any POST accepts ?async=true (or body async:true / X-Async header)
   // and returns 202 with a request resource you poll via GET /v1/requests/{id}.
@@ -72,8 +72,9 @@ export function openApiSpec(
     in: 'query',
     required: false,
     schema: { type: 'boolean', default: false },
-    description: 'Run asynchronously: returns 202 + a request_id and poll_url instead of waiting for the result.',
-  };
+    description:
+      'Run asynchronously: returns 202 + a request_id and poll_url instead of waiting for the result.'
+  }
 
   const errorResponse = {
     description: 'Error',
@@ -84,13 +85,13 @@ export function openApiSpec(
           properties: {
             error: {
               type: 'object',
-              properties: { message: { type: 'string' }, type: { type: 'string' } },
-            },
-          },
-        },
-      },
-    },
-  };
+              properties: { message: { type: 'string' }, type: { type: 'string' } }
+            }
+          }
+        }
+      }
+    }
+  }
 
   const imageResultSchema = {
     type: 'object',
@@ -103,13 +104,13 @@ export function openApiSpec(
           properties: {
             b64_json: { type: 'string', description: 'Base64-encoded PNG' },
             seed: { type: 'integer' },
-            model: { type: 'string' },
-          },
-        },
+            model: { type: 'string' }
+          }
+        }
       },
-      usage: { type: 'object' },
-    },
-  };
+      usage: { type: 'object' }
+    }
+  }
 
   return {
     openapi: '3.1.0',
@@ -191,7 +192,7 @@ Every response carries an \`X-Request-Id\`. Any POST can run async — \`?async=
 
 ## Performance & memory
 
-Models swap in/out (Apple Silicon unified memory): image generation pauses the LLM, TTS runs in a killable subprocess, STT is one-shot. HTTP timeouts are disabled so long diffusion runs and first-run downloads complete — use a client timeout ≥120s for images/TTS (or just use async + polling). While the LLM reloads after image gen, chat may briefly return \`502\` — retry after a moment.`,
+Models swap in/out (Apple Silicon unified memory): image generation pauses the LLM, TTS runs in a killable subprocess, STT is one-shot. HTTP timeouts are disabled so long diffusion runs and first-run downloads complete — use a client timeout ≥120s for images/TTS (or just use async + polling). While the LLM reloads after image gen, chat may briefly return \`502\` — retry after a moment.`
     },
     servers: [{ url: b(port), description: 'Local gateway (loopback)' }],
     tags: [
@@ -200,7 +201,7 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
       { name: 'Audio', description: 'Speech-to-text and text-to-speech' },
       { name: 'Images', description: 'Text-to-image and image-to-image' },
       { name: 'Requests', description: 'Poll async requests (request_id)' },
-      { name: 'MCP', description: 'Model Context Protocol server — on-device models as MCP tools' },
+      { name: 'MCP', description: 'Model Context Protocol server — on-device models as MCP tools' }
     ],
     paths: {
       '/v1/chat/completions': {
@@ -223,8 +224,8 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
                     stream: { type: 'boolean', default: false },
                     max_tokens: { type: 'integer' },
                     temperature: { type: 'number' },
-                    response_format: { type: 'object' },
-                  },
+                    response_format: { type: 'object' }
+                  }
                 },
                 examples: {
                   text: {
@@ -232,8 +233,8 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
                     value: {
                       model: 'local',
                       messages: [{ role: 'user', content: 'Write a haiku about local AI.' }],
-                      chat_template_kwargs: { enable_thinking: false },
-                    },
+                      chat_template_kwargs: { enable_thinking: false }
+                    }
                   },
                   vision: {
                     summary: 'Image → text (vision)',
@@ -244,18 +245,24 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
                           role: 'user',
                           content: [
                             { type: 'text', text: 'What is in this image?' },
-                            { type: 'image_url', image_url: { url: 'https://example.com/photo.jpg' } },
-                          ],
-                        },
-                      ],
-                    },
-                  },
-                },
-              },
-            },
+                            {
+                              type: 'image_url',
+                              image_url: { url: 'https://example.com/photo.jpg' }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           },
-          responses: { '200': { description: 'OpenAI chat.completion object' }, default: errorResponse },
-        },
+          responses: {
+            '200': { description: 'OpenAI chat.completion object' },
+            default: errorResponse
+          }
+        }
       },
       '/v1/embeddings': {
         post: {
@@ -271,23 +278,23 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
                   required: ['input'],
                   properties: {
                     input: {
-                      oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+                      oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }]
                     },
-                    model: { type: 'string', default: 'all-MiniLM-L6-v2' },
-                  },
+                    model: { type: 'string', default: 'all-MiniLM-L6-v2' }
+                  }
                 },
-                example: { input: ['text one', 'text two'] },
-              },
-            },
+                example: { input: ['text one', 'text two'] }
+              }
+            }
           },
           responses: {
             '200': {
               description: 'OpenAI list of embeddings',
-              content: { 'application/json': { schema: { type: 'object' } } },
+              content: { 'application/json': { schema: { type: 'object' } } }
             },
-            default: errorResponse,
-          },
-        },
+            default: errorResponse
+          }
+        }
       },
       '/v1/audio/transcriptions': {
         post: {
@@ -302,25 +309,29 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
                   type: 'object',
                   required: ['file'],
                   properties: {
-                    file: { type: 'string', format: 'binary', description: 'Audio file (wav/mp3/m4a…)' },
-                    response_format: { type: 'string', enum: ['json', 'text'], default: 'json' },
-                  },
-                },
-              },
-            },
+                    file: {
+                      type: 'string',
+                      format: 'binary',
+                      description: 'Audio file (wav/mp3/m4a…)'
+                    },
+                    response_format: { type: 'string', enum: ['json', 'text'], default: 'json' }
+                  }
+                }
+              }
+            }
           },
           responses: {
             '200': {
               description: 'Transcript',
               content: {
                 'application/json': {
-                  schema: { type: 'object', properties: { text: { type: 'string' } } },
-                },
-              },
+                  schema: { type: 'object', properties: { text: { type: 'string' } } }
+                }
+              }
             },
-            default: errorResponse,
-          },
-        },
+            default: errorResponse
+          }
+        }
       },
       '/v1/audio/speech': {
         post: {
@@ -341,22 +352,22 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
                       type: 'string',
                       enum: ['wav', 'json'],
                       default: 'wav',
-                      description: 'wav → raw bytes; json → { audio: dataURL }',
-                    },
-                  },
+                      description: 'wav → raw bytes; json → { audio: dataURL }'
+                    }
+                  }
                 },
-                example: { input: 'Hello from Off Grid.', voice: 'af_heart' },
-              },
-            },
+                example: { input: 'Hello from Off Grid.', voice: 'af_heart' }
+              }
+            }
           },
           responses: {
             '200': {
               description: 'WAV audio',
-              content: { 'audio/wav': { schema: { type: 'string', format: 'binary' } } },
+              content: { 'audio/wav': { schema: { type: 'string', format: 'binary' } } }
             },
-            default: errorResponse,
-          },
-        },
+            default: errorResponse
+          }
+        }
       },
       '/v1/audio/voices': {
         get: {
@@ -367,12 +378,15 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
               description: 'Voice ids',
               content: {
                 'application/json': {
-                  schema: { type: 'object', properties: { voices: { type: 'array', items: { type: 'string' } } } },
-                },
-              },
-            },
-          },
-        },
+                  schema: {
+                    type: 'object',
+                    properties: { voices: { type: 'array', items: { type: 'string' } } }
+                  }
+                }
+              }
+            }
+          }
+        }
       },
       '/v1/images': {
         post: {
@@ -392,14 +406,15 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
                     prompt: { type: 'string' },
                     input_references: {
                       type: 'array',
-                      description: 'Init image(s) for image-to-image. data URL, http(s), or file path.',
+                      description:
+                        'Init image(s) for image-to-image. data URL, http(s), or file path.',
                       items: {
                         type: 'object',
                         properties: {
                           type: { type: 'string', example: 'image_url' },
-                          image_url: { type: 'object', properties: { url: { type: 'string' } } },
-                        },
-                      },
+                          image_url: { type: 'object', properties: { url: { type: 'string' } } }
+                        }
+                      }
                     },
                     strength: { type: 'number', description: 'img2img only, 0–1 (default ~0.75)' },
                     aspect_ratio: { type: 'string', example: '16:9' },
@@ -412,32 +427,45 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
                     cfg_scale: { type: 'number' },
                     negative_prompt: { type: 'string' },
                     model: { type: 'string', ...imgEnum },
-                    response_format: { type: 'string', enum: ['b64_json', 'url'], default: 'b64_json' },
-                  },
+                    response_format: {
+                      type: 'string',
+                      enum: ['b64_json', 'url'],
+                      default: 'b64_json'
+                    }
+                  }
                 },
                 examples: {
                   txt2img: {
                     summary: 'Text → image',
-                    value: { prompt: 'a lighthouse at dusk, watercolor', aspect_ratio: '16:9', resolution: '1K' },
+                    value: {
+                      prompt: 'a lighthouse at dusk, watercolor',
+                      aspect_ratio: '16:9',
+                      resolution: '1K'
+                    }
                   },
                   img2img: {
                     summary: 'Image → image',
                     value: {
                       prompt: 'make it a snowy winter scene',
                       strength: 0.6,
-                      input_references: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,...' } }],
-                    },
-                  },
-                },
-              },
-            },
+                      input_references: [
+                        { type: 'image_url', image_url: { url: 'data:image/png;base64,...' } }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           },
           responses: {
-            '200': { description: 'Generated image', content: { 'application/json': { schema: imageResultSchema } } },
+            '200': {
+              description: 'Generated image',
+              content: { 'application/json': { schema: imageResultSchema } }
+            },
             '501': errorResponse,
-            default: errorResponse,
-          },
-        },
+            default: errorResponse
+          }
+        }
       },
       '/v1/images/generations': {
         post: {
@@ -448,13 +476,27 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
             required: true,
             content: {
               'application/json': {
-                schema: { type: 'object', required: ['prompt'], properties: { prompt: { type: 'string' }, size: { type: 'string' }, model: { type: 'string', ...imgEnum } } },
-                example: { prompt: 'a yellow rubber duck', size: '512x512' },
-              },
-            },
+                schema: {
+                  type: 'object',
+                  required: ['prompt'],
+                  properties: {
+                    prompt: { type: 'string' },
+                    size: { type: 'string' },
+                    model: { type: 'string', ...imgEnum }
+                  }
+                },
+                example: { prompt: 'a yellow rubber duck', size: '512x512' }
+              }
+            }
           },
-          responses: { '200': { description: 'Generated image', content: { 'application/json': { schema: imageResultSchema } } }, default: errorResponse },
-        },
+          responses: {
+            '200': {
+              description: 'Generated image',
+              content: { 'application/json': { schema: imageResultSchema } }
+            },
+            default: errorResponse
+          }
+        }
       },
       '/v1/images/edits': {
         post: {
@@ -472,14 +514,20 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
                     image: { type: 'string', format: 'binary' },
                     prompt: { type: 'string' },
                     strength: { type: 'number' },
-                    model: { type: 'string', ...imgEnum },
-                  },
-                },
-              },
-            },
+                    model: { type: 'string', ...imgEnum }
+                  }
+                }
+              }
+            }
           },
-          responses: { '200': { description: 'Edited image', content: { 'application/json': { schema: imageResultSchema } } }, default: errorResponse },
-        },
+          responses: {
+            '200': {
+              description: 'Edited image',
+              content: { 'application/json': { schema: imageResultSchema } }
+            },
+            default: errorResponse
+          }
+        }
       },
       '/v1/requests/{request_id}': {
         get: {
@@ -487,7 +535,9 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
           summary: 'Poll a request (RESTful)',
           description:
             'Read the status/result of any async request. `status` is queued | running | completed | failed; when completed, `result` holds the modality payload; when failed, `error`.',
-          parameters: [{ name: 'request_id', in: 'path', required: true, schema: { type: 'string' } }],
+          parameters: [
+            { name: 'request_id', in: 'path', required: true, schema: { type: 'string' } }
+          ],
           responses: {
             '200': {
               description: 'Request resource',
@@ -498,20 +548,27 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
                     properties: {
                       request_id: { type: 'string' },
                       kind: { type: 'string' },
-                      status: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
+                      status: {
+                        type: 'string',
+                        enum: ['queued', 'running', 'completed', 'failed']
+                      },
                       result: { type: 'object' },
-                      error: { type: 'object' },
-                    },
-                  },
-                },
-              },
+                      error: { type: 'object' }
+                    }
+                  }
+                }
+              }
             },
-            '404': errorResponse,
-          },
-        },
+            '404': errorResponse
+          }
+        }
       },
       '/v1/requests': {
-        get: { tags: ['Requests'], summary: 'List recent requests', responses: { '200': { description: 'List of requests' } } },
+        get: {
+          tags: ['Requests'],
+          summary: 'List recent requests',
+          responses: { '200': { description: 'List of requests' } }
+        }
       },
       '/mcp': {
         post: {
@@ -527,32 +584,50 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
               'application/json': {
                 schema: { $ref: '#/components/schemas/McpRequest' },
                 examples: {
-                  list: { summary: 'tools/list', value: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} } },
+                  list: {
+                    summary: 'tools/list',
+                    value: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }
+                  },
                   call: {
                     summary: 'tools/call',
-                    value: { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'generate_text', arguments: { prompt: 'Write a haiku.' } } },
-                  },
-                },
-              },
-            },
+                    value: {
+                      jsonrpc: '2.0',
+                      id: 2,
+                      method: 'tools/call',
+                      params: { name: 'generate_text', arguments: { prompt: 'Write a haiku.' } }
+                    }
+                  }
+                }
+              }
+            }
           },
-          responses: { '200': { description: 'JSON-RPC result' }, default: errorResponse },
-        },
+          responses: { '200': { description: 'JSON-RPC result' }, default: errorResponse }
+        }
       },
       '/health': {
-        get: { tags: ['Chat'], summary: 'Gateway health & live modality status', responses: { '200': { description: 'OK' } } },
-      },
+        get: {
+          tags: ['Chat'],
+          summary: 'Gateway health & live modality status',
+          responses: { '200': { description: 'OK' } }
+        }
+      }
     },
     components: {
       schemas: {
         Error: {
           type: 'object',
           description: 'OpenAI-style error envelope.',
-          properties: { error: { type: 'object', properties: { message: { type: 'string' }, type: { type: 'string' } } } },
+          properties: {
+            error: {
+              type: 'object',
+              properties: { message: { type: 'string' }, type: { type: 'string' } }
+            }
+          }
         },
         ChatMessage: {
           type: 'object',
-          description: 'A chat message. `content` is a string, or an array of parts (text + image_url) for vision.',
+          description:
+            'A chat message. `content` is a string, or an array of parts (text + image_url) for vision.',
           properties: {
             role: { type: 'string', enum: ['system', 'user', 'assistant'] },
             content: {
@@ -565,14 +640,19 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
                     properties: {
                       type: { type: 'string', enum: ['text', 'image_url'] },
                       text: { type: 'string' },
-                      image_url: { type: 'object', properties: { url: { type: 'string', description: 'data: URL or http(s)/file URL' } } },
-                    },
-                  },
-                },
-              ],
-            },
+                      image_url: {
+                        type: 'object',
+                        properties: {
+                          url: { type: 'string', description: 'data: URL or http(s)/file URL' }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
           },
-          required: ['role', 'content'],
+          required: ['role', 'content']
         },
         ChatCompletionRequest: {
           type: 'object',
@@ -583,13 +663,19 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
             stream: { type: 'boolean', default: false },
             max_tokens: { type: 'integer' },
             temperature: { type: 'number' },
-            response_format: { type: 'object', description: 'Grammar-constrained JSON / json_schema.' },
-          },
+            response_format: {
+              type: 'object',
+              description: 'Grammar-constrained JSON / json_schema.'
+            }
+          }
         },
         EmbeddingRequest: {
           type: 'object',
           required: ['input'],
-          properties: { input: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] }, model: { type: 'string' } },
+          properties: {
+            input: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+            model: { type: 'string' }
+          }
         },
         EmbeddingList: {
           type: 'object',
@@ -597,11 +683,18 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
             object: { type: 'string', example: 'list' },
             data: {
               type: 'array',
-              items: { type: 'object', properties: { object: { type: 'string' }, index: { type: 'integer' }, embedding: { type: 'array', items: { type: 'number' } } } },
+              items: {
+                type: 'object',
+                properties: {
+                  object: { type: 'string' },
+                  index: { type: 'integer' },
+                  embedding: { type: 'array', items: { type: 'number' } }
+                }
+              }
             },
             model: { type: 'string', example: 'all-MiniLM-L6-v2' },
-            usage: { type: 'object' },
-          },
+            usage: { type: 'object' }
+          }
         },
         ImageRequest: {
           type: 'object',
@@ -610,8 +703,15 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
             prompt: { type: 'string' },
             input_references: {
               type: 'array',
-              description: 'Init image(s) for image-to-image. Each is { type: image_url, image_url: { url } }.',
-              items: { type: 'object', properties: { type: { type: 'string' }, image_url: { type: 'object', properties: { url: { type: 'string' } } } } },
+              description:
+                'Init image(s) for image-to-image. Each is { type: image_url, image_url: { url } }.',
+              items: {
+                type: 'object',
+                properties: {
+                  type: { type: 'string' },
+                  image_url: { type: 'object', properties: { url: { type: 'string' } } }
+                }
+              }
             },
             strength: { type: 'number', description: 'img2img only, 0–1' },
             aspect_ratio: { type: 'string', example: '16:9' },
@@ -622,8 +722,8 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
             cfg_scale: { type: 'number' },
             negative_prompt: { type: 'string' },
             model: { type: 'string', ...imgEnum },
-            response_format: { type: 'string', enum: ['b64_json', 'url'] },
-          },
+            response_format: { type: 'string', enum: ['b64_json', 'url'] }
+          }
         },
         ImageResult: imageResultSchema,
         SpeechRequest: {
@@ -632,23 +732,30 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
           properties: {
             input: { type: 'string' },
             voice: { type: 'string', default: 'af_heart' },
-            response_format: { type: 'string', enum: ['wav', 'json'], default: 'wav' },
-          },
+            response_format: { type: 'string', enum: ['wav', 'json'], default: 'wav' }
+          }
         },
         TranscriptionResult: { type: 'object', properties: { text: { type: 'string' } } },
         RequestResource: {
           type: 'object',
-          description: 'An async request, returned by `?async=true` and read via GET /v1/requests/{id}.',
+          description:
+            'An async request, returned by `?async=true` and read via GET /v1/requests/{id}.',
           properties: {
             request_id: { type: 'string' },
-            kind: { type: 'string', enum: ['chat', 'embedding', 'transcription', 'speech', 'image'] },
+            kind: {
+              type: 'string',
+              enum: ['chat', 'embedding', 'transcription', 'speech', 'image']
+            },
             status: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
             created_at: { type: 'integer' },
             updated_at: { type: 'integer' },
             poll_url: { type: 'string' },
-            result: { type: 'object', description: 'Present when completed — the modality payload.' },
-            error: { $ref: '#/components/schemas/Error' },
-          },
+            result: {
+              type: 'object',
+              description: 'Present when completed — the modality payload.'
+            },
+            error: { $ref: '#/components/schemas/Error' }
+          }
         },
         McpRequest: {
           type: 'object',
@@ -658,14 +765,14 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
             jsonrpc: { type: 'string', enum: ['2.0'] },
             id: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
             method: { type: 'string', enum: ['initialize', 'tools/list', 'tools/call'] },
-            params: { type: 'object' },
-          },
-        },
-      },
-    },
-  };
+            params: { type: 'object' }
+          }
+        }
+      }
+    }
+  }
 }
 
 function b(port: number): string {
-  return `http://127.0.0.1:${port}`;
+  return `http://127.0.0.1:${port}`
 }

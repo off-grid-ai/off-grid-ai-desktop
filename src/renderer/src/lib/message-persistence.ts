@@ -13,7 +13,7 @@
 /** Extra assistant-turn fields that ride in the persisted `context` blob. */
 export interface AssistantContextExtras {
   /** The model's reasoning / "Thinking" text for the turn, if any. */
-  reasoning?: string;
+  reasoning?: string
 }
 
 /**
@@ -26,13 +26,13 @@ export interface AssistantContextExtras {
  */
 export function buildAssistantContext(
   baseCtx: Record<string, unknown> | undefined,
-  extras: AssistantContextExtras = {},
+  extras: AssistantContextExtras = {}
 ): Record<string, unknown> | undefined {
-  const reasoning = extras.reasoning?.trim() ? extras.reasoning : undefined;
-  if (!baseCtx && reasoning === undefined) return undefined;
-  const ctx: Record<string, unknown> = { ...(baseCtx ?? {}) };
-  if (reasoning !== undefined) ctx.reasoning = reasoning;
-  return ctx;
+  const reasoning = extras.reasoning?.trim() ? extras.reasoning : undefined
+  if (!baseCtx && reasoning === undefined) return undefined
+  const ctx: Record<string, unknown> = { ...(baseCtx ?? {}) }
+  if (reasoning !== undefined) ctx.reasoning = reasoning
+  return ctx
 }
 
 /**
@@ -42,7 +42,7 @@ export function buildAssistantContext(
  * "Thinking" block.
  */
 export function readReasoning(ctx: unknown): string | undefined {
-  if (!ctx || typeof ctx !== 'object') return undefined;
-  const r = (ctx as { reasoning?: unknown }).reasoning;
-  return typeof r === 'string' && r.trim() ? r : undefined;
+  if (!ctx || typeof ctx !== 'object') return undefined
+  const r = (ctx as { reasoning?: unknown }).reasoning
+  return typeof r === 'string' && r.trim() ? r : undefined
 }

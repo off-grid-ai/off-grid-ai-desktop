@@ -17,12 +17,12 @@
 // (rag_documents/rag_chunks) all survive a "full erase" — a privacy failure and a
 // broken promise. The fix routes every personal store through one registry.
 
-import { describe, it, expect, afterAll, vi } from 'vitest';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { describe, it, expect, afterAll, vi } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 
-const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-delall-'));
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-delall-'))
 
 vi.mock('electron', () => ({
   app: { getPath: () => TMP_DIR, isPackaged: false, getAppPath: () => process.cwd() },
@@ -32,56 +32,68 @@ vi.mock('electron', () => ({
   safeStorage: {
     isEncryptionAvailable: () => true,
     encryptString: (s: string) => Buffer.from(s),
-    decryptString: (b: Buffer) => b.toString(),
-  },
-}));
+    decryptString: (b: Buffer) => b.toString()
+  }
+}))
 
 // lancedb is a native vector DB — a true external boundary. deleteAllData never
 // issues a query against it (it only nulls the cached handle via resetVectors),
 // so a bare stub is enough to let vectors.ts import in-process.
-vi.mock('@lancedb/lancedb', () => ({ connect: async () => ({}) }));
+vi.mock('@lancedb/lancedb', () => ({ connect: async () => ({}) }))
 
-import * as dbmod from '../database';
-import { deleteAllData } from '../data-privacy';
-import { addConnector } from '../mcp';
-import { setSecret } from '../secrets';
-import { desktopVectorStore } from '../rag/store';
+import * as dbmod from '../database'
+import { deleteAllData } from '../data-privacy'
+import { addConnector } from '../mcp'
+import { setSecret } from '../secrets'
+import { desktopVectorStore } from '../rag/store'
 
 const count = (t: string): number =>
-  (dbmod.getDB().prepare(`SELECT COUNT(*) AS c FROM ${t}`).get() as { c: number }).c;
+  (dbmod.getDB().prepare(`SELECT COUNT(*) AS c FROM ${t}`).get() as { c: number }).c
 
 afterAll(() => {
-  try { fs.rmSync(TMP_DIR, { recursive: true, force: true }); } catch { /* best effort */ }
-});
+  try {
+    fs.rmSync(TMP_DIR, { recursive: true, force: true })
+  } catch {
+    /* best effort */
+  }
+})
 
 describe('deleteAllData — erases EVERY core personal store (D29/D30)', () => {
   it('leaves no connectors, secrets, or RAG knowledge base behind', async () => {
     // Seed via the REAL insert paths (each ensures its own schema).
-    addConnector({ name: 'Notion', transport: 'http', url: 'https://mcp.notion.com' });
-    setSecret('connector:1:oauth:tokens', JSON.stringify({ access_token: 'live-token-abc' }));
+    addConnector({ name: 'Notion', transport: 'http', url: 'https://mcp.notion.com' })
+    setSecret('connector:1:oauth:tokens', JSON.stringify({ access_token: 'live-token-abc' }))
     const docId = await desktopVectorStore.addDocument({
-      projectId: 'p1', name: 'roadmap.md', path: '/tmp/roadmap.md', size: 100, kind: 'text',
-    });
-    await desktopVectorStore.addChunks(docId, [{ content: 'secret plan', position: 0 }], [[0.1, 0.2, 0.3]]);
+      projectId: 'p1',
+      name: 'roadmap.md',
+      path: '/tmp/roadmap.md',
+      size: 100,
+      kind: 'text'
+    })
+    await desktopVectorStore.addChunks(
+      docId,
+      [{ content: 'secret plan', position: 0 }],
+      [[0.1, 0.2, 0.3]]
+    )
 
     // Control: a chat conversation, which delete-all ALREADY clears today — proves
     // the harness is sound and deleteAllData actually ran end-to-end.
-    dbmod.createRagConversation('c1', 'A chat', null);
+    dbmod.createRagConversation('c1', 'A chat', null)
 
     // Precondition: everything is really there.
-    expect(count('connectors')).toBeGreaterThan(0);
-    expect(count('secrets')).toBeGreaterThan(0);
-    expect(count('rag_documents')).toBeGreaterThan(0);
-    expect(count('rag_chunks')).toBeGreaterThan(0);
-    expect(count('rag_conversations')).toBeGreaterThan(0);
+    expect(count('connectors')).toBeGreaterThan(0)
+    expect(count('secrets')).toBeGreaterThan(0)
+    expect(count('rag_documents')).toBeGreaterThan(0)
+    expect(count('rag_chunks')).toBeGreaterThan(0)
+    expect(count('rag_conversations')).toBeGreaterThan(0)
 
-    deleteAllData();
+    deleteAllData()
 
     // Terminal artifact: the user's personal data is GONE.
-    expect(count('rag_conversations')).toBe(0); // control — already worked
-    expect(count('connectors')).toBe(0);        // D30 — was surviving
-    expect(count('secrets')).toBe(0);            // D30 — OAuth tokens were surviving
-    expect(count('rag_documents')).toBe(0);      // D29 — knowledge base was surviving
-    expect(count('rag_chunks')).toBe(0);         // D29 — knowledge base was surviving
-  });
-});
+    expect(count('rag_conversations')).toBe(0) // control — already worked
+    expect(count('connectors')).toBe(0) // D30 — was surviving
+    expect(count('secrets')).toBe(0) // D30 — OAuth tokens were surviving
+    expect(count('rag_documents')).toBe(0) // D29 — knowledge base was surviving
+    expect(count('rag_chunks')).toBe(0) // D29 — knowledge base was surviving
+  })
+})

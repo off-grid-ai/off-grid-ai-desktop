@@ -5,4 +5,4 @@
 // LLMService ctxSize field and the `balanced` MODE_PRESET, so a fresh instance
 // and what the UI shows agree. Pure constants, no imports.
 
-export const DEFAULT_CTX_SIZE = 16384;
+export const DEFAULT_CTX_SIZE = 16384

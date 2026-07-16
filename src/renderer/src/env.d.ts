@@ -5,117 +5,117 @@
 // owner: src/main/database.ts `UserProfile`. Keep field-for-field in sync; drift is
 // guarded by src/main/__tests__/ipc-type-parity.test.ts.
 interface UserProfile {
-  role?: string;
-  companySize?: string;
-  aiUsageFrequency?: string;
-  primaryTools?: string[];
-  painPoints?: string[];
-  primaryUseCase?: string;
-  privacyConcern?: string;
-  expectedBenefit?: string;
-  referralSource?: string;
-  completedAt?: string;
+  role?: string
+  companySize?: string
+  aiUsageFrequency?: string
+  primaryTools?: string[]
+  painPoints?: string[]
+  primaryUseCase?: string
+  privacyConcern?: string
+  expectedBenefit?: string
+  referralSource?: string
+  completedAt?: string
 }
 
 interface ProLicenseInfo {
-  isPro: boolean;
-  tier: 'lifetime' | 'monthly' | null;
-  expiry: string | null;
-  verifiedAt: number;
+  isPro: boolean
+  tier: 'lifetime' | 'monthly' | null
+  expiry: string | null
+  verifiedAt: number
 }
 
 // DUPLICATE (ambient decl). Canonical owner: src/main/permissions.ts `PermissionStatus`.
 // Keep in sync; guarded by src/main/__tests__/ipc-type-parity.test.ts.
 interface PermissionStatus {
-  accessibility: boolean;
-  screenRecording: boolean;
-  allGranted: boolean;
+  accessibility: boolean
+  screenRecording: boolean
+  allGranted: boolean
 }
 
 interface DashboardStats {
-  totalChats: number;
-  totalMemories: number;
-  totalEntities: number;
-  totalRelationships: number;
-  totalMessages: number;
-  totalFacts: number;
-  todayChats: number;
-  todayMemories: number;
-  todayEntities: number;
+  totalChats: number
+  totalMemories: number
+  totalEntities: number
+  totalRelationships: number
+  totalMessages: number
+  totalFacts: number
+  todayChats: number
+  todayMemories: number
+  todayEntities: number
   recentChats: Array<{
-    session_id: string;
-    title: string | null;
-    app_name: string;
-    memory_count: number;
-    entity_count: number;
-    updated_at: string;
-  }>;
+    session_id: string
+    title: string | null
+    app_name: string
+    memory_count: number
+    entity_count: number
+    updated_at: string
+  }>
   recentMemories: Array<{
-    id: number;
-    content: string;
-    source_app: string;
-    created_at: string;
-  }>;
+    id: number
+    content: string
+    source_app: string
+    created_at: string
+  }>
   topEntities: Array<{
-    id: number;
-    name: string;
-    type: string;
-    fact_count: number;
-    session_count: number;
-  }>;
+    id: number
+    name: string
+    type: string
+    fact_count: number
+    session_count: number
+  }>
   entityTypeCounts: Array<{
-    type: string;
-    count: number;
-  }>;
+    type: string
+    count: number
+  }>
   appDistribution: Array<{
-    app_name: string;
-    chat_count: number;
-    memory_count: number;
-  }>;
+    app_name: string
+    chat_count: number
+    memory_count: number
+  }>
   activityByDay: Array<{
-    date: string;
-    chats: number;
-    memories: number;
-  }>;
+    date: string
+    chats: number
+    memories: number
+  }>
 }
 
 // DUPLICATE (ambient decl). Canonical owner: src/main/database.ts `RagConversation`.
 // `project_id` scopes a chat to a project - must stay present or project chat routing
 // silently degrades at the preload boundary. Guarded by ipc-type-parity.test.ts.
 interface RagConversation {
-  id: string;
-  title: string | null;
-  project_id?: string | null;
-  created_at: string;
-  updated_at: string;
-  message_count?: number;
+  id: string
+  title: string | null
+  project_id?: string | null
+  created_at: string
+  updated_at: string
+  message_count?: number
 }
 
 // DUPLICATE (ambient decl). Canonical owner: src/main/database.ts `RagMessage`.
 // Keep in sync; guarded by ipc-type-parity.test.ts.
 interface RagMessage {
-  id: number;
-  conversation_id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  context: string | null;
-  created_at: string;
+  id: number
+  conversation_id: string
+  role: 'user' | 'assistant'
+  content: string
+  context: string | null
+  created_at: string
 }
 
 // DUPLICATE (ambient decl). Canonical shape: the `reprocess:progress` IPC payload
 // emitted in src/main/ipc.ts. Keep in sync; guarded by ipc-type-parity.test.ts.
 interface ReprocessProgress {
-  phase: string;
-  processed: number;
-  total: number;
+  phase: string
+  processed: number
+  total: number
 }
 
 // DUPLICATE (ambient decl). Canonical owner: src/main/database.ts `AppSettings`.
 // Keep in sync; guarded by ipc-type-parity.test.ts.
 interface AppSettings {
-  memoryStrictness?: 'lenient' | 'balanced' | 'strict';
-  entityStrictness?: 'lenient' | 'balanced' | 'strict';
-  [key: string]: any;
+  memoryStrictness?: 'lenient' | 'balanced' | 'strict'
+  entityStrictness?: 'lenient' | 'balanced' | 'strict'
+  [key: string]: any
 }
 
 interface IElectronAPI {
@@ -128,8 +128,18 @@ interface IElectronAPI {
   // Keygen licensing (activation + status for the upgrade/settings UI)
   license?: {
     status: () => Promise<ProLicenseInfo>
-    activate: (key: string) => Promise<{ ok: true } | { ok: false; reason: 'invalid' | 'limit' | 'network' }>
-    listDevices: () => Promise<Array<{ id: string; fingerprint: string; platform: string | null; name: string | null; lastSeen: string | null }>>
+    activate: (
+      key: string
+    ) => Promise<{ ok: true } | { ok: false; reason: 'invalid' | 'limit' | 'network' }>
+    listDevices: () => Promise<
+      Array<{
+        id: string
+        fingerprint: string
+        platform: string | null
+        name: string | null
+        lastSeen: string | null
+      }>
+    >
     deactivate: (machineId: string) => Promise<boolean>
     clear: () => Promise<void>
     payUrl: () => Promise<string>
@@ -137,7 +147,9 @@ interface IElectronAPI {
     relaunch: () => Promise<void>
     onChanged: (cb: (info: ProLicenseInfo) => void) => () => void
   }
-  onMasterMemoryProgress?: (callback: (data: { current: number; total: number }) => void) => (() => void)
+  onMasterMemoryProgress?: (
+    callback: (data: { current: number; total: number }) => void
+  ) => () => void
   getMemories: (limit: number, appName?: string) => Promise<any[]>
   addMemory: (content: string, source?: string) => Promise<{ id: number }>
   searchMemories: (query: string) => Promise<any[]>
@@ -157,8 +169,25 @@ interface IElectronAPI {
   regenerateMasterMemory: () => Promise<string | null>
 
   // RAG Chat
-  ragChat: (query: string, appName?: string, conversationHistory?: { role: string; content: string }[], projectId?: string | null, conversationId?: string, noMemory?: boolean, streamId?: string, thinking?: boolean, images?: string[]) => Promise<{ answer: string; context: any }>
-  onRagStream: (callback: (data: { streamId: string; type: 'content' | 'reasoning' | 'step'; text?: string; step?: any }) => void) => () => void
+  ragChat: (
+    query: string,
+    appName?: string,
+    conversationHistory?: { role: string; content: string }[],
+    projectId?: string | null,
+    conversationId?: string,
+    noMemory?: boolean,
+    streamId?: string,
+    thinking?: boolean,
+    images?: string[]
+  ) => Promise<{ answer: string; context: any }>
+  onRagStream: (
+    callback: (data: {
+      streamId: string
+      type: 'content' | 'reasoning' | 'step'
+      text?: string
+      step?: any
+    }) => void
+  ) => () => void
   cancelRag: (streamId: string) => void
 
   // RAG Conversations
@@ -167,7 +196,12 @@ interface IElectronAPI {
   setRagConversationProject: (id: string, projectId: string | null) => Promise<boolean>
   getRagConversation: (id: string) => Promise<RagConversation | null>
   getRagMessages: (conversationId: string) => Promise<RagMessage[]>
-  addRagMessage: (conversationId: string, role: 'user' | 'assistant', content: string, context?: any) => Promise<number>
+  addRagMessage: (
+    conversationId: string,
+    role: 'user' | 'assistant',
+    content: string,
+    context?: any
+  ) => Promise<number>
   truncateRagMessages: (conversationId: string, keepCount: number) => Promise<number>
   updateRagConversationTitle: (id: string, title: string) => Promise<void>
   deleteRagConversation: (id: string) => Promise<void>
@@ -188,27 +222,92 @@ interface IElectronAPI {
     killed: boolean
     queued: number
   }>
-  consoleSyncNow: () => Promise<{ enrolled: boolean; policyVersion: number | null; lastSync: number }>
+  consoleSyncNow: () => Promise<{
+    enrolled: boolean
+    policyVersion: number | null
+    lastSync: number
+  }>
   consoleDisconnect: () => Promise<boolean>
   reprocessAllSessions: (clean?: boolean) => Promise<{ processed: number; total: number }>
 
   getEntities: (appName?: string) => Promise<any[]>
   getEntityDetails: (entityId: number, appName?: string) => Promise<any>
-  getEntityGraph: (appName?: string, focusEntityId?: number, edgeLimit?: number) => Promise<{ nodes: any[]; edges: any[] }>
+  getEntityGraph: (
+    appName?: string,
+    focusEntityId?: number,
+    edgeLimit?: number
+  ) => Promise<{ nodes: any[]; edges: any[] }>
   rebuildEntityGraph: () => Promise<boolean>
   deleteEntity: (entityId: number) => Promise<boolean>
   deleteMemory: (memoryId: number) => Promise<boolean>
 
   // Artifacts library
-  saveArtifact: (a: { kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'; code: string; title?: string; conversationId?: string; projectId?: string | null }) => Promise<{ id: string; kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'; code: string; title: string; created: number }>
-  listArtifacts: (scope?: { conversationId?: string; projectId?: string | null }) => Promise<{ id: string; kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'; code: string; title: string; created: number; conversationId?: string; projectId?: string | null }[]>
+  saveArtifact: (a: {
+    kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'
+    code: string
+    title?: string
+    conversationId?: string
+    projectId?: string | null
+  }) => Promise<{
+    id: string
+    kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'
+    code: string
+    title: string
+    created: number
+  }>
+  listArtifacts: (scope?: {
+    conversationId?: string
+    projectId?: string | null
+  }) => Promise<
+    {
+      id: string
+      kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'
+      code: string
+      title: string
+      created: number
+      conversationId?: string
+      projectId?: string | null
+    }[]
+  >
   deleteArtifact: (id: string) => Promise<boolean>
-  processFile: (bytes: ArrayBuffer, name: string) => Promise<{ name: string; kind: 'text' | 'pdf' | 'docx' | 'image' | 'audio' | 'video'; text: string; path?: string }>
+  processFile: (
+    bytes: ArrayBuffer,
+    name: string
+  ) => Promise<{
+    name: string
+    kind: 'text' | 'pdf' | 'docx' | 'image' | 'audio' | 'video'
+    text: string
+    path?: string
+  }>
 
   // Skills
   listSkills: () => Promise<{ name: string; description: string }[]>
-  getSkill: (name: string) => Promise<{ name: string; description: string; instructions: string; trigger?: { kind: 'schedule'; at: string } | { kind: 'keyword'; keywords: string[] } | { kind: 'event'; on: 'calendar' | 'approval' }; action?: string; connectors?: boolean } | null>
-  saveSkill: (input: { name: string; description: string; instructions: string; originalName?: string; trigger?: { kind: 'schedule'; at: string } | { kind: 'keyword'; keywords: string[] } | { kind: 'event'; on: 'calendar' | 'approval' } | null; action?: string; connectors?: boolean }) => Promise<{ name: string; description: string; instructions: string }>
+  getSkill: (
+    name: string
+  ) => Promise<{
+    name: string
+    description: string
+    instructions: string
+    trigger?:
+      | { kind: 'schedule'; at: string }
+      | { kind: 'keyword'; keywords: string[] }
+      | { kind: 'event'; on: 'calendar' | 'approval' }
+    action?: string
+    connectors?: boolean
+  } | null>
+  saveSkill: (input: {
+    name: string
+    description: string
+    instructions: string
+    originalName?: string
+    trigger?:
+      | { kind: 'schedule'; at: string }
+      | { kind: 'keyword'; keywords: string[] }
+      | { kind: 'event'; on: 'calendar' | 'approval' }
+      | null
+    action?: string
+    connectors?: boolean
+  }) => Promise<{ name: string; description: string; instructions: string }>
   deleteSkill: (name: string) => Promise<boolean>
   skillsDir: () => Promise<string>
 
@@ -219,8 +318,23 @@ interface IElectronAPI {
   // Events
   onWatcherData: (callback: (data: any) => void) => () => void
   onPermissionDenied: (callback: () => void) => () => void
-  onNewApproval: (callback: (data: { approvalId: number; title: string; detail: string; entityName: string | null }) => void) => () => void
-  onNewAction: (callback: (data: { actionId: number; text: string; due: string | null; entityName: string | null; sourceApp: string }) => void) => () => void
+  onNewApproval: (
+    callback: (data: {
+      approvalId: number
+      title: string
+      detail: string
+      entityName: string | null
+    }) => void
+  ) => () => void
+  onNewAction: (
+    callback: (data: {
+      actionId: number
+      text: string
+      due: string | null
+      entityName: string | null
+      sourceApp: string
+    }) => void
+  ) => () => void
   onReprocessProgress: (callback: (data: ReprocessProgress) => void) => () => void
   onUpdateDownloaded: (callback: (data: { version: string }) => void) => () => void
   getStagedUpdateVersion: () => Promise<string | null>

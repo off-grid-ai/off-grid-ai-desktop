@@ -7,25 +7,25 @@
 //                          interim, so ticks don't reload the model each call.
 // Everything that turns audio into text depends on this seam, never on a concrete
 // engine module: adding an engine is a new entry here + a new TranscriptionService.
-import type { TranscriptionService } from './types';
-import { transcriptionService as whisper } from './whisper-cli';
-import { parakeetTranscription as parakeet } from './parakeet-cli';
-import { whisperServerTranscription as whisperResident, whisperServer } from './whisper-server';
-import { getActiveModal } from '../active-models';
-import { modelsByKind } from '@offgrid/models';
-import type { ManagedRuntime } from '../runtime-manager';
+import type { TranscriptionService } from './types'
+import { transcriptionService as whisper } from './whisper-cli'
+import { parakeetTranscription as parakeet } from './parakeet-cli'
+import { whisperServerTranscription as whisperResident, whisperServer } from './whisper-server'
+import { getActiveModal } from '../active-models'
+import { modelsByKind } from '@offgrid/models'
+import type { ManagedRuntime } from '../runtime-manager'
 // The pure engine classifiers live in a LEAF module (classify.ts) so the CLIs can import
 // them without forming a load-time cycle back through select (which reads the CLI
 // singletons at module scope). Re-exported here so existing importers/tests keep working.
-import { catalogEngine, modelsByEngine, type CatalogTranscriptionEngine } from './classify';
-export { catalogEngine, modelsByEngine, type CatalogTranscriptionEngine };
+import { catalogEngine, modelsByEngine, type CatalogTranscriptionEngine } from './classify'
+export { catalogEngine, modelsByEngine, type CatalogTranscriptionEngine }
 
-export type TranscriptionEngine = 'whisper' | 'parakeet' | 'whisper-resident';
+export type TranscriptionEngine = 'whisper' | 'parakeet' | 'whisper-resident'
 
 interface Services {
-  whisper: TranscriptionService;
-  parakeet: TranscriptionService;
-  whisperResident: TranscriptionService;
+  whisper: TranscriptionService
+  parakeet: TranscriptionService
+  whisperResident: TranscriptionService
 }
 
 /**
@@ -36,20 +36,22 @@ interface Services {
  */
 export function pickTranscription(
   engine: TranscriptionEngine,
-  services: Services,
+  services: Services
 ): { service: TranscriptionService; engine: TranscriptionEngine; fellBack: boolean } {
   if (engine === 'parakeet') {
-    if (services.parakeet.isAvailable()) return { service: services.parakeet, engine: 'parakeet', fellBack: false };
-    return { service: services.whisper, engine: 'whisper', fellBack: true };
+    if (services.parakeet.isAvailable())
+      return { service: services.parakeet, engine: 'parakeet', fellBack: false }
+    return { service: services.whisper, engine: 'whisper', fellBack: true }
   }
   if (engine === 'whisper-resident') {
-    if (services.whisperResident.isAvailable()) return { service: services.whisperResident, engine: 'whisper-resident', fellBack: false };
-    return { service: services.whisper, engine: 'whisper', fellBack: true };
+    if (services.whisperResident.isAvailable())
+      return { service: services.whisperResident, engine: 'whisper-resident', fellBack: false }
+    return { service: services.whisper, engine: 'whisper', fellBack: true }
   }
-  return { service: services.whisper, engine: 'whisper', fellBack: false };
+  return { service: services.whisper, engine: 'whisper', fellBack: false }
 }
 
-const ALL: Services = { whisper, parakeet, whisperResident };
+const ALL: Services = { whisper, parakeet, whisperResident }
 
 /**
  * The single dispatcher every real (non-test) caller goes through to resolve an engine
@@ -62,21 +64,21 @@ const ALL: Services = { whisper, parakeet, whisperResident };
  */
 export function resolveTranscription(
   engine: TranscriptionEngine,
-  mode?: ResidencyMode,
+  mode?: ResidencyMode
 ): { service: TranscriptionService; engine: TranscriptionEngine; fellBack: boolean } {
   // Residency only upgrades a plain whisper request to the resident server; every other
   // engine (parakeet, an already-resident request) is unaffected. Fold it in first so the
   // availability fallback below still applies to the resulting engine.
   const requested: TranscriptionEngine =
-    mode === 'resident' && engine === 'whisper' ? 'whisper-resident' : engine;
-  return pickTranscription(requested, ALL);
+    mode === 'resident' && engine === 'whisper' ? 'whisper-resident' : engine
+  return pickTranscription(requested, ALL)
 }
 
-type ResidencyMode = 'resident' | 'on-demand';
+type ResidencyMode = 'resident' | 'on-demand'
 
 /** Resolve the real singleton for an engine, with the whisper fallback wired in. */
 export function getTranscription(engine: TranscriptionEngine = 'whisper'): TranscriptionService {
-  return resolveTranscription(engine).service;
+  return resolveTranscription(engine).service
 }
 
 /**
@@ -92,11 +94,11 @@ export function engineForActiveModel(
   // engine is the raw catalog field (a free string, only 'parakeet' is meaningful) - not the
   // resolved TranscriptionEngine union. catalogEngine() narrows it. Typed to match what the
   // live catalog (modelsByKind('transcription')) actually provides.
-  entries: Array<{ id: string; engine?: string; files: Array<{ name: string }> }>,
+  entries: Array<{ id: string; engine?: string; files: Array<{ name: string }> }>
 ): TranscriptionEngine {
-  if (!active) return 'whisper';
-  const entry = entries.find((e) => e.id === active || e.files.some((f) => f.name === active));
-  return catalogEngine(entry);
+  if (!active) return 'whisper'
+  const entry = entries.find((e) => e.id === active || e.files.some((f) => f.name === active))
+  return catalogEngine(entry)
 }
 
 /**
@@ -106,15 +108,18 @@ export function engineForActiveModel(
  * actually used instead of always running whisper.
  */
 export function getActiveTranscription(): TranscriptionService {
-  const engine = engineForActiveModel(getActiveModal('transcription'), modelsByKind('transcription'));
-  return getTranscription(engine);
+  const engine = engineForActiveModel(
+    getActiveModal('transcription'),
+    modelsByKind('transcription')
+  )
+  return getTranscription(engine)
 }
 
 /** The engine actually used for a requested one, after the whisper fallback. Single
  *  source of truth for labeling a recording so provenance matches what really ran
  *  (e.g. a Parakeet request labels 'whisper' when Parakeet isn't installed). */
 export function effectiveEngine(engine: TranscriptionEngine): TranscriptionEngine {
-  return resolveTranscription(engine).engine;
+  return resolveTranscription(engine).engine
 }
 
 /** Map a chosen dictation engine + the STT residency mode to the engine to actually
@@ -126,20 +131,20 @@ export function effectiveEngine(engine: TranscriptionEngine): TranscriptionEngin
  *  (pro dictation) that need the requested engine without touching the service singletons. */
 export function residentAwareEngine(
   chosen: 'whisper' | 'parakeet',
-  mode: ResidencyMode,
+  mode: ResidencyMode
 ): TranscriptionEngine {
-  if (chosen === 'whisper' && mode === 'resident') return 'whisper-resident';
-  return chosen;
+  if (chosen === 'whisper' && mode === 'resident') return 'whisper-resident'
+  return chosen
 }
 
 /** Is the Parakeet runtime installed (binary + model present)? */
 export function parakeetAvailable(): boolean {
-  return parakeet.isAvailable();
+  return parakeet.isAvailable()
 }
 
 /** Is the resident whisper-server runtime installed (binary + a model present)? */
 export function residentWhisperAvailable(): boolean {
-  return whisperResident.isAvailable();
+  return whisperResident.isAvailable()
 }
 
 /** STT as a ManagedRuntime for the shared residency seam. The only resident STT
@@ -148,7 +153,13 @@ export function residentWhisperAvailable(): boolean {
  *  no-ops (it lazily re-spawns via ensureUp on the next resident transcription). */
 export const sttRuntime: ManagedRuntime = {
   modality: 'stt',
-  evict: () => { whisperServer.stop(); },
-  warm: () => { /* lazily re-spawned by whisper-server ensureUp on next use */ },
-  release: () => { whisperServer.stop(); },
-};
+  evict: () => {
+    whisperServer.stop()
+  },
+  warm: () => {
+    /* lazily re-spawned by whisper-server ensureUp on next use */
+  },
+  release: () => {
+    whisperServer.stop()
+  }
+}

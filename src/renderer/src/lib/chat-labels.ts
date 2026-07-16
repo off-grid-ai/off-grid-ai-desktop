@@ -5,13 +5,13 @@
 
 export interface ChatScope {
   /** A project is active → retrieval is scoped to that project. */
-  hasProject: boolean;
+  hasProject: boolean
   /** No-memory ("plain chat") mode — no retrieval at all. */
-  noMemory: boolean;
+  noMemory: boolean
 }
 
 export function waitingLabel(scope: ChatScope): string {
-  if (scope.hasProject) return 'Searching this project…';
-  if (scope.noMemory) return 'Thinking…';
-  return 'Searching your memory…';
+  if (scope.hasProject) return 'Searching this project…'
+  if (scope.noMemory) return 'Thinking…'
+  return 'Searching your memory…'
 }

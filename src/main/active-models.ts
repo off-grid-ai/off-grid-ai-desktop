@@ -3,11 +3,11 @@
 // speech (TTS), transcription (STT) — are stateless per-call runtimes, so we just
 // record the chosen model id here and each runtime reads it (falling back to its
 // own heuristic when nothing is chosen). One file: active-modalities.json.
-import fs from 'fs';
-import path from 'path';
-import { modelsDir } from './runtime-env';
+import fs from 'fs'
+import path from 'path'
+import { modelsDir } from './runtime-env'
 
-export type Modality = 'image' | 'speech' | 'transcription';
+export type Modality = 'image' | 'speech' | 'transcription'
 
 /**
  * The single source of truth mapping a catalog model `kind` to its modality.
@@ -17,10 +17,15 @@ export type Modality = 'image' | 'speech' | 'transcription';
  */
 export function modalityForKind(kind?: string | null): Modality | null {
   switch (kind) {
-    case 'image': return 'image';
-    case 'voice': case 'speech': return 'speech'; // accept the setup vocab ('voice') AND the storage vocab ('speech')
-    case 'transcription': return 'transcription';
-    default: return null; // text / vision / local / unknown -> chat LLM, not a modality
+    case 'image':
+      return 'image'
+    case 'voice':
+    case 'speech':
+      return 'speech' // accept the setup vocab ('voice') AND the storage vocab ('speech')
+    case 'transcription':
+      return 'transcription'
+    default:
+      return null // text / vision / local / unknown -> chat LLM, not a modality
   }
 }
 
@@ -32,53 +37,53 @@ export function modalityForKind(kind?: string | null): Modality | null {
  *   - text/vision/local/imported (no modality): the active chat LLM id.
  */
 export function isModelActive(opts: {
-  kind?: string | null;
-  id: string;
-  primaryFile?: string | null;
-  activeChatId: string | null;
-  modals: Record<Modality, string | null>;
+  kind?: string | null
+  id: string
+  primaryFile?: string | null
+  activeChatId: string | null
+  modals: Record<Modality, string | null>
 }): boolean {
-  const modal = modalityForKind(opts.kind);
+  const modal = modalityForKind(opts.kind)
   if (modal) {
-    const chosen = opts.modals[modal];
-    return chosen != null && (chosen === opts.id || chosen === opts.primaryFile);
+    const chosen = opts.modals[modal]
+    return chosen != null && (chosen === opts.id || chosen === opts.primaryFile)
   }
-  return opts.id === opts.activeChatId;
+  return opts.id === opts.activeChatId
 }
 
 function storeFile(): string {
-  return path.join(modelsDir(), 'active-modalities.json');
+  return path.join(modelsDir(), 'active-modalities.json')
 }
 
 function readAll(): Record<string, string | null> {
   try {
-    return JSON.parse(fs.readFileSync(storeFile(), 'utf-8'));
+    return JSON.parse(fs.readFileSync(storeFile(), 'utf-8'))
   } catch {
-    return {};
+    return {}
   }
 }
 
 /** The chosen model id for a modality, or null to use the runtime's default. */
 export function getActiveModal(kind: Modality): string | null {
-  return readAll()[kind] ?? null;
+  return readAll()[kind] ?? null
 }
 
 export function setActiveModal(kind: Modality, id: string | null): void {
-  const cur = readAll();
-  cur[kind] = id;
+  const cur = readAll()
+  cur[kind] = id
   try {
-    fs.mkdirSync(path.dirname(storeFile()), { recursive: true });
-    fs.writeFileSync(storeFile(), JSON.stringify(cur, null, 2));
+    fs.mkdirSync(path.dirname(storeFile()), { recursive: true })
+    fs.writeFileSync(storeFile(), JSON.stringify(cur, null, 2))
   } catch (e) {
-    console.error('[active-models] write failed', e);
+    console.error('[active-models] write failed', e)
   }
 }
 
 export function getAllActiveModals(): Record<Modality, string | null> {
-  const all = readAll();
+  const all = readAll()
   return {
     image: all.image ?? null,
     speech: all.speech ?? null,
-    transcription: all.transcription ?? null,
-  };
+    transcription: all.transcription ?? null
+  }
 }

@@ -2,16 +2,16 @@
 // Extracted from model-server.ts's fetchImage/toDataUrl so the decode decision
 // (base64 vs percent-encoded), mime sniffing, and reference kind are testable.
 
-import { mimeForExt } from '../mime';
+import { mimeForExt } from '../mime'
 
-export type ImageRefKind = 'data' | 'http' | 'file';
+export type ImageRefKind = 'data' | 'http' | 'file'
 
 /** Classify an image reference the gateway accepts (data:, http(s)://, path). */
 export function classifyRef(ref: string): ImageRefKind {
-  const url = ref.trim();
-  if (url.startsWith('data:')) return 'data';
-  if (url.startsWith('http://') || url.startsWith('https://')) return 'http';
-  return 'file';
+  const url = ref.trim()
+  if (url.startsWith('data:')) return 'data'
+  if (url.startsWith('http://') || url.startsWith('https://')) return 'http'
+  return 'file'
 }
 
 /**
@@ -20,18 +20,20 @@ export function classifyRef(ref: string): ImageRefKind {
  * percent-encoded text payload. Defaults the mime to image/png when absent.
  */
 export function decodeDataUrl(url: string): { data: Buffer; mime: string } {
-  const comma = url.indexOf(',');
-  const mime = /data:([^;,]+)/.exec(url)?.[1] || 'image/png';
-  const meta = url.slice(5, comma);
-  const raw = url.slice(comma + 1);
-  const data = meta.includes('base64') ? Buffer.from(raw, 'base64') : Buffer.from(decodeURIComponent(raw));
-  return { data, mime };
+  const comma = url.indexOf(',')
+  const mime = /data:([^;,]+)/.exec(url)?.[1] || 'image/png'
+  const meta = url.slice(5, comma)
+  const raw = url.slice(comma + 1)
+  const data = meta.includes('base64')
+    ? Buffer.from(raw, 'base64')
+    : Buffer.from(decodeURIComponent(raw))
+  return { data, mime }
 }
 
 /** Strip a leading file:// scheme, leaving a bare local path. */
 export function stripFileScheme(ref: string): string {
-  const url = ref.trim();
-  return url.startsWith('file://') ? url.slice(7) : url;
+  const url = ref.trim()
+  return url.startsWith('file://') ? url.slice(7) : url
 }
 
 /**
@@ -40,15 +42,15 @@ export function stripFileScheme(ref: string): string {
  * matching the image-attachment contract this function has always had.
  */
 export function mimeFromExt(ext: string): string {
-  return mimeForExt(ext, 'image/png');
+  return mimeForExt(ext, 'image/png')
 }
 
 /** Map a mime to the temp-file extension used for init images. */
 export function extForMime(mime: string): string {
-  return mime.includes('jpeg') ? '.jpg' : mime.includes('webp') ? '.webp' : '.png';
+  return mime.includes('jpeg') ? '.jpg' : mime.includes('webp') ? '.webp' : '.png'
 }
 
 /** Encode raw bytes as a base64 data URL. */
 export function toDataUrl(data: Buffer, mime: string): string {
-  return `data:${mime};base64,${data.toString('base64')}`;
+  return `data:${mime};base64,${data.toString('base64')}`
 }

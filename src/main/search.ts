@@ -3,9 +3,9 @@
 // fused with reciprocal-rank fusion. Plus a background backfill that embeds the
 // observation/frame/transcript backlog (using the in-app MiniLM model) so the
 // semantic half actually covers your captured life. All local, all offline.
-import { getDB } from './database';
-import { embeddings } from './embeddings';
-import { addChunks, searchVectors, vectorCount, type VecChunk } from './vectors';
+import { getDB } from './database'
+import { embeddings } from './embeddings'
+import { addChunks, searchVectors, vectorCount, type VecChunk } from './vectors'
 import {
   applyBoosts,
   ftsExpr,
@@ -18,10 +18,10 @@ import {
   type RawHit,
   type SearchKind,
   type SearchResult,
-  type SearchSort,
-} from './search-ranking';
+  type SearchSort
+} from './search-ranking'
 
-export type {  SearchResult, SearchSort } from './search-ranking';
+export type { SearchResult, SearchSort } from './search-ranking'
 
 // ---------------------------------------------------------------------------
 // Backfill: embed the backlog into LanceDB (keys tracked in SQLite to skip work)
@@ -54,96 +54,119 @@ const SOURCES_SQL = `
     FROM entities WHERE hidden = 0
   UNION ALL
   SELECT 'fact:'||id, 'fact', entity_id, fact, 'Fact', '', 0
-    FROM entity_facts`;
+    FROM entity_facts`
 
-interface PendingRow { key: string; kind: SearchKind; refId: number; text: string; surface: string; url: string; ts: number }
+interface PendingRow {
+  key: string
+  kind: SearchKind
+  refId: number
+  text: string
+  surface: string
+  url: string
+  ts: number
+}
 
 function ensureIndexTable(): void {
-  getDB().exec('CREATE TABLE IF NOT EXISTS vec_indexed (key TEXT PRIMARY KEY)');
+  getDB().exec('CREATE TABLE IF NOT EXISTS vec_indexed (key TEXT PRIMARY KEY)')
 }
 
 function pendingCount(): number {
-  ensureIndexTable();
+  ensureIndexTable()
   const row = getDB()
-    .prepare(`SELECT COUNT(*) AS c FROM (${SOURCES_SQL}) s WHERE s.key NOT IN (SELECT key FROM vec_indexed)`)
-    .get() as { c: number };
-  return row.c;
+    .prepare(
+      `SELECT COUNT(*) AS c FROM (${SOURCES_SQL}) s WHERE s.key NOT IN (SELECT key FROM vec_indexed)`
+    )
+    .get() as { c: number }
+  return row.c
 }
 
 /** Embed one batch of un-indexed items into LanceDB. Returns progress. */
 async function indexBatch(limit = 48): Promise<{ indexed: number; remaining: number }> {
-  ensureIndexTable();
-  const db = getDB();
+  ensureIndexTable()
+  const db = getDB()
   const rows = db
-    .prepare(`SELECT * FROM (${SOURCES_SQL}) s WHERE s.key NOT IN (SELECT key FROM vec_indexed) LIMIT ?`)
-    .all(limit) as PendingRow[];
-  if (!rows.length) return { indexed: 0, remaining: 0 };
+    .prepare(
+      `SELECT * FROM (${SOURCES_SQL}) s WHERE s.key NOT IN (SELECT key FROM vec_indexed) LIMIT ?`
+    )
+    .all(limit) as PendingRow[]
+  if (!rows.length) return { indexed: 0, remaining: 0 }
 
-  const chunks: VecChunk[] = [];
+  const chunks: VecChunk[] = []
   for (const r of rows) {
-    const text = (r.text || '').trim().slice(0, 1000);
-    if (!text) continue;
-    const vector = await embeddings.generateEmbedding(text);
-    chunks.push({ key: r.key, kind: r.kind, refId: r.refId, vector, text: text.slice(0, 300), surface: r.surface, url: r.url, ts: r.ts || 0 });
+    const text = (r.text || '').trim().slice(0, 1000)
+    if (!text) continue
+    const vector = await embeddings.generateEmbedding(text)
+    chunks.push({
+      key: r.key,
+      kind: r.kind,
+      refId: r.refId,
+      vector,
+      text: text.slice(0, 300),
+      surface: r.surface,
+      url: r.url,
+      ts: r.ts || 0
+    })
   }
-  await addChunks(chunks);
+  await addChunks(chunks)
 
-  const mark = db.prepare('INSERT OR IGNORE INTO vec_indexed (key) VALUES (?)');
-  db.transaction(() => rows.forEach((r) => mark.run(r.key)))();
-  return { indexed: chunks.length, remaining: pendingCount() };
+  const mark = db.prepare('INSERT OR IGNORE INTO vec_indexed (key) VALUES (?)')
+  db.transaction(() => rows.forEach((r) => mark.run(r.key)))()
+  return { indexed: chunks.length, remaining: pendingCount() }
 }
 
-let backfilling = false;
+let backfilling = false
 /** Drain the backlog in the background, one throttled batch at a time. */
-export async function runBackfill(onProgress?: (p: { done: number; remaining: number }) => void): Promise<void> {
-  if (backfilling) return;
-  backfilling = true;
+export async function runBackfill(
+  onProgress?: (p: { done: number; remaining: number }) => void
+): Promise<void> {
+  if (backfilling) return
+  backfilling = true
   try {
-    let done = 0;
+    let done = 0
     for (;;) {
-      const { indexed, remaining } = await indexBatch();
-      done += indexed;
-      onProgress?.({ done, remaining });
-      if (remaining === 0) break;
-      await new Promise((r) => setTimeout(r, 50)); // breathe — don't starve the LLM/UI
+      const { indexed, remaining } = await indexBatch()
+      done += indexed
+      onProgress?.({ done, remaining })
+      if (remaining === 0) break
+      await new Promise((r) => setTimeout(r, 50)) // breathe — don't starve the LLM/UI
     }
   } finally {
-    backfilling = false;
+    backfilling = false
   }
 }
 
 export async function searchStatus(): Promise<{ vectors: number; pending: number }> {
-  return { vectors: await vectorCount(), pending: pendingCount() };
+  return { vectors: await vectorCount(), pending: pendingCount() }
 }
 
 /** Data sources available to filter by (surfaces seen, busiest first, + meetings). */
 export function searchSources(): { source: string; count: number }[] {
-  const db = getDB();
+  const db = getDB()
   const rows = db
     .prepare(
       `SELECT surface AS source, COUNT(*) AS count FROM observations
         WHERE surface IS NOT NULL AND surface != '' GROUP BY surface ORDER BY count DESC LIMIT 20`
     )
-    .all() as { source: string; count: number }[];
-  const mtg = db.prepare('SELECT COUNT(*) AS c FROM meetings').get() as { c: number };
-  if (mtg.c) rows.push({ source: 'Meeting', count: mtg.c });
+    .all() as { source: string; count: number }[]
+  const mtg = db.prepare('SELECT COUNT(*) AS c FROM meetings').get() as { c: number }
+  if (mtg.c) rows.push({ source: 'Meeting', count: mtg.c })
   // Your own data, not just captured surfaces: chats and project knowledge bases.
-  const chat = db.prepare('SELECT COUNT(*) AS c FROM rag_conversations').get() as { c: number };
-  if (chat.c) rows.push({ source: 'Chat', count: chat.c });
-  const kb = db.prepare('SELECT COUNT(*) AS c FROM rag_documents').get() as { c: number };
-  if (kb.c) rows.push({ source: 'Knowledge base', count: kb.c });
-  return rows;
+  const chat = db.prepare('SELECT COUNT(*) AS c FROM rag_conversations').get() as { c: number }
+  if (chat.c) rows.push({ source: 'Chat', count: chat.c })
+  const kb = db.prepare('SELECT COUNT(*) AS c FROM rag_documents').get() as { c: number }
+  if (kb.c) rows.push({ source: 'Knowledge base', count: kb.c })
+  return rows
 }
 
 /** Per-source MATCH counts for a query — drives the Sources rail facet counts so
  *  the numbers reflect the current search (Chat: 1, Knowledge base: 0, …). Empty
  *  query → total counts (searchSources). Only sources with ≥1 match are returned. */
 export function searchFacets(query: string): { source: string; count: number }[] {
-  const q = query.trim();
-  if (!q) return searchSources();
-  const db = getDB();
-  const out: { source: string; count: number }[] = [];
-  const m = ftsExpr(q);
+  const q = query.trim()
+  if (!q) return searchSources()
+  const db = getDB()
+  const out: { source: string; count: number }[] = []
+  const m = ftsExpr(q)
   if (m) {
     out.push(
       ...(db
@@ -154,27 +177,31 @@ export function searchFacets(query: string): { source: string; count: number }[]
             GROUP BY o.surface ORDER BY count DESC`
         )
         .all(m) as { source: string; count: number }[])
-    );
+    )
   }
-  const terms = queryTerms(q, 6);
+  const terms = queryTerms(q, 6)
   if (terms.length) {
-    const chatM = likeMatch(LIKE_COLUMNS.chat, terms);
+    const chatM = likeMatch(LIKE_COLUMNS.chat, terms)
     const chat = db
-      .prepare(`SELECT COUNT(*) AS c FROM (SELECT rc.id FROM rag_messages rm JOIN rag_conversations rc ON rc.id=rm.conversation_id WHERE ${chatM.where} GROUP BY rc.id)`)
-      .get(...chatM.args) as { c: number };
-    if (chat.c) out.push({ source: 'Chat', count: chat.c });
-    const docM = likeMatch(LIKE_COLUMNS.doc, terms);
+      .prepare(
+        `SELECT COUNT(*) AS c FROM (SELECT rc.id FROM rag_messages rm JOIN rag_conversations rc ON rc.id=rm.conversation_id WHERE ${chatM.where} GROUP BY rc.id)`
+      )
+      .get(...chatM.args) as { c: number }
+    if (chat.c) out.push({ source: 'Chat', count: chat.c })
+    const docM = likeMatch(LIKE_COLUMNS.doc, terms)
     const kb = db
-      .prepare(`SELECT COUNT(*) AS c FROM (SELECT d.id FROM rag_chunks c JOIN rag_documents d ON d.id=c.doc_id WHERE ${docM.where} GROUP BY d.id)`)
-      .get(...docM.args) as { c: number };
-    if (kb.c) out.push({ source: 'Knowledge base', count: kb.c });
-    const mtgM = likeMatch(LIKE_COLUMNS.meeting, terms);
+      .prepare(
+        `SELECT COUNT(*) AS c FROM (SELECT d.id FROM rag_chunks c JOIN rag_documents d ON d.id=c.doc_id WHERE ${docM.where} GROUP BY d.id)`
+      )
+      .get(...docM.args) as { c: number }
+    if (kb.c) out.push({ source: 'Knowledge base', count: kb.c })
+    const mtgM = likeMatch(LIKE_COLUMNS.meeting, terms)
     const mtg = db
       .prepare(`SELECT COUNT(*) AS c FROM meetings WHERE ${mtgM.where}`)
-      .get(...mtgM.args) as { c: number };
-    if (mtg.c) out.push({ source: 'Meeting', count: mtg.c });
+      .get(...mtgM.args) as { c: number }
+    if (mtg.c) out.push({ source: 'Meeting', count: mtg.c })
   }
-  return out;
+  return out
 }
 
 // ---------------------------------------------------------------------------
@@ -183,13 +210,13 @@ export function searchFacets(query: string): { source: string; count: number }[]
 
 // One FTS source → ranked raw hits (best first). `sql` must SELECT the RawHit columns.
 function ftsHits(sql: string, match: string, limit: number): RawHit[] {
-  if (!match) return [];
-  return getDB().prepare(sql).all(match, limit) as RawHit[];
+  if (!match) return []
+  return getDB().prepare(sql).all(match, limit) as RawHit[]
 }
 
 function keywordHits(query: string, perSource: number): RawHit[][] {
-  const m = ftsExpr(query);
-  const epochMs = epochMsSql('o.ts');
+  const m = ftsExpr(query)
+  const epochMs = epochMsSql('o.ts')
   return [
     // Screen captures (distilled observation summaries)
     ftsHits(
@@ -244,17 +271,17 @@ function keywordHits(query: string, perSource: number): RawHit[][] {
     // Your own chat conversations (title + message content), one hit per chat.
     likeChatHits(query, perSource),
     // Project knowledge-base documents (chunked file content).
-    likeDocHits(query, perSource),
-  ];
+    likeDocHits(query, perSource)
+  ]
 }
 
 // Chat conversations have no FTS index — LIKE over message content OR the chat
 // title, one hit per conversation (newest first). The conversation id (TEXT) is
 // carried in `url` so the renderer can open that exact chat.
 function likeChatHits(query: string, limit: number): RawHit[] {
-  const terms = queryTerms(query, 6);
-  if (!terms.length) return [];
-  const { where, args } = likeMatch(LIKE_COLUMNS.chat, terms);
+  const terms = queryTerms(query, 6)
+  if (!terms.length) return []
+  const { where, args } = likeMatch(LIKE_COLUMNS.chat, terms)
   return getDB()
     .prepare(
       `SELECT 'chat:'||rc.id AS key, 'chat' AS kind, 0 AS refId, COALESCE(rc.title,'Chat') AS title,
@@ -263,15 +290,15 @@ function likeChatHits(query: string, limit: number): RawHit[] {
          FROM rag_messages rm JOIN rag_conversations rc ON rc.id = rm.conversation_id
         WHERE ${where} GROUP BY rc.id ORDER BY rc.updated_at DESC LIMIT ?`
     )
-    .all(...args, limit) as RawHit[];
+    .all(...args, limit) as RawHit[]
 }
 
 // Knowledge-base documents (per project) — LIKE over chunk content, one hit per
 // document. The owning project_id is carried in `url` so the renderer can open it.
 function likeDocHits(query: string, limit: number): RawHit[] {
-  const terms = queryTerms(query, 6);
-  if (!terms.length) return [];
-  const { where, args } = likeMatch(LIKE_COLUMNS.doc, terms);
+  const terms = queryTerms(query, 6)
+  if (!terms.length) return []
+  const { where, args } = likeMatch(LIKE_COLUMNS.doc, terms)
   return getDB()
     .prepare(
       `SELECT 'doc:'||d.id AS key, 'doc' AS kind, d.id AS refId, d.name AS title,
@@ -280,13 +307,13 @@ function likeDocHits(query: string, limit: number): RawHit[] {
          FROM rag_chunks c JOIN rag_documents d ON d.id = c.doc_id
         WHERE ${where} GROUP BY d.id LIMIT ?`
     )
-    .all(...args, limit) as RawHit[];
+    .all(...args, limit) as RawHit[]
 }
 
 function likeMeetingHits(query: string, limit: number): RawHit[] {
-  const terms = queryTerms(query, 6);
-  if (!terms.length) return [];
-  const { where, args } = likeMatch(LIKE_COLUMNS.meeting, terms);
+  const terms = queryTerms(query, 6)
+  if (!terms.length) return []
+  const { where, args } = likeMatch(LIKE_COLUMNS.meeting, terms)
   return getDB()
     .prepare(
       `SELECT 'mtg:'||id AS key, 'meeting' AS kind, id AS refId, COALESCE(title,'Meeting') AS title,
@@ -294,14 +321,14 @@ function likeMeetingHits(query: string, limit: number): RawHit[] {
               COALESCE(started_at,0) AS ts
          FROM meetings WHERE ${where} ORDER BY started_at DESC LIMIT ?`
     )
-    .all(...args, limit) as RawHit[];
+    .all(...args, limit) as RawHit[]
 }
 
 // Frames have no FTS index; match raw OCR text on all tokens (AND), newest first.
 function likeFrameHits(query: string, limit: number): RawHit[] {
-  const terms = queryTerms(query, 6);
-  if (!terms.length) return [];
-  const { where, args } = likeMatch(LIKE_COLUMNS.frame, terms);
+  const terms = queryTerms(query, 6)
+  if (!terms.length) return []
+  const { where, args } = likeMatch(LIKE_COLUMNS.frame, terms)
   return getDB()
     .prepare(
       `SELECT 'frame:'||id AS key, 'screen' AS kind, id AS refId, COALESCE(surface,'Screen') AS title,
@@ -309,29 +336,42 @@ function likeFrameHits(query: string, limit: number): RawHit[] {
               ${epochMsSql('ts')} AS ts
          FROM frames WHERE text IS NOT NULL AND ${where} ORDER BY ts DESC LIMIT ?`
     )
-    .all(...args, limit) as RawHit[];
+    .all(...args, limit) as RawHit[]
 }
 
 async function semanticHits(query: string, limit: number): Promise<RawHit[]> {
-  const vector = await embeddings.generateEmbedding(query);
-  const hits = await searchVectors(vector, limit);
-  return hits.map((h) => ({ key: h.key, kind: h.kind as SearchKind, refId: h.refId, title: h.surface || h.kind, snippet: h.text, surface: h.surface, url: h.url || null, ts: h.ts }));
+  const vector = await embeddings.generateEmbedding(query)
+  const hits = await searchVectors(vector, limit)
+  return hits.map((h) => ({
+    key: h.key,
+    kind: h.kind as SearchKind,
+    refId: h.refId,
+    title: h.surface || h.kind,
+    snippet: h.text,
+    surface: h.surface,
+    url: h.url || null,
+    ts: h.ts
+  }))
 }
 
 // Best thumbnail for a hit: a frame's own image, or an observation's linked frame.
 function thumbFor(hit: RawHit): string | null {
-  const db = getDB();
+  const db = getDB()
   if (hit.key.startsWith('frame:')) {
-    const r = db.prepare('SELECT image_path FROM frames WHERE id = ?').get(hit.refId) as { image_path?: string } | undefined;
-    return r?.image_path ?? null;
+    const r = db.prepare('SELECT image_path FROM frames WHERE id = ?').get(hit.refId) as
+      | { image_path?: string }
+      | undefined
+    return r?.image_path ?? null
   }
   if (hit.kind === 'screen') {
     const r = db
-      .prepare('SELECT f.image_path FROM observation_frames of JOIN frames f ON f.id = of.frame_id WHERE of.observation_id = ? LIMIT 1')
-      .get(hit.refId) as { image_path?: string } | undefined;
-    return r?.image_path ?? null;
+      .prepare(
+        'SELECT f.image_path FROM observation_frames of JOIN frames f ON f.id = of.frame_id WHERE of.observation_id = ? LIMIT 1'
+      )
+      .get(hit.refId) as { image_path?: string } | undefined
+    return r?.image_path ?? null
   }
-  return null;
+  return null
 }
 
 /** Hybrid universal search. `semantic` adds the LanceDB pass (slower first call). */
@@ -342,39 +382,46 @@ function thumbFor(hit: RawHit): string | null {
 
 export async function universalSearch(
   query: string,
-  opts: { limit?: number; semantic?: boolean; sources?: string[]; sort?: SearchSort; excludeChatId?: string } = {}
+  opts: {
+    limit?: number
+    semantic?: boolean
+    sources?: string[]
+    sort?: SearchSort
+    excludeChatId?: string
+  } = {}
 ): Promise<SearchResult[]> {
-  const q = query.trim();
-  if (!q) return [];
-  const limit = opts.limit ?? 30;
+  const q = query.trim()
+  if (!q) return []
+  const limit = opts.limit ?? 30
   // When filtering by source, cast a wider net per source so enough survive the filter.
-  const perSource = opts.sources?.length ? 80 : Math.min(40, limit + 10);
+  const perSource = opts.sources?.length ? 80 : Math.min(40, limit + 10)
 
-  const lists = keywordHits(q, perSource);
+  const lists = keywordHits(q, perSource)
   if (opts.semantic !== false) {
     try {
-      lists.push(await semanticHits(q, perSource));
+      lists.push(await semanticHits(q, perSource))
     } catch {
       /* embedding model not ready — keyword results still fine */
     }
   }
 
   // Reciprocal-rank fusion across all lists, keyed by the unique chunk key.
-  const fused = fuseHits(lists);
+  const fused = fuseHits(lists)
 
   // Add a recency bias so recent hits float up (this week first, then progressively
   // older), plus a small nudge for your own deliberate content (chats / KB docs) so
   // it isn't buried under thousands of ambient screen captures.
-  applyBoosts(fused.values(), Date.now());
+  applyBoosts(fused.values(), Date.now())
 
   // Filter (source / current chat) then sort (relevance / recency / match).
   const ordered = rankResults(Array.from(fused.values()), {
     query: q,
     sources: opts.sources,
     excludeChatId: opts.excludeChatId,
-    sort: opts.sort,
-  });
-  const ranked = ordered.slice(0, limit);
-  for (const r of ranked) r.imagePath = thumbFor({ key: r.key, kind: r.kind, refId: r.refId } as RawHit);
-  return ranked;
+    sort: opts.sort
+  })
+  const ranked = ordered.slice(0, limit)
+  for (const r of ranked)
+    r.imagePath = thumbFor({ key: r.key, kind: r.kind, refId: r.refId } as RawHit)
+  return ranked
 }

@@ -12,20 +12,22 @@
 // PERSISTED via addRagMessage (the row a reload re-renders) — asserted on its
 // content, the same way the reasoning-persistence test asserts the persisted blob.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { MemoryChat } from '../MemoryChat';
-import { TooltipProvider } from '../ui/tooltip';
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryChat } from '../MemoryChat'
+import { TooltipProvider } from '../ui/tooltip'
 
-(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver ??= class {
-  observe() {} unobserve() {} disconnect() {}
-};
+;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
 
-type AddRag = ReturnType<typeof vi.fn>;
+type AddRag = ReturnType<typeof vi.fn>
 
 function installApi(): { addRagMessage: AddRag } {
-  const addRagMessage = vi.fn(async () => {});
+  const addRagMessage = vi.fn(async () => {})
   const api = {
     isPro: false,
     imageGenStatus: vi.fn(async () => ({ available: true, models: ['sd'], active: 'sd' })),
@@ -47,36 +49,47 @@ function installApi(): { addRagMessage: AddRag } {
     listTools: vi.fn(async () => []),
     mcpList: vi.fn(async () => []),
     // The tool turn requests an image; image generation then CANCELS.
-    toolChat: vi.fn(async () => ({ answer: 'Here is your weekly summary.', imageRequest: { prompt: 'a chart' }, unified: [], toolCalls: [] })),
-    generateImage: vi.fn(async () => { throw new Error('cancelled'); }),
-  };
-  (globalThis as unknown as { window: { api: unknown } }).window.api = api;
-  return { addRagMessage };
+    toolChat: vi.fn(async () => ({
+      answer: 'Here is your weekly summary.',
+      imageRequest: { prompt: 'a chart' },
+      unified: [],
+      toolCalls: []
+    })),
+    generateImage: vi.fn(async () => {
+      throw new Error('cancelled')
+    })
+  }
+  ;(globalThis as unknown as { window: { api: unknown } }).window.api = api
+  return { addRagMessage }
 }
 
 describe('<MemoryChat/> — tool-image cancel keeps the text answer (D12)', () => {
   beforeEach(() => {
-    cleanup();
-    vi.clearAllMocks();
-    (Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
-  });
+    cleanup()
+    vi.clearAllMocks()
+    ;(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {}
+  })
 
   it('persists the assistant text turn even when the deferred image gen is cancelled', async () => {
-    const { addRagMessage } = installApi();
-    const user = userEvent.setup();
-    render(<TooltipProvider><MemoryChat /></TooltipProvider>);
+    const { addRagMessage } = installApi()
+    const user = userEvent.setup()
+    render(
+      <TooltipProvider>
+        <MemoryChat />
+      </TooltipProvider>
+    )
 
-    const textarea = await screen.findByPlaceholderText(/ask anything/i, {}, { timeout: 3000 });
-    await user.type(textarea, 'summarize my week');
-    await user.click(screen.getByRole('button', { name: /^send$/i }));
+    const textarea = await screen.findByPlaceholderText(/ask anything/i, {}, { timeout: 3000 })
+    await user.type(textarea, 'summarize my week')
+    await user.click(screen.getByRole('button', { name: /^send$/i }))
 
     // Terminal artifact: the assistant answer was PERSISTED (survives a reload),
     // not dropped because the image was cancelled.
     await waitFor(() => {
       const persistedAssistant = addRagMessage.mock.calls.find(
-        (c) => c[1] === 'assistant' && c[2] === 'Here is your weekly summary.',
-      );
-      expect(persistedAssistant).toBeTruthy();
-    });
-  });
-});
+        (c) => c[1] === 'assistant' && c[2] === 'Here is your weekly summary.'
+      )
+      expect(persistedAssistant).toBeTruthy()
+    })
+  })
+})

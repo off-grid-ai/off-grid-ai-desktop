@@ -50,7 +50,9 @@ const sonarProWarn = {
   files: ['pro/**/*.{ts,tsx}'],
   ignores: ['pro/**/*.{test,spec}.{ts,tsx}', 'pro/**/__tests__/**'],
   rules: {
-    ...Object.fromEntries(Object.keys(sonarjs.configs.recommended.rules ?? {}).map((rule) => [rule, 'warn'])),
+    ...Object.fromEntries(
+      Object.keys(sonarjs.configs.recommended.rules ?? {}).map((rule) => [rule, 'warn'])
+    ),
     // Pure style — not a defect:
     'sonarjs/arrow-function-convention': 'off',
     'sonarjs/file-header': 'off',

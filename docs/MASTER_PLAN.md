@@ -15,6 +15,7 @@ Desktop/Mobile), grounds them in the **organizational brain**, and proves compli
 regulator.
 
 **Two halves, one story:**
+
 - **Frontline value** — a private, on-device copilot for every worker; democratize the best
   people's know-how to the whole field force (sales productivity, frontline enablement).
 - **Enterprise control** — the auditable, on-prem control plane a DPO/CISO can defend.
@@ -35,17 +36,17 @@ is how we land where the top-down compliance vendors (e.g. Pints) can't reach.
 
 ## 3. The nine planes (and the 5-layer reference mapping)
 
-| Plane (our module) | Reference layer | Status |
-|---|---|---|
-| **Gateway** (Off Grid AI Gateway, :7878) | AI plane / Control chokepoint | ✅ built (desktop) + console reads it |
-| **Fleet** | Control (devices) | ✅ console (enroll/policy/kill/audit) |
-| **Control** (policy, guardrails, egress, audit, RBAC) | Control plane (C) | ✅ console |
-| **Data** (connectors, ingest, masking, catalog, DSAR) | Data plane (A) | ✅ console |
-| **Brain** (LanceDB ingestion→retrieval) | AI plane (B) | ✅ console |
-| **Agents** (pre-built use cases) | Consumption (D) | ⬜ scaffold |
-| **Analytics** (usage, latency, drift, perf) | Control observability | ✅ console |
-| **Reports** (regulator-ready exports) | Consumption (D) | ⬜ scaffold |
-| **Regulatory** (framework mapping, DPIA export) | Org/Regulatory (E) | ✅ console |
+| Plane (our module)                                    | Reference layer               | Status                                |
+| ----------------------------------------------------- | ----------------------------- | ------------------------------------- |
+| **Gateway** (Off Grid AI Gateway, :7878)              | AI plane / Control chokepoint | ✅ built (desktop) + console reads it |
+| **Fleet**                                             | Control (devices)             | ✅ console (enroll/policy/kill/audit) |
+| **Control** (policy, guardrails, egress, audit, RBAC) | Control plane (C)             | ✅ console                            |
+| **Data** (connectors, ingest, masking, catalog, DSAR) | Data plane (A)                | ✅ console                            |
+| **Brain** (LanceDB ingestion→retrieval)               | AI plane (B)                  | ✅ console                            |
+| **Agents** (pre-built use cases)                      | Consumption (D)               | ⬜ scaffold                           |
+| **Analytics** (usage, latency, drift, perf)           | Control observability         | ✅ console                            |
+| **Reports** (regulator-ready exports)                 | Consumption (D)               | ⬜ scaffold                           |
+| **Regulatory** (framework mapping, DPIA export)       | Org/Regulatory (E)            | ✅ console                            |
 
 Layer order (linear story): **Data → AI → Control → Org/Regulatory → Consumption.**
 
@@ -68,9 +69,9 @@ Layer order (linear story): **Data → AI → Control → Org/Regulatory → Con
    in-repo: gateway over HTTP, Brain via a lib interface (LanceDB swappable), Postgres via
    Drizzle.
 5. **Tiered integration — native vs embed.** Each capability declares `render: 'native' |
-   'embed'`:
+'embed'`:
    - **Tier 1 — commodity:** our UI over the API (secrets, vector store, audit query, basic
-     metrics, RBAC). *Built.*
+     metrics, RBAC). _Built._
    - **Tier 2 — common-80% native, deep-20% embed:** drift (our cards + deep-link),
      policies (Monaco + OPA eval — OPA has no heavy UI anyway).
    - **Tier 3 — rich UI, don't rebuild:** Grafana-class dashboards, Keycloak admin, eval
@@ -118,7 +119,7 @@ one compatibility test per adapter.
   for, and their access. Build **now** to avoid a retrofit.
 - **ABAC on top of RBAC** (RBAC already built): attributes = tenant · purpose · data-class,
   enforced at the gateway and on each tool/data slice. Policy-as-code via OPA (Monaco editor
-  + OPA eval API — Tier-2 native).
+  - OPA eval API — Tier-2 native).
 - **SSO** (Google + Microsoft Entra via Auth.js) shipped; Keycloak at scale.
 
 ## 9. What's built & verified (today)
@@ -137,7 +138,7 @@ All `tsc`/lint/prettier clean; APIs validated by curl.
    internal Admin module, evaluate endpoint.
 3. ✅ **Adapter layer** — `src/lib/adapters/` capability ports (inference/observability/
    secrets/guardrails/retrieval) + adapters, swap via `OFFGRID_ADAPTER_<CAP>`, `render:
-   native|embed|headless`; Brain embeds through the inference port; `/admin/adapters` API +
+native|embed|headless`; Brain embeds through the inference port; `/admin/adapters` API +
    Admin "Integrations · adapters" surface.
 4. ✅ **Evals + golden sets** — golden query→expected-doc sets over the Brain; recall-scored
    runs persisted; surfaced in the Brain module; `/admin/golden-cases` + `/admin/evals` API.
@@ -158,19 +159,19 @@ All `tsc`/lint/prettier clean; APIs validated by curl.
 9. ✅ **Tier-3 embeds** — SSO'd iframes for rich OSS UIs (SigNoz, OpenBao, Keycloak, Marquez,
    Langfuse), driven by `render:'embed'` + `embedUrl`. Mere aggregation → license never touches core.
 10. ✅ **Model routing (smart + conditional + cloud leash)** — `routing_rules` evaluator folded into
-   the policy bundle; `/admin/routing` + `/evaluate`; Control-plane UI + tester. PII→local, etc.
+    the policy bundle; `/admin/routing` + `/evaluate`; Control-plane UI + tester. PII→local, etc.
 11. ✅ **Node↔console wiring** — desktop node client (enroll→policy→audit→commands) + Settings UI.
 
 ## 10b. Backlog (approved, sequenced) — toward Portkey/Bedrock parity
 
 a. **Infra:** Redis (cache + rate-limit), OpenSearch (SIEM), Unleash (feature flags) → compose +
-   `caching`/`siem`/`flags` capabilities.
+`caching`/`siem`/`flags` capabilities.
 b. **Caching** (first-party): exact + semantic response cache, Redis-backed (we own it).
 c. **Feature-flag module control**: module/capability enablement routed through flags (Unleash).
 d. **Prompt registry**: first-party templates + versioning (Langfuse optional backend).
 e. **Evals expansion**: promptfoo (Node) + Ragas/DeepEval (service); golden-set stays baseline.
 f. **FinOps + token issuance**: virtual keys scoped to user/project, budgets, cost = tokens×price.
-   (Gaps we are NOT closing per decision: reversible tokenization vault, Ranger cell-level policies.)
+(Gaps we are NOT closing per decision: reversible tokenization vault, Ranger cell-level policies.)
 
 ## 11. Principles to never break
 

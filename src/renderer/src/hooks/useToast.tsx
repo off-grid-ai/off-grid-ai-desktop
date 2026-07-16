@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
-import { IconCheck, IconX } from '@tabler/icons-react';
+import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react'
+import { IconCheck, IconX } from '@tabler/icons-react'
 
 // Transient top-right toast with an optional action (e.g. Undo). Distinct from
 // the persistent notification center (useNotifications): a toast auto-dismisses
@@ -7,35 +7,46 @@ import { IconCheck, IconX } from '@tabler/icons-react';
 // usable from core and pro screens alike.
 
 interface Toast {
-  id: string;
-  message: string;
-  actionLabel?: string;
-  onAction?: () => void;
+  id: string
+  message: string
+  actionLabel?: string
+  onAction?: () => void
 }
 
 interface ToastContextType {
-  showToast: (t: { message: string; actionLabel?: string; onAction?: () => void; durationMs?: number }) => void;
+  showToast: (t: {
+    message: string
+    actionLabel?: string
+    onAction?: () => void
+    durationMs?: number
+  }) => void
 }
 
-const ToastContext = createContext<ToastContextType | undefined>(undefined);
+const ToastContext = createContext<ToastContextType | undefined>(undefined)
 
-const DEFAULT_DURATION = 6000;
+const DEFAULT_DURATION = 6000
 
 export function ToastProvider({ children }: { children: ReactNode }): React.ReactElement {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [toasts, setToasts] = useState<Toast[]>([])
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   const dismiss = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-    const timer = timers.current[id];
-    if (timer) { clearTimeout(timer); delete timers.current[id]; }
-  }, []);
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+    const timer = timers.current[id]
+    if (timer) {
+      clearTimeout(timer)
+      delete timers.current[id]
+    }
+  }, [])
 
-  const showToast = useCallback<ToastContextType['showToast']>(({ message, actionLabel, onAction, durationMs }) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    setToasts((prev) => [{ id, message, actionLabel, onAction }, ...prev].slice(0, 4));
-    timers.current[id] = setTimeout(() => dismiss(id), durationMs ?? DEFAULT_DURATION);
-  }, [dismiss]);
+  const showToast = useCallback<ToastContextType['showToast']>(
+    ({ message, actionLabel, onAction, durationMs }) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      setToasts((prev) => [{ id, message, actionLabel, onAction }, ...prev].slice(0, 4))
+      timers.current[id] = setTimeout(() => dismiss(id), durationMs ?? DEFAULT_DURATION)
+    },
+    [dismiss]
+  )
 
   return (
     <ToastContext.Provider value={{ showToast }}>
@@ -50,7 +61,10 @@ export function ToastProvider({ children }: { children: ReactNode }): React.Reac
             <span className="max-w-[22rem] truncate">{t.message}</span>
             {t.actionLabel && t.onAction && (
               <button
-                onClick={() => { t.onAction?.(); dismiss(t.id); }}
+                onClick={() => {
+                  t.onAction?.()
+                  dismiss(t.id)
+                }}
                 className="shrink-0 rounded-sm border border-green-500/50 bg-green-500/10 px-2 py-0.5 text-green-400 hover:bg-green-500/20"
               >
                 {t.actionLabel}
@@ -67,11 +81,11 @@ export function ToastProvider({ children }: { children: ReactNode }): React.Reac
         ))}
       </div>
     </ToastContext.Provider>
-  );
+  )
 }
 
 export function useToast(): ToastContextType {
-  const ctx = useContext(ToastContext);
-  if (ctx === undefined) throw new Error('useToast must be used within a ToastProvider');
-  return ctx;
+  const ctx = useContext(ToastContext)
+  if (ctx === undefined) throw new Error('useToast must be used within a ToastProvider')
+  return ctx
 }

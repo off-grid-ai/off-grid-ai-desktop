@@ -24,9 +24,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: false # the repo's LFS binaries are macOS-only; Windows runtimes
-                     # come from fetch-win-binaries.ps1, so don't pull ~235MB of
-                     # dylibs we won't ship.
+          lfs:
+            false # the repo's LFS binaries are macOS-only; Windows runtimes
+            # come from fetch-win-binaries.ps1, so don't pull ~235MB of
+            # dylibs we won't ship.
 
       - uses: actions/setup-node@v4
         with:

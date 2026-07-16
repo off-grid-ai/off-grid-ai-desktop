@@ -5,34 +5,34 @@
 
 export interface MemoryGuardInput {
   /** Total machine RAM in GB (os.totalmem() / 1e9). */
-  totalGb: number;
+  totalGb: number
   /** Diffusion model file size in GB (0 for Core ML — runs on the ANE, exempt). */
-  modelSizeGb: number;
+  modelSizeGb: number
   /** Whether this pick runs on Core ML (ANE) — exempt from the guard. */
-  coreml: boolean;
+  coreml: boolean
   /** Whether this is the Z-Image 3-model stack. */
-  zImageStack: boolean;
+  zImageStack: boolean
   /** Z-Image Qwen3-4B text-encoder size in GB (0 when not a Z-Image stack). */
-  zEncoderGb?: number;
+  zEncoderGb?: number
   /** Z-Image FLUX VAE size in GB (0 when not a Z-Image stack). */
-  zVaeGb?: number;
+  zVaeGb?: number
 }
 
 export interface MemoryGuardResult {
   /** Estimated resident footprint in GB. */
-  modelGb: number;
+  modelGb: number
   /** Available budget in GB after the RAM-scaled reserve. */
-  budgetGb: number;
+  budgetGb: number
   /** RAM reserved for the OS + everything else. */
-  reserveGb: number;
+  reserveGb: number
   /** True when the model would exceed the budget (refuse to run). */
-  overBudget: boolean;
+  overBudget: boolean
 }
 
 /** Reserve scales with RAM so an 8GB machine isn't blocked outright — a flat 7GB
  *  reserve would leave it ~1GB and reject everything. */
 export function reserveForRam(totalGb: number): number {
-  return totalGb <= 10 ? 4 : 6;
+  return totalGb <= 10 ? 4 : 6
 }
 
 /** Compute the resident footprint + over-budget decision. Core ML is exempt
@@ -40,11 +40,11 @@ export function reserveForRam(totalGb: number): number {
  *  footprint (encoder + VAE are all resident at once), so they're counted too;
  *  the whole stack is scaled by 1.4 to cover runtime overhead. */
 export function evaluateMemoryGuard(input: MemoryGuardInput): MemoryGuardResult {
-  const { totalGb, modelSizeGb, coreml, zImageStack } = input;
-  const reserveGb = reserveForRam(totalGb);
-  const zEncoderGb = zImageStack ? (input.zEncoderGb ?? 0) : 0;
-  const zVaeGb = zImageStack ? (input.zVaeGb ?? 0) : 0;
-  const modelGb = coreml ? 0 : (modelSizeGb + zEncoderGb + zVaeGb) * 1.4;
-  const budgetGb = totalGb - reserveGb;
-  return { modelGb, budgetGb, reserveGb, overBudget: modelGb > budgetGb };
+  const { totalGb, modelSizeGb, coreml, zImageStack } = input
+  const reserveGb = reserveForRam(totalGb)
+  const zEncoderGb = zImageStack ? (input.zEncoderGb ?? 0) : 0
+  const zVaeGb = zImageStack ? (input.zVaeGb ?? 0) : 0
+  const modelGb = coreml ? 0 : (modelSizeGb + zEncoderGb + zVaeGb) * 1.4
+  const budgetGb = totalGb - reserveGb
+  return { modelGb, budgetGb, reserveGb, overBudget: modelGb > budgetGb }
 }

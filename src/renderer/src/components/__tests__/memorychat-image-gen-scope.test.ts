@@ -10,24 +10,24 @@
 // that the global-bool bug can't come back: it was red on HEAD (which had the
 // `useState(false)` global bool) and passes on the per-conversation shape.
 
-import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
-const src = readFileSync(join(__dirname, '..', 'MemoryChat.tsx'), 'utf8');
+const src = readFileSync(join(__dirname, '..', 'MemoryChat.tsx'), 'utf8')
 
 describe('MemoryChat image-gen state is per-conversation (D9)', () => {
   it('no longer stores generatingImage as a global bool', () => {
-    expect(src).not.toMatch(/useState<?[^>]*>?\(false\)[^\n]*\/\/\s*.*generat/i);
-    expect(src).not.toMatch(/\[generatingImage,\s*setGeneratingImage\]/);
-  });
+    expect(src).not.toMatch(/useState<?[^>]*>?\(false\)[^\n]*\/\/\s*.*generat/i)
+    expect(src).not.toMatch(/\[generatingImage,\s*setGeneratingImage\]/)
+  })
 
   it('tracks the owning conversation (imageGenConv) and derives generatingImage from the active one', () => {
-    expect(src).toMatch(/\[imageGenConv,\s*setImageGenConv\]/);
-    expect(src).toMatch(/const generatingImage = imageGenConv[\s\S]*?=== activeConversationId/);
-  });
+    expect(src).toMatch(/\[imageGenConv,\s*setImageGenConv\]/)
+    expect(src).toMatch(/const generatingImage = imageGenConv[\s\S]*?=== activeConversationId/)
+  })
 
   it('stopGeneration cancels the image job only when THIS conversation owns it', () => {
-    expect(src).toMatch(/if \(imageGenConv === convId\)[\s\S]*?cancelImageGen/);
-  });
-});
+    expect(src).toMatch(/if \(imageGenConv === convId\)[\s\S]*?cancelImageGen/)
+  })
+})

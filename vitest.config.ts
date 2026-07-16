@@ -1,12 +1,12 @@
-import { resolve } from 'path';
-import { existsSync } from 'fs';
-import { defineConfig } from 'vitest/config';
+import { resolve } from 'path'
+import { existsSync } from 'fs'
+import { defineConfig } from 'vitest/config'
 
 // The pro/ submodule is present in the working tree when you have access, absent
 // otherwise (and in a fork CI without the cross-repo token). Only enforce the
 // pro-specific threshold group when pro is actually checked out, so a core-only
 // run measures + gates core alone instead of erroring on an empty pro/** glob.
-const hasPro = existsSync(resolve(__dirname, 'pro/tsconfig.json'));
+const hasPro = existsSync(resolve(__dirname, 'pro/tsconfig.json'))
 
 // Unit + integration tests (fast, deterministic). The Playwright Electron E2E lives
 // in e2e/ and runs via `npm run test:e2e`, NOT here.
@@ -93,14 +93,14 @@ export default defineConfig({
         // models/*, llm/*, licensing/*-logic, files-classify, tts-logic, etc.). These husks
         // register ipcMain handlers, spawn binaries, bind sockets, or call native/OS/network
         // APIs - not unit-coverable in-process; exercised via e2e / smoke / test:db.
-        'src/main/ipc.ts',            // ~100 ipcMain.handle registrations (logic → ipc-query-logic.ts)
+        'src/main/ipc.ts', // ~100 ipcMain.handle registrations (logic → ipc-query-logic.ts)
         'src/main/rag-ipc.ts',
         'src/main/mcp-ipc.ts',
         'src/main/license-ipc.ts',
-        'src/main/llm.ts',            // spawns llama-server; pure bits in llm/* (tested)
+        'src/main/llm.ts', // spawns llama-server; pure bits in llm/* (tested)
         'src/main/mcp.ts',
         'src/main/mcp-oauth.ts',
-        'src/main/mcp-server.ts',     // MCP tool registration; parseDataUrl extracted+tested
+        'src/main/mcp-server.ts', // MCP tool registration; parseDataUrl extracted+tested
         'src/main/updater.ts',
         'src/main/dev-seed.ts',
         'src/main/vision.ts',
@@ -108,19 +108,19 @@ export default defineConfig({
         'src/main/embeddings.ts',
         'src/main/permissions.ts',
         'src/main/rag/extractors.ts',
-        'src/main/rag/index.ts',      // orchestrator; buildProjectPrompt extracted → rag/prompt.ts
+        'src/main/rag/index.ts', // orchestrator; buildProjectPrompt extracted → rag/prompt.ts
         'src/main/licensing/license-service.ts', // Keychain/IPC shell; isProActive → license-service logic exports (tested)
-        'src/main/licensing/keygen-client.ts',   // fetch shell; parsers extracted+tested
-        'src/main/licensing/keygen-config.ts',   // constants only
+        'src/main/licensing/keygen-client.ts', // fetch shell; parsers extracted+tested
+        'src/main/licensing/keygen-config.ts', // constants only
         'src/main/bootstrap/loadProFeaturesMain.ts', // dynamic-import loader; proEnabled() tested
-        'src/main/search.ts',         // DB orchestrator; ranking in search-ranking.ts (tested)
-        'src/main/setup.ts',          // model-recommendation orchestrator; fusion via tested model-sizing
+        'src/main/search.ts', // DB orchestrator; ranking in search-ranking.ts (tested)
+        'src/main/setup.ts', // model-recommendation orchestrator; fusion via tested model-sizing
         'src/main/models-manager.ts', // catalog/install/activate IO; logic in models/* (tested)
-        'src/main/skills.ts',         // fs CRUD shell; parsers → skills-parse.ts (tested)
-        'src/main/tools.ts',          // agentic loop (tools-stream.test.ts) + parsers (tools-parsers.ts)
-        'src/main/files.ts',          // upload IO; classifyUpload → files-classify.ts (tested)
-        'src/main/tts.ts',            // engine spawn; chooseVoice/parseServeLine → tts-logic.ts (tested)
-        'src/main/vectors.ts',        // LanceDB shell; predicates → vectors-predicates.ts (tested)
+        'src/main/skills.ts', // fs CRUD shell; parsers → skills-parse.ts (tested)
+        'src/main/tools.ts', // agentic loop (tools-stream.test.ts) + parsers (tools-parsers.ts)
+        'src/main/files.ts', // upload IO; classifyUpload → files-classify.ts (tested)
+        'src/main/tts.ts', // engine spawn; chooseVoice/parseServeLine → tts-logic.ts (tested)
+        'src/main/vectors.ts', // LanceDB shell; predicates → vectors-predicates.ts (tested)
         'src/main/data-privacy.ts',
         'src/main/artifacts.ts',
         'src/main/secrets.ts',
@@ -163,7 +163,7 @@ export default defineConfig({
         'pro/main/clipboard.ts',
         'pro/main/focus.ts',
         'pro/main/dictation/hotkey/toggle.ts',
-        'pro/main/crm/notify.ts',     // pure Electron Notification shell (isSupported/new Notification/show) — no branchable logic
+        'pro/main/crm/notify.ts', // pure Electron Notification shell (isSupported/new Notification/show) — no branchable logic
 
         // Renderer .tsx COMPONENTS are rendered-behavior surface, covered by the Playwright
         // e2e tour (npm run test:e2e) + targeted render tests (MemoryChat.image.test.tsx),
@@ -172,7 +172,7 @@ export default defineConfig({
         // design; this also drops any .tsx a render test transitively imports from the denominator
         // (a render test asserts the terminal artifact, it is not a unit-coverage vehicle).
         'src/renderer/src/**/*.tsx',
-        'pro/renderer/**/*.tsx',
+        'pro/renderer/**/*.tsx'
       ],
       thresholds: {
         // RATCHET FLOOR on the HONEST TESTABLE surface. The denominator is corrected two ways
@@ -191,8 +191,8 @@ export default defineConfig({
         // guarded, not averaged into core. Just under pro's measured 96.9/91.0/94.8/98.3.
         // Only applied when pro is checked out (see hasPro) so a core-only CI run doesn't
         // error on an empty glob.
-        ...(hasPro ? { 'pro/**': { statements: 95, branches: 89, functions: 93, lines: 97 } } : {}),
-      },
-    },
-  },
-});
+        ...(hasPro ? { 'pro/**': { statements: 95, branches: 89, functions: 93, lines: 97 } } : {})
+      }
+    }
+  }
+})

@@ -10,19 +10,22 @@
 // (The full "run Configure-for-me → Kokoro shows Active" flow is the on-device
 // check in DEVICE_TEST_LOG — setActiveModalChoice sits behind the heavy llm import.)
 
-import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
-const src = readFileSync(join(__dirname, '..', '..', 'models-manager.ts'), 'utf8');
-const fn = src.slice(src.indexOf('export async function setActiveModalChoice'), src.indexOf('export function getActiveModalities'));
+const src = readFileSync(join(__dirname, '..', '..', 'models-manager.ts'), 'utf8')
+const fn = src.slice(
+  src.indexOf('export async function setActiveModalChoice'),
+  src.indexOf('export function getActiveModalities')
+)
 
 describe('setActiveModalChoice normalizes the modality (D26)', () => {
   it('no longer gates on isModalKind (which rejected the setup "voice" kind)', () => {
-    expect(fn).not.toMatch(/isModalKind\(/);
-  });
+    expect(fn).not.toMatch(/isModalKind\(/)
+  })
 
   it('normalizes the kind through modalityForModel so voice + speech both activate', () => {
-    expect(fn).toMatch(/modalityForModel\(kind\)/);
-  });
-});
+    expect(fn).toMatch(/modalityForModel\(kind\)/)
+  })
+})

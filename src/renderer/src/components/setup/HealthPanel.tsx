@@ -1,28 +1,28 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react'
 import {
   CheckCircle,
   CircleNotch,
   WarningCircle,
   Circle,
-  ArrowsClockwise,
-} from '@phosphor-icons/react';
-import { cn } from '@renderer/lib/utils';
+  ArrowsClockwise
+} from '@phosphor-icons/react'
+import { cn } from '@renderer/lib/utils'
 
-type ComponentStatus = 'ready' | 'starting' | 'down' | 'not_installed';
+type ComponentStatus = 'ready' | 'starting' | 'down' | 'not_installed'
 
 interface HealthComponent {
-  id: string;
-  label: string;
-  status: ComponentStatus;
-  detail?: string;
-  port?: number;
-  canRestart?: boolean;
+  id: string
+  label: string
+  status: ComponentStatus
+  detail?: string
+  port?: number
+  canRestart?: boolean
 }
 
 interface SystemHealth {
-  ramGb: number;
-  activeModel: string | null;
-  components: HealthComponent[];
+  ramGb: number
+  activeModel: string | null
+  components: HealthComponent[]
 }
 
 // Emerald is the only accent (DESIGN): healthy = emerald, everything else reads
@@ -31,44 +31,47 @@ const STATUS_META: Record<ComponentStatus, { label: string; text: string }> = {
   ready: { label: 'Running', text: 'text-green-500' },
   starting: { label: 'Starting', text: 'text-neutral-400' },
   down: { label: 'Down', text: 'text-neutral-300' },
-  not_installed: { label: 'Not set up', text: 'text-neutral-500' },
-};
+  not_installed: { label: 'Not set up', text: 'text-neutral-500' }
+}
 
 function StatusIcon({ status }: { status: ComponentStatus }): React.ReactElement {
-  if (status === 'ready') return <CheckCircle weight="fill" className="h-4 w-4 text-green-500" />;
-  if (status === 'starting') return <CircleNotch className="h-4 w-4 animate-spin text-neutral-400" />;
-  if (status === 'down') return <WarningCircle weight="fill" className="h-4 w-4 text-neutral-300" />;
-  return <Circle className="h-4 w-4 text-neutral-600" />;
+  if (status === 'ready') return <CheckCircle weight="fill" className="h-4 w-4 text-green-500" />
+  if (status === 'starting')
+    return <CircleNotch className="h-4 w-4 animate-spin text-neutral-400" />
+  if (status === 'down') return <WarningCircle weight="fill" className="h-4 w-4 text-neutral-300" />
+  return <Circle className="h-4 w-4 text-neutral-600" />
 }
 
 /** Live status of every local component. Polls system:health on an interval. */
 export function HealthPanel(): React.ReactElement {
-  const api = (window as { api?: Record<string, (...args: unknown[]) => Promise<unknown>> }).api;
-  const [health, setHealth] = useState<SystemHealth | null>(null);
-  const [restarting, setRestarting] = useState<string | null>(null);
+  const api = (window as { api?: Record<string, (...args: unknown[]) => Promise<unknown>> }).api
+  const [health, setHealth] = useState<SystemHealth | null>(null)
+  const [restarting, setRestarting] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
-      const h = (await api?.systemHealth?.()) as SystemHealth | undefined;
-      if (h) setHealth(h);
-    } catch { /* ignore — keep last snapshot */ }
-  }, [api]);
+      const h = (await api?.systemHealth?.()) as SystemHealth | undefined
+      if (h) setHealth(h)
+    } catch {
+      /* ignore — keep last snapshot */
+    }
+  }, [api])
 
   useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 3000);
-    return () => clearInterval(t);
-  }, [refresh]);
+    refresh()
+    const t = setInterval(refresh, 3000)
+    return () => clearInterval(t)
+  }, [refresh])
 
   const restart = async (id: string): Promise<void> => {
-    setRestarting(id);
+    setRestarting(id)
     try {
-      await api?.restartComponent?.(id);
-      await refresh();
+      await api?.restartComponent?.(id)
+      await refresh()
     } finally {
-      setRestarting(null);
+      setRestarting(null)
     }
-  };
+  }
 
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 font-mono">
@@ -90,16 +93,23 @@ export function HealthPanel(): React.ReactElement {
       ) : (
         <div className="grid grid-cols-1 gap-1.5 p-3 sm:grid-cols-2 lg:grid-cols-3">
           {health.components.map((c) => {
-            const meta = STATUS_META[c.status];
-            const canRestart = c.canRestart && (c.status === 'down' || c.status === 'ready');
+            const meta = STATUS_META[c.status]
+            const canRestart = c.canRestart && (c.status === 'down' || c.status === 'ready')
             return (
-              <div key={c.id} className="group flex items-center gap-2.5 rounded border border-neutral-800/60 bg-neutral-900/30 px-2.5 py-2 transition-colors duration-150 hover:border-neutral-700">
+              <div
+                key={c.id}
+                className="group flex items-center gap-2.5 rounded border border-neutral-800/60 bg-neutral-900/30 px-2.5 py-2 transition-colors duration-150 hover:border-neutral-700"
+              >
                 <StatusIcon status={c.status} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-mono text-[11px] text-neutral-200">{c.label}</div>
-                  {c.detail && <div className="truncate text-[10px] text-neutral-600">{c.detail}</div>}
+                  {c.detail && (
+                    <div className="truncate text-[10px] text-neutral-600">{c.detail}</div>
+                  )}
                 </div>
-                {c.port && <span className="shrink-0 font-mono text-[9px] text-neutral-600">:{c.port}</span>}
+                {c.port && (
+                  <span className="shrink-0 font-mono text-[9px] text-neutral-600">:{c.port}</span>
+                )}
                 <span className={cn('shrink-0 text-[10px]', meta.text)}>{meta.label}</span>
                 {canRestart && (
                   <button
@@ -111,7 +121,7 @@ export function HealthPanel(): React.ReactElement {
                   </button>
                 )}
               </div>
-            );
+            )
           })}
         </div>
       )}
@@ -122,5 +132,5 @@ export function HealthPanel(): React.ReactElement {
         </div>
       )}
     </div>
-  );
+  )
 }

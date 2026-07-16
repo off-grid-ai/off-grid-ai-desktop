@@ -8,41 +8,45 @@
 // pumpToFile attaches the listener and turns a write error into a normal
 // rejection, so the caller reports the download failed instead of crashing.
 
-import type fs from 'fs';
+import type fs from 'fs'
 
 interface ByteReader {
-  read(): Promise<{ done: boolean; value?: Uint8Array }>;
+  read(): Promise<{ done: boolean; value?: Uint8Array }>
 }
 
 /** Pump `reader` into `out`, calling `onBytes` with each chunk's length. Resolves
  *  when the body is fully written and flushed; rejects (never throws out-of-band)
  *  if the write stream errors. */
-export async function pumpToFile(reader: ByteReader, out: fs.WriteStream, onBytes: (n: number) => void): Promise<void> {
+export async function pumpToFile(
+  reader: ByteReader,
+  out: fs.WriteStream,
+  onBytes: (n: number) => void
+): Promise<void> {
   // Capture the FIRST write error the moment it fires, so it can never reach the
   // process as an unhandled 'error' event, and so the loop stops promptly.
-  let writeErr: Error | null = null;
+  let writeErr: Error | null = null
   out.on('error', (e: Error) => {
-    writeErr ??= e;
-  });
+    writeErr ??= e
+  })
   try {
     for (;;) {
-      if (writeErr) throw writeErr;
-      const { done, value } = await reader.read();
-      if (done || !value) break;
-      out.write(Buffer.from(value));
-      onBytes(value.length);
+      if (writeErr) throw writeErr
+      const { done, value } = await reader.read()
+      if (done || !value) break
+      out.write(Buffer.from(value))
+      onBytes(value.length)
     }
   } finally {
-    out.end();
+    out.end()
     // Wait for the flush, but reject on error instead of hanging (a stream that
     // errored never emits 'finish').
     await new Promise<void>((resolve, reject) => {
       if (writeErr) {
-        reject(writeErr);
-        return;
+        reject(writeErr)
+        return
       }
-      out.on('error', reject);
-      out.on('finish', () => resolve());
-    });
+      out.on('error', reject)
+      out.on('finish', () => resolve())
+    })
   }
 }

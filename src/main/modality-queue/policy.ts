@@ -10,43 +10,47 @@
 // runs OR waits; tier 1 is light and MAY coexist with a running tier-2 job when
 // tier1CoexistsWithTier2 is set (default) so speech never stalls behind foreground.
 
-export type Tier = 1 | 2 | 3;
+export type Tier = 1 | 2 | 3
 
 export interface QueueJob {
-  id: string;
-  tier: Tier;
-  label: string;
-  seq: number;
+  id: string
+  tier: Tier
+  label: string
+  seq: number
 }
 
 export interface PolicyConfig {
-  tier1CoexistsWithTier2: boolean;
+  tier1CoexistsWithTier2: boolean
 }
 
-export const DEFAULT_POLICY: PolicyConfig = { tier1CoexistsWithTier2: true };
+export const DEFAULT_POLICY: PolicyConfig = { tier1CoexistsWithTier2: true }
 
 export function byPriority(a: QueueJob, b: QueueJob): number {
-  return a.tier - b.tier || a.seq - b.seq;
+  return a.tier - b.tier || a.seq - b.seq
 }
 
-export function canRun(candidate: QueueJob, running: readonly QueueJob[], cfg: PolicyConfig): boolean {
-  if (running.some((r) => r.tier === candidate.tier && candidate.tier === 1)) return false;
-  const heavyRunning = running.some((r) => r.tier === 2 || r.tier === 3);
-  if (candidate.tier === 3) return running.length === 0;
-  if (candidate.tier === 2) return !heavyRunning;
-  return !heavyRunning || cfg.tier1CoexistsWithTier2;
+export function canRun(
+  candidate: QueueJob,
+  running: readonly QueueJob[],
+  cfg: PolicyConfig
+): boolean {
+  if (running.some((r) => r.tier === candidate.tier && candidate.tier === 1)) return false
+  const heavyRunning = running.some((r) => r.tier === 2 || r.tier === 3)
+  if (candidate.tier === 3) return running.length === 0
+  if (candidate.tier === 2) return !heavyRunning
+  return !heavyRunning || cfg.tier1CoexistsWithTier2
 }
 
 export function selectNext(
   running: readonly QueueJob[],
   waiting: readonly QueueJob[],
-  cfg: PolicyConfig = DEFAULT_POLICY,
+  cfg: PolicyConfig = DEFAULT_POLICY
 ): QueueJob | null {
-  const foregroundPending = waiting.some((j) => j.tier === 1 || j.tier === 2);
-  const ordered = [...waiting].sort(byPriority);
+  const foregroundPending = waiting.some((j) => j.tier === 1 || j.tier === 2)
+  const ordered = [...waiting].sort(byPriority)
   for (const job of ordered) {
-    if (job.tier === 3 && foregroundPending) continue;
-    if (canRun(job, running, cfg)) return job;
+    if (job.tier === 3 && foregroundPending) continue
+    if (canRun(job, running, cfg)) return job
   }
-  return null;
+  return null
 }

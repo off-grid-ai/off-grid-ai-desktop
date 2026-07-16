@@ -7,7 +7,7 @@
 // ClipboardStore (a local SQLite store today, an @offgrid/memory op-log later so
 // the clipboard syncs across devices).
 
-export * from './types';
-export { ClipboardEngine } from './engine';
-export type { ClipboardEngineOptions } from './engine';
-export { fuzzyMatch, fuzzySearch } from './fuzzy-search';
+export * from './types'
+export { ClipboardEngine } from './engine'
+export type { ClipboardEngineOptions } from './engine'
+export { fuzzyMatch, fuzzySearch } from './fuzzy-search'

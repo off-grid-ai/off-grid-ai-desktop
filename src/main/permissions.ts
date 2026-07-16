@@ -1,9 +1,9 @@
-import { systemPreferences, shell, desktopCapturer } from 'electron';
+import { systemPreferences, shell, desktopCapturer } from 'electron'
 
 export interface PermissionStatus {
-  accessibility: boolean;
-  screenRecording: boolean;
-  allGranted: boolean;
+  accessibility: boolean
+  screenRecording: boolean
+  allGranted: boolean
 }
 
 /**
@@ -12,9 +12,9 @@ export interface PermissionStatus {
  */
 function checkAccessibilityPermission(prompt: boolean = false): boolean {
   if (process.platform !== 'darwin') {
-    return true; // Not applicable on other platforms
+    return true // Not applicable on other platforms
   }
-  return systemPreferences.isTrustedAccessibilityClient(prompt);
+  return systemPreferences.isTrustedAccessibilityClient(prompt)
 }
 
 /**
@@ -23,29 +23,34 @@ function checkAccessibilityPermission(prompt: boolean = false): boolean {
  */
 function checkScreenRecordingPermission(): boolean {
   if (process.platform !== 'darwin') {
-    return true; // Not applicable on other platforms
+    return true // Not applicable on other platforms
   }
-  
+
   // On macOS, we check screen recording access via getMediaAccessStatus
-  const status = systemPreferences.getMediaAccessStatus('screen');
-  console.log('[permissions] Screen recording status:', status);
-  return status === 'granted';
+  const status = systemPreferences.getMediaAccessStatus('screen')
+  console.log('[permissions] Screen recording status:', status)
+  return status === 'granted'
 }
 
 /**
  * Get the status of all required permissions.
  */
 export function getPermissionStatus(): PermissionStatus {
-  const accessibility = checkAccessibilityPermission(false);
-  const screenRecording = checkScreenRecordingPermission();
-  
-  console.log('[permissions] Status check - Accessibility:', accessibility, 'Screen Recording:', screenRecording);
-  
+  const accessibility = checkAccessibilityPermission(false)
+  const screenRecording = checkScreenRecordingPermission()
+
+  console.log(
+    '[permissions] Status check - Accessibility:',
+    accessibility,
+    'Screen Recording:',
+    screenRecording
+  )
+
   return {
     accessibility,
     screenRecording,
     allGranted: accessibility && screenRecording
-  };
+  }
 }
 
 /**
@@ -54,10 +59,10 @@ export function getPermissionStatus(): PermissionStatus {
  */
 export function requestAccessibilityPermission(): boolean {
   if (process.platform !== 'darwin') {
-    return true;
+    return true
   }
   // Passing true triggers the system dialog if not already trusted
-  return systemPreferences.isTrustedAccessibilityClient(true);
+  return systemPreferences.isTrustedAccessibilityClient(true)
 }
 
 /**
@@ -65,13 +70,17 @@ export function requestAccessibilityPermission(): boolean {
  */
 export function openAccessibilitySettings(): void {
   if (process.platform === 'darwin') {
-    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+    shell.openExternal(
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
+    )
   }
 }
 
 export function openScreenRecordingSettings(): void {
   if (process.platform === 'darwin') {
-    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+    shell.openExternal(
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
+    )
   }
 }
 
@@ -81,19 +90,19 @@ export function openScreenRecordingSettings(): void {
  */
 export async function requestScreenRecordingPermission(): Promise<boolean> {
   if (process.platform !== 'darwin') {
-    return true;
+    return true
   }
-  
+
   try {
     // Attempting to get sources triggers the permission prompt
     // macOS will then add the app to the Screen Recording permissions list
-    await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } });
-    
+    await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })
+
     // Check if permission was granted
-    const status = systemPreferences.getMediaAccessStatus('screen');
-    return status === 'granted';
+    const status = systemPreferences.getMediaAccessStatus('screen')
+    return status === 'granted'
   } catch (e) {
-    console.error('Failed to request screen recording permission:', e);
-    return false;
+    console.error('Failed to request screen recording permission:', e)
+    return false
   }
 }

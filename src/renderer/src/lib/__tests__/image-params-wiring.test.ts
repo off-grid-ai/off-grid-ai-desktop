@@ -26,27 +26,27 @@
 // recomputing, or the dropdown stops routing through setActiveModalModel — this
 // test goes red.
 
-import { describe, it, expect, vi } from 'vitest';
-import { standardModelDefaults } from '../../../../shared/image-defaults';
-import { resolveImageParams, setOverride, type ImageParamStore } from '../image-params';
+import { describe, it, expect, vi } from 'vitest'
+import { standardModelDefaults } from '../../../../shared/image-defaults'
+import { resolveImageParams, setOverride, type ImageParamStore } from '../image-params'
 
-const FEW_STEP = 'sdxl-lightning.gguf'; // defaultSteps 10, defaultSize 512
-const FULL = 'dreamlike-photoreal-v2.gguf'; // defaultSteps 28
+const FEW_STEP = 'sdxl-lightning.gguf' // defaultSteps 10, defaultSize 512
+const FULL = 'dreamlike-photoreal-v2.gguf' // defaultSteps 28
 
 /** An in-memory stand-in for the renderer's real persistence seam
  *  (window.api.saveSetting / getSettings). The composer persists the whole
  *  imageParams store under one key and reloads it on mount; we round-trip through
  *  the same JSON boundary so a serialization regression would surface here too. */
 function makeSettingsStore() {
-  const raw: Record<string, string> = {};
+  const raw: Record<string, string> = {}
   return {
     saveSetting: vi.fn((key: string, value: unknown) => {
-      raw[key] = JSON.stringify(value);
+      raw[key] = JSON.stringify(value)
     }),
     getSetting<T>(key: string): T | undefined {
-      return key in raw ? (JSON.parse(raw[key]!) as T) : undefined;
+      return key in raw ? (JSON.parse(raw[key]!) as T) : undefined
     }
-  };
+  }
 }
 
 /**
@@ -66,97 +66,97 @@ function makeSettingsStore() {
  *    the closest reachable proxy for the terminal artifact.
  */
 function makeComposer(setActiveModalModel: (kind: string, model: string) => void) {
-  const settings = makeSettingsStore();
-  let imgModel = '';
-  let imgSteps = 10;
-  let imgSize = 512;
-  let store: ImageParamStore = settings.getSetting<ImageParamStore>('imageParams') ?? {};
+  const settings = makeSettingsStore()
+  let imgModel = ''
+  let imgSteps = 10
+  let imgSize = 512
+  let store: ImageParamStore = settings.getSetting<ImageParamStore>('imageParams') ?? {}
 
   // The `[imgModel, imgParamStore]` effect. Run after every state change that the
   // component lists as a dependency (model OR store), exactly like React re-runs it.
   function runResolveEffect() {
-    if (!imgModel) return;
-    const { steps, size } = resolveImageParams(imgModel, store);
-    imgSize = size;
-    imgSteps = steps;
+    if (!imgModel) return
+    const { steps, size } = resolveImageParams(imgModel, store)
+    imgSize = size
+    imgSteps = steps
   }
 
   return {
     chooseImageModel(model: string) {
-      imgModel = model;
-      setActiveModalModel('image', model); // divergence fix: same owner as ModelPicker
-      runResolveEffect(); // [imgModel] dep fires
+      imgModel = model
+      setActiveModalModel('image', model) // divergence fix: same owner as ModelPicker
+      runResolveEffect() // [imgModel] dep fires
     },
     setStepsOverride(value: number) {
-      imgSteps = value; // immediate local mirror
-      if (!imgModel) return;
-      store = setOverride(store, imgModel, 'steps', value);
-      settings.saveSetting('imageParams', store);
-      runResolveEffect(); // [imgParamStore] dep fires
+      imgSteps = value // immediate local mirror
+      if (!imgModel) return
+      store = setOverride(store, imgModel, 'steps', value)
+      settings.saveSetting('imageParams', store)
+      runResolveEffect() // [imgParamStore] dep fires
     },
     // Simulate a fresh mount: reload persisted store, then run the effect.
     remount() {
-      store = settings.getSetting<ImageParamStore>('imageParams') ?? {};
-      runResolveEffect();
+      store = settings.getSetting<ImageParamStore>('imageParams') ?? {}
+      runResolveEffect()
     },
     // The send path (MemoryChat.tsx L824-831) reads the LOCAL mirror state.
     buildGeneratePayload() {
-      return { steps: imgSteps, width: imgSize, height: imgSize, model: imgModel || undefined };
+      return { steps: imgSteps, width: imgSize, height: imgSize, model: imgModel || undefined }
     }
-  };
+  }
 }
 
 describe('image composer wiring — the generate payload is the terminal artifact', () => {
   it('user override survives a model switch: generate payload carries 10, not the model default 28', () => {
-    const setActive = vi.fn();
-    const c = makeComposer(setActive);
+    const setActive = vi.fn()
+    const c = makeComposer(setActive)
 
     // User picks the full checkpoint (default 28) and types steps = 10.
-    c.chooseImageModel(FULL);
-    c.setStepsOverride(10);
+    c.chooseImageModel(FULL)
+    c.setStepsOverride(10)
 
     // The payload the engine receives must be the OVERRIDE, not the stomped default.
-    const payload = c.buildGeneratePayload();
-    expect(payload.steps).toBe(10);
-    expect(payload.model).toBe(FULL);
+    const payload = c.buildGeneratePayload()
+    expect(payload.steps).toBe(10)
+    expect(payload.model).toBe(FULL)
     // Guard against the assertion-subject trap: prove it's genuinely != the default.
-    expect(payload.steps).not.toBe(standardModelDefaults(FULL).defaultSteps);
-  });
+    expect(payload.steps).not.toBe(standardModelDefaults(FULL).defaultSteps)
+  })
 
   it('the model dropdown writes through setActiveModalModel (same owner as the Active-models panel)', () => {
-    const setActive = vi.fn();
-    const c = makeComposer(setActive);
-    c.chooseImageModel(FULL);
+    const setActive = vi.fn()
+    const c = makeComposer(setActive)
+    c.chooseImageModel(FULL)
     // Divergence fix: choosing in the composer MUST write through the shared owner,
     // or the composer and the Active-models panel silently disagree on which runs.
-    expect(setActive).toHaveBeenCalledWith('image', FULL);
-    expect(c.buildGeneratePayload().model).toBe(FULL);
-  });
+    expect(setActive).toHaveBeenCalledWith('image', FULL)
+    expect(c.buildGeneratePayload().model).toBe(FULL)
+  })
 
   it('override persists and reloads: after a remount the payload still carries 10', () => {
-    const c = makeComposer(vi.fn());
-    c.chooseImageModel(FULL);
-    c.setStepsOverride(10);
+    const c = makeComposer(vi.fn())
+    c.chooseImageModel(FULL)
+    c.setStepsOverride(10)
 
     // Fresh mount: reload the persisted imageParams, resolve for the same model.
-    c.remount();
-    c.chooseImageModel(FULL);
-    expect(c.buildGeneratePayload().steps).toBe(10);
-  });
+    c.remount()
+    c.chooseImageModel(FULL)
+    expect(c.buildGeneratePayload().steps).toBe(10)
+  })
 
   it('switching to a model with no override falls back to THAT model default, not the last value', () => {
-    const c = makeComposer(vi.fn());
-    c.chooseImageModel(FULL);
-    c.setStepsOverride(10); // override on FULL only
+    const c = makeComposer(vi.fn())
+    c.chooseImageModel(FULL)
+    c.setStepsOverride(10) // override on FULL only
 
     // Switch to a few-step model that the user never pinned.
-    c.chooseImageModel(FEW_STEP);
-    const payload = c.buildGeneratePayload();
-    expect(payload.steps).toBe(standardModelDefaults(FEW_STEP).defaultSteps);
-    expect(payload.model).toBe(FEW_STEP);
+    c.chooseImageModel(FEW_STEP)
+    const payload = c.buildGeneratePayload()
+    expect(payload.steps).toBe(standardModelDefaults(FEW_STEP).defaultSteps)
+    expect(payload.model).toBe(FEW_STEP)
 
     // And switching BACK restores the pinned override, not the few-step default.
-    c.chooseImageModel(FULL);
-    expect(c.buildGeneratePayload().steps).toBe(10);
-  });
-});
+    c.chooseImageModel(FULL)
+    expect(c.buildGeneratePayload().steps).toBe(10)
+  })
+})

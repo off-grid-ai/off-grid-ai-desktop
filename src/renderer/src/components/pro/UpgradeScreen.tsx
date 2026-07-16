@@ -1,41 +1,48 @@
-import { useState } from 'react';
-import { ArrowSquareOut, Check, Sparkle, Key, CircleNotch, DeviceMobile } from '@phosphor-icons/react';
-import { PRO_PAY_URL, PRO_FEATURES, type ProFeature } from './proCatalog';
-import { OFF_GRID_MOBILE_URL, openExternal } from '../../constants/links';
+import { useState } from 'react'
+import {
+  ArrowSquareOut,
+  Check,
+  Sparkle,
+  Key,
+  CircleNotch,
+  DeviceMobile
+} from '@phosphor-icons/react'
+import { PRO_PAY_URL, PRO_FEATURES, type ProFeature } from './proCatalog'
+import { OFF_GRID_MOBILE_URL, openExternal } from '../../constants/links'
 
 // License-key activation. Only meaningful in a pro-capable build (__OFFGRID_PRO__);
 // a core build has no pro code bundled, so entering a key would unlock nothing.
 // On success the cached entitlement flips, but main-process pro features (tray,
 // capture, CRM loops) only attach at boot — so we offer a relaunch.
 function LicenseActivation(): React.ReactElement {
-  const [key, setKey] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
   const activate = async (): Promise<void> => {
-    const license = window.api.license;
-    if (!license || !key.trim()) return;
-    setBusy(true);
-    setMsg(null);
+    const license = window.api.license
+    if (!license || !key.trim()) return
+    setBusy(true)
+    setMsg(null)
     try {
-      const r = await license.activate(key.trim());
+      const r = await license.activate(key.trim())
       if (r.ok) {
-        setMsg({ kind: 'ok', text: 'Activated. Restart to finish unlocking Pro.' });
+        setMsg({ kind: 'ok', text: 'Activated. Restart to finish unlocking Pro.' })
       } else {
         const text =
           r.reason === 'limit'
             ? 'This license is already on the maximum number of devices. Deactivate one and try again.'
             : r.reason === 'network'
               ? 'Could not reach the licensing server. Check your connection and try again.'
-              : 'That license key is invalid, expired, or revoked.';
-        setMsg({ kind: 'err', text });
+              : 'That license key is invalid, expired, or revoked.'
+        setMsg({ kind: 'err', text })
       }
     } catch {
-      setMsg({ kind: 'err', text: 'Activation failed. Please try again.' });
+      setMsg({ kind: 'err', text: 'Activation failed. Please try again.' })
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
-  };
+  }
 
   return (
     <div className="flex w-full flex-col items-stretch gap-2">
@@ -61,7 +68,9 @@ function LicenseActivation(): React.ReactElement {
         </button>
       </div>
       {msg && (
-        <div className={`flex items-center justify-between gap-3 text-left text-xs ${msg.kind === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+        <div
+          className={`flex items-center justify-between gap-3 text-left text-xs ${msg.kind === 'ok' ? 'text-green-400' : 'text-red-400'}`}
+        >
           <span>{msg.text}</span>
           {msg.kind === 'ok' && (
             <button
@@ -74,7 +83,7 @@ function LicenseActivation(): React.ReactElement {
         </div>
       )}
     </div>
-  );
+  )
 }
 
 // Shown in the free build when a Pro tab is opened. Pro is launching soon — this
@@ -82,13 +91,13 @@ function LicenseActivation(): React.ReactElement {
 // or paying now (lifetime free + first access). People who've already paid are
 // reassured they're first in line.
 export function UpgradeScreen({ feature }: { feature?: ProFeature }): React.ReactElement {
-  const f = feature;
+  const f = feature
   const open = (url: string): void => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = (window as any).api;
-    if (api?.openExternal) api.openExternal(url);
-    else window.open(url, '_blank');
-  };
+    const api = (window as any).api
+    if (api?.openExternal) api.openExternal(url)
+    else window.open(url, '_blank')
+  }
 
   return (
     <div className="h-full overflow-y-auto px-8 py-10 font-mono lg:px-12">
@@ -101,10 +110,16 @@ export function UpgradeScreen({ feature }: { feature?: ProFeature }): React.Reac
 
           <div className="flex items-start gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900/60">
-              {f ? <f.icon weight="duotone" className="h-7 w-7 text-green-400" /> : <Sparkle weight="duotone" className="h-7 w-7 text-green-400" />}
+              {f ? (
+                <f.icon weight="duotone" className="h-7 w-7 text-green-400" />
+              ) : (
+                <Sparkle weight="duotone" className="h-7 w-7 text-green-400" />
+              )}
             </div>
             <div className="min-w-0">
-              <h1 className="text-3xl font-semibold tracking-tight text-white">{f ? f.label : 'Off Grid Pro is here'}</h1>
+              <h1 className="text-3xl font-semibold tracking-tight text-white">
+                {f ? f.label : 'Off Grid Pro is here'}
+              </h1>
               {f && <p className="mt-1 text-base text-neutral-300">{f.tagline}</p>}
             </div>
           </div>
@@ -127,11 +142,18 @@ export function UpgradeScreen({ feature }: { feature?: ProFeature }): React.Reac
 
           {/* Everything Pro includes — the other gated tabs */}
           <div className="mt-1 border-t border-neutral-800 pt-4">
-            <div className="mb-2 text-[10px] uppercase tracking-widest text-neutral-600">Everything in Pro</div>
+            <div className="mb-2 text-[10px] uppercase tracking-widest text-neutral-600">
+              Everything in Pro
+            </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-neutral-500">
               {PRO_FEATURES.map((x) => (
-                <span key={x.route} className={`flex items-center gap-1.5 ${x.route === f?.route ? 'text-green-400' : ''}`}>
-                  <span className={`h-1 w-1 rounded-full ${x.route === f?.route ? 'bg-green-400' : 'bg-neutral-600'}`} />
+                <span
+                  key={x.route}
+                  className={`flex items-center gap-1.5 ${x.route === f?.route ? 'text-green-400' : ''}`}
+                >
+                  <span
+                    className={`h-1 w-1 rounded-full ${x.route === f?.route ? 'bg-green-400' : 'bg-neutral-600'}`}
+                  />
                   {x.label}
                 </span>
               ))}
@@ -171,16 +193,23 @@ export function UpgradeScreen({ feature }: { feature?: ProFeature }): React.Reac
             className="group flex items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-2.5 text-left transition-colors hover:border-green-500/30"
           >
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-700 bg-neutral-800 transition-colors group-hover:border-green-500/30">
-              <DeviceMobile weight="regular" className="h-4 w-4 text-neutral-300 transition-colors group-hover:text-green-400" />
+              <DeviceMobile
+                weight="regular"
+                className="h-4 w-4 text-neutral-300 transition-colors group-hover:text-green-400"
+              />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-xs font-medium text-neutral-200">Get Off Grid AI Mobile</span>
-              <span className="mt-0.5 block text-[11px] leading-tight text-neutral-500">Your license covers your phone too - up to 5 devices, synced over your own network.</span>
+              <span className="block text-xs font-medium text-neutral-200">
+                Get Off Grid AI Mobile
+              </span>
+              <span className="mt-0.5 block text-[11px] leading-tight text-neutral-500">
+                Your license covers your phone too - up to 5 devices, synced over your own network.
+              </span>
             </span>
             <ArrowSquareOut weight="bold" className="h-4 w-4 shrink-0 text-neutral-500" />
           </button>
         </aside>
       </div>
     </div>
-  );
+  )
 }

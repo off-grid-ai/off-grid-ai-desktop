@@ -12,62 +12,62 @@
  * IO collaborators are mocked so the import doesn't pull Electron/DB into the unit run;
  * only isProEntitled matters here and its return is controlled per case.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-const isProEntitled = vi.fn();
+const isProEntitled = vi.fn()
 
 // Mock every IO collaborator the module imports so loading it stays Electron-free.
-vi.mock('../../licensing/license-service', () => ({ isProEntitled: () => isProEntitled() }));
-vi.mock('../../database', () => ({ getDB: vi.fn(), runMigration: vi.fn() }));
-vi.mock('../../llm', () => ({ llm: {} }));
-vi.mock('../../tools', () => ({ registerToolExtension: vi.fn() }));
-vi.mock('../hookRegistry', () => ({ registerHook: vi.fn() }));
+vi.mock('../../licensing/license-service', () => ({ isProEntitled: () => isProEntitled() }))
+vi.mock('../../database', () => ({ getDB: vi.fn(), runMigration: vi.fn() }))
+vi.mock('../../llm', () => ({ llm: {} }))
+vi.mock('../../tools', () => ({ registerToolExtension: vi.fn() }))
+vi.mock('../hookRegistry', () => ({ registerHook: vi.fn() }))
 
-import { proEnabled } from '../loadProFeaturesMain';
+import { proEnabled } from '../loadProFeaturesMain'
 
 describe('proEnabled', () => {
   beforeEach(() => {
-    isProEntitled.mockReset();
+    isProEntitled.mockReset()
     // Pro code is bundled in this test build; the free-build branch (__OFFGRID_PRO__
     // false) is a compile-time define we can't flip at runtime without a re-import.
-    vi.stubGlobal('__OFFGRID_PRO__', true);
-  });
+    vi.stubGlobal('__OFFGRID_PRO__', true)
+  })
 
   afterEach(() => {
-    vi.unstubAllEnvs();
-    vi.unstubAllGlobals();
-  });
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
 
   it('OFFGRID_PRO="0" forces free (false) without consulting the license', () => {
-    vi.stubEnv('OFFGRID_PRO', '0');
-    expect(proEnabled()).toBe(false);
-    expect(isProEntitled).not.toHaveBeenCalled();
-  });
+    vi.stubEnv('OFFGRID_PRO', '0')
+    expect(proEnabled()).toBe(false)
+    expect(isProEntitled).not.toHaveBeenCalled()
+  })
 
   it('OFFGRID_PRO="1" forces pro (true) without consulting the license', () => {
-    vi.stubEnv('OFFGRID_PRO', '1');
-    expect(proEnabled()).toBe(true);
-    expect(isProEntitled).not.toHaveBeenCalled();
-  });
+    vi.stubEnv('OFFGRID_PRO', '1')
+    expect(proEnabled()).toBe(true)
+    expect(isProEntitled).not.toHaveBeenCalled()
+  })
 
   it('unset env delegates to isProEntitled — true path', () => {
-    vi.stubEnv('OFFGRID_PRO', undefined as unknown as string);
-    isProEntitled.mockReturnValue(true);
-    expect(proEnabled()).toBe(true);
-    expect(isProEntitled).toHaveBeenCalledTimes(1);
-  });
+    vi.stubEnv('OFFGRID_PRO', undefined as unknown as string)
+    isProEntitled.mockReturnValue(true)
+    expect(proEnabled()).toBe(true)
+    expect(isProEntitled).toHaveBeenCalledTimes(1)
+  })
 
   it('unset env delegates to isProEntitled — false path', () => {
-    vi.stubEnv('OFFGRID_PRO', undefined as unknown as string);
-    isProEntitled.mockReturnValue(false);
-    expect(proEnabled()).toBe(false);
-    expect(isProEntitled).toHaveBeenCalledTimes(1);
-  });
+    vi.stubEnv('OFFGRID_PRO', undefined as unknown as string)
+    isProEntitled.mockReturnValue(false)
+    expect(proEnabled()).toBe(false)
+    expect(isProEntitled).toHaveBeenCalledTimes(1)
+  })
 
   it('any other value (e.g. "yes") also delegates to isProEntitled', () => {
-    vi.stubEnv('OFFGRID_PRO', 'yes');
-    isProEntitled.mockReturnValue(true);
-    expect(proEnabled()).toBe(true);
-    expect(isProEntitled).toHaveBeenCalledTimes(1);
-  });
-});
+    vi.stubEnv('OFFGRID_PRO', 'yes')
+    isProEntitled.mockReturnValue(true)
+    expect(proEnabled()).toBe(true)
+    expect(isProEntitled).toHaveBeenCalledTimes(1)
+  })
+})

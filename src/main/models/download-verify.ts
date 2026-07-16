@@ -6,18 +6,23 @@
 // closed the connection early (flaky CDN / HF mirror), or any short read, left a
 // TRUNCATED file that was marked installed + activatable — then llama-server died
 // on load with a blank "Chat model Down" (the exact class CLAUDE.md warns about).
-import fs from 'fs';
-import { isValidGgufFile } from './gguf';
+import fs from 'fs'
+import { isValidGgufFile } from './gguf'
 
 /** Reason a just-downloaded file must NOT be promoted to installed, or null if it
  *  passes. Checks the byte count (when the server reported a length) and, for a
  *  GGUF, the magic header + minimum size. */
-export function downloadIntegrityError(name: string, written: number, total: number, partPath: string): string | null {
+export function downloadIntegrityError(
+  name: string,
+  written: number,
+  total: number,
+  partPath: string
+): string | null {
   if (total > 0 && written < total) {
-    return `${name}: incomplete download (${written}/${total} bytes) — the connection closed early`;
+    return `${name}: incomplete download (${written}/${total} bytes) — the connection closed early`
   }
   if (/\.gguf$/i.test(name) && !isValidGgufFile(partPath, fs)) {
-    return `${name}: downloaded file is not a valid GGUF (corrupt or truncated)`;
+    return `${name}: downloaded file is not a valid GGUF (corrupt or truncated)`
   }
-  return null;
+  return null
 }

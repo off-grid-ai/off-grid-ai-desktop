@@ -12,61 +12,61 @@
 //
 // resetModules per test so the freshly-imported Settings and sectionRegistry share
 // one registry instance (the registry is a module singleton).
-import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest'
+import { render, screen, cleanup, waitFor } from '@testing-library/react'
 
 function stubApi(): void {
   const api = new Proxy(
     {},
     {
       get: (_t, prop) => {
-        if (prop === 'isPro') return true;
-        if (prop === 'platform') return 'darwin';
-        if (prop === 'license') return { status: () => Promise.resolve({}) };
-        if (prop === 'getAppVersion') return () => Promise.resolve('');
-        return () => Promise.resolve({});
-      },
+        if (prop === 'isPro') return true
+        if (prop === 'platform') return 'darwin'
+        if (prop === 'license') return { status: () => Promise.resolve({}) }
+        if (prop === 'getAppVersion') return () => Promise.resolve('')
+        return () => Promise.resolve({})
+      }
     }
-  );
+  )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).api = api;
-  vi.stubGlobal('__OFFGRID_PRO__', true);
+  ;(window as any).api = api
+  vi.stubGlobal('__OFFGRID_PRO__', true)
 }
 
 afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-  vi.resetModules();
-});
+  cleanup()
+  vi.unstubAllGlobals()
+  vi.resetModules()
+})
 
 describe('Settings pro-section registry seam (D31)', () => {
   it('free build (registry empty): shows the catalogued ProPlaceholder for a pro slot', async () => {
-    vi.resetModules();
-    stubApi();
-    const { Settings } = await import('../Settings');
-    render(<Settings />);
+    vi.resetModules()
+    stubApi()
+    const { Settings } = await import('../Settings')
+    render(<Settings />)
     // The proactive slot's PLACEHOLDER copy (from proSettingsCatalog) is on screen...
     await waitFor(() =>
       expect(screen.getByText(/native notifications, even when the window is closed/i)).toBeTruthy()
-    );
+    )
     // ...and no section was registered to replace it.
-    expect(screen.queryByTestId('fake-proactive')).toBeNull();
-  });
+    expect(screen.queryByTestId('fake-proactive')).toBeNull()
+  })
 
   it('pro build: a section registered for the slot id renders instead of the placeholder', async () => {
-    vi.resetModules();
-    stubApi();
+    vi.resetModules()
+    stubApi()
     // Register a FAKE section through the SAME interface the pro package uses.
-    const { registerSettingsSection } = await import('../../bootstrap/sectionRegistry');
+    const { registerSettingsSection } = await import('../../bootstrap/sectionRegistry')
     registerSettingsSection({
       id: 'proactive',
-      component: () => <div data-testid="fake-proactive">FAKE PROACTIVE SECTION</div>,
-    });
-    const { Settings } = await import('../Settings');
-    render(<Settings />);
+      component: () => <div data-testid="fake-proactive">FAKE PROACTIVE SECTION</div>
+    })
+    const { Settings } = await import('../Settings')
+    render(<Settings />)
     // The registered component renders in the slot...
-    await waitFor(() => expect(screen.getByTestId('fake-proactive')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('fake-proactive')).toBeTruthy())
     // ...and the placeholder for that slot is gone.
-    expect(screen.queryByText(/native notifications, even when the window is closed/i)).toBeNull();
-  });
-});
+    expect(screen.queryByText(/native notifications, even when the window is closed/i)).toBeNull()
+  })
+})

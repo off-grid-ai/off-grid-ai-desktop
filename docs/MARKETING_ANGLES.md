@@ -3,6 +3,7 @@
 Background intelligence for knowledge workers. Completely offline, completely private.
 
 **Source docs to pull from / stay consistent with:**
+
 - `../../website/vision.md` — "The world we're building toward" (the long-form ambient/proactive Personal-AI-OS essay: morning briefing, one-brain-across-devices, private-by-architecture, intelligence for everyone).
 - `../../website/ethos.md` and `../../website/guides/vision-ai.md` — ethos + vision detail.
 - `../../mobile/docs/brand_tone_voice.md` — the voice rules (proof-first, privacy-as-mechanism, no exclamation/em-dash/slop). Mac's launch note (the three-products thesis) lives in the section below.
@@ -11,7 +12,7 @@ Background intelligence for knowledge workers. Completely offline, completely pr
 
 One private intelligence layer that lives across your laptop and your phone, learns your work and your life in the background, and gets ahead of you. A truly smart assistant: it remembers everything, syncs device to device over your own network, and acts to make your day easier before you ask. All of it on your hardware. None of it on anyone's cloud.
 
-The arc: it starts by *seeing and remembering* (capture + memory), then *reflects* (where your attention goes), then *acts* (drafts, files, reminds, with your approval), and finally becomes *proactive* (the briefing, the meeting prep, the nudge) - the same assistant the powerful have always had, now private and in everyone's hands.
+The arc: it starts by _seeing and remembering_ (capture + memory), then _reflects_ (where your attention goes), then _acts_ (drafts, files, reminds, with your approval), and finally becomes _proactive_ (the briefing, the meeting prep, the nudge) - the same assistant the powerful have always had, now private and in everyone's hands.
 
 Voice rules (from `mobile/docs/brand_tone_voice.md`): proof-first, privacy stated as a mechanism not a promise, plain words, no exclamation marks, no em dashes, no hype-slop. Emotional arc: Recognition -> Return -> Freedom. Mix and match for tweets, a landing hero, a launch thread, or a waitlist page.
 

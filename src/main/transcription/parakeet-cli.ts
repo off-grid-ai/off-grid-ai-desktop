@@ -29,7 +29,7 @@ const execFileAsync = promisify(execFile)
 function parakeetBin(): string | null {
   return existing([
     ...binRoots().map((r) => path.join(r, 'parakeet', 'bin', 'sherpa-onnx-offline')),
-    ...binRoots().map((r) => path.join(r, 'parakeet', 'sherpa-onnx-offline')),
+    ...binRoots().map((r) => path.join(r, 'parakeet', 'sherpa-onnx-offline'))
   ])
 }
 
@@ -79,7 +79,7 @@ function parakeetModel(): ParakeetModel | null {
         encoder: path.join(dir, 'encoder.onnx'),
         decoder: path.join(dir, 'decoder.onnx'),
         joiner: path.join(dir, 'joiner.onnx'),
-        tokens: path.join(dir, 'tokens.txt'),
+        tokens: path.join(dir, 'tokens.txt')
       }
     }
   }
@@ -91,7 +91,7 @@ function parakeetModel(): ParakeetModel | null {
  *  so match either form. Pure — exported for testing. */
 export function activeMatchesEntry(
   active: string | null,
-  entry: { id: string; files: Array<{ name: string }> },
+  entry: { id: string; files: Array<{ name: string }> }
 ): boolean {
   if (!active) return false
   return entry.id === active || entry.files.some((f) => f.name === active)
@@ -108,20 +108,25 @@ function downloadedCatalogModel(): ParakeetModel | null {
   const active = getActiveModal('transcription')
   const ordered = active
     ? [...entries].sort((a, b) =>
-        activeMatchesEntry(active, a) ? -1 : activeMatchesEntry(active, b) ? 1 : 0,
+        activeMatchesEntry(active, a) ? -1 : activeMatchesEntry(active, b) ? 1 : 0
       )
     : entries
   for (const e of ordered) {
     const names = e.files.map((f) => f.name)
     const matched = matchParakeetFiles(names)
     if (!matched) continue
-    if (![matched.encoder, matched.decoder, matched.joiner, matched.tokens].every((n) => existsIn(dir, n))) continue
+    if (
+      ![matched.encoder, matched.decoder, matched.joiner, matched.tokens].every((n) =>
+        existsIn(dir, n)
+      )
+    )
+      continue
     return {
       dir,
       encoder: path.join(dir, matched.encoder),
       decoder: path.join(dir, matched.decoder),
       joiner: path.join(dir, matched.joiner),
-      tokens: path.join(dir, matched.tokens),
+      tokens: path.join(dir, matched.tokens)
     }
   }
   return null

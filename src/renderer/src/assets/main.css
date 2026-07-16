@@ -1,5 +1,5 @@
 @import './base.css';
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* Tailwind v4 auto-detects content but SKIPS .gitignored paths — and the pro/
    submodule is gitignored. Without this, any utility class used only in pro
@@ -8,8 +8,8 @@
 @source "../../../../pro/renderer";
 
 @theme {
-  --animate-spotlight: spotlight 2s ease .75s 1 forwards;
-  --animate-orbit: orbit calc(var(--duration)*1s) linear infinite;
+  --animate-spotlight: spotlight 2s ease 0.75s 1 forwards;
+  --animate-orbit: orbit calc(var(--duration) * 1s) linear infinite;
 
   /*
    * Remap the Tailwind palette the components already use onto the Off Grid
@@ -94,14 +94,15 @@
 
   @keyframes orbit {
     0% {
-      transform: rotate(calc(var(--angle) * 1deg)) translateY(calc(var(--radius) * 1px)) rotate(calc(var(--angle) * -1deg));
+      transform: rotate(calc(var(--angle) * 1deg)) translateY(calc(var(--radius) * 1px))
+        rotate(calc(var(--angle) * -1deg));
     }
     100% {
-      transform: rotate(calc(var(--angle) * 1deg + 360deg)) translateY(calc(var(--radius) * 1px)) rotate(calc((var(--angle) + 360) * -1deg));
+      transform: rotate(calc(var(--angle) * 1deg + 360deg)) translateY(calc(var(--radius) * 1px))
+        rotate(calc((var(--angle) + 360) * -1deg));
     }
   }
 }
-
 
 body {
   display: flex;
@@ -114,7 +115,21 @@ body {
 
 /* Body disables selection for native-feel app chrome; re-enable it for actual
    text content so chat messages (yours and the responses) can be selected/copied. */
-p, li, pre, code, h1, h2, h3, h4, h5, h6, blockquote, td, th, .selectable, [data-selectable] {
+p,
+li,
+pre,
+code,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+blockquote,
+td,
+th,
+.selectable,
+[data-selectable] {
   user-select: text;
   -webkit-user-select: text;
   cursor: auto;
@@ -123,7 +138,7 @@ p, li, pre, code, h1, h2, h3, h4, h5, h6, blockquote, td, th, .selectable, [data
 /* Clickable elements get the hand cursor (browsers don't do this for <button>
    by default, and the rules above reset it to auto). */
 button:not(:disabled),
-[role="button"]:not([aria-disabled="true"]),
+[role='button']:not([aria-disabled='true']),
 a[href],
 select,
 summary,
@@ -133,7 +148,7 @@ label[for],
   cursor: pointer;
 }
 button:disabled,
-[aria-disabled="true"] {
+[aria-disabled='true'] {
   cursor: not-allowed;
 }
 
@@ -322,7 +337,6 @@ code {
 }
 
 @media (max-width: 350px) {
-
   .tip,
   .actions {
     display: none;
@@ -332,11 +346,24 @@ code {
    streaks across the upper area, layered over the terminal grid. Static star dots
    live on StarfieldBackdrop; this is just the animation. Pure CSS, no deps. */
 @keyframes og-shooting-star {
-  0%   { transform: translate3d(0, 0, 0) rotate(32deg); opacity: 0; }
-  4%   { opacity: 1; }
-  16%  { opacity: 1; }
-  20%  { transform: translate3d(900px, 560px, 0) rotate(32deg); opacity: 0; }
-  100% { transform: translate3d(900px, 560px, 0) rotate(32deg); opacity: 0; }
+  0% {
+    transform: translate3d(0, 0, 0) rotate(32deg);
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  16% {
+    opacity: 1;
+  }
+  20% {
+    transform: translate3d(900px, 560px, 0) rotate(32deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(900px, 560px, 0) rotate(32deg);
+    opacity: 0;
+  }
 }
 .og-shooting-star {
   position: absolute;
@@ -350,28 +377,31 @@ code {
   animation: og-shooting-star 12s ease-in 4s infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .og-shooting-star { animation: none; display: none; }
+  .og-shooting-star {
+    animation: none;
+    display: none;
+  }
 }
 
 /* Static star field — themeable so it reads in BOTH modes: dark dots on light,
    bright dots on dark. Tiled radial-gradients, repeated across the viewport. */
 .og-starfield {
   background-image:
-    radial-gradient(1.5px 1.5px at 30px 40px, rgba(0,0,0,0.55), transparent),
-    radial-gradient(1px 1px at 110px 90px, rgba(0,0,0,0.42), transparent),
-    radial-gradient(1.5px 1.5px at 170px 28px, rgba(0,0,0,0.50), transparent),
-    radial-gradient(2px 2px at 70px 158px, rgba(0,0,0,0.50), transparent),
-    radial-gradient(1px 1px at 150px 192px, rgba(0,0,0,0.38), transparent),
-    radial-gradient(1px 1px at 205px 120px, rgba(0,0,0,0.45), transparent);
+    radial-gradient(1.5px 1.5px at 30px 40px, rgba(0, 0, 0, 0.55), transparent),
+    radial-gradient(1px 1px at 110px 90px, rgba(0, 0, 0, 0.42), transparent),
+    radial-gradient(1.5px 1.5px at 170px 28px, rgba(0, 0, 0, 0.5), transparent),
+    radial-gradient(2px 2px at 70px 158px, rgba(0, 0, 0, 0.5), transparent),
+    radial-gradient(1px 1px at 150px 192px, rgba(0, 0, 0, 0.38), transparent),
+    radial-gradient(1px 1px at 205px 120px, rgba(0, 0, 0, 0.45), transparent);
   background-size: 220px 220px;
   background-repeat: repeat;
 }
-[data-theme="dark"] .og-starfield {
+[data-theme='dark'] .og-starfield {
   background-image:
-    radial-gradient(1.5px 1.5px at 30px 40px, rgba(255,255,255,0.95), transparent),
-    radial-gradient(1px 1px at 110px 90px, rgba(255,255,255,0.70), transparent),
-    radial-gradient(1px 1px at 170px 28px, rgba(255,255,255,0.85), transparent),
-    radial-gradient(2px 2px at 70px 158px, rgba(255,255,255,0.90), transparent),
-    radial-gradient(1px 1px at 150px 192px, rgba(255,255,255,0.60), transparent),
-    radial-gradient(1px 1px at 205px 120px, rgba(255,255,255,0.78), transparent);
+    radial-gradient(1.5px 1.5px at 30px 40px, rgba(255, 255, 255, 0.95), transparent),
+    radial-gradient(1px 1px at 110px 90px, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 170px 28px, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(2px 2px at 70px 158px, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(1px 1px at 150px 192px, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 205px 120px, rgba(255, 255, 255, 0.78), transparent);
 }

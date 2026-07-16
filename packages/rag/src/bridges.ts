@@ -3,24 +3,24 @@
 // better-sqlite3 store + Node/native extractors; mobile wires llama.rn + op-sqlite
 // + RNFS/PDFKit. This keeps the chunking/retrieval/orchestration logic shared.
 
-import type { MediaKind, RagDocument } from './types';
+import type { MediaKind, RagDocument } from './types'
 
 /** Turns text into an embedding vector. Same model must be used for index + query. */
 export interface EmbeddingProvider {
-  embed(text: string): Promise<number[]>;
+  embed(text: string): Promise<number[]>
   /** Optional batch path; the service falls back to mapped embed() if absent. */
-  embedBatch?(texts: string[]): Promise<number[][]>;
+  embedBatch?(texts: string[]): Promise<number[][]>
   /** Embedding dimension (e.g. 384 for all-MiniLM-L6-v2). */
-  readonly dimension: number;
+  readonly dimension: number
 }
 
 /** A stored chunk with its embedding, returned as a retrieval candidate. */
 export interface ChunkCandidate {
-  docId: number;
-  name: string;
-  content: string;
-  position: number;
-  embedding: number[];
+  docId: number
+  name: string
+  content: string
+  position: number
+  embedding: number[]
 }
 
 /**
@@ -31,22 +31,22 @@ export interface ChunkCandidate {
  */
 export interface VectorStore {
   addDocument(doc: {
-    projectId: string;
-    name: string;
-    path: string;
-    size: number;
-    kind: MediaKind;
-  }): Promise<number>;
+    projectId: string
+    name: string
+    path: string
+    size: number
+    kind: MediaKind
+  }): Promise<number>
   addChunks(
     docId: number,
     chunks: { content: string; position: number }[],
     embeddings: number[][]
-  ): Promise<void>;
+  ): Promise<void>
   /** Enabled chunks (and any extra sources) eligible for retrieval in a project. */
-  getChunkCandidates(projectId: string): Promise<ChunkCandidate[]>;
-  listDocuments(projectId: string): Promise<RagDocument[]>;
-  setDocumentEnabled(docId: number, enabled: boolean): Promise<void>;
-  deleteDocument(docId: number): Promise<void>;
+  getChunkCandidates(projectId: string): Promise<ChunkCandidate[]>
+  listDocuments(projectId: string): Promise<RagDocument[]>
+  setDocumentEnabled(docId: number, enabled: boolean): Promise<void>
+  deleteDocument(docId: number): Promise<void>
 }
 
 /**
@@ -56,16 +56,16 @@ export interface VectorStore {
  * the engine when a file needs an unavailable capability (e.g. no vision model).
  */
 export interface ExtractionBridges {
-  readText(path: string): Promise<string>;
-  extractPdf?(path: string, maxChars?: number): Promise<string>;
-  extractDocx?(path: string, maxChars?: number): Promise<string>;
+  readText(path: string): Promise<string>
+  extractPdf?(path: string, maxChars?: number): Promise<string>
+  extractDocx?(path: string, maxChars?: number): Promise<string>
   /** Transcribe an audio file to text (uses a downloaded transcription model). */
-  transcribeAudio?(path: string): Promise<string>;
+  transcribeAudio?(path: string): Promise<string>
   /** Sample frames from a video; returns image paths (or data URIs) to caption. */
   sampleVideoFrames?(
     path: string,
     opts: { everySeconds?: number; maxFrames?: number }
-  ): Promise<string[]>;
+  ): Promise<string[]>
   /** Describe/OCR a single image (uses a downloaded vision model). */
-  captionImage?(imagePath: string): Promise<string>;
+  captionImage?(imagePath: string): Promise<string>
 }

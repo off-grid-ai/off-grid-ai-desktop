@@ -1,130 +1,181 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { shouldQueue, enqueue, dequeue, queuedCount, clearQueue } from '@renderer/lib/chat-queue';
-import { buildSendHistory } from '@renderer/lib/chat-history';
-import { waitingLabel } from '@renderer/lib/chat-labels';
-import { timeAgo } from '@renderer/lib/time';
-import ReactMarkdown, { Components } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
-import { ArtifactCanvas, parseArtifact, type Artifact } from './ArtifactCanvas';
-import { VoiceBubble, stopAllVoicePlayback } from './VoiceBubble';
-import { SkillsPanel } from './SkillsPanel';
-import { SettingsPanel } from './SettingsPanel';
-import { ModelPicker } from './ModelPicker';
-import { resolveImageParams, setOverride, type ImageParamStore } from '@renderer/lib/image-params';
-import { shouldAutoRouteImage, cleanImagePrompt } from '@renderer/lib/image-intent';
-import { buildAssistantContext, readReasoning } from '@renderer/lib/message-persistence';
-import { Button } from '@renderer/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from '@renderer/components/ui/dropdown-menu';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@renderer/components/ui/collapsible';
-import { Plus, Paperclip, Image as ImageIcon, Sparkle as Sparkles, FolderPlus, Wrench, MagnifyingGlass as Search, Plug, SlidersHorizontal, Brain, Prohibit, Check, X, FolderOpen, CaretDown, Lightning, WarningCircle } from '@phosphor-icons/react';
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { shouldQueue, enqueue, dequeue, queuedCount, clearQueue } from '@renderer/lib/chat-queue'
+import { buildSendHistory } from '@renderer/lib/chat-history'
+import { waitingLabel } from '@renderer/lib/chat-labels'
+import { timeAgo } from '@renderer/lib/time'
+import ReactMarkdown, { Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
+import { ArtifactCanvas, parseArtifact, type Artifact } from './ArtifactCanvas'
+import { VoiceBubble, stopAllVoicePlayback } from './VoiceBubble'
+import { SkillsPanel } from './SkillsPanel'
+import { SettingsPanel } from './SettingsPanel'
+import { ModelPicker } from './ModelPicker'
+import { resolveImageParams, setOverride, type ImageParamStore } from '@renderer/lib/image-params'
+import { shouldAutoRouteImage, cleanImagePrompt } from '@renderer/lib/image-intent'
+import { buildAssistantContext, readReasoning } from '@renderer/lib/message-persistence'
+import { Button } from '@renderer/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent
+} from '@renderer/components/ui/dropdown-menu'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '@renderer/components/ui/collapsible'
+import {
+  Plus,
+  Paperclip,
+  Image as ImageIcon,
+  Sparkle as Sparkles,
+  FolderPlus,
+  Wrench,
+  MagnifyingGlass as Search,
+  Plug,
+  SlidersHorizontal,
+  Brain,
+  Prohibit,
+  Check,
+  X,
+  FolderOpen,
+  CaretDown,
+  Lightning,
+  WarningCircle
+} from '@phosphor-icons/react'
 
 type RagContext = {
-  masterMemory?: string | null;
-  memories?: any[];
-  messages?: any[];
-  summaries?: any[];
-  entities?: any[];
-  entityFacts?: any[];
-  unified?: { kind: string; title: string; snippet: string; surface: string; ts: number; refId?: number; imagePath?: string | null }[];
-  image?: string;
-  sources?: { name: string; position: number; score: number }[];
-};
+  masterMemory?: string | null
+  memories?: any[]
+  messages?: any[]
+  summaries?: any[]
+  entities?: any[]
+  entityFacts?: any[]
+  unified?: {
+    kind: string
+    title: string
+    snippet: string
+    surface: string
+    ts: number
+    refId?: number
+    imagePath?: string | null
+  }[]
+  image?: string
+  sources?: { name: string; position: number; score: number }[]
+}
 
 type ChatMessage = {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  context?: RagContext;
-  image?: string;
-  imagePath?: string;
-  toolCalls?: { name: string; result: string }[];
-  reasoning?: string;
-  streaming?: boolean;
-  activity?: { kind: string; counts?: Record<string, number>; name?: string };
-  attachments?: { name: string; kind: string; text?: string; path?: string }[];
-  variants?: string[];      // regenerated answers (navigate with ‹ ›)
-  variantIndex?: number;
-  audioUrl?: string;        // voice-mode: recorded clip for a user voice note
-  audioDuration?: number;   // seconds, when known from the recording
-};
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  context?: RagContext
+  image?: string
+  imagePath?: string
+  toolCalls?: { name: string; result: string }[]
+  reasoning?: string
+  streaming?: boolean
+  activity?: { kind: string; counts?: Record<string, number>; name?: string }
+  attachments?: { name: string; kind: string; text?: string; path?: string }[]
+  variants?: string[] // regenerated answers (navigate with ‹ ›)
+  variantIndex?: number
+  audioUrl?: string // voice-mode: recorded clip for a user voice note
+  audioDuration?: number // seconds, when known from the recording
+}
 
-type ChatMode = 'ask' | 'image';
+type ChatMode = 'ask' | 'image'
 
-type AskBlock = { question: string; options: string[]; multiSelect: boolean };
+type AskBlock = { question: string; options: string[]; multiSelect: boolean }
 
 // Detect a model-emitted interactive question: ```ask { question, options, multiSelect }```
 function parseAsk(content: string): AskBlock | null {
-  const m = content.match(/```ask\s*\n([\s\S]*?)```/i);
-  if (!m) return null;
+  const m = content.match(/```ask\s*\n([\s\S]*?)```/i)
+  if (!m) return null
   try {
-    const j = JSON.parse(m[1]!.trim());
+    const j = JSON.parse(m[1]!.trim())
     if (j && typeof j.question === 'string' && Array.isArray(j.options) && j.options.length) {
-      return { question: j.question, options: j.options.map(String), multiSelect: !!j.multiSelect };
+      return { question: j.question, options: j.options.map(String), multiSelect: !!j.multiSelect }
     }
-  } catch { /* not a valid ask block */ }
-  return null;
+  } catch {
+    /* not a valid ask block */
+  }
+  return null
 }
 
-const ASK_FENCE = /```ask\s*\n[\s\S]*?```/i;
+const ASK_FENCE = /```ask\s*\n[\s\S]*?```/i
 // Artifact code (html/svg/mermaid/react/image) is rendered on the side canvas, not
 // dumped inline — strip the fenced block from the chat bubble and show a card instead.
-const ARTIFACT_FENCE = /```(?:html|svg|mermaid|jsx|tsx|react|image)\s*\n[\s\S]*?```/gi;
+const ARTIFACT_FENCE = /```(?:html|svg|mermaid|jsx|tsx|react|image)\s*\n[\s\S]*?```/gi
 
 // Human label for a live retrieval/activity step shown while the model works.
-function activityLabel(a?: { kind: string; counts?: Record<string, number>; name?: string }): string {
-  if (!a) return '';
-  if (a.kind === 'running_tool') return `Running ${a.name || 'tool'}…`;
-  if (a.kind === 'reading') return `Reading the page${(a.counts?.urls ?? 0) > 1 ? 's' : ''}…`;
-  if (a.kind === 'searching') return 'Searching your memory…';
+function activityLabel(a?: {
+  kind: string
+  counts?: Record<string, number>
+  name?: string
+}): string {
+  if (!a) return ''
+  if (a.kind === 'running_tool') return `Running ${a.name || 'tool'}…`
+  if (a.kind === 'reading') return `Reading the page${(a.counts?.urls ?? 0) > 1 ? 's' : ''}…`
+  if (a.kind === 'searching') return 'Searching your memory…'
   if (a.kind === 'memory') {
-    const c = a.counts || {};
-    const total = (c.memories || 0) + (c.summaries || 0) + (c.entities || 0) + (c.facts || 0) + (c.unified || 0);
-    return `Searched your memory — ${total} result${total === 1 ? '' : 's'}`;
+    const c = a.counts || {}
+    const total =
+      (c.memories || 0) + (c.summaries || 0) + (c.entities || 0) + (c.facts || 0) + (c.unified || 0)
+    return `Searched your memory — ${total} result${total === 1 ? '' : 's'}`
   }
   if (a.kind === 'project') {
-    const c = a.counts || {};
-    return `Searched project — ${c.sources || 0} sources · ${c.projectChats || 0} chats`;
+    const c = a.counts || {}
+    return `Searched project — ${c.sources || 0} sources · ${c.projectChats || 0} chats`
   }
-  return 'Working…';
+  return 'Working…'
 }
 
 type Attachment = {
-  id: string;
-  name: string;
-  kind: 'text' | 'pdf' | 'docx' | 'image' | 'audio' | 'video' | 'pasted';
-  text: string;
-  path?: string; // images: persisted path passed to the vision model
-  preview?: string; // images: a local object URL shown immediately while processing
-  status: 'loading' | 'ready' | 'error';
-};
+  id: string
+  name: string
+  kind: 'text' | 'pdf' | 'docx' | 'image' | 'audio' | 'video' | 'pasted'
+  text: string
+  path?: string // images: persisted path passed to the vision model
+  preview?: string // images: a local object URL shown immediately while processing
+  status: 'loading' | 'ready' | 'error'
+}
 
 type Conversation = {
-  id: string;
-  title: string | null;
-  project_id?: string | null;
-  created_at: string;
-  updated_at: string;
-  message_count?: number;
-};
+  id: string
+  title: string | null
+  project_id?: string | null
+  created_at: string
+  updated_at: string
+  message_count?: number
+}
 
-type ProjectLite = { id: string; name: string };
+type ProjectLite = { id: string; name: string }
 
 interface MemoryChatProps {
-  onNavigateToMemory?: (memoryId: number) => void;
-  onNavigateToChat?: (sessionId: string) => void;
-  onNavigateToEntity?: (entityId: number) => void;
+  onNavigateToMemory?: (memoryId: number) => void
+  onNavigateToChat?: (sessionId: string) => void
+  onNavigateToEntity?: (entityId: number) => void
   /** Open the Replay screen seeked to a capture's moment (epoch ms). */
-  onSeekReplay?: (ts: number) => void;
+  onSeekReplay?: (ts: number) => void
   /** Open a specific conversation, or start a new one scoped to a project. */
-  openTarget?: { conversationId?: string; projectId?: string } | null;
-  onTargetConsumed?: () => void;
+  openTarget?: { conversationId?: string; projectId?: string } | null
+  onTargetConsumed?: () => void
 }
 
 function mapRagMessages(raw: any[]): ChatMessage[] {
   return raw.map((m: any) => {
-    const ctx = m.context ? (typeof m.context === 'string' ? JSON.parse(m.context) : m.context) : undefined;
+    const ctx = m.context
+      ? typeof m.context === 'string'
+        ? JSON.parse(m.context)
+        : m.context
+      : undefined
     return {
       id: String(m.id),
       role: m.role as 'user' | 'assistant',
@@ -136,9 +187,9 @@ function mapRagMessages(raw: any[]): ChatMessage[] {
       image: ctx?.image ? `ogcapture://${ctx.image}` : undefined,
       imagePath: ctx?.image,
       // Attachments persisted on the user turn (clickable chips survive reload).
-      attachments: Array.isArray(ctx?.attachments) ? ctx.attachments : undefined,
-    };
-  });
+      attachments: Array.isArray(ctx?.attachments) ? ctx.attachments : undefined
+    }
+  })
 }
 
 // Core (free) suggestions — generic chat/build/image. Pro adds memory-aware ones.
@@ -146,20 +197,20 @@ const ASK_EXAMPLES = [
   'Explain how RAG works, simply',
   'Write a Python function to dedupe a list',
   'Draft a friendly out-of-office email',
-  'Generate an image of a mountain cabin at dawn',
-];
+  'Generate an image of a mountain cabin at dawn'
+]
 const ASK_EXAMPLES_PRO = [
   'What did I work on today?',
   'Summarize my last meeting',
   'What have I spent the most time on this week?',
-  'What open action items do I have?',
-];
+  'What open action items do I have?'
+]
 const IMAGE_EXAMPLES = [
   'A serene mountain lake at dawn, photorealistic',
   'Minimal logo mark for a coffee brand, flat',
   'Cyberpunk city street at night, neon, rain',
-  'Studio portrait of a husky, soft lighting',
-];
+  'Studio portrait of a husky, soft lighting'
+]
 
 // Gemini-style visual style presets — pick one, then describe the subject; the
 // style text is appended to the prompt. `swatch` = a characteristic gradient so
@@ -168,257 +219,431 @@ const IMAGE_EXAMPLES = [
 // `preview` = the subject used for the on-device style-thumbnail (varied per
 // style so the grid showcases the style, not a gallery of faces).
 const STYLE_PRESETS: { name: string; prompt: string; preview: string; swatch: string }[] = [
-  { name: 'Photoreal', prompt: 'photorealistic, sharp focus, high detail, 50mm photo', preview: 'a red fox standing in a misty forest', swatch: 'from-stone-400 to-stone-600' },
-  { name: 'Cinematic', prompt: 'cinematic film still, dramatic lighting, shallow depth of field, color graded', preview: 'a lone car on a coastal highway at sunset', swatch: 'from-orange-800 via-neutral-800 to-teal-800' },
-  { name: 'Anime', prompt: 'anime illustration, clean lineart, vibrant colors', preview: 'a bustling futuristic city street with cherry blossoms', swatch: 'from-pink-400 via-purple-400 to-sky-400' },
-  { name: 'Sketch', prompt: 'detailed pencil sketch on paper, monochrome line art', preview: 'an old european cathedral', swatch: 'from-neutral-300 to-neutral-500' },
-  { name: 'Watercolor', prompt: 'watercolor painting, soft washes, paper texture', preview: 'a serene mountain lake with pine trees', swatch: 'from-rose-300 via-sky-200 to-emerald-300' },
-  { name: 'Oil painting', prompt: 'oil painting, visible brushstrokes, classical, rich color', preview: 'a still life of fruit and a wine bottle on a table', swatch: 'from-amber-700 via-red-800 to-yellow-700' },
-  { name: 'Monochrome', prompt: 'black and white, high contrast, monochrome', preview: 'a rainy city street with umbrellas', swatch: 'from-neutral-900 to-neutral-500' },
-  { name: 'Neon', prompt: 'neon-lit cyberpunk, glowing lights, night, moody', preview: 'a rain-soaked alley in a cyberpunk city', swatch: 'from-fuchsia-600 via-purple-700 to-cyan-500' },
-  { name: '3D render', prompt: '3D render, octane, soft studio lighting, subsurface detail', preview: 'a cute friendly robot character', swatch: 'from-slate-300 via-slate-500 to-slate-700' },
-  { name: 'Steampunk', prompt: 'steampunk, brass and gears, victorian, intricate', preview: 'a flying steampunk airship above the clouds', swatch: 'from-amber-800 via-yellow-900 to-stone-700' },
-  { name: 'Surreal', prompt: 'surreal, dreamlike, imaginative composition', preview: 'floating islands with waterfalls in a dreamlike sky', swatch: 'from-indigo-500 via-fuchsia-500 to-amber-400' },
-  { name: 'Vintage film', prompt: 'vintage film photograph, faded colors, grain, 1970s', preview: 'a vintage convertible car on a desert road', swatch: 'from-amber-300 via-orange-300 to-rose-300' },
-  { name: 'Minimal', prompt: 'minimal flat design, clean, simple shapes, lots of negative space', preview: 'a single sailboat on calm water', swatch: 'from-neutral-100 to-neutral-300' },
-  { name: 'Risograph', prompt: 'risograph print, halftone texture, limited palette', preview: 'a bicycle leaning against a wall', swatch: 'from-pink-500 via-yellow-400 to-blue-500' },
-  { name: 'Fantasy art', prompt: 'epic fantasy concept art, dramatic, highly detailed', preview: 'a majestic dragon perched on a mountain peak', swatch: 'from-purple-800 via-indigo-700 to-amber-600' },
-  { name: 'Studio portrait', prompt: 'studio portrait, soft key light, bokeh background', preview: 'a golden retriever dog', swatch: 'from-neutral-600 via-neutral-800 to-neutral-900' },
-];
+  {
+    name: 'Photoreal',
+    prompt: 'photorealistic, sharp focus, high detail, 50mm photo',
+    preview: 'a red fox standing in a misty forest',
+    swatch: 'from-stone-400 to-stone-600'
+  },
+  {
+    name: 'Cinematic',
+    prompt: 'cinematic film still, dramatic lighting, shallow depth of field, color graded',
+    preview: 'a lone car on a coastal highway at sunset',
+    swatch: 'from-orange-800 via-neutral-800 to-teal-800'
+  },
+  {
+    name: 'Anime',
+    prompt: 'anime illustration, clean lineart, vibrant colors',
+    preview: 'a bustling futuristic city street with cherry blossoms',
+    swatch: 'from-pink-400 via-purple-400 to-sky-400'
+  },
+  {
+    name: 'Sketch',
+    prompt: 'detailed pencil sketch on paper, monochrome line art',
+    preview: 'an old european cathedral',
+    swatch: 'from-neutral-300 to-neutral-500'
+  },
+  {
+    name: 'Watercolor',
+    prompt: 'watercolor painting, soft washes, paper texture',
+    preview: 'a serene mountain lake with pine trees',
+    swatch: 'from-rose-300 via-sky-200 to-emerald-300'
+  },
+  {
+    name: 'Oil painting',
+    prompt: 'oil painting, visible brushstrokes, classical, rich color',
+    preview: 'a still life of fruit and a wine bottle on a table',
+    swatch: 'from-amber-700 via-red-800 to-yellow-700'
+  },
+  {
+    name: 'Monochrome',
+    prompt: 'black and white, high contrast, monochrome',
+    preview: 'a rainy city street with umbrellas',
+    swatch: 'from-neutral-900 to-neutral-500'
+  },
+  {
+    name: 'Neon',
+    prompt: 'neon-lit cyberpunk, glowing lights, night, moody',
+    preview: 'a rain-soaked alley in a cyberpunk city',
+    swatch: 'from-fuchsia-600 via-purple-700 to-cyan-500'
+  },
+  {
+    name: '3D render',
+    prompt: '3D render, octane, soft studio lighting, subsurface detail',
+    preview: 'a cute friendly robot character',
+    swatch: 'from-slate-300 via-slate-500 to-slate-700'
+  },
+  {
+    name: 'Steampunk',
+    prompt: 'steampunk, brass and gears, victorian, intricate',
+    preview: 'a flying steampunk airship above the clouds',
+    swatch: 'from-amber-800 via-yellow-900 to-stone-700'
+  },
+  {
+    name: 'Surreal',
+    prompt: 'surreal, dreamlike, imaginative composition',
+    preview: 'floating islands with waterfalls in a dreamlike sky',
+    swatch: 'from-indigo-500 via-fuchsia-500 to-amber-400'
+  },
+  {
+    name: 'Vintage film',
+    prompt: 'vintage film photograph, faded colors, grain, 1970s',
+    preview: 'a vintage convertible car on a desert road',
+    swatch: 'from-amber-300 via-orange-300 to-rose-300'
+  },
+  {
+    name: 'Minimal',
+    prompt: 'minimal flat design, clean, simple shapes, lots of negative space',
+    preview: 'a single sailboat on calm water',
+    swatch: 'from-neutral-100 to-neutral-300'
+  },
+  {
+    name: 'Risograph',
+    prompt: 'risograph print, halftone texture, limited palette',
+    preview: 'a bicycle leaning against a wall',
+    swatch: 'from-pink-500 via-yellow-400 to-blue-500'
+  },
+  {
+    name: 'Fantasy art',
+    prompt: 'epic fantasy concept art, dramatic, highly detailed',
+    preview: 'a majestic dragon perched on a mountain peak',
+    swatch: 'from-purple-800 via-indigo-700 to-amber-600'
+  },
+  {
+    name: 'Studio portrait',
+    prompt: 'studio portrait, soft key light, bokeh background',
+    preview: 'a golden retriever dog',
+    swatch: 'from-neutral-600 via-neutral-800 to-neutral-900'
+  }
+]
 
-const NEW_CHAT = '__new__'; // bucket key for a fresh, not-yet-saved conversation
-const EMPTY_MSGS: ChatMessage[] = [];
+const NEW_CHAT = '__new__' // bucket key for a fresh, not-yet-saved conversation
+const EMPTY_MSGS: ChatMessage[] = []
 
-export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToEntity, onSeekReplay, openTarget, onTargetConsumed }: MemoryChatProps) {
+export function MemoryChat({
+  onNavigateToMemory,
+  onNavigateToChat,
+  onNavigateToEntity,
+  onSeekReplay,
+  openTarget,
+  onTargetConsumed
+}: MemoryChatProps) {
   // Messages are kept PER CONVERSATION so a background tab keeps its own thread and
   // an in-flight stream can't leak into whatever tab you switch to. `messages` (below,
   // after activeConversationId) is the active tab's slice; sends target their own conv.
-  const [messagesByConv, setMessagesByConv] = useState<Record<string, ChatMessage[]>>({});
-  const setConvMessages = useCallback((cid: string | null, updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])): void => {
-    const k = cid ?? NEW_CHAT;
-    setMessagesByConv(prev => ({ ...prev, [k]: typeof updater === 'function' ? (updater as (p: ChatMessage[]) => ChatMessage[])(prev[k] ?? []) : updater }));
-  }, []);
-  const [input, setInput] = useState('');
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [messagesByConv, setMessagesByConv] = useState<Record<string, ChatMessage[]>>({})
+  const setConvMessages = useCallback(
+    (
+      cid: string | null,
+      updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])
+    ): void => {
+      const k = cid ?? NEW_CHAT
+      setMessagesByConv((prev) => ({
+        ...prev,
+        [k]:
+          typeof updater === 'function'
+            ? (updater as (p: ChatMessage[]) => ChatMessage[])(prev[k] ?? [])
+            : updater
+      }))
+    },
+    []
+  )
+  const [input, setInput] = useState('')
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   // Whether the active chat model can read images. Gate image attachment on this and
   // re-check periodically (the user can switch models from the Models screen).
-  const [chatVision, setChatVision] = useState(true);
-  const [attachWarn, setAttachWarn] = useState<string | null>(null);
+  const [chatVision, setChatVision] = useState(true)
+  const [attachWarn, setAttachWarn] = useState<string | null>(null)
   useEffect(() => {
-    const check = (): void => { void (window.api as { chatVisionAvailable?: () => Promise<boolean> }).chatVisionAvailable?.().then(v => setChatVision(!!v)).catch(() => {}); };
-    check();
-    const t = setInterval(check, 4000);
-    return () => clearInterval(t);
-  }, []);
-  useEffect(() => { if (chatVision) setAttachWarn(null); }, [chatVision]); // cleared once a vision model is active
-  const [skills, setSkills] = useState<{ name: string; description: string }[]>([]);
-  const [askSel, setAskSel] = useState<Record<string, string[]>>({});
-  const [loading, setLoading] = useState(false);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [convSearch, setConvSearch] = useState('');
+    const check = (): void => {
+      void (window.api as { chatVisionAvailable?: () => Promise<boolean> })
+        .chatVisionAvailable?.()
+        .then((v) => setChatVision(!!v))
+        .catch(() => {})
+    }
+    check()
+    const t = setInterval(check, 4000)
+    return () => clearInterval(t)
+  }, [])
+  useEffect(() => {
+    if (chatVision) setAttachWarn(null)
+  }, [chatVision]) // cleared once a vision model is active
+  const [skills, setSkills] = useState<{ name: string; description: string }[]>([])
+  const [askSel, setAskSel] = useState<Record<string, string[]>>({})
+  const [loading, setLoading] = useState(false)
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [convSearch, setConvSearch] = useState('')
   // Conversation ids whose MESSAGE CONTENT matches the sidebar search (title is
   // matched client-side; content needs a debounced backend query).
-  const [contentMatchIds, setContentMatchIds] = useState<Set<string>>(new Set());
+  const [contentMatchIds, setContentMatchIds] = useState<Set<string>>(new Set())
   useEffect(() => {
-    const q = convSearch.trim();
-    if (!q) { setContentMatchIds(new Set()); return; }
-    let live = true;
+    const q = convSearch.trim()
+    if (!q) {
+      setContentMatchIds(new Set())
+      return
+    }
+    let live = true
     const t = setTimeout(async () => {
       try {
-        const ids = (await window.api.searchRagConversationIds?.(q)) as string[] | undefined;
-        if (live) setContentMatchIds(new Set(ids ?? []));
-      } catch { /* keep title-only matches */ }
-    }, 200);
-    return () => { live = false; clearTimeout(t); };
-  }, [convSearch]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+        const ids = (await window.api.searchRagConversationIds?.(q)) as string[] | undefined
+        if (live) setContentMatchIds(new Set(ids ?? []))
+      } catch {
+        /* keep title-only matches */
+      }
+    }, 200)
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+  }, [convSearch])
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   // Active tab's messages (derived) + a shim so the existing active-conversation call
   // sites keep working. The send path targets its own conv via setConvMessages instead.
-  const messages = messagesByConv[activeConversationId ?? NEW_CHAT] ?? EMPTY_MSGS;
-  const setMessages = useCallback((updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])): void => {
-    setConvMessages(activeConversationId, updater);
-  }, [activeConversationId, setConvMessages]);
+  const messages = messagesByConv[activeConversationId ?? NEW_CHAT] ?? EMPTY_MSGS
+  const setMessages = useCallback(
+    (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])): void => {
+      setConvMessages(activeConversationId, updater)
+    },
+    [activeConversationId, setConvMessages]
+  )
   // Voice playback must never carry across chats — stop it whenever the active
   // conversation changes (and on unmount).
-  useEffect(() => { stopAllVoicePlayback(); return () => stopAllVoicePlayback(); }, [activeConversationId]);
-  const [openTabs, setOpenTabs] = useState<string[]>([]); // conversation ids open as tabs
-  const [showHistory, setShowHistory] = useState(true);
-  const [mode, setMode] = useState<ChatMode>('ask');
-  const [showImageOptions, setShowImageOptions] = useState(false);
-  const [imageAvailable, setImageAvailable] = useState(false);
-  const [imgSize, setImgSize] = useState(512);
-  const [imgSteps, setImgSteps] = useState(10);
-  const [imgSeed, setImgSeed] = useState('');
-  const [imgNegative, setImgNegative] = useState('');
-  const [imgInit, setImgInit] = useState<string | null>(null);
-  const [imgStrength, setImgStrength] = useState(0.6);
-  const [imgModels, setImgModels] = useState<string[]>([]);
-  const [imgModel, setImgModel] = useState<string>('');
+  useEffect(() => {
+    stopAllVoicePlayback()
+    return () => stopAllVoicePlayback()
+  }, [activeConversationId])
+  const [openTabs, setOpenTabs] = useState<string[]>([]) // conversation ids open as tabs
+  const [showHistory, setShowHistory] = useState(true)
+  const [mode, setMode] = useState<ChatMode>('ask')
+  const [showImageOptions, setShowImageOptions] = useState(false)
+  const [imageAvailable, setImageAvailable] = useState(false)
+  const [imgSize, setImgSize] = useState(512)
+  const [imgSteps, setImgSteps] = useState(10)
+  const [imgSeed, setImgSeed] = useState('')
+  const [imgNegative, setImgNegative] = useState('')
+  const [imgInit, setImgInit] = useState<string | null>(null)
+  const [imgStrength, setImgStrength] = useState(0.6)
+  const [imgModels, setImgModels] = useState<string[]>([])
+  const [imgModel, setImgModel] = useState<string>('')
   // Per-model steps/size overrides. This is the ONE persisted owner of those two
   // params — the composer and (future) a Settings > Image section both read/write
   // it. Persisted via saveSetting('imageParams', …). A value here means the user
   // pinned it; absence means "track the model default". Resolved through the pure
   // resolveImageParams so a model change never clobbers a user override.
-  const [imgParamStore, setImgParamStore] = useState<ImageParamStore>({});
-  const [activeStyle, setActiveStyle] = useState<string | null>(null);
-  const [styleThumbs, setStyleThumbs] = useState<Record<string, string>>({});
-  const [genThumbsBusy, setGenThumbsBusy] = useState(false);
-  const [imgProgress, setImgProgress] = useState<{ step: number; total: number; secPerStep: number; preview?: string; phase?: 'sampling' | 'decoding' } | null>(null);
+  const [imgParamStore, setImgParamStore] = useState<ImageParamStore>({})
+  const [activeStyle, setActiveStyle] = useState<string | null>(null)
+  const [styleThumbs, setStyleThumbs] = useState<Record<string, string>>({})
+  const [genThumbsBusy, setGenThumbsBusy] = useState(false)
+  const [imgProgress, setImgProgress] = useState<{
+    step: number
+    total: number
+    secPerStep: number
+    preview?: string
+    phase?: 'sampling' | 'decoding'
+  } | null>(null)
   // Which conversation currently owns the in-flight image generation (null = none).
   // Per-conversation so the image progress/warm-up UI shows ONLY in the conversation
   // that started it — a global bool bled the spinner + a Stop that cancels it into
   // whatever tab you switched to while an image was forming (D9).
-  const [imageGenConv, setImageGenConv] = useState<string | null>(null);
+  const [imageGenConv, setImageGenConv] = useState<string | null>(null)
   // The image progress/warm-up UI shows only when the ACTIVE conversation is the one
   // generating an image — never a background conversation's gen (D9).
-  const generatingImage = imageGenConv !== null && imageGenConv === activeConversationId;
-  const [projects, setProjects] = useState<ProjectLite[]>([]);
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const generatingImage = imageGenConv !== null && imageGenConv === activeConversationId
+  const [projects, setProjects] = useState<ProjectLite[]>([])
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   // Captured-memory context is a Pro ("remembers") feature; core chats are plain
   // (no memory) or scoped to a project. The UI never says "memory".
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const isPro = !!(window as any).api?.isPro;
-  const [noMemory, setNoMemory] = useState(!isPro);
-  const [, setProjectMenuOpen] = useState(false);
-  const [projCreating, setProjCreating] = useState(false);
-  const [projNewName, setProjNewName] = useState('');
-  const projInputRef = useRef<HTMLInputElement>(null);
+  const isPro = !!(window as any).api?.isPro
+  const [noMemory, setNoMemory] = useState(!isPro)
+  const [, setProjectMenuOpen] = useState(false)
+  const [projCreating, setProjCreating] = useState(false)
+  const [projNewName, setProjNewName] = useState('')
+  const projInputRef = useRef<HTMLInputElement>(null)
   // Focus the new-project input AFTER the dropdown returns focus to its trigger,
   // otherwise Radix's focus-return blurs the input immediately and onBlur tears it
   // down before the user can type. A short delay lands focus after that hand-off.
   useEffect(() => {
-    if (!projCreating) return;
-    const t = setTimeout(() => projInputRef.current?.focus(), 80);
-    return () => clearTimeout(t);
-  }, [projCreating]);
-  const [recording, setRecording] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
-  const [toolsOn, setToolsOn] = useState(false);
-  const [connectorsOn, setConnectorsOn] = useState(false);
-  const [thinkingEnabled, setThinkingEnabled] = useState(false);
-  const [voiceMode, setVoiceMode] = useState(false); // voice mode: messages exchanged as voice notes
-  useEffect(() => { if (!voiceMode) stopAllVoicePlayback(); }, [voiceMode]);
+    if (!projCreating) return
+    const t = setTimeout(() => projInputRef.current?.focus(), 80)
+    return () => clearTimeout(t)
+  }, [projCreating])
+  const [recording, setRecording] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const [toolsOn, setToolsOn] = useState(false)
+  const [connectorsOn, setConnectorsOn] = useState(false)
+  const [thinkingEnabled, setThinkingEnabled] = useState(false)
+  const [voiceMode, setVoiceMode] = useState(false) // voice mode: messages exchanged as voice notes
+  useEffect(() => {
+    if (!voiceMode) stopAllVoicePlayback()
+  }, [voiceMode])
 
   // Composer preferences persist across sessions (memory scope, thinking, tools,
   // voice mode). Individual tool toggles and model choices persist on their own
   // (DB `disabledTools`, active-model.json). Load once, then save on every change.
-  const prefsLoaded = useRef(false);
+  const prefsLoaded = useRef(false)
   useEffect(() => {
-    (async () => {
+    ;(async () => {
       try {
-        const s = await window.api.getSettings();
-        if (typeof s.composerNoMemory === 'boolean') setNoMemory(s.composerNoMemory);
-        if (typeof s.composerToolsOn === 'boolean') setToolsOn(s.composerToolsOn);
-        if (typeof s.composerConnectorsOn === 'boolean') setConnectorsOn(s.composerConnectorsOn);
-        if (typeof s.composerThinking === 'boolean') setThinkingEnabled(s.composerThinking);
-        if (typeof s.composerVoiceMode === 'boolean') setVoiceMode(s.composerVoiceMode);
+        const s = await window.api.getSettings()
+        if (typeof s.composerNoMemory === 'boolean') setNoMemory(s.composerNoMemory)
+        if (typeof s.composerToolsOn === 'boolean') setToolsOn(s.composerToolsOn)
+        if (typeof s.composerConnectorsOn === 'boolean') setConnectorsOn(s.composerConnectorsOn)
+        if (typeof s.composerThinking === 'boolean') setThinkingEnabled(s.composerThinking)
+        if (typeof s.composerVoiceMode === 'boolean') setVoiceMode(s.composerVoiceMode)
         // Image-composer params: per-model steps/size overrides + the global
         // seed/negative/strength/style. These are persisted so they survive a
         // remount (they used to reset every mount).
-        if (s.imageParams && typeof s.imageParams === 'object') setImgParamStore(s.imageParams as ImageParamStore);
-        if (typeof s.imgSeed === 'string') setImgSeed(s.imgSeed);
-        if (typeof s.imgNegative === 'string') setImgNegative(s.imgNegative);
-        if (typeof s.imgStrength === 'number') setImgStrength(s.imgStrength);
-        if (typeof s.imgStyle === 'string' || s.imgStyle === null) setActiveStyle((s.imgStyle as string | null) ?? null);
-      } catch (e) { console.error('Failed to load composer prefs', e); }
-      finally { prefsLoaded.current = true; }
-    })();
-  }, []);
-  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('composerNoMemory', noMemory); }, [noMemory]);
-  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('composerToolsOn', toolsOn); }, [toolsOn]);
-  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('composerConnectorsOn', connectorsOn); }, [connectorsOn]);
-  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('composerThinking', thinkingEnabled); }, [thinkingEnabled]);
-  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('composerVoiceMode', voiceMode); }, [voiceMode]);
+        if (s.imageParams && typeof s.imageParams === 'object')
+          setImgParamStore(s.imageParams as ImageParamStore)
+        if (typeof s.imgSeed === 'string') setImgSeed(s.imgSeed)
+        if (typeof s.imgNegative === 'string') setImgNegative(s.imgNegative)
+        if (typeof s.imgStrength === 'number') setImgStrength(s.imgStrength)
+        if (typeof s.imgStyle === 'string' || s.imgStyle === null)
+          setActiveStyle((s.imgStyle as string | null) ?? null)
+      } catch (e) {
+        console.error('Failed to load composer prefs', e)
+      } finally {
+        prefsLoaded.current = true
+      }
+    })()
+  }, [])
+  useEffect(() => {
+    if (prefsLoaded.current) void window.api.saveSetting('composerNoMemory', noMemory)
+  }, [noMemory])
+  useEffect(() => {
+    if (prefsLoaded.current) void window.api.saveSetting('composerToolsOn', toolsOn)
+  }, [toolsOn])
+  useEffect(() => {
+    if (prefsLoaded.current) void window.api.saveSetting('composerConnectorsOn', connectorsOn)
+  }, [connectorsOn])
+  useEffect(() => {
+    if (prefsLoaded.current) void window.api.saveSetting('composerThinking', thinkingEnabled)
+  }, [thinkingEnabled])
+  useEffect(() => {
+    if (prefsLoaded.current) void window.api.saveSetting('composerVoiceMode', voiceMode)
+  }, [voiceMode])
   // Persist the global image-composer params (per-model steps/size live in the
   // store, saved on change). Guarded by prefsLoaded so the initial load doesn't
   // echo back an empty default.
-  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('imgSeed', imgSeed); }, [imgSeed]);
-  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('imgNegative', imgNegative); }, [imgNegative]);
-  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('imgStrength', imgStrength); }, [imgStrength]);
-  useEffect(() => { if (prefsLoaded.current) void window.api.saveSetting('imgStyle', activeStyle); }, [activeStyle]);
-  const [autoPlayId, setAutoPlayId] = useState<string | null>(null); // assistant reply to auto-speak once
-  const [speakingId, setSpeakingId] = useState<string | null>(null);
-  const [speakLoadingId, setSpeakLoadingId] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const [canvasWidth, setCanvasWidth] = useState<number | null>(null); // px; null = default 30vw
-  const [dragOver, setDragOver] = useState(false);
+  useEffect(() => {
+    if (prefsLoaded.current) void window.api.saveSetting('imgSeed', imgSeed)
+  }, [imgSeed])
+  useEffect(() => {
+    if (prefsLoaded.current) void window.api.saveSetting('imgNegative', imgNegative)
+  }, [imgNegative])
+  useEffect(() => {
+    if (prefsLoaded.current) void window.api.saveSetting('imgStrength', imgStrength)
+  }, [imgStrength])
+  useEffect(() => {
+    if (prefsLoaded.current) void window.api.saveSetting('imgStyle', activeStyle)
+  }, [activeStyle])
+  const [autoPlayId, setAutoPlayId] = useState<string | null>(null) // assistant reply to auto-speak once
+  const [speakingId, setSpeakingId] = useState<string | null>(null)
+  const [speakLoadingId, setSpeakLoadingId] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [modelPickerOpen, setModelPickerOpen] = useState(false)
+  const [canvasWidth, setCanvasWidth] = useState<number | null>(null) // px; null = default 30vw
+  const [dragOver, setDragOver] = useState(false)
   // Safety net so the "Drop files to attach" overlay never gets stuck: a drag that
   // ends/cancels outside the composer (drop elsewhere, leave the window, Esc)
   // doesn't fire the composer's own dragleave, so clear it from the window level.
   useEffect(() => {
-    const clear = (): void => setDragOver(false);
-    const onWinLeave = (e: DragEvent): void => { if (!e.relatedTarget) clear(); };
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') clear(); };
-    window.addEventListener('drop', clear);
-    window.addEventListener('dragend', clear);
-    window.addEventListener('dragleave', onWinLeave);
-    window.addEventListener('keydown', onKey);
+    const clear = (): void => setDragOver(false)
+    const onWinLeave = (e: DragEvent): void => {
+      if (!e.relatedTarget) clear()
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') clear()
+    }
+    window.addEventListener('drop', clear)
+    window.addEventListener('dragend', clear)
+    window.addEventListener('dragleave', onWinLeave)
+    window.addEventListener('keydown', onKey)
     return () => {
-      window.removeEventListener('drop', clear);
-      window.removeEventListener('dragend', clear);
-      window.removeEventListener('dragleave', onWinLeave);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, []);
-  const [viewer, setViewer] = useState<{ title: string; text: string; path?: string; kind?: string } | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState('');
-  const [lightbox, setLightbox] = useState<{ url: string; path?: string } | null>(null);
+      window.removeEventListener('drop', clear)
+      window.removeEventListener('dragend', clear)
+      window.removeEventListener('dragleave', onWinLeave)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [])
+  const [viewer, setViewer] = useState<{
+    title: string
+    text: string
+    path?: string
+    kind?: string
+  } | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+  const [lightbox, setLightbox] = useState<{ url: string; path?: string } | null>(null)
   // Esc closes the open overlay (attachment viewer / image lightbox).
   useEffect(() => {
-    if (!viewer && !lightbox) return;
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { setViewer(null); setLightbox(null); } };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [viewer, lightbox]);
-  const [canvasArtifact, setCanvasArtifact] = useState<Artifact | null>(null);
-  const [skillsOpen, setSkillsOpen] = useState(false);
-  const [showGallery, setShowGallery] = useState(false);
+    if (!viewer && !lightbox) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        setViewer(null)
+        setLightbox(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [viewer, lightbox])
+  const [canvasArtifact, setCanvasArtifact] = useState<Artifact | null>(null)
+  const [skillsOpen, setSkillsOpen] = useState(false)
+  const [showGallery, setShowGallery] = useState(false)
   // The canvas / text viewer / gallery belong to a specific message, so they must
   // not bleed across chats — close them whenever the active conversation changes
   // (switch tab, new chat, close-to-fallback, open-from-projects, delete).
-  useEffect(() => { setCanvasArtifact(null); setViewer(null); setShowGallery(false); }, [activeConversationId]);
-  const [gallery, setGallery] = useState<{ path: string; name: string; mtime: number }[]>([]);
-  const [galleryTab, setGalleryTab] = useState<'images' | 'artifacts'>('images');
-  const [galleryScope, setGalleryScope] = useState<'chat' | 'project' | 'all'>('all');
-  const [artifacts, setArtifacts] = useState<(Artifact & { id: string; title: string; created: number })[]>([]);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const pendingVariantsRef = useRef<string[] | null>(null); // prior answers to keep when regenerating
-  const bottomRef = useRef<HTMLDivElement | null>(null);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    setCanvasArtifact(null)
+    setViewer(null)
+    setShowGallery(false)
+  }, [activeConversationId])
+  const [gallery, setGallery] = useState<{ path: string; name: string; mtime: number }[]>([])
+  const [galleryTab, setGalleryTab] = useState<'images' | 'artifacts'>('images')
+  const [galleryScope, setGalleryScope] = useState<'chat' | 'project' | 'all'>('all')
+  const [artifacts, setArtifacts] = useState<
+    (Artifact & { id: string; title: string; created: number })[]
+  >([])
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const pendingVariantsRef = useRef<string[] | null>(null) // prior answers to keep when regenerating
+  const bottomRef = useRef<HTMLDivElement | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
   // Per-conversation generation lock + queue: a send belongs to its OWN conversation,
   // never the active tab. generatingRef is the synchronous source of truth for the
   // queue decision; generatingConvs mirrors it for rendering.
-  const generatingRef = useRef<Set<string>>(new Set());
-  const [generatingConvs, setGeneratingConvs] = useState<Set<string>>(new Set());
+  const generatingRef = useRef<Set<string>>(new Set())
+  const [generatingConvs, setGeneratingConvs] = useState<Set<string>>(new Set())
   const markGenerating = useCallback((cid: string, on: boolean): void => {
-    if (on) generatingRef.current.add(cid); else generatingRef.current.delete(cid);
-    setGeneratingConvs(new Set(generatingRef.current));
-  }, []);
+    if (on) generatingRef.current.add(cid)
+    else generatingRef.current.delete(cid)
+    setGeneratingConvs(new Set(generatingRef.current))
+  }, [])
   // Queued sends carry their attachments too, so a message waiting behind an in-flight
   // generation keeps its image/files when it finally runs — keyed per conversation.
-  const queuedRef = useRef<Record<string, { text: string; atts: Attachment[] }[]>>({});
-  const [queuedByConv, setQueuedByConv] = useState<Record<string, { text: string; atts: Attachment[] }[]>>({});
+  const queuedRef = useRef<Record<string, { text: string; atts: Attachment[] }[]>>({})
+  const [queuedByConv, setQueuedByConv] = useState<
+    Record<string, { text: string; atts: Attachment[] }[]>
+  >({})
   // Map streamId → convId so the onRagStream handler can route tokens to the right
   // conversation regardless of which tab is active when the event fires.
-  const streamConvRef = useRef<Map<string, string>>(new Map());
+  const streamConvRef = useRef<Map<string, string>>(new Map())
   // Accumulated reasoning per streamId, mirrored from the onRagStream reasoning
   // events. Read DETERMINISTICALLY at persist time — reading it out of a
   // setConvMessages updater (a state-updater side effect) was unreliable: React
   // only runs the updater eagerly on a bail-out, else defers it to render, so the
   // read could see undefined and the persisted 'Thinking' block would vanish on
   // reload (the exact T1f bug). A ref is written synchronously and read directly.
-  const reasoningByStream = useRef<Record<string, string>>({});
+  const reasoningByStream = useRef<Record<string, string>>({})
   // Conversations the user hit "stop" on. The in-flight send checks this at each of
   // its awaits and bails (no error bubble, no persisted junk) instead of finalizing a
   // turn the user abandoned. Cleared when the conversation's send settles.
-  const cancelledRef = useRef<Set<string>>(new Set());
+  const cancelledRef = useRef<Set<string>>(new Set())
 
   const markdownComponents: Components = {
     p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>,
@@ -428,47 +653,54 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       </a>
     ),
     code: ({ children, ...props }) => {
-      const inline = !('className' in props);
+      const inline = !('className' in props)
       return (
-        <code className={`font-mono text-[0.9em] bg-neutral-800/60 rounded ${inline ? 'px-1 py-0.5' : 'block px-2.5 py-2 overflow-x-auto'}`}>
+        <code
+          className={`font-mono text-[0.9em] bg-neutral-800/60 rounded ${inline ? 'px-1 py-0.5' : 'block px-2.5 py-2 overflow-x-auto'}`}
+        >
           {children}
         </code>
-      );
+      )
     },
-    pre: ({ children }) => <pre style={{ margin: 0 }}>{children}</pre>,
-  };
+    pre: ({ children }) => <pre style={{ margin: 0 }}>{children}</pre>
+  }
 
   // Citation-aware markdown components: `[S2]` in an answer is rewritten to a
   // cite: link and rendered as a clickable chip that opens the exact source it
   // cites (memory / entity / meeting). Falls back to a normal link otherwise.
-  const makeCiteComponents = (unified?: RagContext['unified']): Components => ({
-    ...markdownComponents,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    a: ({ href, children }: any) => {
-      const m = typeof href === 'string' ? /^cite:(\d+)$/.exec(href) : null;
-      if (m && unified) {
-        const u = unified[parseInt(m[1]!, 10) - 1];
+  const makeCiteComponents = (unified?: RagContext['unified']): Components =>
+    ({
+      ...markdownComponents,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      a: ({ href, children }: any) => {
+        const m = typeof href === 'string' ? /^cite:(\d+)$/.exec(href) : null
+        if (m && unified) {
+          const u = unified[parseInt(m[1]!, 10) - 1]
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                if (!u) return
+                if (u.kind === 'screen') onSeekReplay?.(u.ts)
+                else if (u.refId == null) return
+                else if (u.kind === 'memory') onNavigateToMemory?.(u.refId)
+                else if (u.kind === 'entity') onNavigateToEntity?.(u.refId)
+                else if (u.kind === 'meeting') onNavigateToChat?.(String(u.refId))
+              }}
+              title={u ? `${u.kind} · ${u.surface}${u.title ? ' · ' + u.title : ''}` : 'source'}
+              className="mx-0.5 inline-flex items-center rounded-sm border border-green-500/40 bg-green-500/10 px-1 align-baseline text-[0.72em] font-semibold text-green-500 transition-colors hover:bg-green-500/20"
+            >
+              {children}
+            </button>
+          )
+        }
         return (
-          <button
-            type="button"
-            onClick={() => {
-              if (!u) return;
-              if (u.kind === 'screen') onSeekReplay?.(u.ts);
-              else if (u.refId == null) return;
-              else if (u.kind === 'memory') onNavigateToMemory?.(u.refId);
-              else if (u.kind === 'entity') onNavigateToEntity?.(u.refId);
-              else if (u.kind === 'meeting') onNavigateToChat?.(String(u.refId));
-            }}
-            title={u ? `${u.kind} · ${u.surface}${u.title ? ' · ' + u.title : ''}` : 'source'}
-            className="mx-0.5 inline-flex items-center rounded-sm border border-green-500/40 bg-green-500/10 px-1 align-baseline text-[0.72em] font-semibold text-green-500 transition-colors hover:bg-green-500/20"
-          >
+          <a href={href} target="_blank" rel="noreferrer" className="text-green-500 underline">
             {children}
-          </button>
-        );
+          </a>
+        )
       }
-      return <a href={href} target="_blank" rel="noreferrer" className="text-green-500 underline">{children}</a>;
-    },
-  } as Components);
+    }) as Components
 
   // Bind the composer's image model to the ONE owner of that state: the active
   // modal model (what the Active-models panel / ModelPicker writes via
@@ -478,67 +710,88 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   // into the composer. Falls back to a sensible default only when nothing is active.
   const refreshImageModel = useCallback(async () => {
     try {
-      const s = await window.api.imageGenStatus?.();
-      if (!s) return;
-      setImageAvailable(!!s.available);
-      const models = s.models || [];
-      setImgModels(models);
+      const s = await window.api.imageGenStatus?.()
+      if (!s) return
+      setImageAvailable(!!s.available)
+      const models = s.models || []
+      setImgModels(models)
       // Skip the parked/slow Core ML dir (it would otherwise win on an "sdxl" name
       // match and default the composer to a non-distilled model).
-      const usable = models.filter(m => !/coreml/i.test(m));
-      const preferred = usable.find(m => /dreamshaper/i.test(m)) || usable.find(m => /lightning|turbo/i.test(m)) || usable.find(m => /z[-_]?image/i.test(m)) || usable.find(m => /sdxl|xl/i.test(m)) || usable[0] || models[0] || '';
-      setImgModel(s.active || preferred);
-    } catch { /* engine may be down; leave prior state */ }
-  }, []);
+      const usable = models.filter((m) => !/coreml/i.test(m))
+      const preferred =
+        usable.find((m) => /dreamshaper/i.test(m)) ||
+        usable.find((m) => /lightning|turbo/i.test(m)) ||
+        usable.find((m) => /z[-_]?image/i.test(m)) ||
+        usable.find((m) => /sdxl|xl/i.test(m)) ||
+        usable[0] ||
+        models[0] ||
+        ''
+      setImgModel(s.active || preferred)
+    } catch {
+      /* engine may be down; leave prior state */
+    }
+  }, [])
   // When the model picker closes it may have changed the active image model
   // (setActiveModalModel). Re-read so the composer reflects the single source of
   // truth rather than a stale mirror.
-  const prevPickerOpen = useRef(modelPickerOpen);
+  const prevPickerOpen = useRef(modelPickerOpen)
   useEffect(() => {
-    if (prevPickerOpen.current && !modelPickerOpen) void refreshImageModel();
-    prevPickerOpen.current = modelPickerOpen;
-  }, [modelPickerOpen, refreshImageModel]);
+    if (prevPickerOpen.current && !modelPickerOpen) void refreshImageModel()
+    prevPickerOpen.current = modelPickerOpen
+  }, [modelPickerOpen, refreshImageModel])
 
   // Load conversations on mount; probe image gen; load projects for scoping.
   useEffect(() => {
     void (async () => {
-      const convos = await window.api.getRagConversations().catch(() => []);
-      setConversations(convos);
+      const convos = await window.api.getRagConversations().catch(() => [])
+      setConversations(convos)
       // Open the latest conversation by default (most recent first), unless the shell
       // asked to open a specific chat/project — then its own effect handles it.
       if (!openTarget && convos.length > 0) {
-        const first = convos[0]!; // convos.length > 0
-        setActiveConversationId(first.id);
-        setActiveProjectId((first as { project_id?: string | null }).project_id ?? null);
-        setOpenTabs([first.id]);
-        try { setConvMessages(first.id, mapRagMessages(await window.api.getRagMessages(first.id))); } catch { setConvMessages(first.id, []); }
+        const first = convos[0]! // convos.length > 0
+        setActiveConversationId(first.id)
+        setActiveProjectId((first as { project_id?: string | null }).project_id ?? null)
+        setOpenTabs([first.id])
+        try {
+          setConvMessages(first.id, mapRagMessages(await window.api.getRagMessages(first.id)))
+        } catch {
+          setConvMessages(first.id, [])
+        }
       }
-    })();
-    void refreshImageModel();
-    window.api.listProjects?.().then((p: ProjectLite[]) => setProjects(p)).catch(() => {});
-    window.api.styleThumbs?.().then((t: Record<string, string>) => setStyleThumbs(t)).catch(() => {});
-  }, []);
+    })()
+    void refreshImageModel()
+    window.api
+      .listProjects?.()
+      .then((p: ProjectLite[]) => setProjects(p))
+      .catch(() => {})
+    window.api
+      .styleThumbs?.()
+      .then((t: Record<string, string>) => setStyleThumbs(t))
+      .catch(() => {})
+  }, [])
 
-  const styleKey = (name: string): string => name.replace(/[^\w-]+/g, '_');
+  const styleKey = (name: string): string => name.replace(/[^\w-]+/g, '_')
 
   // Generate on-device preview thumbnails for any styles that don't have one yet.
   const generateStylePreviews = useCallback(async () => {
-    if (genThumbsBusy) return;
-    setGenThumbsBusy(true);
+    if (genThumbsBusy) return
+    setGenThumbsBusy(true)
     try {
       for (const s of STYLE_PRESETS) {
-        const k = styleKey(s.name);
-        if (styleThumbs[k]) continue;
+        const k = styleKey(s.name)
+        if (styleThumbs[k]) continue
         try {
-          await window.api.makeStyleThumb?.(s.name, `${s.preview}, ${s.prompt}`);
-          const refreshed = await window.api.styleThumbs?.();
-          if (refreshed) setStyleThumbs(refreshed);
-        } catch (e) { console.error('style thumb failed', s.name, e); }
+          await window.api.makeStyleThumb?.(s.name, `${s.preview}, ${s.prompt}`)
+          const refreshed = await window.api.styleThumbs?.()
+          if (refreshed) setStyleThumbs(refreshed)
+        } catch (e) {
+          console.error('style thumb failed', s.name, e)
+        }
       }
     } finally {
-      setGenThumbsBusy(false);
+      setGenThumbsBusy(false)
     }
-  }, [genThumbsBusy, styleThumbs]);
+  }, [genThumbsBusy, styleThumbs])
 
   // Resolve the size + steps controls for the current model: a per-model user
   // OVERRIDE (persisted in imgParamStore) wins; otherwise fall back to the model's
@@ -548,268 +801,351 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   // resolver reads the override for whichever model is now selected. Depends on the
   // store too, so persisted overrides apply once they load.
   useEffect(() => {
-    if (!imgModel) return;
-    const { steps, size } = resolveImageParams(imgModel, imgParamStore);
-    setImgSize(size);
-    setImgSteps(steps);
-  }, [imgModel, imgParamStore]);
+    if (!imgModel) return
+    const { steps, size } = resolveImageParams(imgModel, imgParamStore)
+    setImgSize(size)
+    setImgSteps(steps)
+  }, [imgModel, imgParamStore])
 
   // Composer image-model dropdown: write through to the SAME owner ModelPicker
   // uses (setActiveModalModel), then mirror locally for immediate UI. This is what
   // keeps the composer and the Active-models panel from silently disagreeing about
   // which model runs — one source of truth.
   const chooseImageModel = useCallback((value: string) => {
-    setImgModel(value);
+    setImgModel(value)
     // Write through to the owning source; log on failure rather than swallow — a
     // silent reject would let the composer and Active-models panel diverge again
     // (the exact drift this binding prevents), with no signal.
-    void window.api.setActiveModalModel?.('image', value).catch((e) =>
-      console.error('[image] failed to persist active model', e)
-    );
-  }, []);
+    void window.api
+      .setActiveModalModel?.('image', value)
+      .catch((e) => console.error('[image] failed to persist active model', e))
+  }, [])
   // Steps/size edits persist as a per-model override so they survive a remount and
   // a model switch (setOverride is pure; a value == the model default clears it).
-  const setStepsOverride = useCallback((value: number) => {
-    setImgSteps(value);
-    if (!imgModel) return;
-    setImgParamStore(prev => setOverride(prev, imgModel, 'steps', value));
-  }, [imgModel]);
-  const setSizeOverride = useCallback((value: number) => {
-    setImgSize(value);
-    if (!imgModel) return;
-    setImgParamStore(prev => setOverride(prev, imgModel, 'size', value));
-  }, [imgModel]);
+  const setStepsOverride = useCallback(
+    (value: number) => {
+      setImgSteps(value)
+      if (!imgModel) return
+      setImgParamStore((prev) => setOverride(prev, imgModel, 'steps', value))
+    },
+    [imgModel]
+  )
+  const setSizeOverride = useCallback(
+    (value: number) => {
+      setImgSize(value)
+      if (!imgModel) return
+      setImgParamStore((prev) => setOverride(prev, imgModel, 'size', value))
+    },
+    [imgModel]
+  )
   // Persist the per-model image params in ONE effect (not inside the state updater —
   // an updater must be pure; StrictMode double-invokes it, firing the IPC save twice).
   // Gated on prefsLoaded so the initial hydrate doesn't write back.
   useEffect(() => {
-    if (prefsLoaded.current) void window.api.saveSetting('imageParams', imgParamStore);
-  }, [imgParamStore]);
+    if (prefsLoaded.current) void window.api.saveSetting('imageParams', imgParamStore)
+  }, [imgParamStore])
 
-  const activeProjectName = projects.find(p => p.id === activeProjectId)?.name ?? null;
+  const activeProjectName = projects.find((p) => p.id === activeProjectId)?.name ?? null
 
   const loadProjects = useCallback(async () => {
-    try { setProjects((await window.api.listProjects?.()) || []); } catch (e) { console.error(e); }
-  }, []);
+    try {
+      setProjects((await window.api.listProjects?.()) || [])
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
 
   // Assign the current chat to a project (or clear it). Persists if a conversation exists.
-  const assignProject = useCallback(async (projectId: string | null) => {
-    setActiveProjectId(projectId);
-    setProjectMenuOpen(false);
-    setProjCreating(false);
-    setProjNewName('');
-    if (activeConversationId) {
-      try { await window.api.setRagConversationProject(activeConversationId, projectId); } catch (e) { console.error(e); }
-      await loadConversations();
-    }
-  }, [activeConversationId]);
+  const assignProject = useCallback(
+    async (projectId: string | null) => {
+      setActiveProjectId(projectId)
+      setProjectMenuOpen(false)
+      setProjCreating(false)
+      setProjNewName('')
+      if (activeConversationId) {
+        try {
+          await window.api.setRagConversationProject(activeConversationId, projectId)
+        } catch (e) {
+          console.error(e)
+        }
+        await loadConversations()
+      }
+    },
+    [activeConversationId]
+  )
 
   // Create a project inline and assign the current chat to it.
   const createAndAssignProject = useCallback(async () => {
-    const name = projNewName.trim();
-    if (!name) { setProjCreating(false); return; }
+    const name = projNewName.trim()
+    if (!name) {
+      setProjCreating(false)
+      return
+    }
     try {
-      const id = await window.api.createProject?.({ name });
-      await loadProjects();
-      if (id) await assignProject(id);
-    } catch (e) { console.error('Failed to create project', e); }
-  }, [projNewName, loadProjects, assignProject]);
+      const id = await window.api.createProject?.({ name })
+      await loadProjects()
+      if (id) await assignProject(id)
+    } catch (e) {
+      console.error('Failed to create project', e)
+    }
+  }, [projNewName, loadProjects, assignProject])
 
   useEffect(() => {
     // Only follow the stream if the user is already near the bottom — don't yank
     // them down when they've scrolled up to read while generating.
-    const el = scrollRef.current;
-    if (el && el.scrollHeight - el.scrollTop - el.clientHeight > 120) return;
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+    const el = scrollRef.current
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight > 120) return
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
 
   // Opening / switching a chat lands you at the latest message (after it loads).
-  const justSwitched = useRef(false);
-  useEffect(() => { justSwitched.current = true; }, [activeConversationId]);
+  const justSwitched = useRef(false)
   useEffect(() => {
-    if (!justSwitched.current || !messages.length) return;
-    justSwitched.current = false;
-    requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ block: 'end' }));
-  }, [messages, activeConversationId]);
+    justSwitched.current = true
+  }, [activeConversationId])
+  useEffect(() => {
+    if (!justSwitched.current || !messages.length) return
+    justSwitched.current = false
+    requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ block: 'end' }))
+  }, [messages, activeConversationId])
 
   // Live per-step image generation progress (step counter + forming preview).
   useEffect(() => {
-    const off = window.api.onImageGenProgress?.((p) => setImgProgress(p));
-    return () => off?.();
-  }, []);
+    const off = window.api.onImageGenProgress?.((p) => setImgProgress(p))
+    return () => off?.()
+  }, [])
 
   const loadConversations = async () => {
     try {
-      const convos = await window.api.getRagConversations();
-      setConversations(convos);
+      const convos = await window.api.getRagConversations()
+      setConversations(convos)
     } catch (e) {
-      console.error('Failed to load conversations:', e);
+      console.error('Failed to load conversations:', e)
     }
-  };
+  }
 
-  const switchConversation = useCallback(async (convId: string) => {
-    setOpenTabs(t => (t.includes(convId) ? t : [...t, convId]));
-    if (convId === activeConversationId) return;
-    setActiveConversationId(convId);
-    setActiveProjectId(conversations.find(c => c.id === convId)?.project_id ?? null);
-    try {
-      const rawMessages = await window.api.getRagMessages(convId);
-      // Refresh from DB, but never clobber an in-flight stream for this conversation.
-      setMessagesByConv(prev => (prev[convId]?.some(m => m.streaming) ? prev : { ...prev, [convId]: mapRagMessages(rawMessages) }));
-    } catch (e) {
-      console.error('Failed to load messages:', e);
-      setMessagesByConv(prev => (prev[convId] ? prev : { ...prev, [convId]: [] }));
-    }
-  }, [activeConversationId, conversations]);
+  const switchConversation = useCallback(
+    async (convId: string) => {
+      setOpenTabs((t) => (t.includes(convId) ? t : [...t, convId]))
+      if (convId === activeConversationId) return
+      setActiveConversationId(convId)
+      setActiveProjectId(conversations.find((c) => c.id === convId)?.project_id ?? null)
+      try {
+        const rawMessages = await window.api.getRagMessages(convId)
+        // Refresh from DB, but never clobber an in-flight stream for this conversation.
+        setMessagesByConv((prev) =>
+          prev[convId]?.some((m) => m.streaming)
+            ? prev
+            : { ...prev, [convId]: mapRagMessages(rawMessages) }
+        )
+      } catch (e) {
+        console.error('Failed to load messages:', e)
+        setMessagesByConv((prev) => (prev[convId] ? prev : { ...prev, [convId]: [] }))
+      }
+    },
+    [activeConversationId, conversations]
+  )
 
   // Close a chat tab; fall back to another open tab (or a fresh chat) if it was active.
-  const closeTab = useCallback((convId: string) => {
-    setOpenTabs(prev => {
-      const next = prev.filter(t => t !== convId);
-      if (activeConversationId === convId) {
-        const fallback = next[next.length - 1];
-        if (fallback) void switchConversation(fallback);
-        else { setActiveConversationId(null); setConvMessages(null, []); setActiveProjectId(null); }
-      }
-      return next;
-    });
-  }, [activeConversationId, switchConversation]);
+  const closeTab = useCallback(
+    (convId: string) => {
+      setOpenTabs((prev) => {
+        const next = prev.filter((t) => t !== convId)
+        if (activeConversationId === convId) {
+          const fallback = next[next.length - 1]
+          if (fallback) void switchConversation(fallback)
+          else {
+            setActiveConversationId(null)
+            setConvMessages(null, [])
+            setActiveProjectId(null)
+          }
+        }
+        return next
+      })
+    },
+    [activeConversationId, switchConversation]
+  )
 
   // Open a target passed from the Projects tab (an existing chat, or a new chat
   // scoped to a project). Resolves project from the DB to avoid stale state.
   useEffect(() => {
-    if (!openTarget) return;
-    (async () => {
+    if (!openTarget) return
+    ;(async () => {
       try {
         if (openTarget.conversationId) {
-          const convId = openTarget.conversationId;
-          setActiveConversationId(convId);
-          setOpenTabs(t => (t.includes(convId) ? t : [...t, convId]));
-          const conv = await window.api.getRagConversation(convId);
-          setActiveProjectId((conv as { project_id?: string | null }).project_id ?? null);
-          setConvMessages(convId, mapRagMessages(await window.api.getRagMessages(convId)));
+          const convId = openTarget.conversationId
+          setActiveConversationId(convId)
+          setOpenTabs((t) => (t.includes(convId) ? t : [...t, convId]))
+          const conv = await window.api.getRagConversation(convId)
+          setActiveProjectId((conv as { project_id?: string | null }).project_id ?? null)
+          setConvMessages(convId, mapRagMessages(await window.api.getRagMessages(convId)))
         } else if (openTarget.projectId) {
-          setActiveConversationId(null);
-          setConvMessages(null, []);
-          setActiveProjectId(openTarget.projectId);
+          setActiveConversationId(null)
+          setConvMessages(null, [])
+          setActiveProjectId(openTarget.projectId)
         }
-        await loadConversations();
+        await loadConversations()
       } catch (e) {
-        console.error('Failed to open chat target:', e);
+        console.error('Failed to open chat target:', e)
       } finally {
-        onTargetConsumed?.();
+        onTargetConsumed?.()
       }
-    })();
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openTarget]);
+  }, [openTarget])
 
   const startNewConversation = useCallback(() => {
-    setActiveConversationId(null);
-    setConvMessages(null, []); // clear the fresh-chat bucket
-    setActiveProjectId(null);
-  }, [setConvMessages]);
+    setActiveConversationId(null)
+    setConvMessages(null, []) // clear the fresh-chat bucket
+    setActiveProjectId(null)
+  }, [setConvMessages])
 
-  const deleteConversation = useCallback(async (convId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await window.api.deleteRagConversation(convId);
-      // Drop the deleted conversation's cached messages; reset to a fresh chat if active.
-      setMessagesByConv(prev => { const n = { ...prev }; delete n[convId]; n[NEW_CHAT] = []; return n; });
-      setOpenTabs(t => t.filter(id => id !== convId));
-      if (activeConversationId === convId) setActiveConversationId(null);
-      await loadConversations();
-    } catch (err) {
-      console.error('Failed to delete conversation:', err);
+  const deleteConversation = useCallback(
+    async (convId: string, e: React.MouseEvent) => {
+      e.stopPropagation()
+      try {
+        await window.api.deleteRagConversation(convId)
+        // Drop the deleted conversation's cached messages; reset to a fresh chat if active.
+        setMessagesByConv((prev) => {
+          const n = { ...prev }
+          delete n[convId]
+          n[NEW_CHAT] = []
+          return n
+        })
+        setOpenTabs((t) => t.filter((id) => id !== convId))
+        if (activeConversationId === convId) setActiveConversationId(null)
+        await loadConversations()
+      } catch (err) {
+        console.error('Failed to delete conversation:', err)
+      }
+    },
+    [activeConversationId]
+  )
+
+  const sendMessage = async (
+    override?: string,
+    opts?: {
+      regen?: boolean
+      voiceClip?: { url: string; duration: number }
+      atts?: Attachment[]
+      conversationId?: string
     }
-  }, [activeConversationId]);
-
-  const sendMessage = async (override?: string, opts?: { regen?: boolean; voiceClip?: { url: string; duration: number }; atts?: Attachment[]; conversationId?: string }) => {
-    const isInput = override === undefined;
+  ) => {
+    const isInput = override === undefined
     // Regenerate/Resend: the user turn already exists in the thread — re-run it
     // in place instead of echoing another user bubble.
-    const regen = opts?.regen ?? false;
+    const regen = opts?.regen ?? false
     // Lock the project for THIS send at send-time, like convId — every attribution
     // below (RAG scope, saved artifacts, generated images) uses it. Reading the live
     // `activeProjectId` at each await instead let a mid-stream project switch land
     // this turn's output in the WRONG project (D21).
-    const projectId = activeProjectId;
+    const projectId = activeProjectId
     // Attachments (pasted blocks + processed files) ride along on a normal send
     // from the composer, or on a drained queue item (opts.atts) — not on
     // resend/regenerate/example.
-    const atts = opts?.atts ?? (isInput ? attachments.filter(a => a.status === 'ready' && (a.text || a.path)) : []);
-    const typed = (override ?? input).trim();
+    const atts =
+      opts?.atts ??
+      (isInput ? attachments.filter((a) => a.status === 'ready' && (a.text || a.path)) : [])
+    const typed = (override ?? input).trim()
     // The user sees `trimmed`; the model also gets the attachment text folded in.
-    const trimmed = typed || (atts.length ? `(${atts.length} attachment${atts.length > 1 ? 's' : ''})` : '');
-    const attBlock = atts.filter(a => a.text).map(a => `--- attached ${a.kind}: ${a.name} ---\n${a.text}`).join('\n\n');
+    const trimmed =
+      typed || (atts.length ? `(${atts.length} attachment${atts.length > 1 ? 's' : ''})` : '')
+    const attBlock = atts
+      .filter((a) => a.text)
+      .map((a) => `--- attached ${a.kind}: ${a.name} ---\n${a.text}`)
+      .join('\n\n')
     // Actual image files go to the multimodal model (not just their captions).
-    const imagePaths = atts.filter(a => a.kind === 'image' && a.path).map(a => a.path as string);
-    let modelQuery = (attBlock ? `${attBlock}\n\n${typed}` : typed).trim();
-    if (!typed && atts.length === 0) return;
+    const imagePaths = atts.filter((a) => a.kind === 'image' && a.path).map((a) => a.path as string)
+    let modelQuery = (attBlock ? `${attBlock}\n\n${typed}` : typed).trim()
+    if (!typed && atts.length === 0) return
     // Don't block the user — if a generation is in flight, queue this message and
     // let them keep typing/sending. The queue drains in order when each finishes.
-    const targetConv = opts?.conversationId ?? activeConversationId;
+    const targetConv = opts?.conversationId ?? activeConversationId
     if (shouldQueue(targetConv, generatingRef.current)) {
-      const item = { text: typed, atts };
-      queuedRef.current = enqueue(queuedRef.current, targetConv as string, item);
-      setQueuedByConv({ ...queuedRef.current });
-      if (isInput) { setInput(''); setAttachments([]); }
-      return;
+      const item = { text: typed, atts }
+      queuedRef.current = enqueue(queuedRef.current, targetConv as string, item)
+      setQueuedByConv({ ...queuedRef.current })
+      if (isInput) {
+        setInput('')
+        setAttachments([])
+      }
+      return
     }
-    if (isInput) setAttachments([]);
+    if (isInput) setAttachments([])
 
     // Skill invocation: "/skill-name [rest]" prepends that skill's instructions.
     if (isInput) {
-      const sm = /^\/([A-Za-z0-9_-]+)\s*([\s\S]*)$/.exec(typed);
-      if (sm && skills.some(s => s.name.toLowerCase() === sm[1]!.toLowerCase())) {
+      const sm = /^\/([A-Za-z0-9_-]+)\s*([\s\S]*)$/.exec(typed)
+      if (sm && skills.some((s) => s.name.toLowerCase() === sm[1]!.toLowerCase())) {
         try {
-          const sk = await window.api.getSkill(sm[1]!);
+          const sk = await window.api.getSkill(sm[1]!)
           if (sk) {
-            const rest = sm[2]!.trim();
-            modelQuery = `${attBlock ? attBlock + '\n\n' : ''}# Skill: ${sk.name}\n${sk.instructions}\n\n${rest}`.trim();
+            const rest = sm[2]!.trim()
+            modelQuery =
+              `${attBlock ? attBlock + '\n\n' : ''}# Skill: ${sk.name}\n${sk.instructions}\n\n${rest}`.trim()
           }
-        } catch (e) { console.error('skill load failed', e); }
+        } catch (e) {
+          console.error('skill load failed', e)
+        }
       }
     }
 
     // A drained queue item carries its own conversationId; a normal send uses the
     // active tab. Either way, this send is bound to `convId` end-to-end.
-    let convId = opts?.conversationId ?? activeConversationId;
+    let convId = opts?.conversationId ?? activeConversationId
 
     // Create new conversation if none active
     if (!convId) {
-      convId = `rag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const title = trimmed.length > 50 ? trimmed.slice(0, 47) + '...' : trimmed;
+      convId = `rag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const title = trimmed.length > 50 ? trimmed.slice(0, 47) + '...' : trimmed
       try {
-        await window.api.createRagConversation(convId, title, projectId);
-        setActiveConversationId(convId);
-        setOpenTabs(t => (t.includes(convId!) ? t : [...t, convId!]));
+        await window.api.createRagConversation(convId, title, projectId)
+        setActiveConversationId(convId)
+        setOpenTabs((t) => (t.includes(convId!) ? t : [...t, convId!]))
       } catch (e) {
-        console.error('Failed to create conversation:', e);
-        return;
+        console.error('Failed to create conversation:', e)
+        return
       }
     }
 
     // From here this send belongs to `convId` — lock + target THAT conversation, so
     // switching tabs mid-generation never misroutes it. Clear any stale stop flag so a
     // conversation the user previously stopped can generate again.
-    cancelledRef.current.delete(convId);
-    markGenerating(convId, true);
+    cancelledRef.current.delete(convId)
+    markGenerating(convId, true)
     if (!regen) {
-      const userMessage: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: trimmed, attachments: atts.map(a => ({ name: a.name, kind: a.kind, text: a.text, path: a.path })), audioUrl: opts?.voiceClip?.url, audioDuration: opts?.voiceClip?.duration };
-      setConvMessages(convId, prev => [...prev, userMessage]);
+      const userMessage: ChatMessage = {
+        id: `u-${Date.now()}`,
+        role: 'user',
+        content: trimmed,
+        attachments: atts.map((a) => ({ name: a.name, kind: a.kind, text: a.text, path: a.path })),
+        audioUrl: opts?.voiceClip?.url,
+        audioDuration: opts?.voiceClip?.duration
+      }
+      setConvMessages(convId, (prev) => [...prev, userMessage])
     }
-    setInput('');
-    setLoading(true);
+    setInput('')
+    setLoading(true)
 
     // Persist user message (skip on regen — it's already in the thread). Stash
     // the attachments in the message context so the clickable chips survive reload.
     try {
       if (!regen) {
-        const attMeta = atts.map(a => ({ name: a.name, kind: a.kind, text: a.text, path: a.path }));
-        await window.api.addRagMessage(convId, 'user', trimmed, attMeta.length ? { attachments: attMeta } : undefined);
+        const attMeta = atts.map((a) => ({
+          name: a.name,
+          kind: a.kind,
+          text: a.text,
+          path: a.path
+        }))
+        await window.api.addRagMessage(
+          convId,
+          'user',
+          trimmed,
+          attMeta.length ? { attachments: attMeta } : undefined
+        )
       }
     } catch (e) {
-      console.error('Failed to persist user message:', e);
+      console.error('Failed to persist user message:', e)
     }
 
     // Catalogue attached inputs (files / pasted text) as artifacts of this chat &
@@ -819,9 +1155,29 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         if (a.kind === 'image' && a.path) {
           // Best-effort cataloguing: handle the async rejection with .catch (a try/catch
           // can't catch a floating promise's rejection — S4822).
-          void window.api.saveArtifact({ kind: 'image', code: a.path, title: a.name, conversationId: convId, projectId: projectId }).catch(() => { /* ignore */ });
+          void window.api
+            .saveArtifact({
+              kind: 'image',
+              code: a.path,
+              title: a.name,
+              conversationId: convId,
+              projectId: projectId
+            })
+            .catch(() => {
+              /* ignore */
+            })
         } else if (a.text) {
-          void window.api.saveArtifact({ kind: 'text', code: a.text, title: a.name, conversationId: convId, projectId: projectId }).catch(() => { /* ignore */ });
+          void window.api
+            .saveArtifact({
+              kind: 'text',
+              code: a.text,
+              title: a.name,
+              conversationId: convId,
+              projectId: projectId
+            })
+            .catch(() => {
+              /* ignore */
+            })
         }
       }
     }
@@ -832,18 +1188,18 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     // route is SUPPRESSED when the agentic tools/connectors path owns the turn:
     // there, image generation is a tool the model calls, so the renderer must not
     // pre-decide (that double decision hijacked "draw ..." away from the tool loop).
-    const agenticActive = (toolsOn || connectorsOn) && !projectId;
-    const autoImage = shouldAutoRouteImage({ mode, imageAvailable, agenticActive, text: trimmed });
+    const agenticActive = (toolsOn || connectorsOn) && !projectId
+    const autoImage = shouldAutoRouteImage({ mode, imageAvailable, agenticActive, text: trimmed })
     if (mode === 'image' || autoImage) {
-      setImgProgress(null);
-      setImageGenConv(convId);
+      setImgProgress(null)
+      setImageGenConv(convId)
       try {
-        const seedNum = imgSeed.trim() === '' ? -1 : parseInt(imgSeed, 10);
-        const styleObj = STYLE_PRESETS.find(s => s.name === activeStyle);
+        const seedNum = imgSeed.trim() === '' ? -1 : parseInt(imgSeed, 10)
+        const styleObj = STYLE_PRESETS.find((s) => s.name === activeStyle)
         // In explicit image mode keep the exact prompt (+ any chosen style); on
         // auto-route strip the "draw/generate an image of" phrasing to the subject.
-        const basePrompt = mode === 'image' ? trimmed : cleanImagePrompt(trimmed);
-        const fullPrompt = styleObj ? `${basePrompt}, ${styleObj.prompt}` : basePrompt;
+        const basePrompt = mode === 'image' ? trimmed : cleanImagePrompt(trimmed)
+        const fullPrompt = styleObj ? `${basePrompt}, ${styleObj.prompt}` : basePrompt
         const img = await window.api.generateImage({
           prompt: fullPrompt,
           negativePrompt: imgNegative.trim() || undefined,
@@ -855,402 +1211,637 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           initImage: imgInit || undefined,
           strength: imgInit ? imgStrength : undefined,
           conversationId: convId, // the turn's own conversation (activeConversationId can lag for a fresh/queued chat)
-          projectId: projectId,
-        });
+          projectId: projectId
+        })
         const assistantMessage: ChatMessage = {
           id: `a-${Date.now()}`,
           role: 'assistant',
           content: `Generated for: ${trimmed}`,
           image: img.dataUrl,
-          imagePath: img.path,
-        };
-        setConvMessages(convId, prev => [...prev, assistantMessage]);
+          imagePath: img.path
+        }
+        setConvMessages(convId, (prev) => [...prev, assistantMessage])
         try {
-          await window.api.addRagMessage(convId, 'assistant', `Generated for: ${trimmed}`, { image: img.path });
-        } catch (_) { /* ignore */ }
+          await window.api.addRagMessage(convId, 'assistant', `Generated for: ${trimmed}`, {
+            image: img.path
+          })
+        } catch (_) {
+          /* ignore */
+        }
       } catch (e) {
-        const errorContent = (e as Error).message || 'Image generation failed.';
+        const errorContent = (e as Error).message || 'Image generation failed.'
         // User-cancelled: just drop the loading state, no error bubble.
         if (!/cancel/i.test(errorContent)) {
-          console.error('Image generation failed', e);
-          setConvMessages(convId, prev => [...prev, { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }]);
+          console.error('Image generation failed', e)
+          setConvMessages(convId, (prev) => [
+            ...prev,
+            { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }
+          ])
           try {
-            await window.api.addRagMessage(convId, 'assistant', errorContent);
-          } catch (_) { /* ignore */ }
+            await window.api.addRagMessage(convId, 'assistant', errorContent)
+          } catch (_) {
+            /* ignore */
+          }
         }
       } finally {
-        markGenerating(convId, false);
-        setLoading(false);
-        setImgProgress(null);
-        setImageGenConv((c) => (c === convId ? null : c));
-        await loadConversations();
-        drainQueue(convId);
+        markGenerating(convId, false)
+        setLoading(false)
+        setImgProgress(null)
+        setImageGenConv((c) => (c === convId ? null : c))
+        await loadConversations()
+        drainQueue(convId)
       }
-      return;
+      return
     }
 
-    let activeStreamId: string | undefined;
+    let activeStreamId: string | undefined
     try {
       // History is built from the TARGET conversation's own messages (never the
       // active tab's `messages`) — a drained-queue or background send is bound to
       // `convId`, so its history must come from that conversation (D8).
-      const history = buildSendHistory(messagesByConv[convId] ?? EMPTY_MSGS, !!regen, trimmed);
+      const history = buildSendHistory(messagesByConv[convId] ?? EMPTY_MSGS, !!regen, trimmed)
 
       // Agentic tools path (opt-in, non-project). The model calls built-in tools,
       // plus (when Connectors is on) MCP connector tools. STREAMS like the RAG path:
       // a streamId placeholder fills in live - thinking, then each tool-call activity
       // step, then the answer - and the stop button aborts it via rag:cancel.
       if (agenticActive) {
-        if (cancelledRef.current.has(convId)) return;
-        const toolStreamId = `a-${Date.now()}`;
-        activeStreamId = toolStreamId;
-        streamConvRef.current.set(toolStreamId, convId!);
-        setConvMessages(convId, prev => [...prev, { id: toolStreamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
-        const tr = await window.api.toolChat(modelQuery, history, { connectors: connectorsOn, conversationId: convId, images: imagePaths, imageAvailable, streamId: toolStreamId, thinking: thinkingEnabled });
-        const toolCalls = (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({ name: c.name, result: c.result }));
-        const context = tr?.unified?.length ? { unified: tr.unified } : undefined;
+        if (cancelledRef.current.has(convId)) return
+        const toolStreamId = `a-${Date.now()}`
+        activeStreamId = toolStreamId
+        streamConvRef.current.set(toolStreamId, convId!)
+        setConvMessages(convId, (prev) => [
+          ...prev,
+          { id: toolStreamId, role: 'assistant', content: '', reasoning: '', streaming: true }
+        ])
+        const tr = await window.api.toolChat(modelQuery, history, {
+          connectors: connectorsOn,
+          conversationId: convId,
+          images: imagePaths,
+          imageAvailable,
+          streamId: toolStreamId,
+          thinking: thinkingEnabled
+        })
+        const toolCalls = (tr?.toolCalls || []).map((c: { name: string; result: string }) => ({
+          name: c.name,
+          result: c.result
+        }))
+        const context = tr?.unified?.length ? { unified: tr.unified } : undefined
         // Persist the citation sources + tool calls so they survive a reload.
-        const toolCtx = (tr?.unified?.length || toolCalls.length) ? { unified: tr?.unified ?? [], toolCalls } : undefined;
+        const toolCtx =
+          tr?.unified?.length || toolCalls.length
+            ? { unified: tr?.unified ?? [], toolCalls }
+            : undefined
         if (cancelledRef.current.has(convId)) {
-          const partial = (tr?.answer || '').trim();
+          const partial = (tr?.answer || '').trim()
           if (partial) {
-            setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, content: partial, context, toolCalls, activity: undefined, streaming: false } : m)));
-            try { await window.api.addRagMessage(convId, 'assistant', partial, toolCtx); } catch { /* ignore */ }
+            setConvMessages(convId, (prev) =>
+              prev.map((m) =>
+                m.id === toolStreamId
+                  ? {
+                      ...m,
+                      content: partial,
+                      context,
+                      toolCalls,
+                      activity: undefined,
+                      streaming: false
+                    }
+                  : m
+              )
+            )
+            try {
+              await window.api.addRagMessage(convId, 'assistant', partial, toolCtx)
+            } catch {
+              /* ignore */
+            }
           } else {
-            setConvMessages(convId, prev => prev.filter(m => m.id !== toolStreamId));
+            setConvMessages(convId, (prev) => prev.filter((m) => m.id !== toolStreamId))
           }
-          return;
+          return
         }
-        const answer = tr?.answer || 'No response returned.';
+        const answer = tr?.answer || 'No response returned.'
         // Reasoning read from the ref (populated as it streamed) — deterministic,
         // unlike reading it out of the setConvMessages updater. Rides the persisted
         // context blob so the 'Thinking' block survives reload (T1f).
-        const toolReasoning = reasoningByStream.current[toolStreamId];
-        delete reasoningByStream.current[toolStreamId]; // done with this stream — free it
+        const toolReasoning = reasoningByStream.current[toolStreamId]
+        delete reasoningByStream.current[toolStreamId] // done with this stream — free it
         // Finalize the streamed placeholder in place (never append a second bubble).
-        setConvMessages(convId, prev => prev.map(m => (
-          m.id === toolStreamId ? { ...m, content: answer, context, toolCalls, activity: undefined, streaming: false } : m
-        )));
-        const toolCtxWithReasoning = buildAssistantContext(toolCtx, { reasoning: toolReasoning });
-        if (voiceMode) setAutoPlayId(toolStreamId);
+        setConvMessages(convId, (prev) =>
+          prev.map((m) =>
+            m.id === toolStreamId
+              ? { ...m, content: answer, context, toolCalls, activity: undefined, streaming: false }
+              : m
+          )
+        )
+        const toolCtxWithReasoning = buildAssistantContext(toolCtx, { reasoning: toolReasoning })
+        if (voiceMode) setAutoPlayId(toolStreamId)
         // Deferred image generation: the tool loop only RECORDS the prompt (it never
         // generates inline, which would evict the LLM). Generate + attach here AFTER
         // the text turn - same path as the ```image fence block below.
-        if (tr?.imageRequest?.prompt && window.api.generateImage && !cancelledRef.current.has(convId)) {
+        if (
+          tr?.imageRequest?.prompt &&
+          window.api.generateImage &&
+          !cancelledRef.current.has(convId)
+        ) {
           try {
-            const img = await window.api.generateImage({ prompt: tr.imageRequest.prompt, conversationId: convId, projectId: projectId });
-            setConvMessages(convId, prev => prev.map(m => (m.id === toolStreamId ? { ...m, image: img.dataUrl, imagePath: img.path } : m)));
-            try { await window.api.addRagMessage(convId, 'assistant', answer, { ...(toolCtxWithReasoning ?? {}), image: img.path }); } catch (_) { /* ignore */ }
+            const img = await window.api.generateImage({
+              prompt: tr.imageRequest.prompt,
+              conversationId: convId,
+              projectId: projectId
+            })
+            setConvMessages(convId, (prev) =>
+              prev.map((m) =>
+                m.id === toolStreamId ? { ...m, image: img.dataUrl, imagePath: img.path } : m
+              )
+            )
+            try {
+              await window.api.addRagMessage(convId, 'assistant', answer, {
+                ...(toolCtxWithReasoning ?? {}),
+                image: img.path
+              })
+            } catch (_) {
+              /* ignore */
+            }
           } catch (e) {
             // Persist the TEXT answer regardless of why the image failed — including
             // a cancel. The text turn already finished and is on screen; a cancelled
             // (or failed) IMAGE must not drop it, or it vanishes on reload (D12). Only
             // the image is lost.
-            void e;
-            try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtxWithReasoning); } catch (_) { /* ignore */ }
+            void e
+            try {
+              await window.api.addRagMessage(convId, 'assistant', answer, toolCtxWithReasoning)
+            } catch (_) {
+              /* ignore */
+            }
           }
-          return;
+          return
         }
-        try { await window.api.addRagMessage(convId, 'assistant', answer, toolCtxWithReasoning); } catch (_) { /* ignore */ }
-        return;
+        try {
+          await window.api.addRagMessage(convId, 'assistant', answer, toolCtxWithReasoning)
+        } catch (_) {
+          /* ignore */
+        }
+        return
       }
 
       // User stopped during the pre-stream window (persisting the turn, waiting for the
       // model) — don't open a stream at all.
-      if (cancelledRef.current.has(convId)) return;
+      if (cancelledRef.current.has(convId)) return
 
       // Placeholder message that fills in live as tokens/reasoning stream in
       // (matched by streamId in the onRagStream subscription).
-      const streamId = `a-${Date.now()}`;
-      activeStreamId = streamId; // expose to finally for cleanup
-      streamConvRef.current.set(streamId, convId!);
-      setConvMessages(convId, prev => [...prev, { id: streamId, role: 'assistant', content: '', reasoning: '', streaming: true }]);
-      const result = await window.api.ragChat(modelQuery, 'All', history, projectId, convId, noMemory && !projectId, streamId, thinkingEnabled, imagePaths);
+      const streamId = `a-${Date.now()}`
+      activeStreamId = streamId // expose to finally for cleanup
+      streamConvRef.current.set(streamId, convId!)
+      setConvMessages(convId, (prev) => [
+        ...prev,
+        { id: streamId, role: 'assistant', content: '', reasoning: '', streaming: true }
+      ])
+      const result = await window.api.ragChat(
+        modelQuery,
+        'All',
+        history,
+        projectId,
+        convId,
+        noMemory && !projectId,
+        streamId,
+        thinkingEnabled,
+        imagePaths
+      )
 
       // Stopped mid-stream: the abort keeps whatever streamed so far. Finalize the
       // partial text if any arrived; otherwise drop the empty placeholder. Never write
       // the "No response returned." filler or a fresh bubble for a cancelled turn.
       if (cancelledRef.current.has(convId)) {
-        const partial = (result.answer || '').trim();
+        const partial = (result.answer || '').trim()
         if (partial) {
-          setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: partial, context: result.context, streaming: false } : m)));
-          try { await window.api.addRagMessage(convId, 'assistant', partial, result.context); } catch { /* ignore */ }
+          setConvMessages(convId, (prev) =>
+            prev.map((m) =>
+              m.id === streamId
+                ? { ...m, content: partial, context: result.context, streaming: false }
+                : m
+            )
+          )
+          try {
+            await window.api.addRagMessage(convId, 'assistant', partial, result.context)
+          } catch {
+            /* ignore */
+          }
         } else {
-          setConvMessages(convId, prev => prev.filter(m => m.id !== streamId));
+          setConvMessages(convId, (prev) => prev.filter((m) => m.id !== streamId))
         }
-        return;
+        return
       }
-      const assistantContent = result.answer || 'No response returned.';
+      const assistantContent = result.answer || 'No response returned.'
 
       // The model decided this is an image request — replace the streamed turn
       // with on-device generation.
-      const imgMatch = assistantContent.match(/```image\s*\n([\s\S]*?)```/i);
+      const imgMatch = assistantContent.match(/```image\s*\n([\s\S]*?)```/i)
       if (imgMatch && window.api.generateImage) {
-        const imgPrompt = imgMatch[1]!.trim();
-        setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: 'Generating image…', reasoning: undefined, streaming: false } : m)));
+        const imgPrompt = imgMatch[1]!.trim()
+        setConvMessages(convId, (prev) =>
+          prev.map((m) =>
+            m.id === streamId
+              ? { ...m, content: 'Generating image…', reasoning: undefined, streaming: false }
+              : m
+          )
+        )
         try {
-          const img = await window.api.generateImage({ prompt: imgPrompt, conversationId: convId, projectId: projectId });
-          setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: `Generated: ${imgPrompt.slice(0, 80)}`, image: img.dataUrl, imagePath: img.path } : m)));
-          try { await window.api.addRagMessage(convId, 'assistant', `Generated: ${imgPrompt.slice(0, 80)}`, { image: img.path }); } catch (_) { /* ignore */ }
+          const img = await window.api.generateImage({
+            prompt: imgPrompt,
+            conversationId: convId,
+            projectId: projectId
+          })
+          setConvMessages(convId, (prev) =>
+            prev.map((m) =>
+              m.id === streamId
+                ? {
+                    ...m,
+                    content: `Generated: ${imgPrompt.slice(0, 80)}`,
+                    image: img.dataUrl,
+                    imagePath: img.path
+                  }
+                : m
+            )
+          )
+          try {
+            await window.api.addRagMessage(
+              convId,
+              'assistant',
+              `Generated: ${imgPrompt.slice(0, 80)}`,
+              { image: img.path }
+            )
+          } catch (_) {
+            /* ignore */
+          }
         } catch (err) {
-          const msg = (err as Error).message || 'Image generation failed.';
-          if (!/cancel/i.test(msg)) setConvMessages(convId, prev => prev.map(m => (m.id === streamId ? { ...m, content: msg, streaming: false } : m)));
+          const msg = (err as Error).message || 'Image generation failed.'
+          if (!/cancel/i.test(msg))
+            setConvMessages(convId, (prev) =>
+              prev.map((m) => (m.id === streamId ? { ...m, content: msg, streaming: false } : m))
+            )
         }
       } else {
         // Finalize the streamed message — set authoritative text + context, clear streaming.
         // If this was a regenerate, keep the prior answer(s) as navigable variants.
-        const priorVariants = pendingVariantsRef.current;
-        pendingVariantsRef.current = null;
-        const allVariants = priorVariants ? [...priorVariants, assistantContent] : undefined;
+        const priorVariants = pendingVariantsRef.current
+        pendingVariantsRef.current = null
+        const allVariants = priorVariants ? [...priorVariants, assistantContent] : undefined
         // Reasoning from the ref (populated as it streamed) — deterministic read, not
         // a setState-updater side effect. Rides the persisted context blob (T1f).
-        const ragReasoning = reasoningByStream.current[streamId];
-        delete reasoningByStream.current[streamId]; // done with this stream — free it
-        setConvMessages(convId, prev => prev.map(m => (
-          m.id === streamId
-            ? { ...m, content: assistantContent, context: result.context, streaming: false, variants: allVariants, variantIndex: allVariants ? allVariants.length - 1 : undefined }
-            : m
-        )));
-        const art = parseArtifact(assistantContent);
+        const ragReasoning = reasoningByStream.current[streamId]
+        delete reasoningByStream.current[streamId] // done with this stream — free it
+        setConvMessages(convId, (prev) =>
+          prev.map((m) =>
+            m.id === streamId
+              ? {
+                  ...m,
+                  content: assistantContent,
+                  context: result.context,
+                  streaming: false,
+                  variants: allVariants,
+                  variantIndex: allVariants ? allVariants.length - 1 : undefined
+                }
+              : m
+          )
+        )
+        const art = parseArtifact(assistantContent)
         if (art) {
           // Inline-first: don't force the canvas open — the user opens the live
           // preview via the artifact card when they want it. Still save it, scoped
           // to this chat + project so the gallery can filter.
-          void window.api.saveArtifact({ kind: art.kind, code: art.code, conversationId: convId, projectId: projectId }).catch(() => { /* ignore */ });
+          void window.api
+            .saveArtifact({
+              kind: art.kind,
+              code: art.code,
+              conversationId: convId,
+              projectId: projectId
+            })
+            .catch(() => {
+              /* ignore */
+            })
         }
-        if (voiceMode) setAutoPlayId(streamId);
+        if (voiceMode) setAutoPlayId(streamId)
         try {
-          await window.api.addRagMessage(convId, 'assistant', assistantContent, buildAssistantContext(result.context, { reasoning: ragReasoning }));
+          await window.api.addRagMessage(
+            convId,
+            'assistant',
+            assistantContent,
+            buildAssistantContext(result.context, { reasoning: ragReasoning })
+          )
         } catch (e) {
-          console.error('Failed to persist assistant message:', e);
+          console.error('Failed to persist assistant message:', e)
         }
       }
     } catch (e) {
       // User stopped: no error bubble — drop the empty placeholder (any partial text
       // was already finalized on the cancel path above).
       if (cancelledRef.current.has(convId)) {
-        const sid = activeStreamId;
-        if (sid) setConvMessages(convId, prev => prev.filter(m => !(m.id === sid && !m.content && !m.reasoning)));
-        return;
+        const sid = activeStreamId
+        if (sid)
+          setConvMessages(convId, (prev) =>
+            prev.filter((m) => !(m.id === sid && !m.content && !m.reasoning))
+          )
+        return
       }
-      console.error('RAG chat failed', e);
-      const errorContent = 'Sorry, something went wrong while generating a response.';
+      console.error('RAG chat failed', e)
+      const errorContent = 'Sorry, something went wrong while generating a response.'
       // Update the streaming placeholder to show the error — never append a second bubble.
-      const sid = activeStreamId;
-      setConvMessages(convId, prev => {
-        const hasPlaceholder = sid && prev.some(m => m.id === sid);
-        if (hasPlaceholder) return prev.map(m => m.id === sid ? { ...m, content: errorContent, activity: undefined, streaming: false } : m);
-        return [...prev, { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }];
-      });
+      const sid = activeStreamId
+      setConvMessages(convId, (prev) => {
+        const hasPlaceholder = sid && prev.some((m) => m.id === sid)
+        if (hasPlaceholder)
+          return prev.map((m) =>
+            m.id === sid
+              ? { ...m, content: errorContent, activity: undefined, streaming: false }
+              : m
+          )
+        return [...prev, { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }]
+      })
       try {
-        await window.api.addRagMessage(convId, 'assistant', errorContent);
-      } catch (_) { /* ignore */ }
+        await window.api.addRagMessage(convId, 'assistant', errorContent)
+      } catch (_) {
+        /* ignore */
+      }
     } finally {
-      cancelledRef.current.delete(convId);
-      markGenerating(convId, false);
-      setLoading(false);
-      await loadConversations();
-      drainQueue(convId);
-      if (activeStreamId) streamConvRef.current.delete(activeStreamId);
+      cancelledRef.current.delete(convId)
+      markGenerating(convId, false)
+      setLoading(false)
+      await loadConversations()
+      drainQueue(convId)
+      if (activeStreamId) streamConvRef.current.delete(activeStreamId)
     }
-  };
+  }
 
   // Pull the next queued message for THIS conversation (sent while it was generating)
   // and send it — bound to its own conversation, never the active tab.
   const drainQueue = (convId: string): void => {
-    const { item, next } = dequeue(queuedRef.current, convId);
-    queuedRef.current = next;
-    setQueuedByConv({ ...next });
-    if (item === undefined) return;
-    setTimeout(() => { void sendMessage(item.text || ' ', { atts: item.atts, conversationId: convId }); }, 30);
-  };
+    const { item, next } = dequeue(queuedRef.current, convId)
+    queuedRef.current = next
+    setQueuedByConv({ ...next })
+    if (item === undefined) return
+    setTimeout(() => {
+      void sendMessage(item.text || ' ', { atts: item.atts, conversationId: convId })
+    }, 30)
+  }
 
   // Stop the in-flight generation for a conversation: abort the model stream (main
   // keeps whatever streamed so far) or the image job, drop any queued follow-ups, and
   // return the UI to idle now. The in-flight sendMessage sees cancelledRef and bails at
   // its next await; this handles both the pre-stream ("Searching your memory…") window
   // and a live token stream.
-  const stopGeneration = useCallback((cid: string | null): void => {
-    const convId = cid ?? activeConversationId;
-    if (!convId) return;
-    cancelledRef.current.add(convId);
-    const streamingId = (messagesByConv[convId] ?? []).find(m => m.streaming)?.id;
-    if (streamingId) window.api.cancelRag(streamingId);
-    if (queuedRef.current[convId]?.length) {
-      queuedRef.current = clearQueue(queuedRef.current, convId);
-      setQueuedByConv({ ...queuedRef.current });
-    }
-    markGenerating(convId, false);
-    // Cancel + clear the image job ONLY if THIS conversation owns it, so stopping
-    // one conversation never kills another's in-flight image (D9). imgProgress is a
-    // shared stream buffer — clear it too when the owner stops.
-    if (imageGenConv === convId) {
-      window.api.cancelImageGen?.();
-      setImageGenConv(null);
-      setImgProgress(null);
-    }
-    // `loading` is the foreground send-flag; clear it when stopping the conversation
-    // on screen (the only conversation whose composer is visible).
-    if (convId === activeConversationId) setLoading(false);
-  }, [activeConversationId, messagesByConv, markGenerating, imageGenConv]);
+  const stopGeneration = useCallback(
+    (cid: string | null): void => {
+      const convId = cid ?? activeConversationId
+      if (!convId) return
+      cancelledRef.current.add(convId)
+      const streamingId = (messagesByConv[convId] ?? []).find((m) => m.streaming)?.id
+      if (streamingId) window.api.cancelRag(streamingId)
+      if (queuedRef.current[convId]?.length) {
+        queuedRef.current = clearQueue(queuedRef.current, convId)
+        setQueuedByConv({ ...queuedRef.current })
+      }
+      markGenerating(convId, false)
+      // Cancel + clear the image job ONLY if THIS conversation owns it, so stopping
+      // one conversation never kills another's in-flight image (D9). imgProgress is a
+      // shared stream buffer — clear it too when the owner stops.
+      if (imageGenConv === convId) {
+        window.api.cancelImageGen?.()
+        setImageGenConv(null)
+        setImgProgress(null)
+      }
+      // `loading` is the foreground send-flag; clear it when stopping the conversation
+      // on screen (the only conversation whose composer is visible).
+      if (convId === activeConversationId) setLoading(false)
+    },
+    [activeConversationId, messagesByConv, markGenerating, imageGenConv]
+  )
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Slash skill autocomplete: while typing "/name" (before any space), Tab —
     // or Enter on a not-yet-complete name — fills in the top matching skill.
-    const sq = input.startsWith('/') && !/\s/.test(input) ? input.slice(1).toLowerCase() : null;
+    const sq = input.startsWith('/') && !/\s/.test(input) ? input.slice(1).toLowerCase() : null
     if (sq !== null) {
-      const matches = skills.filter(s => s.name.toLowerCase().includes(sq));
-      const exact = skills.some(s => s.name.toLowerCase() === sq);
+      const matches = skills.filter((s) => s.name.toLowerCase().includes(sq))
+      const exact = skills.some((s) => s.name.toLowerCase() === sq)
       if (matches.length > 0 && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !exact))) {
-        e.preventDefault();
-        setInput(`/${matches[0]!.name} `); // matches.length > 0
-        inputRef.current?.focus();
-        return;
+        e.preventDefault()
+        setInput(`/${matches[0]!.name} `) // matches.length > 0
+        inputRef.current?.focus()
+        return
       }
     }
     if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
+      e.preventDefault()
       // Don't send while an attachment is still processing — it would be dropped.
-      if (attachments.some(a => a.status === 'loading')) return;
-      sendMessage();
+      if (attachments.some((a) => a.status === 'loading')) return
+      sendMessage()
     }
-  };
+  }
 
   // Voice input: record from the mic, transcribe on-device with whisper, then
   // drop the text into the input for review (not auto-sent).
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      const startedAt = Date.now();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      chunksRef.current = []
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data)
+      }
+      const startedAt = Date.now()
       recorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        if (blob.size === 0) return;
-        setTranscribing(true);
+        stream.getTracks().forEach((t) => t.stop())
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        if (blob.size === 0) return
+        setTranscribing(true)
         try {
-          const bytes = new Uint8Array(await blob.arrayBuffer());
-          const text = await window.api.transcribeAudio(bytes, 'webm');
-          const clean = (text || '').trim();
+          const bytes = new Uint8Array(await blob.arrayBuffer())
+          const text = await window.api.transcribeAudio(bytes, 'webm')
+          const clean = (text || '').trim()
           if (voiceMode) {
             // Voice mode: send the spoken note straight away, keeping the recording
             // so the user's bubble plays back their own audio.
-            if (!clean) return;
-            const url = URL.createObjectURL(blob);
-            void sendMessage(clean, { voiceClip: { url, duration: (Date.now() - startedAt) / 1000 } });
+            if (!clean) return
+            const url = URL.createObjectURL(blob)
+            void sendMessage(clean, {
+              voiceClip: { url, duration: (Date.now() - startedAt) / 1000 }
+            })
           } else if (clean) {
-            setInput(prev => (prev ? prev + ' ' : '') + clean);
+            setInput((prev) => (prev ? prev + ' ' : '') + clean)
           }
         } catch (err) {
-          console.error('Transcription failed', err);
+          console.error('Transcription failed', err)
         } finally {
-          setTranscribing(false);
+          setTranscribing(false)
         }
-      };
-      recorder.start();
-      recorderRef.current = recorder;
-      setRecording(true);
+      }
+      recorder.start()
+      recorderRef.current = recorder
+      setRecording(true)
     } catch (err) {
-      console.error('Mic access failed', err);
-      setRecording(false);
+      console.error('Mic access failed', err)
+      setRecording(false)
     }
-  };
+  }
 
   const stopRecording = () => {
-    recorderRef.current?.stop();
-    recorderRef.current = null;
-    setRecording(false);
-  };
+    recorderRef.current?.stop()
+    recorderRef.current = null
+    setRecording(false)
+  }
 
-  const toggleRecording = () => { recording ? stopRecording() : startRecording(); };
+  const toggleRecording = () => {
+    recording ? stopRecording() : startRecording()
+  }
 
   // Voice output: synthesize a message on-device (Kokoro) and play it. Toggling
   // the same message stops playback.
-  const speakMessage = useCallback(async (id: string, text: string) => {
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    // Toggle off if this message is already loading or playing.
-    if (speakingId === id || speakLoadingId === id) { setSpeakingId(null); setSpeakLoadingId(null); return; }
-    setSpeakLoadingId(id); // generating on-device — show a loading state
-    try {
-      const { dataUrl } = await window.api.speak(text);
-      if (!dataUrl) throw new Error('empty dataUrl');
-      const audio = new Audio(dataUrl);
-      audioRef.current = audio;
-      audio.onended = () => { setSpeakingId(cur => (cur === id ? null : cur)); audioRef.current = null; };
-      audio.onerror = () => { console.error('[tts] audio element error', audio.error); setSpeakingId(cur => (cur === id ? null : cur)); setSpeakLoadingId(cur => (cur === id ? null : cur)); };
-      await audio.play();
-      setSpeakLoadingId(cur => (cur === id ? null : cur));
-      setSpeakingId(id); // now actually speaking
-    } catch (e) {
-      console.error('[tts] failed', e);
-      setSpeakLoadingId(cur => (cur === id ? null : cur));
-      setSpeakingId(cur => (cur === id ? null : cur));
-    }
-  }, [speakingId, speakLoadingId]);
+  const speakMessage = useCallback(
+    async (id: string, text: string) => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+      // Toggle off if this message is already loading or playing.
+      if (speakingId === id || speakLoadingId === id) {
+        setSpeakingId(null)
+        setSpeakLoadingId(null)
+        return
+      }
+      setSpeakLoadingId(id) // generating on-device — show a loading state
+      try {
+        const { dataUrl } = await window.api.speak(text)
+        if (!dataUrl) throw new Error('empty dataUrl')
+        const audio = new Audio(dataUrl)
+        audioRef.current = audio
+        audio.onended = () => {
+          setSpeakingId((cur) => (cur === id ? null : cur))
+          audioRef.current = null
+        }
+        audio.onerror = () => {
+          console.error('[tts] audio element error', audio.error)
+          setSpeakingId((cur) => (cur === id ? null : cur))
+          setSpeakLoadingId((cur) => (cur === id ? null : cur))
+        }
+        await audio.play()
+        setSpeakLoadingId((cur) => (cur === id ? null : cur))
+        setSpeakingId(id) // now actually speaking
+      } catch (e) {
+        console.error('[tts] failed', e)
+        setSpeakLoadingId((cur) => (cur === id ? null : cur))
+        setSpeakingId((cur) => (cur === id ? null : cur))
+      }
+    },
+    [speakingId, speakLoadingId]
+  )
 
   const refreshGallery = useCallback(async () => {
-    const scope = galleryScope === 'chat' ? { conversationId: activeConversationId || '__none__' }
-      : galleryScope === 'project' ? { projectId: activeProjectId }
-      : undefined;
-    try { setGallery((await window.api.listGeneratedImages?.(scope)) || []); } catch (e) { console.error(e); }
-    try { setArtifacts(await window.api.listArtifacts(scope)); } catch (e) { console.error(e); }
-  }, [galleryScope, activeConversationId, activeProjectId]);
+    const scope =
+      galleryScope === 'chat'
+        ? { conversationId: activeConversationId || '__none__' }
+        : galleryScope === 'project'
+          ? { projectId: activeProjectId }
+          : undefined
+    try {
+      setGallery((await window.api.listGeneratedImages?.(scope)) || [])
+    } catch (e) {
+      console.error(e)
+    }
+    try {
+      setArtifacts(await window.api.listArtifacts(scope))
+    } catch (e) {
+      console.error(e)
+    }
+  }, [galleryScope, activeConversationId, activeProjectId])
 
   // Reload the gallery's artifacts whenever the scope changes while it's open.
-  useEffect(() => { if (showGallery) void refreshGallery(); }, [galleryScope, showGallery, refreshGallery]);
+  useEffect(() => {
+    if (showGallery) void refreshGallery()
+  }, [galleryScope, showGallery, refreshGallery])
 
   const deleteArtifact = useCallback(async (id: string) => {
     try {
-      await window.api.deleteArtifact(id);
-      setArtifacts(prev => prev.filter(a => a.id !== id));
-    } catch (e) { console.error(e); }
-  }, []);
+      await window.api.deleteArtifact(id)
+      setArtifacts((prev) => prev.filter((a) => a.id !== id))
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
 
   // Right-side panels are mutually exclusive — opening one closes the others so
   // they never overlap (one common docked panel slot).
   const closePanels = useCallback(() => {
-    setCanvasArtifact(null); setSkillsOpen(false); setSettingsOpen(false); setViewer(null); setShowGallery(false); setModelPickerOpen(false);
-  }, []);
-  const openCanvas = useCallback((a: Artifact) => { closePanels(); setCanvasArtifact(a); }, [closePanels]);
+    setCanvasArtifact(null)
+    setSkillsOpen(false)
+    setSettingsOpen(false)
+    setViewer(null)
+    setShowGallery(false)
+    setModelPickerOpen(false)
+  }, [])
+  const openCanvas = useCallback(
+    (a: Artifact) => {
+      closePanels()
+      setCanvasArtifact(a)
+    },
+    [closePanels]
+  )
 
   const openGallery = useCallback(() => {
-    if (showGallery) { setShowGallery(false); return; }
+    if (showGallery) {
+      setShowGallery(false)
+      return
+    }
     // Default the scope to the current context: a project → that project's items,
     // otherwise this chat's items. (User can switch to All.)
-    setGalleryScope(activeProjectId ? 'project' : 'chat');
+    setGalleryScope(activeProjectId ? 'project' : 'chat')
     // Close the OTHER panels (closePanels also clears showGallery), then open —
     // setShowGallery(true) runs last so it wins. The scope effect refreshes.
-    closePanels(); setShowGallery(true);
-  }, [showGallery, activeProjectId, closePanels]);
+    closePanels()
+    setShowGallery(true)
+  }, [showGallery, activeProjectId, closePanels])
 
   const downloadImage = useCallback(async (path?: string, name?: string) => {
-    if (!path) return;
-    try { await window.api.exportGeneratedImage?.(path, name || 'off-grid-image.png'); } catch (e) { console.error(e); }
-  }, []);
+    if (!path) return
+    try {
+      await window.api.exportGeneratedImage?.(path, name || 'off-grid-image.png')
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
 
   const deleteImage = useCallback(async (path?: string) => {
-    if (!path) return;
+    if (!path) return
     try {
-      await window.api.deleteGeneratedImage?.(path);
-      setMessages(prev => prev.map(m => (m.imagePath === path ? { ...m, image: undefined, imagePath: undefined, content: m.content + '  (deleted)' } : m)));
-      setGallery(prev => prev.filter(g => g.path !== path));
-      setLightbox(null);
-    } catch (e) { console.error(e); }
-  }, []);
+      await window.api.deleteGeneratedImage?.(path)
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.imagePath === path
+            ? { ...m, image: undefined, imagePath: undefined, content: m.content + '  (deleted)' }
+            : m
+        )
+      )
+      setGallery((prev) => prev.filter((g) => g.path !== path))
+      setLightbox(null)
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
 
   // Auto-grow the composer with its content, up to a cap (then it scrolls).
   useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 208)}px`;
-  }, [input]);
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 208)}px`
+  }, [input])
 
   useEffect(() => {
-    window.api.listSkills().then(s => setSkills(s)).catch(() => {});
-  }, []);
+    window.api
+      .listSkills()
+      .then((s) => setSkills(s))
+      .catch(() => {})
+  }, [])
 
   // Live streaming: route token/reasoning events to the in-flight assistant
   // message (matched by streamId === message id) so it fills in as it generates.
@@ -1258,143 +1849,212 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
   // [] effect because it captures activeConversationId at mount time.
   useEffect(() => {
     const off = window.api.onRagStream((data) => {
-      const cid = streamConvRef.current.get(data.streamId);
-      if (!cid) return;
+      const cid = streamConvRef.current.get(data.streamId)
+      if (!cid) return
       // Mirror reasoning into a ref as it streams, so persistence can read it
       // deterministically (not via a state-updater side effect). Rendering still
       // uses message.reasoning below; this is the durable source for the saved blob.
       if (data.type === 'reasoning') {
-        reasoningByStream.current[data.streamId] = (reasoningByStream.current[data.streamId] || '') + (data.text || '');
+        reasoningByStream.current[data.streamId] =
+          (reasoningByStream.current[data.streamId] || '') + (data.text || '')
       }
-      setConvMessages(cid, prev => prev.map(m => {
-        if (m.id !== data.streamId || !m.streaming) return m;
-        if (data.type === 'content') return { ...m, content: (m.content || '') + (data.text || ''), activity: undefined };
-        if (data.type === 'reasoning') return { ...m, reasoning: (m.reasoning || '') + (data.text || '') };
-        // type is exhaustively 'content' | 'reasoning' | 'step' — this is the 'step' arm.
-        return { ...m, activity: data.step as ChatMessage['activity'] };
-      }));
-    });
-    return () => off();
-  }, [setConvMessages]);
+      setConvMessages(cid, (prev) =>
+        prev.map((m) => {
+          if (m.id !== data.streamId || !m.streaming) return m
+          if (data.type === 'content')
+            return { ...m, content: (m.content || '') + (data.text || ''), activity: undefined }
+          if (data.type === 'reasoning')
+            return { ...m, reasoning: (m.reasoning || '') + (data.text || '') }
+          // type is exhaustively 'content' | 'reasoning' | 'step' — this is the 'step' arm.
+          return { ...m, activity: data.step as ChatMessage['activity'] }
+        })
+      )
+    })
+    return () => off()
+  }, [setConvMessages])
 
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const copyText = useCallback((t: string, key?: string) => {
     // Electron's renderer navigator.clipboard is flaky (silent reject), so copy via
     // the main-process clipboard; fall back to navigator if the bridge is missing.
-    const api = window.api as { writeClipboardText?: (s: string) => Promise<boolean> };
-    if (api.writeClipboardText) void api.writeClipboardText(t).catch(() => { try { void navigator.clipboard.writeText(t); } catch { /* ignore */ } });
-    else { try { void navigator.clipboard.writeText(t); } catch (e) { console.error(e); } }
+    const api = window.api as { writeClipboardText?: (s: string) => Promise<boolean> }
+    if (api.writeClipboardText)
+      void api.writeClipboardText(t).catch(() => {
+        try {
+          void navigator.clipboard.writeText(t)
+        } catch {
+          /* ignore */
+        }
+      })
+    else {
+      try {
+        void navigator.clipboard.writeText(t)
+      } catch (e) {
+        console.error(e)
+      }
+    }
     // Brief "Copied" confirmation on the button that was pressed.
-    const k = key ?? 'copy';
-    setCopiedKey(k);
-    setTimeout(() => setCopiedKey(prev => (prev === k ? null : prev)), 1500);
-  }, []);
+    const k = key ?? 'copy'
+    setCopiedKey(k)
+    setTimeout(() => setCopiedKey((prev) => (prev === k ? null : prev)), 1500)
+  }, [])
 
   // Re-run the user prompt that produced (or precedes) a given message.
-  const regenerate = useCallback((messageId: string) => {
-    const idx = messages.findIndex(m => m.id === messageId);
-    if (idx < 0) return;
-    // Regenerating an assistant answer keeps prior answers as navigable variants.
-    const target = messages[idx]!; // idx >= 0 checked above
-    if (target.role === 'assistant' && target.content.trim()) {
-      pendingVariantsRef.current = target.variants && target.variants.length ? target.variants : [target.content];
-    }
-    // Walk back to the user turn that produced this answer.
-    for (let i = idx; i >= 0; i--) {
-      const mi = messages[i]!; // 0 <= i <= idx
-      if (mi.role === 'user') {
-        const content = mi.content;
-        // Drop everything after that user turn (the old answer) and re-run in
-        // place — no new user bubble. Also prune the persisted rows so reopening
-        // the chat doesn't show old answers stacked.
-        setMessages(prev => prev.slice(0, i + 1));
-        if (activeConversationId) void window.api.truncateRagMessages(activeConversationId, i + 1);
-        void sendMessage(content, { regen: true });
-        return;
+  const regenerate = useCallback(
+    (messageId: string) => {
+      const idx = messages.findIndex((m) => m.id === messageId)
+      if (idx < 0) return
+      // Regenerating an assistant answer keeps prior answers as navigable variants.
+      const target = messages[idx]! // idx >= 0 checked above
+      if (target.role === 'assistant' && target.content.trim()) {
+        pendingVariantsRef.current =
+          target.variants && target.variants.length ? target.variants : [target.content]
       }
-    }
-  }, [messages]);
+      // Walk back to the user turn that produced this answer.
+      for (let i = idx; i >= 0; i--) {
+        const mi = messages[i]! // 0 <= i <= idx
+        if (mi.role === 'user') {
+          const content = mi.content
+          // Drop everything after that user turn (the old answer) and re-run in
+          // place — no new user bubble. Also prune the persisted rows so reopening
+          // the chat doesn't show old answers stacked.
+          setMessages((prev) => prev.slice(0, i + 1))
+          if (activeConversationId) void window.api.truncateRagMessages(activeConversationId, i + 1)
+          void sendMessage(content, { regen: true })
+          return
+        }
+      }
+    },
+    [messages]
+  )
 
   // Edit a sent message: replace its text, drop everything after it, re-run.
-  const saveEdit = useCallback((id: string) => {
-    const text = editText.trim();
-    setEditingId(null);
-    if (!text) return;
-    const idx = messages.findIndex(m => m.id === id);
-    if (idx < 0) return;
-    setMessages(prev => prev.slice(0, idx + 1).map((m, i) => (i === idx ? { ...m, content: text } : m)));
-    // Persist the edit: drop the old user row + everything after, re-add the
-    // edited message, then regenerate the answer onto it.
-    const cid = activeConversationId;
-    if (cid) void window.api.truncateRagMessages(cid, idx).then(() => window.api.addRagMessage(cid, 'user', text));
-    void sendMessage(text, { regen: true });
-  }, [editText, messages, activeConversationId]);
+  const saveEdit = useCallback(
+    (id: string) => {
+      const text = editText.trim()
+      setEditingId(null)
+      if (!text) return
+      const idx = messages.findIndex((m) => m.id === id)
+      if (idx < 0) return
+      setMessages((prev) =>
+        prev.slice(0, idx + 1).map((m, i) => (i === idx ? { ...m, content: text } : m))
+      )
+      // Persist the edit: drop the old user row + everything after, re-add the
+      // edited message, then regenerate the answer onto it.
+      const cid = activeConversationId
+      if (cid)
+        void window.api
+          .truncateRagMessages(cid, idx)
+          .then(() => window.api.addRagMessage(cid, 'user', text))
+      void sendMessage(text, { regen: true })
+    },
+    [editText, messages, activeConversationId]
+  )
 
   // Process attached files into text (read/parse/caption/transcribe) on the main side.
-  const addFiles = useCallback(async (files: FileList | File[]) => {
-    const arr = Array.from(files);
-    // The active model can't read images → don't attach them; tell the user why.
-    if (!chatVision && arr.some(f => f.type.startsWith('image/'))) {
-      setAttachWarn("This model can't read images. Switch to a vision model (Gemma E4B or Qwen3-VL 2B) in Models to attach images.");
-    }
-    const usable = chatVision ? arr : arr.filter(f => !f.type.startsWith('image/'));
-    for (const file of usable) {
-      const id = `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      // Show images as images straight away (local preview) so an upload reads as
-      // an image while it captions in the background, not a generic TEXT box.
-      const isImg = file.type.startsWith('image/');
-      const preview = isImg ? URL.createObjectURL(file) : undefined;
-      setAttachments(prev => [...prev, { id, name: file.name, kind: isImg ? 'image' : 'text', text: '', preview, status: 'loading' }]);
-      try {
-        const buf = await file.arrayBuffer();
-        const res = await window.api.processFile(buf, file.name);
-        // Images are "ready" if we have the file path (even with no caption), so the
-        // actual image still gets sent to the vision model.
-        const ok = (!!res.text || (res.kind === 'image' && !!res.path));
-        setAttachments(prev => prev.map(a => a.id === id
-          ? { ...a, kind: res.kind as Attachment['kind'], text: res.text || '', path: res.path, preview, status: ok ? 'ready' : 'error' }
-          : a));
-      } catch (e) {
-        console.error('process file failed', e);
-        setAttachments(prev => prev.map(a => (a.id === id ? { ...a, status: 'error' } : a)));
+  const addFiles = useCallback(
+    async (files: FileList | File[]) => {
+      const arr = Array.from(files)
+      // The active model can't read images → don't attach them; tell the user why.
+      if (!chatVision && arr.some((f) => f.type.startsWith('image/'))) {
+        setAttachWarn(
+          "This model can't read images. Switch to a vision model (Gemma E4B or Qwen3-VL 2B) in Models to attach images."
+        )
       }
-    }
-  }, [chatVision]);
+      const usable = chatVision ? arr : arr.filter((f) => !f.type.startsWith('image/'))
+      for (const file of usable) {
+        const id = `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+        // Show images as images straight away (local preview) so an upload reads as
+        // an image while it captions in the background, not a generic TEXT box.
+        const isImg = file.type.startsWith('image/')
+        const preview = isImg ? URL.createObjectURL(file) : undefined
+        setAttachments((prev) => [
+          ...prev,
+          {
+            id,
+            name: file.name,
+            kind: isImg ? 'image' : 'text',
+            text: '',
+            preview,
+            status: 'loading'
+          }
+        ])
+        try {
+          const buf = await file.arrayBuffer()
+          const res = await window.api.processFile(buf, file.name)
+          // Images are "ready" if we have the file path (even with no caption), so the
+          // actual image still gets sent to the vision model.
+          const ok = !!res.text || (res.kind === 'image' && !!res.path)
+          setAttachments((prev) =>
+            prev.map((a) =>
+              a.id === id
+                ? {
+                    ...a,
+                    kind: res.kind as Attachment['kind'],
+                    text: res.text || '',
+                    path: res.path,
+                    preview,
+                    status: ok ? 'ready' : 'error'
+                  }
+                : a
+            )
+          )
+        } catch (e) {
+          console.error('process file failed', e)
+          setAttachments((prev) => prev.map((a) => (a.id === id ? { ...a, status: 'error' } : a)))
+        }
+      }
+    },
+    [chatVision]
+  )
 
-  const removeAttachment = useCallback((id: string) => setAttachments(prev => prev.filter(a => a.id !== id)), []);
+  const removeAttachment = useCallback(
+    (id: string) => setAttachments((prev) => prev.filter((a) => a.id !== id)),
+    []
+  )
 
   // Pasting an image (e.g. a screenshot) attaches it; a large text blob becomes a
   // "PASTED" chip instead of flooding the input.
-  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const dt = e.clipboardData;
-    // Any real file (image, PDF, doc…) arrives in `files`, or — for a copied image
-    // blob (screenshot) — as a `file` item. Attach all of them rather than falling
-    // through to the filename text.
-    let pasteFiles = Array.from(dt.files);
-    if (!pasteFiles.length) {
-      pasteFiles = Array.from(dt.items)
-        .filter(it => it.kind === 'file')
-        .map(it => it.getAsFile())
-        .filter((f): f is File => !!f);
-    }
-    if (pasteFiles.length) {
-      e.preventDefault();
-      void addFiles(pasteFiles);
-      return;
-    }
-    const text = dt.getData('text');
-    if (text && text.length > 1200) {
-      e.preventDefault();
-      const id = `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      setAttachments(prev => [...prev, { id, name: 'Pasted text', kind: 'pasted', text, status: 'ready' }]);
-    }
-  }, [addFiles]);
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const dt = e.clipboardData
+      // Any real file (image, PDF, doc…) arrives in `files`, or — for a copied image
+      // blob (screenshot) — as a `file` item. Attach all of them rather than falling
+      // through to the filename text.
+      let pasteFiles = Array.from(dt.files)
+      if (!pasteFiles.length) {
+        pasteFiles = Array.from(dt.items)
+          .filter((it) => it.kind === 'file')
+          .map((it) => it.getAsFile())
+          .filter((f): f is File => !!f)
+      }
+      if (pasteFiles.length) {
+        e.preventDefault()
+        void addFiles(pasteFiles)
+        return
+      }
+      const text = dt.getData('text')
+      if (text && text.length > 1200) {
+        e.preventDefault()
+        const id = `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+        setAttachments((prev) => [
+          ...prev,
+          { id, name: 'Pasted text', kind: 'pasted', text, status: 'ready' }
+        ])
+      }
+    },
+    [addFiles]
+  )
 
-  const examples = mode === 'image' ? IMAGE_EXAMPLES : (isPro ? ASK_EXAMPLES_PRO : ASK_EXAMPLES);
+  const examples = mode === 'image' ? IMAGE_EXAMPLES : isPro ? ASK_EXAMPLES_PRO : ASK_EXAMPLES
 
   // Slash-command autocomplete: typing "/" (before any space) lists matching skills.
-  const slashQuery = mode === 'ask' && input.startsWith('/') && !/\s/.test(input) ? input.slice(1).toLowerCase() : null;
-  const skillMatches = slashQuery !== null ? skills.filter(s => s.name.toLowerCase().includes(slashQuery)) : [];
+  const slashQuery =
+    mode === 'ask' && input.startsWith('/') && !/\s/.test(input)
+      ? input.slice(1).toLowerCase()
+      : null
+  const skillMatches =
+    slashQuery !== null ? skills.filter((s) => s.name.toLowerCase().includes(slashQuery)) : []
 
   return (
     <div
@@ -1406,43 +2066,74 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
             : 'max(360px, 30vw)'
           : skillsOpen || settingsOpen || viewer || showGallery || modelPickerOpen
             ? 'max(420px, 30vw)'
-            : undefined,
+            : undefined
       }}
     >
       {/* Header */}
       <header className="flex items-center gap-3 border-b border-neutral-900 px-6 py-4">
         <div className="flex h-8 w-8 items-center justify-center rounded-md border border-neutral-800 bg-neutral-900">
-          <svg className="h-4 w-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+          <svg
+            className="h-4 w-4 text-green-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+            />
           </svg>
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-medium tracking-wide text-neutral-200">OFF GRID</h2>
-          <p className="truncate text-xs text-neutral-500">Private, on-device — chat, generate, and build</p>
+          <p className="truncate text-xs text-neutral-500">
+            Private, on-device — chat, generate, and build
+          </p>
         </div>
-
 
         {/* Active models — pick the model per modality (text/image/voice/STT) */}
         <button
-          onClick={() => { closePanels(); setModelPickerOpen(true); }}
+          onClick={() => {
+            closePanels()
+            setModelPickerOpen(true)
+          }}
           className={`rounded-md border p-1.5 transition-colors ${modelPickerOpen ? 'border-green-500 text-green-500' : 'border-neutral-800 text-neutral-500 hover:text-neutral-300'}`}
           title="Active models"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <rect x="4" y="4" width="16" height="16" rx="2" strokeWidth={2} />
-            <path strokeLinecap="round" strokeWidth={2} d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2" />
+            <path
+              strokeLinecap="round"
+              strokeWidth={2}
+              d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"
+            />
           </svg>
         </button>
 
         {/* Settings — model params, voice, tools, connectors (right-side panel) */}
         <button
-          onClick={() => { closePanels(); setSettingsOpen(true); }}
+          onClick={() => {
+            closePanels()
+            setSettingsOpen(true)
+          }}
           className={`rounded-md border p-1.5 transition-colors ${settingsOpen ? 'border-green-500 text-green-500' : 'border-neutral-800 text-neutral-500 hover:text-neutral-300'}`}
           title="Settings"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+            />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            />
           </svg>
         </button>
         <button
@@ -1451,23 +2142,43 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           title="Generated images"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 15l4-4 4 4 3-3 5 5" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z"
+            />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 15l4-4 4 4 3-3 5 5"
+            />
             <circle cx="9" cy="9" r="1.5" fill="currentColor" />
           </svg>
         </button>
         <button
-          onClick={() => setVoiceMode(v => !v)}
+          onClick={() => setVoiceMode((v) => !v)}
           className={`rounded-md border p-1.5 transition-colors ${voiceMode ? 'border-green-500 text-green-500' : 'border-neutral-800 text-neutral-500 hover:text-neutral-300'}`}
           title={voiceMode ? 'Voice mode on — speak and listen in voice notes' : 'Voice mode off'}
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5L6 9H2v6h4l5 4V5z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M11 5L6 9H2v6h4l5 4V5z"
+            />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"
+            />
           </svg>
         </button>
         <button
-          onClick={() => setShowHistory(prev => !prev)}
+          onClick={() => setShowHistory((prev) => !prev)}
           className={`rounded-md border p-1.5 transition-colors ${showHistory ? 'border-neutral-700 text-neutral-300' : 'border-neutral-800 text-neutral-500 hover:text-neutral-300'}`}
           title={showHistory ? 'Collapse sidebar (full-screen chat)' : 'Show conversations'}
         >
@@ -1482,7 +2193,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       {/* Body */}
       <div className="flex min-h-0 flex-1">
         {/* History rail — animated collapse (width slides to 0) */}
-        <aside className={`shrink-0 overflow-hidden border-neutral-900 transition-[width] duration-300 ease-in-out ${showHistory ? 'w-64 border-r' : 'w-0'}`}>
+        <aside
+          className={`shrink-0 overflow-hidden border-neutral-900 transition-[width] duration-300 ease-in-out ${showHistory ? 'w-64 border-r' : 'w-0'}`}
+        >
           <div className="flex h-full w-64 flex-col">
             <div className="p-3">
               <button
@@ -1490,7 +2203,12 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                 className="flex w-full items-center justify-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-xs text-neutral-300 transition-colors hover:border-green-500 hover:text-green-500"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4v16m8-8H4"
+                  />
                 </svg>
                 New chat
               </button>
@@ -1498,66 +2216,126 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
             {conversations.length > 0 && (
               <div className="px-2 pb-2">
                 <div className="flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-2.5 py-1.5 focus-within:border-neutral-600">
-                  <svg className="h-3.5 w-3.5 shrink-0 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                  <svg
+                    className="h-3.5 w-3.5 shrink-0 text-neutral-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
                   <input
                     value={convSearch}
-                    onChange={e => setConvSearch(e.target.value)}
+                    onChange={(e) => setConvSearch(e.target.value)}
                     placeholder="Search conversations…"
                     className="w-full bg-transparent text-xs text-neutral-200 placeholder-neutral-600 outline-none"
                   />
-                  {convSearch && <button onClick={() => setConvSearch('')} className="shrink-0 text-neutral-600 hover:text-neutral-300">✕</button>}
+                  {convSearch && (
+                    <button
+                      onClick={() => setConvSearch('')}
+                      className="shrink-0 text-neutral-600 hover:text-neutral-300"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               </div>
             )}
             <div className="flex-1 overflow-y-auto px-2 pb-2">
               {(() => {
-                const q = convSearch.trim().toLowerCase();
-                const filtered = q ? conversations.filter(c => (c.title || '').toLowerCase().includes(q) || contentMatchIds.has(c.id)) : conversations;
-                if (conversations.length === 0) return <p className="px-2 py-4 text-center text-xs text-neutral-600">No conversations yet</p>;
-                if (filtered.length === 0) return <p className="px-2 py-4 text-center text-xs text-neutral-600">No matches</p>;
-                const now = new Date();
-                const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                const q = convSearch.trim().toLowerCase()
+                const filtered = q
+                  ? conversations.filter(
+                      (c) => (c.title || '').toLowerCase().includes(q) || contentMatchIds.has(c.id)
+                    )
+                  : conversations
+                if (conversations.length === 0)
+                  return (
+                    <p className="px-2 py-4 text-center text-xs text-neutral-600">
+                      No conversations yet
+                    </p>
+                  )
+                if (filtered.length === 0)
+                  return (
+                    <p className="px-2 py-4 text-center text-xs text-neutral-600">No matches</p>
+                  )
+                const now = new Date()
+                const startToday = new Date(
+                  now.getFullYear(),
+                  now.getMonth(),
+                  now.getDate()
+                ).getTime()
                 const groups: { label: string; items: Conversation[] }[] = [
-                  { label: 'Today', items: [] }, { label: 'Yesterday', items: [] }, { label: 'This week', items: [] }, { label: 'Older', items: [] },
-                ];
+                  { label: 'Today', items: [] },
+                  { label: 'Yesterday', items: [] },
+                  { label: 'This week', items: [] },
+                  { label: 'Older', items: [] }
+                ]
                 for (const c of filtered) {
-                  const t = new Date(c.updated_at).getTime();
-                  if (t >= startToday) groups[0]!.items.push(c);
-                  else if (t >= startToday - 86400000) groups[1]!.items.push(c);
-                  else if (t >= startToday - 6 * 86400000) groups[2]!.items.push(c);
-                  else groups[3]!.items.push(c);
+                  const t = new Date(c.updated_at).getTime()
+                  if (t >= startToday) groups[0]!.items.push(c)
+                  else if (t >= startToday - 86400000) groups[1]!.items.push(c)
+                  else if (t >= startToday - 6 * 86400000) groups[2]!.items.push(c)
+                  else groups[3]!.items.push(c)
                 }
-                return groups.filter(g => g.items.length).map(g => (
-                  <div key={g.label} className="mb-2">
-                    <div className="px-1 py-1 text-[10px] uppercase tracking-wider text-neutral-600">{g.label}</div>
-                    {g.items.map(conv => (
-                      <div
-                        key={conv.id}
-                        onClick={() => switchConversation(conv.id)}
-                        className={`group flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
-                          activeConversationId === conv.id ? 'border-neutral-800 bg-neutral-900' : 'border-transparent hover:bg-neutral-900/50'
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs text-neutral-300">{conv.title || 'Untitled'}</p>
-                          <div className="mt-0.5 flex items-center gap-2">
-                            <span className="text-[10px] text-neutral-600">{timeAgo(conv.updated_at)}</span>
-                            {conv.project_id && <span className="text-[10px] text-green-500/70">project</span>}
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => deleteConversation(conv.id, e)}
-                          className="shrink-0 text-neutral-700 opacity-0 transition hover:text-red-400 group-hover:opacity-100"
-                          title="Delete conversation"
-                        >
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+                return groups
+                  .filter((g) => g.items.length)
+                  .map((g) => (
+                    <div key={g.label} className="mb-2">
+                      <div className="px-1 py-1 text-[10px] uppercase tracking-wider text-neutral-600">
+                        {g.label}
                       </div>
-                    ))}
-                  </div>
-                ));
+                      {g.items.map((conv) => (
+                        <div
+                          key={conv.id}
+                          onClick={() => switchConversation(conv.id)}
+                          className={`group flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
+                            activeConversationId === conv.id
+                              ? 'border-neutral-800 bg-neutral-900'
+                              : 'border-transparent hover:bg-neutral-900/50'
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs text-neutral-300">
+                              {conv.title || 'Untitled'}
+                            </p>
+                            <div className="mt-0.5 flex items-center gap-2">
+                              <span className="text-[10px] text-neutral-600">
+                                {timeAgo(conv.updated_at)}
+                              </span>
+                              {conv.project_id && (
+                                <span className="text-[10px] text-green-500/70">project</span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => deleteConversation(conv.id, e)}
+                            className="shrink-0 text-neutral-700 opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                            title="Delete conversation"
+                          >
+                            <svg
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ))
               })()}
             </div>
           </div>
@@ -1568,32 +2346,68 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           {/* Chat tabs — quick-switch between open conversations */}
           {(openTabs.length > 0 || activeConversationId) && (
             <div className="flex items-center gap-1 overflow-x-auto border-b border-neutral-900 px-2 py-1">
-              {openTabs.map(id => {
-                const t = conversations.find(c => c.id === id);
-                const active = activeConversationId === id;
+              {openTabs.map((id) => {
+                const t = conversations.find((c) => c.id === id)
+                const active = activeConversationId === id
                 return (
-                  <div key={id} className={`group flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors ${active ? 'bg-neutral-800 text-neutral-100' : 'text-neutral-400 hover:bg-neutral-900'}`}>
-                    <button onClick={() => switchConversation(id)} className="max-w-[12rem] truncate">{t?.title || 'Untitled'}</button>
-                    <button onClick={() => closeTab(id)} className="text-neutral-600 transition-colors hover:text-red-400" title="Close tab">✕</button>
+                  <div
+                    key={id}
+                    className={`group flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors ${active ? 'bg-neutral-800 text-neutral-100' : 'text-neutral-400 hover:bg-neutral-900'}`}
+                  >
+                    <button
+                      onClick={() => switchConversation(id)}
+                      className="max-w-[12rem] truncate"
+                    >
+                      {t?.title || 'Untitled'}
+                    </button>
+                    <button
+                      onClick={() => closeTab(id)}
+                      className="text-neutral-600 transition-colors hover:text-red-400"
+                      title="Close tab"
+                    >
+                      ✕
+                    </button>
                   </div>
-                );
+                )
               })}
               {!activeConversationId && (
-                <div className="flex shrink-0 items-center rounded-md bg-neutral-800 px-2.5 py-1 text-xs text-neutral-100">New chat</div>
+                <div className="flex shrink-0 items-center rounded-md bg-neutral-800 px-2.5 py-1 text-xs text-neutral-100">
+                  New chat
+                </div>
               )}
-              <button onClick={startNewConversation} className="shrink-0 rounded-md px-2 py-1 text-neutral-500 transition-colors hover:text-green-500" title="New tab">+</button>
+              <button
+                onClick={startNewConversation}
+                className="shrink-0 rounded-md px-2 py-1 text-neutral-500 transition-colors hover:text-green-500"
+                title="New tab"
+              >
+                +
+              </button>
             </div>
           )}
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto">
             {messages.length === 0 ? (
-              <div className={`mx-auto flex min-h-full flex-col items-center justify-center px-6 py-6 text-center ${mode === 'image' ? 'max-w-6xl' : 'max-w-2xl'}`}>
+              <div
+                className={`mx-auto flex min-h-full flex-col items-center justify-center px-6 py-6 text-center ${mode === 'image' ? 'max-w-6xl' : 'max-w-2xl'}`}
+              >
                 <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900 shadow-sm">
-                  <svg className="h-8 w-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  <svg
+                    className="h-8 w-8 text-green-500"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                    />
                   </svg>
                 </div>
-                <h2 className="text-3xl font-semibold tracking-tight text-neutral-100">{mode === 'image' ? 'Create an image' : 'Start a conversation'}</h2>
+                <h2 className="text-3xl font-semibold tracking-tight text-neutral-100">
+                  {mode === 'image' ? 'Create an image' : 'Start a conversation'}
+                </h2>
                 <p className="mt-3 max-w-md text-sm text-neutral-500">
                   {mode === 'image'
                     ? 'Pick a style, then describe your subject — generated on-device.'
@@ -1606,7 +2420,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                 {mode === 'image' ? (
                   <div className="mt-4 w-full">
                     <div className="mb-2 flex items-center justify-between">
-                      <span className="text-[10px] uppercase tracking-wider text-neutral-600">Style</span>
+                      <span className="text-[10px] uppercase tracking-wider text-neutral-600">
+                        Style
+                      </span>
                       {Object.keys(styleThumbs).length < STYLE_PRESETS.length && (
                         <button
                           onClick={generateStylePreviews}
@@ -1618,14 +2434,18 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                       )}
                     </div>
                     <div className="grid w-full grid-cols-2 gap-2.5 sm:grid-cols-4">
-                      {STYLE_PRESETS.map(s => {
-                        const thumb = styleThumbs[styleKey(s.name)];
+                      {STYLE_PRESETS.map((s) => {
+                        const thumb = styleThumbs[styleKey(s.name)]
                         return (
                           <button
                             key={s.name}
-                            onClick={() => setActiveStyle(cur => (cur === s.name ? null : s.name))}
+                            onClick={() =>
+                              setActiveStyle((cur) => (cur === s.name ? null : s.name))
+                            }
                             className={`group relative aspect-[16/9] overflow-hidden rounded-md border transition-all ${
-                              activeStyle === s.name ? 'border-green-500 ring-1 ring-green-500' : 'border-neutral-800 hover:border-neutral-600'
+                              activeStyle === s.name
+                                ? 'border-green-500 ring-1 ring-green-500'
+                                : 'border-neutral-800 hover:border-neutral-600'
                             }`}
                           >
                             {thumb ? (
@@ -1635,24 +2455,38 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                                 className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                               />
                             ) : (
-                              <span className={`absolute inset-0 bg-gradient-to-br ${s.swatch} transition-transform duration-300 group-hover:scale-105`} />
+                              <span
+                                className={`absolute inset-0 bg-gradient-to-br ${s.swatch} transition-transform duration-300 group-hover:scale-105`}
+                              />
                             )}
                             <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5 text-left text-[11px] font-medium text-white">
                               {s.name}
                             </span>
                             {activeStyle === s.name && (
                               <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-neutral-950">
-                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                <svg
+                                  className="h-3 w-3"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={3}
+                                    d="M5 13l4 4L19 7"
+                                  />
+                                </svg>
                               </span>
                             )}
                           </button>
-                        );
+                        )
                       })}
                     </div>
                   </div>
                 ) : (
                   <div className="mt-6 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                    {examples.map(ex => (
+                    {examples.map((ex) => (
                       <button
                         key={ex}
                         onClick={() => sendMessage(ex)}
@@ -1666,459 +2500,919 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
               </div>
             ) : (
               <div className="w-full px-6 py-5">
-                {messages.map(message => (
+                {messages.map((message) =>
                   voiceMode ? (
-                  <div key={message.id} className={`mb-4 flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
-                    {(() => {
-                      if (message.role === 'user') {
+                    <div
+                      key={message.id}
+                      className={`mb-4 flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}
+                    >
+                      {(() => {
+                        if (message.role === 'user') {
+                          return (
+                            <VoiceBubble
+                              messageId={message.id}
+                              isUser
+                              transcript={message.content}
+                              audioUrl={message.audioUrl}
+                              durationSeconds={message.audioDuration}
+                              synthesize={(t) => window.api.speak(t)}
+                              onCopy={copyText}
+                            />
+                          )
+                        }
+                        // Generated image in voice mode: show the image, no audio bubble.
+                        if (message.image) {
+                          return (
+                            <img
+                              src={message.image}
+                              alt="Generated"
+                              onClick={() =>
+                                setLightbox({
+                                  url: message.image as string,
+                                  path: message.imagePath
+                                })
+                              }
+                              className="max-w-[20rem] cursor-zoom-in rounded-md border border-neutral-800 transition-opacity hover:opacity-90"
+                            />
+                          )
+                        }
+                        const transcript = (
+                          message.variants && message.variantIndex != null
+                            ? message.variants[message.variantIndex]!
+                            : message.content
+                        )
+                          .replace(ASK_FENCE, '')
+                          .replace(ARTIFACT_FENCE, '')
+                          .replace(/\[S(\d+)\]/g, '')
+                          .trim()
                         return (
                           <VoiceBubble
                             messageId={message.id}
-                            isUser
-                            transcript={message.content}
-                            audioUrl={message.audioUrl}
-                            durationSeconds={message.audioDuration}
+                            transcript={transcript}
+                            isLoading={!!message.streaming}
+                            autoPlay={autoPlayId === message.id}
                             synthesize={(t) => window.api.speak(t)}
                             onCopy={copyText}
+                            onRetry={() => regenerate(message.id)}
                           />
-                        );
-                      }
-                      // Generated image in voice mode: show the image, no audio bubble.
-                      if (message.image) {
-                        return (
+                        )
+                      })()}
+                    </div>
+                  ) : (
+                    <div
+                      key={message.id}
+                      className={`mb-5 flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}
+                    >
+                      {message.role === 'assistant' &&
+                      !message.streaming &&
+                      message.reasoning &&
+                      message.reasoning.trim() ? (
+                        <Collapsible className="mb-1.5 max-w-[85%]">
+                          <CollapsibleTrigger className="group flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-neutral-300">
+                            <svg
+                              className="h-3 w-3 text-neutral-600"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9.663 17h4.673M12 3a6 6 0 00-3.6 10.8c.3.225.45.6.45.975V16.5h6.3v-1.725c0-.375.15-.75.45-.975A6 6 0 0012 3z"
+                              />
+                            </svg>
+                            Thought process
+                            <svg
+                              className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 9l-7 7-7-7"
+                              />
+                            </svg>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="mt-1 whitespace-pre-wrap border-l-2 border-neutral-800 pl-3 text-xs leading-relaxed text-neutral-500">
+                            {message.reasoning}
+                          </CollapsibleContent>
+                        </Collapsible>
+                      ) : null}
+                      {/* Live thinking + tool activity, ABOVE the answer bubble: reasoning
+                        first (Thinking…), then the current tool-call step (Running <tool>…). */}
+                      {message.role === 'assistant' && message.streaming ? (
+                        <div className="mb-1.5 flex flex-col gap-1.5">
+                          <span className="inline-flex gap-1 text-green-500">
+                            <span className="animate-bounce [animation-delay:-0.3s]">●</span>
+                            <span className="animate-bounce [animation-delay:-0.15s]">●</span>
+                            <span className="animate-bounce">●</span>
+                          </span>
+                          {message.reasoning && message.reasoning.trim() ? (
+                            <Collapsible defaultOpen className="max-w-[85%]">
+                              <CollapsibleTrigger className="group flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-neutral-300">
+                                <span>Thinking…</span>
+                                <svg
+                                  className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 9l-7 7-7-7"
+                                  />
+                                </svg>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent className="mt-1 whitespace-pre-wrap border-l-2 border-neutral-800 pl-3 text-xs leading-relaxed text-neutral-500">
+                                {message.reasoning}
+                              </CollapsibleContent>
+                            </Collapsible>
+                          ) : null}
+                          {activityLabel(message.activity) ? (
+                            <span className="text-[11px] text-neutral-500">
+                              {activityLabel(message.activity)}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {/* Tool calls as their own entry, between thinking and the answer bubble.
+                        search_memory is shown as interactive Source cards below, so skip its chip. */}
+                      {(() => {
+                        const chips = (message.toolCalls || []).filter(
+                          (tc) => tc.name !== 'search_memory'
+                        )
+                        return chips.length > 0 ? (
+                          <div className="mb-1.5 flex max-w-[85%] flex-wrap gap-1">
+                            {chips.map((tc, i) => (
+                              <span
+                                key={i}
+                                className="rounded-sm border border-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500"
+                                title={tc.result}
+                              >
+                                {tc.name} →{' '}
+                                {tc.result.length > 32 ? tc.result.slice(0, 32) + '…' : tc.result}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null
+                      })()}
+                      <div
+                        className={
+                          message.role === 'assistant' &&
+                          message.streaming &&
+                          !message.content.trim()
+                            ? 'hidden'
+                            : `max-w-[85%] rounded-md px-3.5 py-2.5 text-sm leading-relaxed ${
+                                message.role === 'user'
+                                  ? 'bg-neutral-800 text-neutral-100'
+                                  : 'border border-neutral-800 bg-neutral-900/40 text-neutral-200'
+                              }`
+                        }
+                      >
+                        {message.attachments && message.attachments.length > 0 ? (
+                          <div className="mb-2 flex flex-wrap gap-1.5">
+                            {message.attachments.map((att, i) => {
+                              const viewable = !!att.text || (att.kind === 'image' && !!att.path)
+                              return (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  disabled={!viewable}
+                                  onClick={() => {
+                                    if (att.kind === 'image' && att.path) {
+                                      closePanels()
+                                      setLightbox({
+                                        url: `ogcapture://${att.path}`,
+                                        path: att.path
+                                      })
+                                    } else if (att.text || att.path) {
+                                      closePanels()
+                                      setViewer({
+                                        title: att.kind === 'pasted' ? 'Pasted text' : att.name,
+                                        text: att.text || '',
+                                        path: att.path,
+                                        kind: att.kind
+                                      })
+                                    }
+                                  }}
+                                  title={viewable ? 'Click to view' : undefined}
+                                  className="flex items-center gap-1 rounded-md bg-neutral-700/60 px-2 py-1 text-[10px] text-neutral-200 transition-colors enabled:cursor-pointer enabled:hover:bg-neutral-600/60"
+                                >
+                                  <svg
+                                    className="h-3 w-3 text-neutral-400"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                                    />
+                                  </svg>
+                                  <span className="max-w-[12rem] truncate">{att.name}</span>
+                                  <span className="text-neutral-500">{att.kind}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ) : null}
+                        {editingId === message.id ? (
+                          <div className="flex flex-col gap-2">
+                            <textarea
+                              autoFocus
+                              value={editText}
+                              onChange={(e) => setEditText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault()
+                                  saveEdit(message.id)
+                                }
+                                if (e.key === 'Escape') setEditingId(null)
+                              }}
+                              rows={Math.min(10, editText.split('\n').length + 1)}
+                              className="w-full resize-none rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-green-500"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => saveEdit(message.id)}
+                                className="rounded-md bg-green-600 px-3 py-1 text-xs text-white transition-colors hover:bg-green-500"
+                              >
+                                Save & submit
+                              </button>
+                              <button
+                                onClick={() => setEditingId(null)}
+                                className="rounded-md border border-neutral-700 px-3 py-1 text-xs text-neutral-400 transition-colors hover:text-neutral-200"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm, remarkBreaks]}
+                            components={
+                              message.role === 'assistant'
+                                ? makeCiteComponents(message.context?.unified)
+                                : markdownComponents
+                            }
+                          >
+                            {message.role !== 'assistant'
+                              ? message.content
+                              : // Show the selected regenerated variant (if any); keep artifact code
+                                // inline; hide only the clarifying-question fence.
+                                (message.variants && message.variantIndex != null
+                                  ? message.variants[message.variantIndex]!
+                                  : message.content
+                                )
+                                  .replace(ASK_FENCE, '')
+                                  .replace(/\[S(\d+)\]/g, '[S$1](cite:$1)')
+                                  .trim()}
+                          </ReactMarkdown>
+                        )}
+                        {(() => {
+                          if (message.role !== 'assistant') return null
+                          const art = parseArtifact(message.content)
+                          if (!art) return null
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => openCanvas(art)}
+                              className="mt-2 flex w-full items-center gap-3 rounded-md border border-neutral-800 bg-neutral-900/60 px-3 py-2.5 text-left transition-colors hover:border-green-500/60"
+                            >
+                              <span className="flex h-9 w-9 items-center justify-center rounded-md border border-neutral-800 bg-neutral-950 text-green-500">
+                                <svg
+                                  className="h-4 w-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                  />
+                                </svg>
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-xs text-neutral-200">
+                                  {art.title || `${art.kind.toUpperCase()} artifact`}
+                                </span>
+                                <span className="block text-[11px] text-neutral-500">
+                                  Click to open in the canvas →
+                                </span>
+                              </span>
+                            </button>
+                          )
+                        })()}
+                        {(() => {
+                          if (message.role !== 'assistant') return null
+                          const ask = parseAsk(message.content)
+                          if (!ask) return null
+                          const sel = askSel[message.id] || []
+                          return (
+                            <div className="mt-2 flex flex-col gap-1.5">
+                              <p className="text-xs text-neutral-400">{ask.question}</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {ask.options.map((opt) => {
+                                  const on = sel.includes(opt)
+                                  return (
+                                    <button
+                                      key={opt}
+                                      onClick={() => {
+                                        if (ask.multiSelect) {
+                                          setAskSel((prev) => ({
+                                            ...prev,
+                                            [message.id]: on
+                                              ? sel.filter((o) => o !== opt)
+                                              : [...sel, opt]
+                                          }))
+                                        } else {
+                                          void sendMessage(opt)
+                                        }
+                                      }}
+                                      className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${on ? 'border-green-500 text-green-500' : 'border-neutral-700 text-neutral-300 hover:border-green-500 hover:text-green-500'}`}
+                                    >
+                                      {opt}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                              {ask.multiSelect && sel.length > 0 ? (
+                                <button
+                                  onClick={() => void sendMessage(sel.join(', '))}
+                                  className="mt-1 self-start rounded-md bg-green-600 px-3 py-1 text-xs text-white transition-colors hover:bg-green-500"
+                                >
+                                  Submit ({sel.length})
+                                </button>
+                              ) : null}
+                            </div>
+                          )
+                        })()}
+                        {message.image ? (
                           <img
                             src={message.image}
                             alt="Generated"
-                            onClick={() => setLightbox({ url: message.image as string, path: message.imagePath })}
-                            className="max-w-[20rem] cursor-zoom-in rounded-md border border-neutral-800 transition-opacity hover:opacity-90"
+                            onClick={() =>
+                              setLightbox({ url: message.image as string, path: message.imagePath })
+                            }
+                            className="mt-2 max-w-full cursor-zoom-in rounded-md border border-neutral-800 transition-opacity hover:opacity-90"
                           />
-                        );
-                      }
-                      const transcript = (message.variants && message.variantIndex != null ? message.variants[message.variantIndex]! : message.content)
-                        .replace(ASK_FENCE, '').replace(ARTIFACT_FENCE, '').replace(/\[S(\d+)\]/g, '').trim();
-                      return (
-                        <VoiceBubble
-                          messageId={message.id}
-                          transcript={transcript}
-                          isLoading={!!message.streaming}
-                          autoPlay={autoPlayId === message.id}
-                          synthesize={(t) => window.api.speak(t)}
-                          onCopy={copyText}
-                          onRetry={() => regenerate(message.id)}
-                        />
-                      );
-                    })()}
-                  </div>
-                  ) : (
-                  <div key={message.id} className={`mb-5 flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
-                    {message.role === 'assistant' && !message.streaming && message.reasoning && message.reasoning.trim() ? (
-                      <Collapsible className="mb-1.5 max-w-[85%]">
-                        <CollapsibleTrigger className="group flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-neutral-300">
-                          <svg className="h-3 w-3 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3a6 6 0 00-3.6 10.8c.3.225.45.6.45.975V16.5h6.3v-1.725c0-.375.15-.75.45-.975A6 6 0 0012 3z" /></svg>
-                          Thought process
-                          <svg className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="mt-1 whitespace-pre-wrap border-l-2 border-neutral-800 pl-3 text-xs leading-relaxed text-neutral-500">
-                          {message.reasoning}
-                        </CollapsibleContent>
-                      </Collapsible>
-                    ) : null}
-                    {/* Live thinking + tool activity, ABOVE the answer bubble: reasoning
-                        first (Thinking…), then the current tool-call step (Running <tool>…). */}
-                    {message.role === 'assistant' && message.streaming ? (
-                      <div className="mb-1.5 flex flex-col gap-1.5">
-                        <span className="inline-flex gap-1 text-green-500">
-                          <span className="animate-bounce [animation-delay:-0.3s]">●</span>
-                          <span className="animate-bounce [animation-delay:-0.15s]">●</span>
-                          <span className="animate-bounce">●</span>
-                        </span>
-                        {message.reasoning && message.reasoning.trim() ? (
-                          <Collapsible defaultOpen className="max-w-[85%]">
-                            <CollapsibleTrigger className="group flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-neutral-300">
-                              <span>Thinking…</span>
-                              <svg className="h-3 w-3 transition-transform group-data-[state=open]:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent className="mt-1 whitespace-pre-wrap border-l-2 border-neutral-800 pl-3 text-xs leading-relaxed text-neutral-500">
-                              {message.reasoning}
-                            </CollapsibleContent>
-                          </Collapsible>
-                        ) : null}
-                        {activityLabel(message.activity) ? (
-                          <span className="text-[11px] text-neutral-500">{activityLabel(message.activity)}</span>
                         ) : null}
                       </div>
-                    ) : null}
-                    {/* Tool calls as their own entry, between thinking and the answer bubble.
-                        search_memory is shown as interactive Source cards below, so skip its chip. */}
-                    {(() => {
-                      const chips = (message.toolCalls || []).filter((tc) => tc.name !== 'search_memory');
-                      return chips.length > 0 ? (
-                        <div className="mb-1.5 flex max-w-[85%] flex-wrap gap-1">
-                          {chips.map((tc, i) => (
-                            <span key={i} className="rounded-sm border border-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500" title={tc.result}>
-                              {tc.name} → {tc.result.length > 32 ? tc.result.slice(0, 32) + '…' : tc.result}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null;
-                    })()}
-                    <div
-                      className={
-                        message.role === 'assistant' && message.streaming && !message.content.trim()
-                          ? 'hidden'
-                          : `max-w-[85%] rounded-md px-3.5 py-2.5 text-sm leading-relaxed ${
-                              message.role === 'user'
-                                ? 'bg-neutral-800 text-neutral-100'
-                                : 'border border-neutral-800 bg-neutral-900/40 text-neutral-200'
-                            }`
-                      }
-                    >
-                      {message.attachments && message.attachments.length > 0 ? (
-                        <div className="mb-2 flex flex-wrap gap-1.5">
-                          {message.attachments.map((att, i) => {
-                            const viewable = !!att.text || (att.kind === 'image' && !!att.path);
-                            return (
-                              <button
-                                key={i}
-                                type="button"
-                                disabled={!viewable}
-                                onClick={() => {
-                                  if (att.kind === 'image' && att.path) { closePanels(); setLightbox({ url: `ogcapture://${att.path}`, path: att.path }); }
-                                  else if (att.text || att.path) { closePanels(); setViewer({ title: att.kind === 'pasted' ? 'Pasted text' : att.name, text: att.text || '', path: att.path, kind: att.kind }); }
-                                }}
-                                title={viewable ? 'Click to view' : undefined}
-                                className="flex items-center gap-1 rounded-md bg-neutral-700/60 px-2 py-1 text-[10px] text-neutral-200 transition-colors enabled:cursor-pointer enabled:hover:bg-neutral-600/60"
-                              >
-                                <svg className="h-3 w-3 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                                <span className="max-w-[12rem] truncate">{att.name}</span>
-                                <span className="text-neutral-500">{att.kind}</span>
-                              </button>
-                            );
-                          })}
+
+                      {message.role === 'user' ? (
+                        <div className="mt-1.5 flex items-center gap-3">
+                          <button
+                            onClick={() => copyText(message.content, message.id)}
+                            className={`flex items-center gap-1 text-[11px] transition-colors ${copiedKey === message.id ? 'text-green-500' : 'text-neutral-600 hover:text-green-500'}`}
+                            title="Copy"
+                          >
+                            {copiedKey === message.id ? (
+                              <>
+                                <svg
+                                  className="h-3.5 w-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M5 13l4 4L19 7"
+                                  />
+                                </svg>
+                                Copied
+                              </>
+                            ) : (
+                              <>
+                                <svg
+                                  className="h-3.5 w-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M8 16h8M8 12h8m-7 8h6a2 2 0 002-2V6a2 2 0 00-2-2h-3.586a1 1 0 00-.707.293l-2.414 2.414A1 1 0 009 7.414V18a2 2 0 002 2z"
+                                  />
+                                </svg>
+                                Copy
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => regenerate(message.id)}
+                            className="flex items-center gap-1 text-[11px] text-neutral-600 transition-colors hover:text-green-500"
+                            title="Regenerate the reply to this message"
+                          >
+                            <svg
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                              />
+                            </svg>
+                            Resend
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingId(message.id)
+                              setEditText(message.content)
+                            }}
+                            className="flex items-center gap-1 text-[11px] text-neutral-600 transition-colors hover:text-green-500"
+                            title="Edit this message"
+                          >
+                            <svg
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                              />
+                            </svg>
+                            Edit
+                          </button>
                         </div>
                       ) : null}
-                      {editingId === message.id ? (
-                        <div className="flex flex-col gap-2">
-                          <textarea
-                            autoFocus
-                            value={editText}
-                            onChange={(e) => setEditText(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(message.id); } if (e.key === 'Escape') setEditingId(null); }}
-                            rows={Math.min(10, editText.split('\n').length + 1)}
-                            className="w-full resize-none rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-green-500"
-                          />
-                          <div className="flex gap-2">
-                            <button onClick={() => saveEdit(message.id)} className="rounded-md bg-green-600 px-3 py-1 text-xs text-white transition-colors hover:bg-green-500">Save & submit</button>
-                            <button onClick={() => setEditingId(null)} className="rounded-md border border-neutral-700 px-3 py-1 text-xs text-neutral-400 transition-colors hover:text-neutral-200">Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm, remarkBreaks]}
-                        components={message.role === 'assistant' ? makeCiteComponents(message.context?.unified) : markdownComponents}
-                      >
-                        {message.role !== 'assistant'
-                          ? message.content
-                          // Show the selected regenerated variant (if any); keep artifact code
-                          // inline; hide only the clarifying-question fence.
-                          : (message.variants && message.variantIndex != null ? message.variants[message.variantIndex]! : message.content).replace(ASK_FENCE, '').replace(/\[S(\d+)\]/g, '[S$1](cite:$1)').trim()}
-                      </ReactMarkdown>
-                      )}
-                      {(() => {
-                        if (message.role !== 'assistant') return null;
-                        const art = parseArtifact(message.content);
-                        if (!art) return null;
-                        return (
+
+                      {message.role === 'assistant' && !message.image ? (
+                        <div className="mt-1.5 flex items-center gap-3">
                           <button
-                            type="button"
-                            onClick={() => openCanvas(art)}
-                            className="mt-2 flex w-full items-center gap-3 rounded-md border border-neutral-800 bg-neutral-900/60 px-3 py-2.5 text-left transition-colors hover:border-green-500/60"
+                            onClick={() => speakMessage(message.id, message.content)}
+                            className={`flex items-center gap-1 text-[11px] transition-colors ${speakingId === message.id || speakLoadingId === message.id ? 'text-green-500' : 'text-neutral-600 hover:text-green-500'}`}
+                            title={
+                              speakLoadingId === message.id
+                                ? 'Generating…'
+                                : speakingId === message.id
+                                  ? 'Stop'
+                                  : 'Speak'
+                            }
                           >
-                            <span className="flex h-9 w-9 items-center justify-center rounded-md border border-neutral-800 bg-neutral-950 text-green-500">
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-xs text-neutral-200">{art.title || `${art.kind.toUpperCase()} artifact`}</span>
-                              <span className="block text-[11px] text-neutral-500">Click to open in the canvas →</span>
-                            </span>
+                            {speakLoadingId === message.id ? (
+                              <svg
+                                className="h-3.5 w-3.5 animate-spin"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                              >
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                />
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                                />
+                              </svg>
+                            ) : speakingId === message.id ? (
+                              <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+                                <rect x="6" y="5" width="4" height="14" rx="1" />
+                                <rect x="14" y="5" width="4" height="14" rx="1" />
+                              </svg>
+                            ) : (
+                              <svg
+                                className="h-3.5 w-3.5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M11 5L6 9H2v6h4l5 4V5z"
+                                />
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"
+                                />
+                              </svg>
+                            )}
+                            {speakLoadingId === message.id
+                              ? 'Generating…'
+                              : speakingId === message.id
+                                ? 'Stop'
+                                : 'Speak'}
                           </button>
-                        );
-                      })()}
-                      {(() => {
-                        if (message.role !== 'assistant') return null;
-                        const ask = parseAsk(message.content);
-                        if (!ask) return null;
-                        const sel = askSel[message.id] || [];
-                        return (
-                          <div className="mt-2 flex flex-col gap-1.5">
-                            <p className="text-xs text-neutral-400">{ask.question}</p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {ask.options.map(opt => {
-                                const on = sel.includes(opt);
-                                return (
-                                  <button
-                                    key={opt}
-                                    onClick={() => {
-                                      if (ask.multiSelect) {
-                                        setAskSel(prev => ({ ...prev, [message.id]: on ? sel.filter(o => o !== opt) : [...sel, opt] }));
-                                      } else {
-                                        void sendMessage(opt);
-                                      }
-                                    }}
-                                    className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${on ? 'border-green-500 text-green-500' : 'border-neutral-700 text-neutral-300 hover:border-green-500 hover:text-green-500'}`}
-                                  >
-                                    {opt}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            {ask.multiSelect && sel.length > 0 ? (
-                              <button onClick={() => void sendMessage(sel.join(', '))} className="mt-1 self-start rounded-md bg-green-600 px-3 py-1 text-xs text-white transition-colors hover:bg-green-500">
-                                Submit ({sel.length})
+                          <button
+                            onClick={() => copyText(message.content, message.id)}
+                            className={`flex items-center gap-1 text-[11px] transition-colors ${copiedKey === message.id ? 'text-green-500' : 'text-neutral-600 hover:text-green-500'}`}
+                            title="Copy"
+                          >
+                            {copiedKey === message.id ? (
+                              <>
+                                <svg
+                                  className="h-3.5 w-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M5 13l4 4L19 7"
+                                  />
+                                </svg>
+                                Copied
+                              </>
+                            ) : (
+                              <>
+                                <svg
+                                  className="h-3.5 w-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M8 16h8M8 12h8m-7 8h6a2 2 0 002-2V6a2 2 0 00-2-2h-3.586a1 1 0 00-.707.293l-2.414 2.414A1 1 0 009 7.414V18a2 2 0 002 2z"
+                                  />
+                                </svg>
+                                Copy
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => regenerate(message.id)}
+                            className="flex items-center gap-1 text-[11px] text-neutral-600 transition-colors hover:text-green-500"
+                            title="Regenerate"
+                          >
+                            <svg
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                              />
+                            </svg>
+                            Regenerate
+                          </button>
+                          {message.variants && message.variants.length > 1 ? (
+                            <span className="flex items-center gap-1 text-[11px] text-neutral-500">
+                              <button
+                                onClick={() =>
+                                  setMessages((prev) =>
+                                    prev.map((m) =>
+                                      m.id === message.id
+                                        ? {
+                                            ...m,
+                                            variantIndex: Math.max(0, (m.variantIndex ?? 0) - 1)
+                                          }
+                                        : m
+                                    )
+                                  )
+                                }
+                                disabled={(message.variantIndex ?? 0) <= 0}
+                                className="transition-colors hover:text-green-500 disabled:opacity-30"
+                              >
+                                ‹
                               </button>
+                              <span>
+                                {(message.variantIndex ?? 0) + 1}/{message.variants.length}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  setMessages((prev) =>
+                                    prev.map((m) =>
+                                      m.id === message.id
+                                        ? {
+                                            ...m,
+                                            variantIndex: Math.min(
+                                              (m.variants?.length ?? 1) - 1,
+                                              (m.variantIndex ?? 0) + 1
+                                            )
+                                          }
+                                        : m
+                                    )
+                                  )
+                                }
+                                disabled={
+                                  (message.variantIndex ?? 0) >= message.variants.length - 1
+                                }
+                                className="transition-colors hover:text-green-500 disabled:opacity-30"
+                              >
+                                ›
+                              </button>
+                            </span>
+                          ) : null}
+                          {parseArtifact(message.content) ? (
+                            <button
+                              onClick={() => {
+                                const a = parseArtifact(message.content)
+                                if (a) openCanvas(a)
+                              }}
+                              className="flex items-center gap-1 text-[11px] text-green-500 transition-colors hover:text-green-400"
+                            >
+                              <svg
+                                className="h-3.5 w-3.5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M9 17V7h10v10M9 17H5a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v2"
+                                />
+                              </svg>
+                              Open canvas
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {message.role === 'assistant' &&
+                      message.context &&
+                      (message.context.sources?.length || 0) +
+                        (message.context.memories?.length || 0) +
+                        (message.context.summaries?.length || 0) +
+                        (message.context.entities?.length || 0) +
+                        (message.context.entityFacts?.length || 0) +
+                        (message.context.unified?.length || 0) >
+                        0 ? (
+                        <Collapsible className="mt-2 w-full max-w-[90%]">
+                          <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900/40 px-3 py-2 text-left text-xs text-neutral-400 transition-colors hover:border-neutral-700">
+                            <svg
+                              className="h-3.5 w-3.5 text-green-500"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                              />
+                            </svg>
+                            <span className="flex-1">
+                              Searched your memory —{' '}
+                              {(message.context.sources?.length || 0) +
+                                (message.context.memories?.length || 0) +
+                                (message.context.summaries?.length || 0) +
+                                (message.context.entities?.length || 0) +
+                                (message.context.entityFacts?.length || 0) +
+                                (message.context.unified?.length || 0)}{' '}
+                              results
+                            </span>
+                            <svg
+                              className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 9l-7 7-7-7"
+                              />
+                            </svg>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="mt-1.5 max-h-[400px] max-w-full overflow-y-auto rounded-md border border-neutral-800 bg-neutral-900/40 p-4 text-sm">
+                            {message.context.unified && message.context.unified.length > 0 ? (
+                              <div className="mb-3">
+                                <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">
+                                  Sources ({message.context.unified.length}) — cited as [S#]
+                                </div>
+                                <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-3">
+                                  {message.context.unified.map((u, idx) => (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={() => {
+                                        if (u.kind === 'screen') {
+                                          onSeekReplay?.(u.ts)
+                                          return
+                                        }
+                                        if (u.refId == null) return
+                                        if (u.kind === 'memory') onNavigateToMemory?.(u.refId)
+                                        else if (u.kind === 'entity') onNavigateToEntity?.(u.refId)
+                                        else if (u.kind === 'meeting')
+                                          onNavigateToChat?.(String(u.refId))
+                                      }}
+                                      title={`${u.kind} · ${u.surface}${u.title ? ' · ' + u.title : ''}${u.kind === 'screen' ? ' · open in Replay' : ''}`}
+                                      className="flex flex-col gap-1 overflow-hidden rounded-md border border-neutral-800 p-2 text-left text-[11px] text-neutral-400 transition-colors hover:border-green-500"
+                                    >
+                                      {/* Screen captures: show the actual frame, click → Replay seeked to that moment */}
+                                      {u.kind === 'screen' && u.imagePath ? (
+                                        <img
+                                          src={`ogcapture://${u.imagePath}`}
+                                          alt=""
+                                          className="mb-0.5 h-16 w-full rounded border border-neutral-800 object-cover"
+                                        />
+                                      ) : null}
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-semibold text-green-500">
+                                          [S{idx + 1}]
+                                        </span>
+                                        <span className="rounded-sm border border-neutral-700 px-1 text-[9px] uppercase tracking-wide text-neutral-500">
+                                          {u.kind}
+                                        </span>
+                                      </div>
+                                      <span className="line-clamp-2 text-neutral-300">
+                                        {u.title && u.title !== u.surface ? u.title : u.snippet}
+                                      </span>
+                                      <span className="truncate text-[10px] text-neutral-600">
+                                        {u.surface}
+                                        {u.kind === 'screen' ? ' · open in Replay →' : ''}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
                             ) : null}
-                          </div>
-                        );
-                      })()}
-                      {message.image ? (
-                        <img
-                          src={message.image}
-                          alt="Generated"
-                          onClick={() => setLightbox({ url: message.image as string, path: message.imagePath })}
-                          className="mt-2 max-w-full cursor-zoom-in rounded-md border border-neutral-800 transition-opacity hover:opacity-90"
-                        />
+
+                            {message.context.sources && message.context.sources.length > 0 ? (
+                              <div className="mb-3">
+                                <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">
+                                  Sources ({message.context.sources.length})
+                                </div>
+                                <div className="space-y-1">
+                                  {message.context.sources.slice(0, 8).map((s, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="flex items-center gap-2 rounded-md border border-neutral-800 p-2 text-[11px] text-neutral-400"
+                                    >
+                                      <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                                      <span className="shrink-0 text-neutral-600">
+                                        {(s.score * 100).toFixed(0)}%
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {message.context.masterMemory ? (
+                              <div className="mb-3 rounded-md border border-neutral-800 p-3">
+                                <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">
+                                  Master memory
+                                </div>
+                                <div className="text-neutral-300">
+                                  <ReactMarkdown
+                                    remarkPlugins={[remarkGfm, remarkBreaks]}
+                                    components={markdownComponents}
+                                  >
+                                    {message.context.masterMemory}
+                                  </ReactMarkdown>
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {message.context.memories && message.context.memories.length > 0 ? (
+                              <div className="mb-3">
+                                <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">
+                                  Memories ({message.context.memories.length})
+                                </div>
+                                <div className="space-y-1">
+                                  {message.context.memories
+                                    .slice(0, 5)
+                                    .map((memory: any, idx: number) => (
+                                      <button
+                                        key={memory.id || idx}
+                                        onClick={() => onNavigateToMemory?.(memory.id)}
+                                        className="block w-full rounded-md border border-neutral-800 p-2 text-left transition-colors hover:border-neutral-700"
+                                      >
+                                        <p className="line-clamp-2 text-[11px] text-neutral-400">
+                                          {memory.content || memory.text || 'Memory'}
+                                        </p>
+                                      </button>
+                                    ))}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {message.context.summaries && message.context.summaries.length > 0 ? (
+                              <div className="mb-3">
+                                <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">
+                                  Related chats ({message.context.summaries.length})
+                                </div>
+                                <div className="space-y-1">
+                                  {message.context.summaries
+                                    .slice(0, 5)
+                                    .map((summary: any, idx: number) => (
+                                      <button
+                                        key={summary.session_id || idx}
+                                        onClick={() => onNavigateToChat?.(summary.session_id)}
+                                        className="block w-full rounded-md border border-neutral-800 p-2 text-left transition-colors hover:border-neutral-700"
+                                      >
+                                        <p className="line-clamp-2 text-[11px] text-neutral-400">
+                                          {summary.summary || summary.title || 'Chat'}
+                                        </p>
+                                        {summary.app_name && (
+                                          <span className="mt-1 inline-block text-[10px] text-neutral-600">
+                                            {summary.app_name}
+                                          </span>
+                                        )}
+                                      </button>
+                                    ))}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {message.context.entities && message.context.entities.length > 0 ? (
+                              <div className="mb-3">
+                                <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">
+                                  Entities ({message.context.entities.length})
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {message.context.entities
+                                    .slice(0, 10)
+                                    .map((entity: any, idx: number) => (
+                                      <button
+                                        key={entity.id || idx}
+                                        onClick={() => onNavigateToEntity?.(entity.id)}
+                                        className="rounded-md border border-neutral-800 px-2 py-1 text-[11px] text-neutral-400 transition-colors hover:border-green-500 hover:text-green-500"
+                                      >
+                                        {entity.name || 'Entity'}
+                                      </button>
+                                    ))}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {message.context.entityFacts &&
+                            message.context.entityFacts.length > 0 ? (
+                              <div>
+                                <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">
+                                  Entity facts ({message.context.entityFacts.length})
+                                </div>
+                                <div className="space-y-1">
+                                  {message.context.entityFacts
+                                    .slice(0, 5)
+                                    .map((fact: any, idx: number) => (
+                                      <div
+                                        key={idx}
+                                        className="rounded-md border border-neutral-800 p-2"
+                                      >
+                                        <p className="line-clamp-2 text-[11px] text-neutral-400">
+                                          {fact.fact || fact}
+                                        </p>
+                                      </div>
+                                    ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </CollapsibleContent>
+                        </Collapsible>
                       ) : null}
                     </div>
-
-                    {message.role === 'user' ? (
-                      <div className="mt-1.5 flex items-center gap-3">
-                        <button onClick={() => copyText(message.content, message.id)} className={`flex items-center gap-1 text-[11px] transition-colors ${copiedKey === message.id ? 'text-green-500' : 'text-neutral-600 hover:text-green-500'}`} title="Copy">
-                          {copiedKey === message.id ? (
-                            <><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Copied</>
-                          ) : (
-                            <><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16h8M8 12h8m-7 8h6a2 2 0 002-2V6a2 2 0 00-2-2h-3.586a1 1 0 00-.707.293l-2.414 2.414A1 1 0 009 7.414V18a2 2 0 002 2z" /></svg>Copy</>
-                          )}
-                        </button>
-                        <button onClick={() => regenerate(message.id)} className="flex items-center gap-1 text-[11px] text-neutral-600 transition-colors hover:text-green-500" title="Regenerate the reply to this message">
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                          Resend
-                        </button>
-                        <button onClick={() => { setEditingId(message.id); setEditText(message.content); }} className="flex items-center gap-1 text-[11px] text-neutral-600 transition-colors hover:text-green-500" title="Edit this message">
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                          Edit
-                        </button>
-                      </div>
-                    ) : null}
-
-                    {message.role === 'assistant' && !message.image ? (
-                      <div className="mt-1.5 flex items-center gap-3">
-                        <button
-                          onClick={() => speakMessage(message.id, message.content)}
-                          className={`flex items-center gap-1 text-[11px] transition-colors ${speakingId === message.id || speakLoadingId === message.id ? 'text-green-500' : 'text-neutral-600 hover:text-green-500'}`}
-                          title={speakLoadingId === message.id ? 'Generating…' : speakingId === message.id ? 'Stop' : 'Speak'}
-                        >
-                          {speakLoadingId === message.id ? (
-                            <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                          ) : speakingId === message.id ? (
-                            <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
-                          ) : (
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5L6 9H2v6h4l5 4V5z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14" /></svg>
-                          )}
-                          {speakLoadingId === message.id ? 'Generating…' : speakingId === message.id ? 'Stop' : 'Speak'}
-                        </button>
-                        <button
-                          onClick={() => copyText(message.content, message.id)}
-                          className={`flex items-center gap-1 text-[11px] transition-colors ${copiedKey === message.id ? 'text-green-500' : 'text-neutral-600 hover:text-green-500'}`}
-                          title="Copy"
-                        >
-                          {copiedKey === message.id ? (
-                            <><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Copied</>
-                          ) : (
-                            <><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16h8M8 12h8m-7 8h6a2 2 0 002-2V6a2 2 0 00-2-2h-3.586a1 1 0 00-.707.293l-2.414 2.414A1 1 0 009 7.414V18a2 2 0 002 2z" /></svg>Copy</>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => regenerate(message.id)}
-                          className="flex items-center gap-1 text-[11px] text-neutral-600 transition-colors hover:text-green-500"
-                          title="Regenerate"
-                        >
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                          Regenerate
-                        </button>
-                        {message.variants && message.variants.length > 1 ? (
-                          <span className="flex items-center gap-1 text-[11px] text-neutral-500">
-                            <button
-                              onClick={() => setMessages(prev => prev.map(m => (m.id === message.id ? { ...m, variantIndex: Math.max(0, (m.variantIndex ?? 0) - 1) } : m)))}
-                              disabled={(message.variantIndex ?? 0) <= 0}
-                              className="transition-colors hover:text-green-500 disabled:opacity-30"
-                            >‹</button>
-                            <span>{(message.variantIndex ?? 0) + 1}/{message.variants.length}</span>
-                            <button
-                              onClick={() => setMessages(prev => prev.map(m => (m.id === message.id ? { ...m, variantIndex: Math.min((m.variants?.length ?? 1) - 1, (m.variantIndex ?? 0) + 1) } : m)))}
-                              disabled={(message.variantIndex ?? 0) >= message.variants.length - 1}
-                              className="transition-colors hover:text-green-500 disabled:opacity-30"
-                            >›</button>
-                          </span>
-                        ) : null}
-                        {parseArtifact(message.content) ? (
-                          <button
-                            onClick={() => { const a = parseArtifact(message.content); if (a) openCanvas(a); }}
-                            className="flex items-center gap-1 text-[11px] text-green-500 transition-colors hover:text-green-400"
-                          >
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7h10v10M9 17H5a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v2" /></svg>
-                            Open canvas
-                          </button>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {message.role === 'assistant' && message.context && ((message.context.sources?.length || 0) + (message.context.memories?.length || 0) + (message.context.summaries?.length || 0) + (message.context.entities?.length || 0) + (message.context.entityFacts?.length || 0) + (message.context.unified?.length || 0)) > 0 ? (
-                      <Collapsible className="mt-2 w-full max-w-[90%]">
-                        <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900/40 px-3 py-2 text-left text-xs text-neutral-400 transition-colors hover:border-neutral-700">
-                          <svg className="h-3.5 w-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                          <span className="flex-1">Searched your memory — {(message.context.sources?.length || 0) + (message.context.memories?.length || 0) + (message.context.summaries?.length || 0) + (message.context.entities?.length || 0) + (message.context.entityFacts?.length || 0) + (message.context.unified?.length || 0)} results</span>
-                          <svg className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="mt-1.5 max-h-[400px] max-w-full overflow-y-auto rounded-md border border-neutral-800 bg-neutral-900/40 p-4 text-sm">
-
-                        {message.context.unified && message.context.unified.length > 0 ? (
-                          <div className="mb-3">
-                            <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">Sources ({message.context.unified.length}) — cited as [S#]</div>
-                            <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-3">
-                              {message.context.unified.map((u, idx) => (
-                                <button
-                                  key={idx}
-                                  type="button"
-                                  onClick={() => {
-                                    if (u.kind === 'screen') { onSeekReplay?.(u.ts); return; }
-                                    if (u.refId == null) return;
-                                    if (u.kind === 'memory') onNavigateToMemory?.(u.refId);
-                                    else if (u.kind === 'entity') onNavigateToEntity?.(u.refId);
-                                    else if (u.kind === 'meeting') onNavigateToChat?.(String(u.refId));
-                                  }}
-                                  title={`${u.kind} · ${u.surface}${u.title ? ' · ' + u.title : ''}${u.kind === 'screen' ? ' · open in Replay' : ''}`}
-                                  className="flex flex-col gap-1 overflow-hidden rounded-md border border-neutral-800 p-2 text-left text-[11px] text-neutral-400 transition-colors hover:border-green-500"
-                                >
-                                  {/* Screen captures: show the actual frame, click → Replay seeked to that moment */}
-                                  {u.kind === 'screen' && u.imagePath ? (
-                                    <img src={`ogcapture://${u.imagePath}`} alt="" className="mb-0.5 h-16 w-full rounded border border-neutral-800 object-cover" />
-                                  ) : null}
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-semibold text-green-500">[S{idx + 1}]</span>
-                                    <span className="rounded-sm border border-neutral-700 px-1 text-[9px] uppercase tracking-wide text-neutral-500">{u.kind}</span>
-                                  </div>
-                                  <span className="line-clamp-2 text-neutral-300">{u.title && u.title !== u.surface ? u.title : u.snippet}</span>
-                                  <span className="truncate text-[10px] text-neutral-600">
-                                    {u.surface}{u.kind === 'screen' ? ' · open in Replay →' : ''}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {message.context.sources && message.context.sources.length > 0 ? (
-                          <div className="mb-3">
-                            <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">Sources ({message.context.sources.length})</div>
-                            <div className="space-y-1">
-                              {message.context.sources.slice(0, 8).map((s, idx) => (
-                                <div key={idx} className="flex items-center gap-2 rounded-md border border-neutral-800 p-2 text-[11px] text-neutral-400">
-                                  <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                                  <span className="shrink-0 text-neutral-600">{(s.score * 100).toFixed(0)}%</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {message.context.masterMemory ? (
-                          <div className="mb-3 rounded-md border border-neutral-800 p-3">
-                            <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">Master memory</div>
-                            <div className="text-neutral-300">
-                              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>
-                                {message.context.masterMemory}
-                              </ReactMarkdown>
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {message.context.memories && message.context.memories.length > 0 ? (
-                          <div className="mb-3">
-                            <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">Memories ({message.context.memories.length})</div>
-                            <div className="space-y-1">
-                              {message.context.memories.slice(0, 5).map((memory: any, idx: number) => (
-                                <button
-                                  key={memory.id || idx}
-                                  onClick={() => onNavigateToMemory?.(memory.id)}
-                                  className="block w-full rounded-md border border-neutral-800 p-2 text-left transition-colors hover:border-neutral-700"
-                                >
-                                  <p className="line-clamp-2 text-[11px] text-neutral-400">{memory.content || memory.text || 'Memory'}</p>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {message.context.summaries && message.context.summaries.length > 0 ? (
-                          <div className="mb-3">
-                            <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">Related chats ({message.context.summaries.length})</div>
-                            <div className="space-y-1">
-                              {message.context.summaries.slice(0, 5).map((summary: any, idx: number) => (
-                                <button
-                                  key={summary.session_id || idx}
-                                  onClick={() => onNavigateToChat?.(summary.session_id)}
-                                  className="block w-full rounded-md border border-neutral-800 p-2 text-left transition-colors hover:border-neutral-700"
-                                >
-                                  <p className="line-clamp-2 text-[11px] text-neutral-400">{summary.summary || summary.title || 'Chat'}</p>
-                                  {summary.app_name && <span className="mt-1 inline-block text-[10px] text-neutral-600">{summary.app_name}</span>}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {message.context.entities && message.context.entities.length > 0 ? (
-                          <div className="mb-3">
-                            <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">Entities ({message.context.entities.length})</div>
-                            <div className="flex flex-wrap gap-1">
-                              {message.context.entities.slice(0, 10).map((entity: any, idx: number) => (
-                                <button
-                                  key={entity.id || idx}
-                                  onClick={() => onNavigateToEntity?.(entity.id)}
-                                  className="rounded-md border border-neutral-800 px-2 py-1 text-[11px] text-neutral-400 transition-colors hover:border-green-500 hover:text-green-500"
-                                >
-                                  {entity.name || 'Entity'}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {message.context.entityFacts && message.context.entityFacts.length > 0 ? (
-                          <div>
-                            <div className="mb-2 text-[10px] uppercase tracking-wide text-neutral-600">Entity facts ({message.context.entityFacts.length})</div>
-                            <div className="space-y-1">
-                              {message.context.entityFacts.slice(0, 5).map((fact: any, idx: number) => (
-                                <div key={idx} className="rounded-md border border-neutral-800 p-2">
-                                  <p className="line-clamp-2 text-[11px] text-neutral-400">{fact.fact || fact}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                        </CollapsibleContent>
-                      </Collapsible>
-                    ) : null}
-                  </div>
                   )
-                ))}
-                {!!activeConversationId && generatingConvs.has(activeConversationId) && !messages.some(m => m.streaming) ? (
+                )}
+                {!!activeConversationId &&
+                generatingConvs.has(activeConversationId) &&
+                !messages.some((m) => m.streaming) ? (
                   <div className="mb-5 flex flex-col items-start">
-                    <div className="mb-1 text-[10px] uppercase tracking-wider text-neutral-600">Off Grid</div>
+                    <div className="mb-1 text-[10px] uppercase tracking-wider text-neutral-600">
+                      Off Grid
+                    </div>
                     {mode === 'image' || generatingImage ? (
                       <div className="rounded-md border border-neutral-800 bg-neutral-900/40 p-3">
                         {imgProgress?.preview ? (
-                          <img src={imgProgress.preview} alt="forming" className="mb-2 w-56 rounded-md border border-neutral-800" />
+                          <img
+                            src={imgProgress.preview}
+                            alt="forming"
+                            className="mb-2 w-56 rounded-md border border-neutral-800"
+                          />
                         ) : (
                           <div className="mb-2 flex h-56 w-56 items-center justify-center rounded-md border border-neutral-800 text-[11px] text-neutral-600">
                             warming up…
@@ -2126,18 +3420,31 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                         )}
                         <div className="flex items-center justify-between text-[11px] text-neutral-500">
                           <span>
-                            {imgProgress ? `${imgProgress.phase === 'decoding' ? 'Decoding' : 'Step'} ${imgProgress.step}/${imgProgress.total}` : 'Loading model…'}
+                            {imgProgress
+                              ? `${imgProgress.phase === 'decoding' ? 'Decoding' : 'Step'} ${imgProgress.step}/${imgProgress.total}`
+                              : 'Loading model…'}
                           </span>
                           {imgProgress ? (
                             <span className="text-neutral-600">
-                              ~{Math.max(0, Math.round((imgProgress.total - imgProgress.step) * imgProgress.secPerStep))}s left
+                              ~
+                              {Math.max(
+                                0,
+                                Math.round(
+                                  (imgProgress.total - imgProgress.step) * imgProgress.secPerStep
+                                )
+                              )}
+                              s left
                             </span>
                           ) : null}
                         </div>
                         <div className="mt-1.5 h-1 w-56 overflow-hidden rounded-full bg-neutral-800">
                           <div
                             className="h-full bg-green-500 transition-all duration-300"
-                            style={{ width: imgProgress ? `${(imgProgress.step / imgProgress.total) * 100}%` : '5%' }}
+                            style={{
+                              width: imgProgress
+                                ? `${(imgProgress.step / imgProgress.total) * 100}%`
+                                : '5%'
+                            }}
                           />
                         </div>
                       </div>
@@ -2148,7 +3455,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-green-500 [animation-delay:150ms]" />
                           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-green-500 [animation-delay:300ms]" />
                         </span>
-                        <span className="text-xs text-neutral-500">{waitingLabel({ noMemory, hasProject: !!activeProjectId })}</span>
+                        <span className="text-xs text-neutral-500">
+                          {waitingLabel({ noMemory, hasProject: !!activeProjectId })}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -2167,14 +3476,26 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   {imgModels.length > 1 && (
                     <label className="flex items-center gap-1.5">
                       Model
-                      <select value={imgModel} onChange={e => chooseImageModel(e.target.value)} className="max-w-[12rem] rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500">
-                        {imgModels.map(m => <option key={m} value={m}>{m.replace(/\.gguf$/i, '').replace(/-Q\d.*$/i, '')}</option>)}
+                      <select
+                        value={imgModel}
+                        onChange={(e) => chooseImageModel(e.target.value)}
+                        className="max-w-[12rem] rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500"
+                      >
+                        {imgModels.map((m) => (
+                          <option key={m} value={m}>
+                            {m.replace(/\.gguf$/i, '').replace(/-Q\d.*$/i, '')}
+                          </option>
+                        ))}
                       </select>
                     </label>
                   )}
                   <label className="flex items-center gap-1.5">
                     Size
-                    <select value={imgSize} onChange={e => setSizeOverride(Number(e.target.value))} className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500">
+                    <select
+                      value={imgSize}
+                      onChange={(e) => setSizeOverride(Number(e.target.value))}
+                      className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500"
+                    >
                       <option value={256}>256</option>
                       <option value={512}>512</option>
                       <option value={640}>640</option>
@@ -2184,24 +3505,69 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   </label>
                   <label className="flex items-center gap-1.5">
                     Steps
-                    <input type="number" min={4} max={50} value={imgSteps} onChange={e => setStepsOverride(Math.max(4, Math.min(50, Number(e.target.value) || 16)))} className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                    <input
+                      type="number"
+                      min={4}
+                      max={50}
+                      value={imgSteps}
+                      onChange={(e) =>
+                        setStepsOverride(Math.max(4, Math.min(50, Number(e.target.value) || 16)))
+                      }
+                      className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
                   </label>
                   <label className="flex items-center gap-1.5">
                     Seed
-                    <input value={imgSeed} onChange={e => setImgSeed(e.target.value.replace(/[^0-9]/g, ''))} placeholder="random" className="w-20 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 placeholder-neutral-700 outline-none focus:border-green-500" />
+                    <input
+                      value={imgSeed}
+                      onChange={(e) => setImgSeed(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="random"
+                      className="w-20 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 placeholder-neutral-700 outline-none focus:border-green-500"
+                    />
                   </label>
-                  <input value={imgNegative} onChange={e => setImgNegative(e.target.value)} placeholder="Negative prompt" className="min-w-[10rem] flex-1 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 placeholder-neutral-700 outline-none focus:border-green-500" />
+                  <input
+                    value={imgNegative}
+                    onChange={(e) => setImgNegative(e.target.value)}
+                    placeholder="Negative prompt"
+                    className="min-w-[10rem] flex-1 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 placeholder-neutral-700 outline-none focus:border-green-500"
+                  />
                   {imgInit ? (
                     <span className="flex items-center gap-2 rounded-md border border-green-500/40 px-2 py-1 text-green-500">
                       {imgInit.split('/').pop()}
-                      <label className="flex items-center gap-1 text-neutral-500" title="img2img strength: how much to change the init image (0.1 = subtle, 1 = ignore it)">
+                      <label
+                        className="flex items-center gap-1 text-neutral-500"
+                        title="img2img strength: how much to change the init image (0.1 = subtle, 1 = ignore it)"
+                      >
                         Strength
-                        <input type="number" min={0.1} max={1} step={0.05} value={imgStrength} onChange={e => setImgStrength(Math.max(0.1, Math.min(1, Number(e.target.value) || 0.6)))} className="w-14 rounded border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-neutral-300 outline-none focus:border-green-500" />
+                        <input
+                          type="number"
+                          min={0.1}
+                          max={1}
+                          step={0.05}
+                          value={imgStrength}
+                          onChange={(e) =>
+                            setImgStrength(
+                              Math.max(0.1, Math.min(1, Number(e.target.value) || 0.6))
+                            )
+                          }
+                          className="w-14 rounded border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-neutral-300 outline-none focus:border-green-500"
+                        />
                       </label>
-                      <button onClick={() => setImgInit(null)} className="text-neutral-500 hover:text-red-400">✕</button>
+                      <button
+                        onClick={() => setImgInit(null)}
+                        className="text-neutral-500 hover:text-red-400"
+                      >
+                        ✕
+                      </button>
                     </span>
                   ) : (
-                    <button onClick={async () => { const p = await window.api.pickImageForGen?.(); if (p) setImgInit(p); }} className="rounded-md border border-neutral-800 px-2 py-1 text-neutral-400 transition-colors hover:border-green-500 hover:text-green-500">
+                    <button
+                      onClick={async () => {
+                        const p = await window.api.pickImageForGen?.()
+                        if (p) setImgInit(p)
+                      }}
+                      className="rounded-md border border-neutral-800 px-2 py-1 text-neutral-400 transition-colors hover:border-green-500 hover:text-green-500"
+                    >
                       + Init image
                     </button>
                   )}
@@ -2212,8 +3578,15 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
               {mode === 'image' && activeStyle && (
                 <div className="mb-2 flex items-center gap-2 text-[11px] text-neutral-500">
                   <span>Style</span>
-                  <span className="rounded-md border border-green-500/40 px-2 py-0.5 text-green-500">{activeStyle}</span>
-                  <button onClick={() => setActiveStyle(null)} className="text-neutral-600 transition-colors hover:text-red-400">clear</button>
+                  <span className="rounded-md border border-green-500/40 px-2 py-0.5 text-green-500">
+                    {activeStyle}
+                  </span>
+                  <button
+                    onClick={() => setActiveStyle(null)}
+                    className="text-neutral-600 transition-colors hover:text-red-400"
+                  >
+                    clear
+                  </button>
                 </div>
               )}
 
@@ -2224,8 +3597,11 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                     value={projNewName}
                     onChange={(e) => setProjNewName(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') createAndAssignProject();
-                      if (e.key === 'Escape') { setProjCreating(false); setProjNewName(''); }
+                      if (e.key === 'Enter') createAndAssignProject()
+                      if (e.key === 'Escape') {
+                        setProjCreating(false)
+                        setProjNewName('')
+                      }
                     }}
                     onBlur={createAndAssignProject}
                     placeholder="New project name…  (Enter to create, Esc to cancel)"
@@ -2236,22 +3612,72 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
 
               {queuedCount(queuedByConv, activeConversationId) > 0 && (
                 <div className="mb-2 flex flex-col gap-1">
-                  {(activeConversationId ? queuedByConv[activeConversationId] ?? [] : []).map((q, i) => (
-                    <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900/40 px-3 py-1.5 text-[11px] text-neutral-400">
-                      <svg className="h-3 w-3 shrink-0 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                      <span className="flex-1 select-text cursor-text whitespace-pre-wrap break-words">{q.text || `(${q.atts.length} attachment${q.atts.length > 1 ? 's' : ''})`}</span>
-                      {q.atts.length > 0 ? (
-                        <span className="flex shrink-0 items-center gap-1 text-neutral-500" title={q.atts.map(a => a.name).join(', ')}>
-                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                          {q.atts.length}
+                  {(activeConversationId ? (queuedByConv[activeConversationId] ?? []) : []).map(
+                    (q, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900/40 px-3 py-1.5 text-[11px] text-neutral-400"
+                      >
+                        <svg
+                          className="h-3 w-3 shrink-0 text-neutral-600"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        <span className="flex-1 select-text cursor-text whitespace-pre-wrap break-words">
+                          {q.text || `(${q.atts.length} attachment${q.atts.length > 1 ? 's' : ''})`}
                         </span>
-                      ) : null}
-                      <button onClick={() => copyText(q.text)} className="shrink-0 cursor-pointer text-neutral-600 transition-colors hover:text-green-500" title="Copy">
-                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16h8M8 12h8m-7 8h6a2 2 0 002-2V6a2 2 0 00-2-2h-3.586a1 1 0 00-.707.293l-2.414 2.414A1 1 0 009 7.414V18a2 2 0 002 2z" /></svg>
-                      </button>
-                      <span className="shrink-0 text-neutral-600">queued</span>
-                    </div>
-                  ))}
+                        {q.atts.length > 0 ? (
+                          <span
+                            className="flex shrink-0 items-center gap-1 text-neutral-500"
+                            title={q.atts.map((a) => a.name).join(', ')}
+                          >
+                            <svg
+                              className="h-3 w-3"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                              />
+                            </svg>
+                            {q.atts.length}
+                          </span>
+                        ) : null}
+                        <button
+                          onClick={() => copyText(q.text)}
+                          className="shrink-0 cursor-pointer text-neutral-600 transition-colors hover:text-green-500"
+                          title="Copy"
+                        >
+                          <svg
+                            className="h-3 w-3"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M8 16h8M8 12h8m-7 8h6a2 2 0 002-2V6a2 2 0 00-2-2h-3.586a1 1 0 00-.707.293l-2.414 2.414A1 1 0 009 7.414V18a2 2 0 002 2z"
+                            />
+                          </svg>
+                        </button>
+                        <span className="shrink-0 text-neutral-600">queued</span>
+                      </div>
+                    )
+                  )}
                 </div>
               )}
 
@@ -2259,13 +3685,24 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   skills / tools / memory scope / thinking) serves chat and voice
                   mode; only the input surface (textarea vs. mic) differs. */}
               <div
-                onDragOver={(e) => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
-                onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
-                onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files); }}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  if (!dragOver) setDragOver(true)
+                }}
+                onDragLeave={(e) => {
+                  if (e.currentTarget === e.target) setDragOver(false)
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setDragOver(false)
+                  if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files)
+                }}
                 className={`relative rounded-xl border bg-neutral-950 shadow-sm transition-colors ${dragOver ? 'border-green-500' : 'border-neutral-800 focus-within:border-neutral-600'}`}
               >
                 {dragOver ? (
-                  <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-xl bg-neutral-950/80 text-xs text-green-500">Drop files to attach</div>
+                  <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-xl bg-neutral-950/80 text-xs text-green-500">
+                    Drop files to attach
+                  </div>
                 ) : null}
                 {skillMatches.length > 0 && (
                   <div className="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 py-1 text-sm shadow-lg">
@@ -2276,11 +3713,18 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                     {skillMatches.slice(0, 6).map((s, i) => (
                       <button
                         key={s.name}
-                        onClick={() => { setInput(`/${s.name} `); inputRef.current?.focus(); }}
+                        onClick={() => {
+                          setInput(`/${s.name} `)
+                          inputRef.current?.focus()
+                        }}
                         className={`flex w-full flex-col items-start gap-0.5 px-3 py-1.5 text-left transition-colors hover:bg-neutral-900 ${i === 0 ? 'bg-neutral-900/60' : ''}`}
                       >
                         <span className="text-green-500">/{s.name}</span>
-                        {s.description ? <span className="line-clamp-1 text-[11px] text-neutral-500">{s.description}</span> : null}
+                        {s.description ? (
+                          <span className="line-clamp-1 text-[11px] text-neutral-500">
+                            {s.description}
+                          </span>
+                        ) : null}
                       </button>
                     ))}
                   </div>
@@ -2290,7 +3734,10 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   type="file"
                   multiple
                   className="hidden"
-                  onChange={e => { if (e.target.files?.length) void addFiles(e.target.files); e.target.value = ''; }}
+                  onChange={(e) => {
+                    if (e.target.files?.length) void addFiles(e.target.files)
+                    e.target.value = ''
+                  }}
                 />
                 <input
                   ref={imageInputRef}
@@ -2298,45 +3745,89 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                   accept="image/*"
                   multiple
                   className="hidden"
-                  onChange={e => { if (e.target.files?.length) void addFiles(e.target.files); e.target.value = ''; }}
+                  onChange={(e) => {
+                    if (e.target.files?.length) void addFiles(e.target.files)
+                    e.target.value = ''
+                  }}
                 />
                 {attachWarn && (
                   <div className="mx-3 mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
                     <WarningCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" weight="fill" />
                     <span className="flex-1">{attachWarn}</span>
-                    <button onClick={() => setAttachWarn(null)} className="shrink-0 text-amber-400/70 hover:text-amber-200">✕</button>
+                    <button
+                      onClick={() => setAttachWarn(null)}
+                      className="shrink-0 text-amber-400/70 hover:text-amber-200"
+                    >
+                      ✕
+                    </button>
                   </div>
                 )}
                 {attachments.length > 0 && (
                   <div className="flex flex-wrap gap-2 px-3 pt-3">
-                    {attachments.map(a => (
-                      <div key={a.id} className="group relative flex w-40 flex-col gap-1 rounded-lg border border-neutral-800 bg-neutral-900 p-2">
-                        <button onClick={() => removeAttachment(a.id)} className="absolute -right-1.5 -top-1.5 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-neutral-700 bg-neutral-950 text-[10px] text-neutral-400 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100">✕</button>
+                    {attachments.map((a) => (
+                      <div
+                        key={a.id}
+                        className="group relative flex w-40 flex-col gap-1 rounded-lg border border-neutral-800 bg-neutral-900 p-2"
+                      >
+                        <button
+                          onClick={() => removeAttachment(a.id)}
+                          className="absolute -right-1.5 -top-1.5 z-10 flex h-4 w-4 items-center justify-center rounded-full border border-neutral-700 bg-neutral-950 text-[10px] text-neutral-400 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                        >
+                          ✕
+                        </button>
                         {a.kind === 'image' ? (
                           <button
                             type="button"
-                            onClick={() => { const url = a.preview || (a.path ? `ogcapture://${a.path}` : ''); if (url) { closePanels(); setLightbox({ url, path: a.path }); } }}
+                            onClick={() => {
+                              const url = a.preview || (a.path ? `ogcapture://${a.path}` : '')
+                              if (url) {
+                                closePanels()
+                                setLightbox({ url, path: a.path })
+                              }
+                            }}
                             title="Click to view"
                             className="relative h-[2.6rem] overflow-hidden rounded-md"
                           >
-                            <img src={a.preview || (a.path ? `ogcapture://${a.path}` : '')} alt={a.name} className="h-full w-full object-cover" />
+                            <img
+                              src={a.preview || (a.path ? `ogcapture://${a.path}` : '')}
+                              alt={a.name}
+                              className="h-full w-full object-cover"
+                            />
                             {a.status === 'loading' ? (
-                              <span className="absolute inset-0 flex items-center justify-center bg-neutral-950/50 text-[9px] text-neutral-300">Reading…</span>
+                              <span className="absolute inset-0 flex items-center justify-center bg-neutral-950/50 text-[9px] text-neutral-300">
+                                Reading…
+                              </span>
                             ) : null}
                           </button>
                         ) : (
                           <button
                             type="button"
                             disabled={!a.text}
-                            onClick={() => { if (a.text || a.path) { closePanels(); setViewer({ title: a.kind === 'pasted' ? 'Pasted text' : a.name, text: a.text || '', path: a.path, kind: a.kind }); } }}
+                            onClick={() => {
+                              if (a.text || a.path) {
+                                closePanels()
+                                setViewer({
+                                  title: a.kind === 'pasted' ? 'Pasted text' : a.name,
+                                  text: a.text || '',
+                                  path: a.path,
+                                  kind: a.kind
+                                })
+                              }
+                            }}
                             title={a.text ? 'Click to expand' : undefined}
                             className="line-clamp-3 h-[2.6rem] overflow-hidden text-left text-[10px] leading-snug text-neutral-500 enabled:hover:text-neutral-300"
                           >
-                            {a.status === 'loading' ? 'Processing…' : a.status === 'error' ? 'Could not read this file.' : (a.text.slice(0, 140) || a.name)}
+                            {a.status === 'loading'
+                              ? 'Processing…'
+                              : a.status === 'error'
+                                ? 'Could not read this file.'
+                                : a.text.slice(0, 140) || a.name}
                           </button>
                         )}
                         <div className="flex items-center justify-between">
-                          <span className="truncate text-[10px] text-neutral-400" title={a.name}>{a.kind === 'pasted' ? '' : a.name}</span>
+                          <span className="truncate text-[10px] text-neutral-400" title={a.name}>
+                            {a.kind === 'pasted' ? '' : a.name}
+                          </span>
                           <span className="rounded-sm border border-neutral-700 px-1 py-0.5 text-[9px] uppercase tracking-wide text-neutral-400">
                             {a.kind === 'pasted' ? 'Pasted' : a.kind}
                           </span>
@@ -2354,222 +3845,419 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                     disabled={transcribing}
                     className={`flex w-full flex-col items-center gap-2 py-5 ${transcribing ? 'cursor-default' : 'cursor-pointer'}`}
                   >
-                    <span className={`flex h-14 w-14 items-center justify-center rounded-full border-2 transition-colors ${recording ? 'border-red-500 bg-red-500/15 text-red-400' : 'border-green-500 bg-green-500/10 text-green-500 hover:bg-green-500/20'} ${transcribing ? 'opacity-50' : ''}`}>
+                    <span
+                      className={`flex h-14 w-14 items-center justify-center rounded-full border-2 transition-colors ${recording ? 'border-red-500 bg-red-500/15 text-red-400' : 'border-green-500 bg-green-500/10 text-green-500 hover:bg-green-500/20'} ${transcribing ? 'opacity-50' : ''}`}
+                    >
                       {transcribing ? (
-                        <svg className="h-6 w-6 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                        <svg className="h-6 w-6 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                          />
+                        </svg>
                       ) : recording ? (
-                        <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                        <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+                          <rect x="6" y="6" width="12" height="12" rx="2" />
+                        </svg>
                       ) : (
-                        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-14 0m7 7v3m0-3a4 4 0 01-4-4V5a4 4 0 018 0v6a4 4 0 01-4 4z" /></svg>
+                        <svg
+                          className="h-6 w-6"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 11a7 7 0 01-14 0m7 7v3m0-3a4 4 0 01-4-4V5a4 4 0 018 0v6a4 4 0 01-4 4z"
+                          />
+                        </svg>
                       )}
                     </span>
                     <span className="text-xs text-neutral-500">
-                      {transcribing ? 'Transcribing…' : recording ? 'Recording — tap to send' : 'Tap to record a voice note'}
+                      {transcribing
+                        ? 'Transcribing…'
+                        : recording
+                          ? 'Recording — tap to send'
+                          : 'Tap to record a voice note'}
                     </span>
                   </button>
                 ) : (
                   <textarea
                     ref={inputRef}
                     value={input}
-                    onChange={e => setInput(e.target.value)}
+                    onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     onPaste={handlePaste}
                     rows={1}
-                    placeholder={mode === 'image' ? 'Describe an image to generate…' : activeProjectName ? `Ask about “${activeProjectName}”…` : 'Ask anything…'}
+                    placeholder={
+                      mode === 'image'
+                        ? 'Describe an image to generate…'
+                        : activeProjectName
+                          ? `Ask about “${activeProjectName}”…`
+                          : 'Ask anything…'
+                    }
                     className="max-h-52 w-full resize-none overflow-y-auto bg-transparent px-3.5 pt-3 text-sm text-neutral-200 placeholder-neutral-600 outline-none"
                   />
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-2 px-2.5 pb-2.5 pt-1">
                   <div className="flex min-w-0 items-center gap-2">
-                  {/* "+" menu — attach / image / project / tools */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button type="button" variant="outline" size="icon" className="size-8 rounded-full"><Plus className="h-4 w-4" /></Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
-                      <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
-                        <Paperclip /> Attach files
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
-                        <ImageIcon /> Add image
-                      </DropdownMenuItem>
-                      <DropdownMenuItem disabled={!imageAvailable} onSelect={() => setMode('image')}>
-                        <Sparkles /> Generate image
-                      </DropdownMenuItem>
-                      {projects.length > 0 ? (
-                        <DropdownMenuSub>
-                          <DropdownMenuSubTrigger><FolderOpen /> Add to project</DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent className="max-h-72 w-52 overflow-y-auto">
-                            {projects.map(p => (
-                              <DropdownMenuItem key={p.id} onSelect={() => { setNoMemory(false); assignProject(p.id); }}>
-                                <FolderOpen /> <span className="flex-1 truncate">{p.name}</span>
-                                {activeProjectId === p.id && <Check className="h-3.5 w-3.5 text-primary" />}
+                    {/* "+" menu — attach / image / project / tools */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="size-8 rounded-full"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
+                        <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
+                          <Paperclip /> Attach files
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
+                          <ImageIcon /> Add image
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={!imageAvailable}
+                          onSelect={() => setMode('image')}
+                        >
+                          <Sparkles /> Generate image
+                        </DropdownMenuItem>
+                        {projects.length > 0 ? (
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                              <FolderOpen /> Add to project
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent className="max-h-72 w-52 overflow-y-auto">
+                              {projects.map((p) => (
+                                <DropdownMenuItem
+                                  key={p.id}
+                                  onSelect={() => {
+                                    setNoMemory(false)
+                                    assignProject(p.id)
+                                  }}
+                                >
+                                  <FolderOpen /> <span className="flex-1 truncate">{p.name}</span>
+                                  {activeProjectId === p.id && (
+                                    <Check className="h-3.5 w-3.5 text-primary" />
+                                  )}
+                                </DropdownMenuItem>
+                              ))}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onSelect={() => setProjCreating(true)}>
+                                <FolderPlus /> New project
+                              </DropdownMenuItem>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                        ) : (
+                          <DropdownMenuItem onSelect={() => setProjCreating(true)}>
+                            <FolderPlus /> Add to project
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            closePanels()
+                            setSkillsOpen(true)
+                          }}
+                        >
+                          <Lightning /> Skills
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={(e) => {
+                            e.preventDefault()
+                            setToolsOn((t) => !t)
+                          }}
+                        >
+                          <Wrench /> <span className="flex-1">Tools</span>
+                          <span
+                            className={`text-xs ${toolsOn ? 'text-primary' : 'text-muted-foreground'}`}
+                          >
+                            {toolsOn ? 'On' : 'Off'}
+                          </span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={(e) => {
+                            e.preventDefault()
+                            setConnectorsOn((t) => !t)
+                          }}
+                        >
+                          <Plug /> <span className="flex-1">Connectors</span>
+                          <span
+                            className={`text-xs ${connectorsOn ? 'text-primary' : 'text-muted-foreground'}`}
+                          >
+                            {connectorsOn ? 'On' : 'Off'}
+                          </span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Coming soon
+                        </DropdownMenuLabel>
+                        <DropdownMenuItem disabled>
+                          <Search /> Web search
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    {/* Scope — Off Grid (default) or a project */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          title="Choose what this chat can draw on: your memory, nothing, or a project"
+                          className={`h-8 gap-1.5 rounded-full ${activeProjectId || (isPro && !noMemory) ? 'border-green-500 text-primary' : 'text-neutral-400'}`}
+                        >
+                          {activeProjectId ? (
+                            <FolderOpen className="h-3.5 w-3.5" />
+                          ) : (
+                            <Brain className="h-3.5 w-3.5" />
+                          )}
+                          <span className="max-w-[9rem] truncate">
+                            {activeProjectName ?? (noMemory ? 'No memory' : 'All memory')}
+                          </span>
+                          <CaretDown className="h-3 w-3 opacity-60" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
+                        <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Memory for this chat
+                        </DropdownMenuLabel>
+                        {isPro && (
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              setNoMemory(false)
+                              assignProject(null)
+                            }}
+                          >
+                            <Brain />
+                            <span
+                              className={`flex-1 ${!activeProjectId && !noMemory ? 'text-primary' : ''}`}
+                            >
+                              All memory
+                            </span>
+                            {!activeProjectId && !noMemory && (
+                              <Check className="h-3.5 w-3.5 text-primary" />
+                            )}
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setNoMemory(true)
+                            assignProject(null)
+                          }}
+                        >
+                          <Prohibit />
+                          <span
+                            className={`flex-1 ${!activeProjectId && noMemory ? 'text-primary' : ''}`}
+                          >
+                            No memory{' '}
+                            <span className="text-[10px] text-muted-foreground">· plain chat</span>
+                          </span>
+                          {!activeProjectId && noMemory && (
+                            <Check className="h-3.5 w-3.5 text-primary" />
+                          )}
+                        </DropdownMenuItem>
+                        {projects.length > 0 && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              Project memory
+                            </DropdownMenuLabel>
+                            {projects.map((p) => (
+                              <DropdownMenuItem
+                                key={p.id}
+                                onSelect={() => {
+                                  setNoMemory(false)
+                                  assignProject(p.id)
+                                }}
+                              >
+                                <FolderOpen />
+                                <span
+                                  className={`flex-1 truncate ${activeProjectId === p.id ? 'text-primary' : ''}`}
+                                >
+                                  {p.name}
+                                </span>
+                                {activeProjectId === p.id && (
+                                  <Check className="h-3.5 w-3.5 text-primary" />
+                                )}
                               </DropdownMenuItem>
                             ))}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onSelect={() => setProjCreating(true)}><FolderPlus /> New project</DropdownMenuItem>
-                          </DropdownMenuSubContent>
-                        </DropdownMenuSub>
-                      ) : (
+                          </>
+                        )}
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={() => setProjCreating(true)}>
-                          <FolderPlus /> Add to project
+                          <FolderPlus /> New project
                         </DropdownMenuItem>
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => { closePanels(); setSkillsOpen(true); }}>
-                        <Lightning /> Skills
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setToolsOn(t => !t); }}>
-                        <Wrench /> <span className="flex-1">Tools</span>
-                        <span className={`text-xs ${toolsOn ? 'text-primary' : 'text-muted-foreground'}`}>{toolsOn ? 'On' : 'Off'}</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setConnectorsOn(t => !t); }}>
-                        <Plug /> <span className="flex-1">Connectors</span>
-                        <span className={`text-xs ${connectorsOn ? 'text-primary' : 'text-muted-foreground'}`}>{connectorsOn ? 'On' : 'Off'}</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Coming soon</DropdownMenuLabel>
-                      <DropdownMenuItem disabled><Search /> Web search</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  {/* Scope — Off Grid (default) or a project */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        title="Choose what this chat can draw on: your memory, nothing, or a project"
-                        className={`h-8 gap-1.5 rounded-full ${activeProjectId || (isPro && !noMemory) ? 'border-green-500 text-primary' : 'text-neutral-400'}`}
-                      >
-                        {activeProjectId ? <FolderOpen className="h-3.5 w-3.5" /> : <Brain className="h-3.5 w-3.5" />}
-                        <span className="max-w-[9rem] truncate">{activeProjectName ?? (noMemory ? 'No memory' : 'All memory')}</span>
-                        <CaretDown className="h-3 w-3 opacity-60" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
-                      <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Memory for this chat</DropdownMenuLabel>
-                      {isPro && (
-                        <DropdownMenuItem onSelect={() => { setNoMemory(false); assignProject(null); }}>
-                          <Brain />
-                          <span className={`flex-1 ${!activeProjectId && !noMemory ? 'text-primary' : ''}`}>All memory</span>
-                          {!activeProjectId && !noMemory && <Check className="h-3.5 w-3.5 text-primary" />}
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem onSelect={() => { setNoMemory(true); assignProject(null); }}>
-                        <Prohibit />
-                        <span className={`flex-1 ${!activeProjectId && noMemory ? 'text-primary' : ''}`}>No memory <span className="text-[10px] text-muted-foreground">· plain chat</span></span>
-                        {!activeProjectId && noMemory && <Check className="h-3.5 w-3.5 text-primary" />}
-                      </DropdownMenuItem>
-                      {projects.length > 0 && (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">Project memory</DropdownMenuLabel>
-                          {projects.map(p => (
-                            <DropdownMenuItem key={p.id} onSelect={() => { setNoMemory(false); assignProject(p.id); }}>
-                              <FolderOpen />
-                              <span className={`flex-1 truncate ${activeProjectId === p.id ? 'text-primary' : ''}`}>{p.name}</span>
-                              {activeProjectId === p.id && <Check className="h-3.5 w-3.5 text-primary" />}
-                            </DropdownMenuItem>
-                          ))}
-                        </>
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => setProjCreating(true)}><FolderPlus /> New project</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setThinkingEnabled(t => !t)}
-                        className={`h-8 gap-1.5 rounded-full ${thinkingEnabled ? 'border-green-500 text-primary' : 'text-neutral-400'}`}
-                      >
-                        <Brain className="h-3.5 w-3.5" /> Thinking
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{thinkingEnabled ? 'Reasoning on — the model thinks step by step (slower)' : 'Reasoning off — direct answers (faster)'}</TooltipContent>
-                  </Tooltip>
-                  {/* Image toggle — always available; turning it on makes the next
-                      prompt generate an image instead of a chat reply. */}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => { const on = mode !== 'image'; setMode(on ? 'image' : 'ask'); if (!on) setShowImageOptions(false); }}
-                        className={`h-8 gap-1.5 rounded-full ${mode === 'image' ? 'border-green-500 text-primary' : 'text-neutral-400'}`}
-                      >
-                        <Sparkles className="h-3.5 w-3.5" /> Image
-                        {mode === 'image' && <X className="h-3.5 w-3.5 opacity-70" />}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{mode === 'image' ? 'Image mode on — your prompt generates an image (click to return to chat)' : 'Generate an image from your prompt'}</TooltipContent>
-                  </Tooltip>
-                  {mode === 'image' && (
-                    <Button type="button" variant="outline" size="sm" onClick={() => setShowImageOptions(o => !o)} className={`h-8 gap-1.5 rounded-full ${showImageOptions ? 'text-primary' : ''}`}>
-                      <SlidersHorizontal className="h-3.5 w-3.5" /> Image options
-                    </Button>
-                  )}
-                  {queuedCount(queuedByConv, activeConversationId) > 0 && (
-                    <span className="flex h-8 items-center rounded-full border border-neutral-800 px-2.5 text-[11px] text-neutral-400">
-                      {queuedCount(queuedByConv, activeConversationId)} queued
-                    </span>
-                  )}
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    {!voiceMode && (
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           type="button"
                           variant="outline"
-                          size="icon"
-                          onClick={toggleRecording}
-                          disabled={transcribing}
-                          className={`size-8 ${recording ? 'border-red-500/50 text-red-400' : ''}`}
+                          size="sm"
+                          onClick={() => setThinkingEnabled((t) => !t)}
+                          className={`h-8 gap-1.5 rounded-full ${thinkingEnabled ? 'border-green-500 text-primary' : 'text-neutral-400'}`}
                         >
-                          {transcribing ? (
-                            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                          ) : recording ? (
-                            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-                          ) : (
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-14 0m7 7v3m0-3a4 4 0 01-4-4V5a4 4 0 018 0v6a4 4 0 01-4 4z" /></svg>
-                          )}
+                          <Brain className="h-3.5 w-3.5" /> Thinking
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>{recording ? 'Stop recording' : 'Record voice'}</TooltipContent>
+                      <TooltipContent>
+                        {thinkingEnabled
+                          ? 'Reasoning on — the model thinks step by step (slower)'
+                          : 'Reasoning off — direct answers (faster)'}
+                      </TooltipContent>
                     </Tooltip>
+                    {/* Image toggle — always available; turning it on makes the next
+                      prompt generate an image instead of a chat reply. */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const on = mode !== 'image'
+                            setMode(on ? 'image' : 'ask')
+                            if (!on) setShowImageOptions(false)
+                          }}
+                          className={`h-8 gap-1.5 rounded-full ${mode === 'image' ? 'border-green-500 text-primary' : 'text-neutral-400'}`}
+                        >
+                          <Sparkles className="h-3.5 w-3.5" /> Image
+                          {mode === 'image' && <X className="h-3.5 w-3.5 opacity-70" />}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {mode === 'image'
+                          ? 'Image mode on — your prompt generates an image (click to return to chat)'
+                          : 'Generate an image from your prompt'}
+                      </TooltipContent>
+                    </Tooltip>
+                    {mode === 'image' && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowImageOptions((o) => !o)}
+                        className={`h-8 gap-1.5 rounded-full ${showImageOptions ? 'text-primary' : ''}`}
+                      >
+                        <SlidersHorizontal className="h-3.5 w-3.5" /> Image options
+                      </Button>
                     )}
-                    {/* Stop shows for the WHOLE generating window — the pre-stream
-                        "Searching your memory…" phase as well as a live token stream —
-                        so an in-flight turn is always cancellable. Image gen has its own
-                        labeled Stop just below, so skip this icon in that mode. */}
-                    {!!activeConversationId && generatingConvs.has(activeConversationId) && !(loading && (mode === 'image' || generatingImage)) && (
+                    {queuedCount(queuedByConv, activeConversationId) > 0 && (
+                      <span className="flex h-8 items-center rounded-full border border-neutral-800 px-2.5 text-[11px] text-neutral-400">
+                        {queuedCount(queuedByConv, activeConversationId)} queued
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {!voiceMode && (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
                             type="button"
                             variant="outline"
                             size="icon"
-                            aria-label="Stop generating"
-                            onClick={() => stopGeneration(activeConversationId)}
-                            className="size-8 rounded-full border-red-500/50 text-red-400 hover:bg-red-500/10"
+                            onClick={toggleRecording}
+                            disabled={transcribing}
+                            className={`size-8 ${recording ? 'border-red-500/50 text-red-400' : ''}`}
                           >
-                            <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                            {transcribing ? (
+                              <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                />
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                                />
+                              </svg>
+                            ) : recording ? (
+                              <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                                <rect x="6" y="6" width="12" height="12" rx="2" />
+                              </svg>
+                            ) : (
+                              <svg
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M19 11a7 7 0 01-14 0m7 7v3m0-3a4 4 0 01-4-4V5a4 4 0 018 0v6a4 4 0 01-4 4z"
+                                />
+                              </svg>
+                            )}
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Stop generating</TooltipContent>
+                        <TooltipContent>
+                          {recording ? 'Stop recording' : 'Record voice'}
+                        </TooltipContent>
                       </Tooltip>
                     )}
+                    {/* Stop shows for the WHOLE generating window — the pre-stream
+                        "Searching your memory…" phase as well as a live token stream —
+                        so an in-flight turn is always cancellable. Image gen has its own
+                        labeled Stop just below, so skip this icon in that mode. */}
+                    {!!activeConversationId &&
+                      generatingConvs.has(activeConversationId) &&
+                      !(loading && (mode === 'image' || generatingImage)) && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              aria-label="Stop generating"
+                              onClick={() => stopGeneration(activeConversationId)}
+                              className="size-8 rounded-full border-red-500/50 text-red-400 hover:bg-red-500/10"
+                            >
+                              <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+                                <rect x="6" y="6" width="12" height="12" rx="2" />
+                              </svg>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Stop generating</TooltipContent>
+                        </Tooltip>
+                      )}
                     {loading && (mode === 'image' || generatingImage) ? (
-                      <Button type="button" variant="outline" onClick={() => { stopGeneration(activeConversationId); window.api.cancelImageGen?.(); }} className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10">
-
-                        <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          stopGeneration(activeConversationId)
+                          window.api.cancelImageGen?.()
+                        }}
+                        className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+                          <rect x="6" y="6" width="12" height="12" rx="2" />
+                        </svg>
                         Stop
                       </Button>
                     ) : voiceMode ? null : (
@@ -2579,12 +4267,31 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                             type="button"
                             size="icon"
                             onClick={() => sendMessage()}
-                            disabled={(!input.trim() && attachments.length === 0) || attachments.some(a => a.status === 'loading')}
-                            title={attachments.some(a => a.status === 'loading') ? 'Waiting for attachment to finish processing…' : 'Send'}
+                            disabled={
+                              (!input.trim() && attachments.length === 0) ||
+                              attachments.some((a) => a.status === 'loading')
+                            }
+                            title={
+                              attachments.some((a) => a.status === 'loading')
+                                ? 'Waiting for attachment to finish processing…'
+                                : 'Send'
+                            }
                             className="size-8 rounded-full"
                           >
                             {/* Always sendable — generating doesn't block; messages queue. */}
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
+                            <svg
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 10l7-7m0 0l7 7m-7-7v18"
+                              />
+                            </svg>
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>Send</TooltipContent>
@@ -2599,10 +4306,27 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       </div>
 
       {/* Canvas — sandboxed render of a model-generated artifact */}
-      {canvasArtifact && <ArtifactCanvas artifact={canvasArtifact} onClose={() => setCanvasArtifact(null)} width={canvasWidth} onResize={setCanvasWidth} />}
+      {canvasArtifact && (
+        <ArtifactCanvas
+          artifact={canvasArtifact}
+          onClose={() => setCanvasArtifact(null)}
+          width={canvasWidth}
+          onResize={setCanvasWidth}
+        />
+      )}
 
       {/* Skills — view / create / edit reusable instruction packs */}
-      {skillsOpen && <SkillsPanel onClose={() => setSkillsOpen(false)} onChanged={() => window.api.listSkills().then(s => setSkills(s)).catch(() => {})} />}
+      {skillsOpen && (
+        <SkillsPanel
+          onClose={() => setSkillsOpen(false)}
+          onChanged={() =>
+            window.api
+              .listSkills()
+              .then((s) => setSkills(s))
+              .catch(() => {})
+          }
+        />
+      )}
 
       {/* Settings — model params, voice, tools, connectors */}
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
@@ -2611,9 +4335,17 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
       {/* Attachment viewer — same full-screen overlay layout as the image lightbox
           (floating Download/Close top-right, content centered), for text/PDF/docs. */}
       {viewer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-10 font-mono" onClick={() => setViewer(null)}>
-          <div className="absolute right-4 top-4 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            <span className="mr-2 max-w-[40vw] truncate self-center text-xs text-neutral-400">{viewer.title}</span>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-10 font-mono"
+          onClick={() => setViewer(null)}
+        >
+          <div
+            className="absolute right-4 top-4 flex items-center gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="mr-2 max-w-[40vw] truncate self-center text-xs text-neutral-400">
+              {viewer.title}
+            </span>
             {viewer.path && (
               <button
                 onClick={() => downloadImage(viewer.path, viewer.title)}
@@ -2622,19 +4354,32 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                 Download
               </button>
             )}
-            <button onClick={() => setViewer(null)} className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:text-white">Close</button>
+            <button
+              onClick={() => setViewer(null)}
+              className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:text-white"
+            >
+              Close
+            </button>
           </div>
           <pre
             onClick={(e) => e.stopPropagation()}
             className="max-h-full w-full max-w-3xl overflow-auto whitespace-pre-wrap break-words rounded-md border border-neutral-800 bg-neutral-950 p-5 text-sm leading-relaxed text-neutral-200"
-          >{viewer.text}</pre>
+          >
+            {viewer.text}
+          </pre>
         </div>
       )}
 
       {/* Lightbox — click a generated image to enlarge, download, or delete */}
       {lightbox && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-10" onClick={() => setLightbox(null)}>
-          <div className="absolute right-4 top-4 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-10"
+          onClick={() => setLightbox(null)}
+        >
+          <div
+            className="absolute right-4 top-4 flex items-center gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
             {lightbox.path && (
               <>
                 <button
@@ -2658,7 +4403,12 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
               Close
             </button>
           </div>
-          <img src={lightbox.url} alt="" className="max-h-full max-w-full rounded-md object-contain" onClick={(e) => e.stopPropagation()} />
+          <img
+            src={lightbox.url}
+            alt=""
+            className="max-h-full max-w-full rounded-md object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
 
@@ -2668,10 +4418,15 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           <div className="fixed right-0 top-0 bottom-0 z-50 flex w-[30vw] min-w-[420px] flex-col border-l border-neutral-800 bg-neutral-950 font-mono shadow-2xl">
             <div className="flex items-center justify-between border-b border-neutral-900 px-4 py-3">
               <span className="text-sm text-neutral-200">Gallery</span>
-              <button onClick={() => setShowGallery(false)} className="text-neutral-500 transition-colors hover:text-neutral-200">✕</button>
+              <button
+                onClick={() => setShowGallery(false)}
+                className="text-neutral-500 transition-colors hover:text-neutral-200"
+              >
+                ✕
+              </button>
             </div>
             <div className="flex items-center gap-1 border-b border-neutral-900 px-3 py-2">
-              {(['images', 'artifacts'] as const).map(tab => (
+              {(['images', 'artifacts'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setGalleryTab(tab)}
@@ -2682,7 +4437,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
               ))}
             </div>
             <div className="flex items-center gap-1 border-b border-neutral-900 px-3 py-1.5">
-              {(['chat', 'project', 'all'] as const).map(sc => (
+              {(['chat', 'project', 'all'] as const).map((sc) => (
                 <button
                   key={sc}
                   onClick={() => setGalleryScope(sc)}
@@ -2696,7 +4451,9 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
             <div className="flex-1 overflow-y-auto p-3">
               {galleryTab === 'images' ? (
                 gallery.length === 0 ? (
-                  <p className="py-10 text-center text-xs text-neutral-600">No images generated yet.</p>
+                  <p className="py-10 text-center text-xs text-neutral-600">
+                    No images generated yet.
+                  </p>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
                     {gallery.map((g) => (
@@ -2705,7 +4462,11 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
                         onClick={() => setLightbox({ url: `ogcapture://${g.path}`, path: g.path })}
                         className="overflow-hidden rounded-md border border-neutral-800 transition-colors hover:border-green-500"
                       >
-                        <img src={`ogcapture://${g.path}`} alt="" className="aspect-square w-full object-cover" />
+                        <img
+                          src={`ogcapture://${g.path}`}
+                          alt=""
+                          className="aspect-square w-full object-cover"
+                        />
                       </button>
                     ))}
                   </div>
@@ -2713,29 +4474,49 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
               ) : (
                 <>
                   {artifacts.length === 0 ? (
-                    <p className="py-10 text-center text-xs text-neutral-600">No artifacts in this {galleryScope === 'all' ? 'app' : galleryScope}.</p>
+                    <p className="py-10 text-center text-xs text-neutral-600">
+                      No artifacts in this {galleryScope === 'all' ? 'app' : galleryScope}.
+                    </p>
                   ) : (
-                <div className="flex flex-col gap-2">
-                  {artifacts.map((a) => (
-                    <div key={a.id} className="group flex items-center gap-2 rounded-md border border-neutral-800 p-2 transition-colors hover:border-green-500">
-                      <button
-                        onClick={() => a.kind === 'image'
-                          ? (closePanels(), setLightbox({ url: `ogcapture://${a.code}`, path: a.code }))
-                          : a.kind === 'text'
-                            ? (closePanels(), setViewer({ title: a.title, text: a.code }))
-                            : openCanvas({ kind: a.kind, code: a.code, title: a.title })}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      >
-                        {a.kind === 'image' ? (
-                          <img src={`ogcapture://${a.code}`} alt="" className="h-8 w-8 shrink-0 rounded-sm border border-neutral-800 object-cover" />
-                        ) : (
-                          <span className="rounded-sm bg-neutral-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-green-500">{a.kind === 'text' ? 'input' : a.kind}</span>
-                        )}
-                        <span className="truncate text-xs text-neutral-200">{a.title}</span>
-                      </button>
-                      <button onClick={() => deleteArtifact(a.id)} className="text-neutral-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100" title="Delete">✕</button>
-                    </div>
-                  ))}
+                    <div className="flex flex-col gap-2">
+                      {artifacts.map((a) => (
+                        <div
+                          key={a.id}
+                          className="group flex items-center gap-2 rounded-md border border-neutral-800 p-2 transition-colors hover:border-green-500"
+                        >
+                          <button
+                            onClick={() =>
+                              a.kind === 'image'
+                                ? (closePanels(),
+                                  setLightbox({ url: `ogcapture://${a.code}`, path: a.code }))
+                                : a.kind === 'text'
+                                  ? (closePanels(), setViewer({ title: a.title, text: a.code }))
+                                  : openCanvas({ kind: a.kind, code: a.code, title: a.title })
+                            }
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          >
+                            {a.kind === 'image' ? (
+                              <img
+                                src={`ogcapture://${a.code}`}
+                                alt=""
+                                className="h-8 w-8 shrink-0 rounded-sm border border-neutral-800 object-cover"
+                              />
+                            ) : (
+                              <span className="rounded-sm bg-neutral-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-green-500">
+                                {a.kind === 'text' ? 'input' : a.kind}
+                              </span>
+                            )}
+                            <span className="truncate text-xs text-neutral-200">{a.title}</span>
+                          </button>
+                          <button
+                            onClick={() => deleteArtifact(a.id)}
+                            className="text-neutral-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                            title="Delete"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </>
@@ -2745,5 +4526,5 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
         </>
       )}
     </div>
-  );
+  )
 }

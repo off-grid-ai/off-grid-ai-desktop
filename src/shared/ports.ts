@@ -8,6 +8,6 @@
 // Pure constants, no imports, so both the main process and the renderer can
 // import this without pulling in Electron/Node.
 
-export const LLAMA_SERVER_PORT = 8439;
-export const GATEWAY_PORT = 7878;
-export const MEDIA_PORT = 7879;
+export const LLAMA_SERVER_PORT = 8439
+export const GATEWAY_PORT = 7878
+export const MEDIA_PORT = 7879

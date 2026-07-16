@@ -1,37 +1,37 @@
-import { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react'
 
 export interface Notification {
-  id: string;
-  type: 'approval' | 'todo' | 'info';
-  title: string;
-  message: string;
-  timestamp: Date;
-  read: boolean;
-  approvalId?: number;
-  actionId?: number;
+  id: string
+  type: 'approval' | 'todo' | 'info'
+  title: string
+  message: string
+  timestamp: Date
+  read: boolean
+  approvalId?: number
+  actionId?: number
 }
 
 interface NotificationContextType {
-  notifications: Notification[];
-  unreadCount: number;
-  addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => void;
-  markAsRead: (id: string) => void;
-  markAllAsRead: () => void;
-  clearNotification: (id: string) => void;
-  clearAll: () => void;
+  notifications: Notification[]
+  unreadCount: number
+  addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => void
+  markAsRead: (id: string) => void
+  markAllAsRead: () => void
+  clearNotification: (id: string) => void
+  clearAll: () => void
 }
 
-const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+const NotificationContext = createContext<NotificationContextType | undefined>(undefined)
 
-const STORAGE_KEY = 'my-memories-notifications';
-const MAX_NOTIFICATIONS = 50;
+const STORAGE_KEY = 'my-memories-notifications'
+const MAX_NOTIFICATIONS = 50
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
-        const parsed = JSON.parse(stored);
+        const parsed = JSON.parse(stored)
         // Drop legacy chat/memory/entity/summary notifications — we only surface
         // proactive approvals and to-dos now.
         return parsed
@@ -39,57 +39,58 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           .map((n: any) => ({
             ...n,
             timestamp: new Date(n.timestamp)
-          }));
+          }))
       }
     } catch (e) {
-      console.error('Failed to load notifications from storage:', e);
+      console.error('Failed to load notifications from storage:', e)
     }
-    return [];
-  });
+    return []
+  })
 
   // Persist notifications to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications))
     } catch (e) {
-      console.error('Failed to save notifications:', e);
+      console.error('Failed to save notifications:', e)
     }
-  }, [notifications]);
+  }, [notifications])
 
-  const addNotification = useCallback((notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
-    const newNotification: Notification = {
-      ...notification,
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      timestamp: new Date(),
-      read: false,
-    };
+  const addNotification = useCallback(
+    (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
+      const newNotification: Notification = {
+        ...notification,
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        timestamp: new Date(),
+        read: false
+      }
 
-    setNotifications(prev => {
-      const updated = [newNotification, ...prev];
-      // Keep only the most recent notifications
-      return updated.slice(0, MAX_NOTIFICATIONS);
-    });
-  }, []);
+      setNotifications((prev) => {
+        const updated = [newNotification, ...prev]
+        // Keep only the most recent notifications
+        return updated.slice(0, MAX_NOTIFICATIONS)
+      })
+    },
+    []
+  )
 
   const markAsRead = useCallback((id: string) => {
-    setNotifications(prev =>
-      prev.map(n => (n.id === id ? { ...n, read: true } : n))
-    );
-  }, []);
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
+  }, [])
 
   const markAllAsRead = useCallback(() => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  }, []);
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+  }, [])
 
   const clearNotification = useCallback((id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  }, []);
+    setNotifications((prev) => prev.filter((n) => n.id !== id))
+  }, [])
 
   const clearAll = useCallback(() => {
-    setNotifications([]);
-  }, []);
+    setNotifications([])
+  }, [])
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.read).length
 
   return (
     <NotificationContext.Provider
@@ -100,18 +101,18 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         markAsRead,
         markAllAsRead,
         clearNotification,
-        clearAll,
+        clearAll
       }}
     >
       {children}
     </NotificationContext.Provider>
-  );
+  )
 }
 
 export function useNotifications() {
-  const context = useContext(NotificationContext);
+  const context = useContext(NotificationContext)
   if (context === undefined) {
-    throw new Error('useNotifications must be used within a NotificationProvider');
+    throw new Error('useNotifications must be used within a NotificationProvider')
   }
-  return context;
+  return context
 }

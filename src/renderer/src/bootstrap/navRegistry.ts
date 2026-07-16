@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import type { ComponentType } from 'react'
 
 // Navigation seam. Pro registers sidebar nav entries during activation; App.tsx
 // renders core items + registered items in order. Each entry points at a route
@@ -11,28 +11,28 @@ import type { ComponentType } from 'react';
 
 export interface NavEntry {
   /** Route name, matches a RegisteredScreen.name. */
-  route: string;
+  route: string
   /** Sidebar label. */
-  label: string;
+  label: string
   /** Phosphor icon component. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  icon: ComponentType<any>;
+  icon: ComponentType<any>
   /** Lower sorts first; core items use 0..99, pro items 100+. */
-  order?: number;
+  order?: number
 }
 
-const entries: NavEntry[] = [];
+const entries: NavEntry[] = []
 
 export function registerNav(entry: NavEntry): void {
-  if (!entries.some((e) => e.route === entry.route)) entries.push(entry);
+  if (!entries.some((e) => e.route === entry.route)) entries.push(entry)
 }
 
 export function getRegisteredNav(): NavEntry[] {
-  return [...entries].sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
+  return [...entries].sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
 }
 
 /** True once the pro package has registered at least one screen — used by the
  *  shell to decide between rendering the real screen vs the upgrade teaser. */
 export function isProActive(): boolean {
-  return entries.length > 0;
+  return entries.length > 0
 }

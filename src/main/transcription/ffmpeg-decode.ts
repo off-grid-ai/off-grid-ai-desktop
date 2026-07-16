@@ -6,7 +6,7 @@
 // own ffmpeg-binary resolution + tmp-file lifecycle.
 
 /** Cap the decode so a malformed/streaming input can't hang the process forever. */
-export const DECODE_TIMEOUT_MS = 10 * 60_000;
+export const DECODE_TIMEOUT_MS = 10 * 60_000
 
 /**
  * ffmpeg args to re-encode `inputPath` into a 16 kHz mono PCM WAV at `outPath`:
@@ -15,5 +15,5 @@ export const DECODE_TIMEOUT_MS = 10 * 60_000;
  * parakeet expect on input.
  */
 export function decodeToWavArgs(inputPath: string, outPath: string): string[] {
-  return ['-y', '-i', inputPath, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', outPath];
+  return ['-y', '-i', inputPath, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', outPath]
 }

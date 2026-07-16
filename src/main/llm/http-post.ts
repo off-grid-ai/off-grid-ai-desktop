@@ -9,7 +9,7 @@
 // that contract ONCE; every request site in llm.ts builds its options from here (DRY), and the
 // integration test drives postCompletionOnce against a real socket-closing server (behaviour).
 
-import * as http from 'http';
+import * as http from 'http'
 
 /** Turn a non-200 model-server response into an ACTIONABLE message. llama-server
  *  returns a JSON body like {"error":{"message":"request (22825 tokens) exceeds
@@ -17,22 +17,24 @@ import * as http from 'http';
  *  useless to the user. We surface the common, user-fixable cases in plain
  *  language and otherwise fall back to the server's own message. */
 export function describeServerError(statusCode: number | undefined, body: string): string {
-  let detail = (body || '').trim();
+  let detail = (body || '').trim()
   try {
-    const j = JSON.parse(body);
-    const m = j?.error?.message ?? j?.message;
-    if (typeof m === 'string' && m) detail = m;
-  } catch { /* non-JSON body — use the raw text */ }
+    const j = JSON.parse(body)
+    const m = j?.error?.message ?? j?.message
+    if (typeof m === 'string' && m) detail = m
+  } catch {
+    /* non-JSON body — use the raw text */
+  }
   // Context overflow — usually too many connectors enabled at once (their tool
   // schemas + grammar overflow the context window).
   if (/exceeds the available context size/i.test(detail)) {
-    return 'The request is larger than the model’s context window — usually too many connectors enabled at once. Disable some connectors, or raise the context window in Settings, then try again.';
+    return 'The request is larger than the model’s context window — usually too many connectors enabled at once. Disable some connectors, or raise the context window in Settings, then try again.'
   }
   // A tool schema that can't be compiled into a valid grammar for the engine.
   if (/failed to (parse|initialize|compile) (grammar|json ?schema)/i.test(detail)) {
-    return 'A connected tool’s schema couldn’t be turned into a valid grammar for the local model. Disable the most recently added connector and try again.';
+    return 'A connected tool’s schema couldn’t be turned into a valid grammar for the local model. Disable the most recently added connector and try again.'
   }
-  return `LLM Server Error: ${statusCode ?? '?'}${detail ? ` ${detail}` : ''}`;
+  return `LLM Server Error: ${statusCode ?? '?'}${detail ? ` ${detail}` : ''}`
 }
 
 /** The request options that guarantee a fresh, non-pooled connection to the model server.
@@ -49,9 +51,9 @@ export function modelRequestOptions(port: number, contentLength: number): http.R
     headers: {
       'Content-Type': 'application/json',
       'Content-Length': contentLength,
-      'Connection': 'close',
-    },
-  };
+      Connection: 'close'
+    }
+  }
 }
 
 /** One non-streaming POST to /v1/chat/completions, resolving the raw body text. Rejects on a
@@ -59,25 +61,54 @@ export function modelRequestOptions(port: number, contentLength: number): http.R
  *  integration-tested. The abort matters: a pre-stream call (intent classify / image-prompt)
  *  otherwise runs to completion after the user hits Stop, leaving the model busy and blocking
  *  the next turn. */
-export function postCompletionOnce(port: number, body: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
+export function postCompletionOnce(
+  port: number,
+  body: string,
+  timeoutMs: number,
+  signal?: AbortSignal
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) { reject(new Error('aborted')); return; }
-    let done = false;
-    const finish = (fn: () => void): void => { if (done) { return; } done = true; clearTimeout(timer); signal?.removeEventListener('abort', onAbort); fn(); };
-    const onAbort = (): void => { req.destroy(); finish(() => reject(new Error('aborted'))); };
-    const timer = setTimeout(() => { req.destroy(); finish(() => reject(new Error('LLM request timed out - try a shorter prompt'))); }, timeoutMs);
+    if (signal?.aborted) {
+      reject(new Error('aborted'))
+      return
+    }
+    let done = false
+    const finish = (fn: () => void): void => {
+      if (done) {
+        return
+      }
+      done = true
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      fn()
+    }
+    const onAbort = (): void => {
+      req.destroy()
+      finish(() => reject(new Error('aborted')))
+    }
+    const timer = setTimeout(() => {
+      req.destroy()
+      finish(() => reject(new Error('LLM request timed out - try a shorter prompt')))
+    }, timeoutMs)
 
     const req = http.request(modelRequestOptions(port, Buffer.byteLength(body)), (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => finish(() => {
-        if (res.statusCode !== 200) { reject(new Error(describeServerError(res.statusCode, data))); return; }
-        resolve(data);
-      }));
-    });
-    req.on('error', (e) => finish(() => reject(e)));
-    signal?.addEventListener('abort', onAbort, { once: true });
-    req.write(body);
-    req.end();
-  });
+      let data = ''
+      res.on('data', (chunk) => {
+        data += chunk
+      })
+      res.on('end', () =>
+        finish(() => {
+          if (res.statusCode !== 200) {
+            reject(new Error(describeServerError(res.statusCode, data)))
+            return
+          }
+          resolve(data)
+        })
+      )
+    })
+    req.on('error', (e) => finish(() => reject(e)))
+    signal?.addEventListener('abort', onAbort, { once: true })
+    req.write(body)
+    req.end()
+  })
 }

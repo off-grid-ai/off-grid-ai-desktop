@@ -19,6 +19,7 @@ mobile licensing model (same Keygen account/product — a key works on both).
   synchronously at load via the `pro:is-enabled` IPC (preload → `window.api.isPro`).
 
 Env overrides (dev/contributor only):
+
 - `OFFGRID_PRO=0` → force free even in a pro build.
 - `OFFGRID_PRO=1` → force pro on **without** a license (for working on pro features).
 - unset → the real paid path: license-gated.
@@ -41,6 +42,7 @@ git lfs pull                      # ensure resources/bin/* are real binaries, no
 These builds are **unsigned** (no cert/Apple-ID prompts) and never touch GitHub.
 
 ### Smoke test
+
 1. Open `dist/OffGrid-core-<v>.dmg`, drag to /Applications, **right-click → Open**
    (unsigned → Gatekeeper). Confirm: app launches, a model downloads + chat works,
    pro tabs show the UpgradeScreen (no license box, since core).
@@ -73,6 +75,7 @@ Buy Pro on web (RevenueCat checkout)
 ```
 
 Desktop licensing code (ported from mobile):
+
 - `src/main/licensing/keygen-config.ts` — account/product/policy IDs, public key (non-secret).
 - `src/main/licensing/keygen-client.ts` — Keygen REST (validate / activate / list / deactivate).
 - `src/main/licensing/device-fingerprint.ts` — stable per-install id (userData file).
@@ -89,18 +92,21 @@ fingerprint and reclaim their slot.
 > Not yet wired into CI as two artifacts — see TODO at the bottom. The mechanics:
 
 ### macOS (working today)
+
 Signing uses the Apple Developer ID + notarization (`electron-builder.yml`
 `mac.notarize: true`). CI secrets: `CSC_LINK`, `CSC_KEY_PASSWORD`,
 `APPLE_API_KEY*`. Do **not** add an afterSign re-sign hook — it invalidates the
 notarization staple (this was a past bug).
 
 ### Windows — PARKED
+
 Windows is on hold and owned elsewhere (the bundled llama-server doesn't start in
 the Windows binary; being fixed separately). Azure Trusted Signing setup (§4) is
 kept below for when Windows resumes, but it is **not** on the current path. Focus
 is macOS core + pro.
 
 ### Per-artifact config
+
 Core and pro differ only by `OFFGRID_FORCE_CORE`, `productName`, `appId`, and
 `artifactName` (see `scripts/build-mac-local.sh` for the exact overrides). They
 must publish to **separate update channels** so electron-updater never feeds a
@@ -115,6 +121,7 @@ so a downloadable `.pfx` no longer works in CI. Azure Trusted Signing is the
 cheapest CI-native option (~$10/mo) and electron-builder 25+ supports it natively.
 
 ### One-time setup (Azure portal — only the org owner can do this)
+
 1. **Subscription + provider**: in an Azure subscription, register the
    `Microsoft.CodeSigning` resource provider.
 2. **Trusted Signing Account**: create one (region: East US / West US3 /
@@ -127,17 +134,19 @@ cheapest CI-native option (~$10/mo) and electron-builder 25+ supports it nativel
    it the **"Trusted Signing Certificate Profile Signer"** role on the account.
 
 ### Values to collect
-| What | Where it goes |
-|------|----------------|
+
+| What                                                   | Where it goes           |
+| ------------------------------------------------------ | ----------------------- |
 | `endpoint` (e.g. `https://eus.codesigning.azure.net/`) | electron-builder config |
-| `codeSigningAccountName` | electron-builder config |
-| `certificateProfileName` | electron-builder config |
-| `publisherName` (exact validated org name) | electron-builder config |
-| `AZURE_TENANT_ID` | GitHub repo secret |
-| `AZURE_CLIENT_ID` | GitHub repo secret |
-| `AZURE_CLIENT_SECRET` | GitHub repo secret |
+| `codeSigningAccountName`                               | electron-builder config |
+| `certificateProfileName`                               | electron-builder config |
+| `publisherName` (exact validated org name)             | electron-builder config |
+| `AZURE_TENANT_ID`                                      | GitHub repo secret      |
+| `AZURE_CLIENT_ID`                                      | GitHub repo secret      |
+| `AZURE_CLIENT_SECRET`                                  | GitHub repo secret      |
 
 ### electron-builder wiring (when values are in hand)
+
 Add to the Windows config (electron-builder 25+ reads `AZURE_*` env via
 DefaultAzureCredential and auto-downloads the Trusted Signing dlib):
 
@@ -145,10 +154,10 @@ DefaultAzureCredential and auto-downloads the Trusted Signing dlib):
 win:
   executableName: off-grid-ai
   azureSignOptions:
-    publisherName: "<validated org name>"
-    endpoint: "https://<region>.codesigning.azure.net/"
-    certificateProfileName: "<profile>"
-    codeSigningAccountName: "<account>"
+    publisherName: '<validated org name>'
+    endpoint: 'https://<region>.codesigning.azure.net/'
+    certificateProfileName: '<profile>'
+    codeSigningAccountName: '<account>'
 ```
 
 SmartScreen reputation accrues over downloads; Microsoft-backed certs gain trust
@@ -157,6 +166,7 @@ quickly. No EV needed.
 ---
 
 ## TODO before first paid release (macOS)
+
 - [ ] Split `.github/workflows/release.yml` into **macOS** core + pro build jobs,
       using `OFFGRID_FORCE_CORE` and the per-artifact overrides; separate update channels.
 - [ ] Confirm the RevenueCat offering/products issue desktop-valid keys (they're
@@ -165,5 +175,6 @@ quickly. No EV needed.
       (`license:list-devices` / `license:deactivate`).
 
 ### Parked (owned elsewhere)
+
 - [ ] Windows: bundled llama-server doesn't start — fix in progress separately.
 - [ ] Azure Trusted Signing validated + `azureSignOptions` wired (§4) — resumes with Windows.

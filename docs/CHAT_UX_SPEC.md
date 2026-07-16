@@ -24,7 +24,7 @@ appears at the right time, and nothing feels like a tool you have to operate.)
 2. **The model picks the modality at the right point.** It emits a typed block and the
    UI renders it seamlessly inline:
    - `\`\`\`image` → on-device generation, rendered as it completes
-   - `\`\`\`html` / `\`\`\`svg` / `\`\`\`mermaid` → artifact in the side canvas
+   - `\`\`\`html`/`\`\`\`svg`/`\`\`\`mermaid` → artifact in the side canvas
    - `\`\`\`ask` (JSON) → inline clickable multiple-choice
    - otherwise → streamed text
 3. **Everything streams.** Text types in; images show a tasteful generating state then

@@ -108,3 +108,33 @@ altstackHQ/altstack-data, AmineDjeghri/awesome-os-setup, Axorax/awesome-free-app
 open-saas-directory/awesome-native-macosx-apps, momenbasel/awesome-mac-mini-homeserver, linsa-io/macos-apps,
 EndoTheDev/Awesome-Ollama, BrethofAI/awesome-local-ai, jaywcjlove/awesome-swift-macos-apps,
 Danielskry/Awesome-RAG, hasura/awesome-RAG-tools, coree/awesome-rag
+
+## RAISED (batch 5, 2026-07-10)
+- [x] AlexMili/Awesome-MCP — https://github.com/AlexMili/Awesome-MCP/pull/150
+- [x] raullenchai/awesome-mlx — https://github.com/raullenchai/awesome-mlx/pull/17
+- [x] Axorax/awesome-free-apps — https://github.com/Axorax/awesome-free-apps/pull/189
+- [x] e2b-dev/awesome-ai-agents — https://github.com/e2b-dev/awesome-ai-agents/pull/1226
+- [x] linsa-io/macos-apps — https://github.com/linsa-io/macos-apps/pull/62
+
+## RAISED (batch 6, 2026-07-15)
+- [x] serhii-londar/open-source-mac-os-apps — https://github.com/serhii-londar/open-source-mac-os-apps/pull/1199
+- [x] phmullins/awesome-macos — https://github.com/phmullins/awesome-macos/pull/217
+- [x] tehtbl/awesome-note-taking — https://github.com/tehtbl/awesome-note-taking/pull/109
+- [x] vince-lam/awesome-local-llms — https://github.com/vince-lam/awesome-local-llms/issues/55 (issue-first)
+- [x] abordage/awesome-mcp — https://github.com/abordage/awesome-mcp/pull/73
+- [x] IrtezaAsadRizvi/ai-megalist — https://github.com/IrtezaAsadRizvi/ai-megalist/pull/19
+- [x] altstackHQ/altstack-data — https://github.com/altstackHQ/altstack-data/pull/28
+
+## REVIEW REPLIES HANDLED
+- aristoapp/awesome-second-brain#32 — CHANGES_REQUESTED (rokpiy): rewrote row to make AGPL open-core vs paid Pro split explicit; replied. (2026-07-15)
+
+## SKIPPED / BLOCKED (batch 5-6)
+- appcypher/awesome-mcp-servers — BLOCKED: GitHub refuses PR from alichherawalla (interaction/permission). Branch staged: alichherawalla:add-off-grid-ai-desktop. Manual-file later.
+- punkpeye/awesome-mcp-devtools — server-devtools/SDK list, no client section (points clients to awesome-mcp-clients, already raised #245).
+- open-saas-directory/awesome-native-macosx-apps — excludes Electron apps.
+- sindresorhus/awesome-whisper — requires 100+ stars (repo has 38). Recheck when repo passes 100.
+- slimhk45/awesome-obsidian-alternatives, arkydon/Awesome-desktop-notes — relevance <3 (not an Obsidian/notes app).
+- electron/apps — DEFERRED: needs a STABLE release + 20-day wait; we only ship betas (0.0.39-beta.x) today.
+
+## GATING SIGNAL
+Repo off-grid-ai/off-grid-ai-desktop is at ~38 stars. Star-gated lists (awesome-whisper 100+, likely others) are blocked until the star count rises. Factor this before targeting large curated lists.

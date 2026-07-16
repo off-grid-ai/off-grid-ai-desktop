@@ -7,29 +7,29 @@
 // hand-kept copies that could drift.
 
 /** The GGUF file-format magic number, as the first four bytes. */
-const GGUF_MAGIC = 'GGUF';
+const GGUF_MAGIC = 'GGUF'
 
 /** Minimum plausible size for a real model file; anything smaller is a stub or a
  *  truncated download. */
-export const GGUF_MIN_BYTES = 1024;
+export const GGUF_MIN_BYTES = 1024
 
 /**
  * Decide whether a file's size + first four bytes identify a valid GGUF model.
  * Pure: the caller reads the size and the leading bytes; this judges them.
  */
 export function isValidGgufHeader(sizeBytes: number, firstFourBytes: Buffer): boolean {
-  if (sizeBytes < GGUF_MIN_BYTES) return false;
-  return firstFourBytes.toString('ascii') === GGUF_MAGIC;
+  if (sizeBytes < GGUF_MIN_BYTES) return false
+  return firstFourBytes.toString('ascii') === GGUF_MAGIC
 }
 
 /** The subset of `fs` this check needs — injected so the read path is testable
  *  against a real temp file (or a fake) without importing node fs into callers'
  *  test setups. */
 export interface GgufFs {
-  statSync(p: string): { size: number };
-  openSync(p: string, flags: string): number;
-  readSync(fd: number, buffer: Buffer, offset: number, length: number, position: number): number;
-  closeSync(fd: number): void;
+  statSync(p: string): { size: number }
+  openSync(p: string, flags: string): number
+  readSync(fd: number, buffer: Buffer, offset: number, length: number, position: number): number
+  closeSync(fd: number): void
 }
 
 /**
@@ -39,19 +39,19 @@ export interface GgufFs {
  */
 export function isValidGgufFile(p: string, fs: GgufFs): boolean {
   try {
-    const size = fs.statSync(p).size;
-    if (size < GGUF_MIN_BYTES) return false;
-    const fd = fs.openSync(p, 'r');
-    const buf = Buffer.alloc(4);
+    const size = fs.statSync(p).size
+    if (size < GGUF_MIN_BYTES) return false
+    const fd = fs.openSync(p, 'r')
+    const buf = Buffer.alloc(4)
     // try/finally so a readSync throw can't leak the descriptor (the outer catch
     // swallows the error, so without this the fd would never be closed).
     try {
-      fs.readSync(fd, buf, 0, 4, 0);
+      fs.readSync(fd, buf, 0, 4, 0)
     } finally {
-      fs.closeSync(fd);
+      fs.closeSync(fd)
     }
-    return isValidGgufHeader(size, buf);
+    return isValidGgufHeader(size, buf)
   } catch {
-    return false;
+    return false
   }
 }

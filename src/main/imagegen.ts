@@ -3,93 +3,129 @@
 // Stable Diffusion model from the userData models dir, spawn one-shot txt2img/
 // img2img, persist the PNG under userData/generated-images, return a data URL.
 
-import { spawn, type ChildProcess } from 'child_process';
-import path from 'path';
-import fs from 'fs';
-import os from 'os';
-import { modalityQueue, IMAGE_JOB } from './modality-queue/queue';
-import { getResidencyMode } from './runtime-residency';
-import type { ManagedRuntime } from './runtime-manager';
-import { isMfluxModelId, mfluxAvailable, getMfluxModel, runMflux, cancelMflux, MFLUX_MODELS } from './mflux';
-import { getActiveModal } from './active-models';
-import { binRoots, dataDir, modelsDir, exe } from './runtime-env';
-import { sdServer } from './sd-server';
-import { standardModelDefaults, taesdFilename } from '../shared/image-defaults';
-import { defaultImageModelFilename } from './image-default';
-import { hasMlmodelc, isZImageModel, isQuantizedModel } from './imagegen/runtime-detect';
-import { isImageModelFile, hasCheckpointExt, stripCheckpointExt, ensureCheckpointExt } from './imagegen/model-filter';
-import { evaluateMemoryGuard } from './imagegen/memory-guard';
-import { buildCoreMLArgs, buildZImageArgs, buildStandardArgs, DEFAULT_NEGATIVE } from './imagegen/args';
-import { initialProgressState, reduceProgress } from './imagegen/progress';
+import { spawn, type ChildProcess } from 'child_process'
+import path from 'path'
+import fs from 'fs'
+import os from 'os'
+import { modalityQueue, IMAGE_JOB } from './modality-queue/queue'
+import { getResidencyMode } from './runtime-residency'
+import type { ManagedRuntime } from './runtime-manager'
+import {
+  isMfluxModelId,
+  mfluxAvailable,
+  getMfluxModel,
+  runMflux,
+  cancelMflux,
+  MFLUX_MODELS
+} from './mflux'
+import { getActiveModal } from './active-models'
+import { binRoots, dataDir, modelsDir, exe } from './runtime-env'
+import { sdServer } from './sd-server'
+import { standardModelDefaults, taesdFilename } from '../shared/image-defaults'
+import { defaultImageModelFilename } from './image-default'
+import { hasMlmodelc, isZImageModel, isQuantizedModel } from './imagegen/runtime-detect'
+import {
+  isImageModelFile,
+  hasCheckpointExt,
+  stripCheckpointExt,
+  ensureCheckpointExt
+} from './imagegen/model-filter'
+import { evaluateMemoryGuard } from './imagegen/memory-guard'
+import {
+  buildCoreMLArgs,
+  buildZImageArgs,
+  buildStandardArgs,
+  DEFAULT_NEGATIVE
+} from './imagegen/args'
+import { initialProgressState, reduceProgress } from './imagegen/progress'
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {
-    const p = path.join(r, 'sd', exe('sd-cli'));
-    if (fs.existsSync(p)) return p;
+    const p = path.join(r, 'sd', exe('sd-cli'))
+    if (fs.existsSync(p)) return p
   }
-  return null;
+  return null
 }
 
 /** The Core ML (ANE) image-gen Swift helper, if bundled. */
 function findCoreMLBin(): string | null {
   // Core ML is Apple-Silicon only — never offered off macOS (Windows/Linux use sd).
-  if (process.platform !== 'darwin') return null;
+  if (process.platform !== 'darwin') return null
   for (const r of binRoots()) {
-    const p = path.join(r, 'coreml-sd', 'coreml-sd');
-    if (fs.existsSync(p)) return p;
+    const p = path.join(r, 'coreml-sd', 'coreml-sd')
+    if (fs.existsSync(p)) return p
   }
-  return null;
+  return null
 }
 
 /** A Core ML model is a DIRECTORY of compiled .mlmodelc resources, not a GGUF. */
 function isCoreMLModelDir(p: string): boolean {
-  if (process.platform !== 'darwin') return false; // Core ML is macOS-only
+  if (process.platform !== 'darwin') return false // Core ML is macOS-only
   try {
-    if (!fs.statSync(p).isDirectory()) return false;
-    return hasMlmodelc(fs.readdirSync(p));
+    if (!fs.statSync(p).isDirectory()) return false
+    return hasMlmodelc(fs.readdirSync(p))
   } catch {
-    return false;
+    return false
   }
 }
 
 /** All image models on disk: GGUFs, custom .safetensors checkpoints, Core ML dirs. */
 export function listImageModels(): string[] {
-  const dir = modelsDir();
-  let files: string[] = [];
+  const dir = modelsDir()
+  let files: string[] = []
   try {
-    files = fs.readdirSync(dir);
+    files = fs.readdirSync(dir)
   } catch {
-    return [];
+    return []
   }
-  const coreml = files.filter((f) => isCoreMLModelDir(path.join(dir, f)));
-  const checkpoints = files.filter(isImageModelFile);
+  const coreml = files.filter((f) => isCoreMLModelDir(path.join(dir, f)))
+  const checkpoints = files.filter(isImageModelFile)
   // MLX (mflux) models are virtual ids (mlx/…), not files in the models dir.
   // Appended last so the sd-cli default (Z-Image) stays the preferred pick.
   // mflux fetches its own weights from HF on first use (cached in userData).
-  const mlx = mfluxAvailable() ? MFLUX_MODELS.map((m) => m.id) : [];
-  return [...coreml, ...checkpoints, ...mlx];
+  const mlx = mfluxAvailable() ? MFLUX_MODELS.map((m) => m.id) : []
+  return [...coreml, ...checkpoints, ...mlx]
 }
 
 /** All generated images on disk, newest first (excludes step-preview files). */
-export function listGeneratedImages(scope?: { conversationId?: string; projectId?: string | null }): { path: string; name: string; mtime: number; conversationId?: string; projectId?: string | null }[] {
-  const dir = path.join(dataDir(), 'generated-images');
+export function listGeneratedImages(scope?: {
+  conversationId?: string
+  projectId?: string | null
+}): {
+  path: string
+  name: string
+  mtime: number
+  conversationId?: string
+  projectId?: string | null
+}[] {
+  const dir = path.join(dataDir(), 'generated-images')
   try {
     let all = fs
       .readdirSync(dir)
       .filter((f) => /\.png$/i.test(f) && !f.startsWith('preview-'))
       .map((f) => {
-        const p = path.join(dir, f);
+        const p = path.join(dir, f)
         // Optional sidecar with chat/project scope, written by the ipc handler.
-        let meta: { conversationId?: string; projectId?: string | null } = {};
-        try { meta = JSON.parse(fs.readFileSync(`${p}.json`, 'utf8')); } catch { /* no sidecar */ }
-        return { path: p, name: f, mtime: fs.statSync(p).mtimeMs, conversationId: meta.conversationId, projectId: meta.projectId ?? null };
+        let meta: { conversationId?: string; projectId?: string | null } = {}
+        try {
+          meta = JSON.parse(fs.readFileSync(`${p}.json`, 'utf8'))
+        } catch {
+          /* no sidecar */
+        }
+        return {
+          path: p,
+          name: f,
+          mtime: fs.statSync(p).mtimeMs,
+          conversationId: meta.conversationId,
+          projectId: meta.projectId ?? null
+        }
       })
-      .sort((a, b) => b.mtime - a.mtime);
-    if (scope?.conversationId) all = all.filter((r) => r.conversationId === scope.conversationId);
-    else if (scope?.projectId) all = all.filter((r) => r.projectId === scope.projectId);
-    return all;
+      .sort((a, b) => b.mtime - a.mtime)
+    if (scope?.conversationId) all = all.filter((r) => r.conversationId === scope.conversationId)
+    else if (scope?.projectId) all = all.filter((r) => r.projectId === scope.projectId)
+    return all
   } catch {
-    return [];
+    return []
   }
 }
 
@@ -97,40 +133,42 @@ export function listGeneratedImages(scope?: { conversationId?: string; projectId
 export function deleteGeneratedImage(p: string): boolean {
   try {
     // Only allow deleting inside the generated-images dir (safety).
-    const dir = path.join(dataDir(), 'generated-images');
-    if (!path.resolve(p).startsWith(path.resolve(dir))) return false;
-    fs.unlinkSync(p);
-    return true;
+    const dir = path.join(dataDir(), 'generated-images')
+    if (!path.resolve(p).startsWith(path.resolve(dir))) return false
+    fs.unlinkSync(p)
+    return true
   } catch {
-    return false;
+    return false
   }
 }
 
 // --- Style-preset thumbnails (generated on-device, cached; never hotlinked) --
 function styleThumbDir(): string {
-  return path.join(dataDir(), 'style-thumbs');
+  return path.join(dataDir(), 'style-thumbs')
 }
 
 /** Map of style key -> cached thumbnail path (on-device generated). */
 export function listStyleThumbs(): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = {}
   try {
     for (const f of fs.readdirSync(styleThumbDir())) {
-      const m = f.match(/^(.+)\.png$/i);
-      if (m) out[m[1]!] = path.join(styleThumbDir(), f);
+      const m = f.match(/^(.+)\.png$/i)
+      if (m) out[m[1]!] = path.join(styleThumbDir(), f)
     }
-  } catch { /* none yet */ }
-  return out;
+  } catch {
+    /* none yet */
+  }
+  return out
 }
 
 /** Generate one style thumbnail on-device (small/fast) and cache it. */
 export async function generateStyleThumb(key: string, prompt: string): Promise<string> {
-  const out = await generateImage({ prompt, width: 512, height: 512, steps: 6 });
-  const dir = styleThumbDir();
-  fs.mkdirSync(dir, { recursive: true });
-  const dest = path.join(dir, `${key.replace(/[^\w-]+/g, '_')}.png`);
-  fs.copyFileSync(out.path, dest);
-  return dest;
+  const out = await generateImage({ prompt, width: 512, height: 512, steps: 6 })
+  const dir = styleThumbDir()
+  fs.mkdirSync(dir, { recursive: true })
+  const dest = path.join(dir, `${key.replace(/[^\w-]+/g, '_')}.png`)
+  fs.copyFileSync(out.path, dest)
+  return dest
 }
 
 // --- LoRA adapters -----------------------------------------------------------
@@ -139,90 +177,95 @@ export async function generateStyleThumb(key: string, prompt: string): Promise<s
 // prompt (NAME = filename without extension). Our checkpoints are quantized, so
 // sd-cli auto-selects "at_runtime" apply mode (compatible, slightly slower).
 function loraDir(): string {
-  return path.join(modelsDir(), 'loras');
+  return path.join(modelsDir(), 'loras')
 }
 
 export interface LoraInfo {
   /** Filename without extension — the NAME used in <lora:NAME:weight>. */
-  name: string;
+  name: string
   /** Display label (name with separators tidied). */
-  label: string;
-  file: string;
-  sizeBytes: number;
+  label: string
+  file: string
+  sizeBytes: number
 }
 
 /** List installed LoRA adapters. */
 export function listLoras(): LoraInfo[] {
-  const dir = loraDir();
-  const out: LoraInfo[] = [];
+  const dir = loraDir()
+  const out: LoraInfo[] = []
   try {
     for (const f of fs.readdirSync(dir)) {
-      if (!hasCheckpointExt(f)) continue;
-      const name = stripCheckpointExt(f);
-      let sizeBytes = 0;
-      try { sizeBytes = fs.statSync(path.join(dir, f)).size; } catch { /* ignore */ }
-      out.push({ name, label: name.replace(/[_-]+/g, ' '), file: path.join(dir, f), sizeBytes });
+      if (!hasCheckpointExt(f)) continue
+      const name = stripCheckpointExt(f)
+      let sizeBytes = 0
+      try {
+        sizeBytes = fs.statSync(path.join(dir, f)).size
+      } catch {
+        /* ignore */
+      }
+      out.push({ name, label: name.replace(/[_-]+/g, ' '), file: path.join(dir, f), sizeBytes })
     }
-  } catch { /* dir doesn't exist yet */ }
-  return out.sort((a, b) => a.label.localeCompare(b.label));
+  } catch {
+    /* dir doesn't exist yet */
+  }
+  return out.sort((a, b) => a.label.localeCompare(b.label))
 }
 
 /** Absolute path to the LoRA folder (created on demand) — for "reveal in Finder". */
 export function ensureLoraDir(): string {
-  const dir = loraDir();
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
+  const dir = loraDir()
+  fs.mkdirSync(dir, { recursive: true })
+  return dir
 }
 
 /** Download a LoRA .safetensors into the LoRA folder (HF resolve URLs, follows redirects). */
 export async function downloadLora(
   url: string,
   filename: string,
-  onProgress?: (pct: number) => void,
+  onProgress?: (pct: number) => void
 ): Promise<string> {
-  const dir = ensureLoraDir();
-  const dest = path.join(dir, filename);
-  if (fs.existsSync(dest) && fs.statSync(dest).size > 0) return dest;
-  const res = await fetch(url); // Electron main = Node 18+, follows redirects (HF → CDN)
-  if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`);
-  const total = Number(res.headers.get('content-length') || 0);
-  const tmp = `${dest}.part`;
-  const out = fs.createWriteStream(tmp);
-  let received = 0;
-  const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+  const dir = ensureLoraDir()
+  const dest = path.join(dir, filename)
+  if (fs.existsSync(dest) && fs.statSync(dest).size > 0) return dest
+  const res = await fetch(url) // Electron main = Node 18+, follows redirects (HF → CDN)
+  if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
+  const total = Number(res.headers.get('content-length') || 0)
+  const tmp = `${dest}.part`
+  const out = fs.createWriteStream(tmp)
+  let received = 0
+  const reader = (res.body as ReadableStream<Uint8Array>).getReader()
   try {
     for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      out.write(Buffer.from(value));
-      received += value.length;
-      if (total && onProgress) onProgress(Math.round((received / total) * 100));
+      const { done, value } = await reader.read()
+      if (done) break
+      out.write(Buffer.from(value))
+      received += value.length
+      if (total && onProgress) onProgress(Math.round((received / total) * 100))
     }
   } finally {
-    await new Promise<void>((r) => out.end(r));
+    await new Promise<void>((r) => out.end(r))
   }
-  fs.renameSync(tmp, dest);
-  return dest;
+  fs.renameSync(tmp, dest)
+  return dest
 }
 
 /** Resolve the TAESD decoder for a model's family, if the file is installed.
  *  Returns null (so callers just skip taesd) when it isn't — the feature is a
  *  no-op until the tiny decoder is downloaded into the models dir. */
 export function resolveTaesd(base: string): string | null {
-  const p = path.join(modelsDir(), taesdFilename(base));
-  return fs.existsSync(p) ? p : null;
+  const p = path.join(modelsDir(), taesdFilename(base))
+  return fs.existsSync(p) ? p : null
 }
 
 /** Find a companion file (text encoder / vae) in the models dir by pattern. */
 function findInModels(re: RegExp): string | null {
   try {
-    const f = fs.readdirSync(modelsDir()).find((x) => re.test(x));
-    return f ? path.join(modelsDir(), f) : null;
+    const f = fs.readdirSync(modelsDir()).find((x) => re.test(x))
+    return f ? path.join(modelsDir(), f) : null
   } catch {
-    return null;
+    return null
   }
 }
-
 
 // A GGUF checkpoint is loadable via `-m` only if it's a FULL pipeline (UNET + VAE
 // + text encoder). Many SDXL quants on HF (e.g. animagine-xl, illustrious) ship
@@ -231,146 +274,155 @@ function findInModels(re: RegExp): string | null {
 // Detect by scanning the tensor-name table (near the file start) for VAE + CLIP
 // namespaces. On any read error we assume FULL so models that already work aren't
 // regressed. Cached by path+size+mtime. (Z-Image/FLUX are handled separately.)
-const ggufFullCache = new Map<string, boolean>();
+const ggufFullCache = new Map<string, boolean>()
 function ggufIsFullCheckpoint(p: string): boolean {
-  if (!/\.gguf$/i.test(p)) return true; // .safetensors checkpoints are full pipelines
-  let key: string;
+  if (!/\.gguf$/i.test(p)) return true // .safetensors checkpoints are full pipelines
+  let key: string
   try {
-    const st = fs.statSync(p);
-    key = `${p}:${st.size}:${st.mtimeMs}`;
+    const st = fs.statSync(p)
+    key = `${p}:${st.size}:${st.mtimeMs}`
   } catch {
-    return true;
+    return true
   }
-  const cached = ggufFullCache.get(key);
-  if (cached !== undefined) return cached;
-  let full = true;
+  const cached = ggufFullCache.get(key)
+  if (cached !== undefined) return cached
+  let full = true
   try {
-    const fd = fs.openSync(p, 'r');
+    const fd = fs.openSync(p, 'r')
     try {
       // The tensor-name table sits just after the (tiny) KV metadata, well within
       // the first few MB even for 2600-tensor checkpoints.
-      const buf = Buffer.alloc(Math.min(4_000_000, fs.fstatSync(fd).size));
-      fs.readSync(fd, buf, 0, buf.length, 0);
-      const s = buf.toString('latin1');
-      const hasVae = s.includes('first_stage_model') || s.includes('vae.') || s.includes('.vae');
+      const buf = Buffer.alloc(Math.min(4_000_000, fs.fstatSync(fd).size))
+      fs.readSync(fd, buf, 0, buf.length, 0)
+      const s = buf.toString('latin1')
+      const hasVae = s.includes('first_stage_model') || s.includes('vae.') || s.includes('.vae')
       const hasClip =
-        s.includes('cond_stage_model') || s.includes('conditioner') ||
-        s.includes('text_encoder') || s.includes('text_model');
-      full = hasVae && hasClip;
+        s.includes('cond_stage_model') ||
+        s.includes('conditioner') ||
+        s.includes('text_encoder') ||
+        s.includes('text_model')
+      full = hasVae && hasClip
     } finally {
-      fs.closeSync(fd);
+      fs.closeSync(fd)
     }
   } catch {
-    full = true;
+    full = true
   }
-  ggufFullCache.set(key, full);
-  return full;
+  ggufFullCache.set(key, full)
+  return full
 }
 
 /** Pick a model: the requested filename if present, else prefer the higher-quality v2.1, else any. */
 /** The image model an incoming request would actually load (active pick, else the
  *  resolver's default), as a bare filename — or null if none installed. */
 export function activeImageModel(): string | null {
-  const m = resolveModel();
-  return m ? path.basename(m) : null;
+  const m = resolveModel()
+  return m ? path.basename(m) : null
 }
 
 function resolveModel(preferred?: string): string | null {
-  const dir = modelsDir();
+  const dir = modelsDir()
   if (preferred) {
-    const pp = path.join(dir, preferred);
-    if (fs.existsSync(pp)) return pp;
+    const pp = path.join(dir, preferred)
+    if (fs.existsSync(pp)) return pp
   }
-  const sd = listImageModels();
-  if (!sd.length) return null;
+  const sd = listImageModels()
+  if (!sd.length) return null
   // User-chosen image model is the default when the caller didn't request one.
-  const chosen = getActiveModal('image');
+  const chosen = getActiveModal('image')
   if (chosen) {
-    if (fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen);
-    if (sd.includes(chosen)) return path.join(dir, chosen); // mlx/virtual id
+    if (fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen)
+    if (sd.includes(chosen)) return path.join(dir, chosen) // mlx/virtual id
   }
   // Smart default: DreamShaper XL v2 Turbo (the versatile default), RAM-aware —
   // a fresh user on <=16GB gets the Light (Q4) quant, >16GB gets the full (Q8).
   // Only when the user hasn't picked (getActiveModal above). Falls through to the
   // generic heuristic below when no DreamShaper quant is installed.
-  const dreamshaper = defaultImageModelFilename(sd, os.totalmem() / 1e9);
-  if (dreamshaper) return path.join(dir, dreamshaper);
+  const dreamshaper = defaultImageModelFilename(sd, os.totalmem() / 1e9)
+  if (dreamshaper) return path.join(dir, dreamshaper)
   // Preference: Juggernaut XL v9 (default photoreal) > Z-Image-Turbo >
   // SDXL-Lightning > SDXL > SD 2.1 > anything else.
-  const juggernaut = sd.find((f) => /juggernaut/i.test(f));
-  const zimage = sd.find((f) => /z[-_]?image/i.test(f));
-  const lightning = sd.find((f) => /lightning/i.test(f));
-  const xl = sd.find((f) => /sdxl|xl/i.test(f));
-  const v21 = sd.find((f) => /v2-1|v2\.1/i.test(f));
-  return path.join(dir, juggernaut ?? zimage ?? lightning ?? xl ?? v21 ?? sd[0]!); // sd.length checked above
+  const juggernaut = sd.find((f) => /juggernaut/i.test(f))
+  const zimage = sd.find((f) => /z[-_]?image/i.test(f))
+  const lightning = sd.find((f) => /lightning/i.test(f))
+  const xl = sd.find((f) => /sdxl|xl/i.test(f))
+  const v21 = sd.find((f) => /v2-1|v2\.1/i.test(f))
+  return path.join(dir, juggernaut ?? zimage ?? lightning ?? xl ?? v21 ?? sd[0]!) // sd.length checked above
 }
 
 /** Whether image generation is usable right now (binary + at least one model). */
-export function imageGenStatus(): { available: boolean; models: string[]; active: string | null; reason?: string } {
-  const models = listImageModels();
+export function imageGenStatus(): {
+  available: boolean
+  models: string[]
+  active: string | null
+  reason?: string
+} {
+  const models = listImageModels()
   // The model an incoming request would actually load (the user's active pick,
   // else the resolver default) — so the composer can default its picker to it and
   // match the Active-models panel, instead of guessing from a name heuristic (which
   // used to land on the parked Core ML model).
-  const active = activeImageModel();
+  const active = activeImageModel()
   // Available if EITHER runtime is usable: sd-cli (with a model) or MLX/mflux.
-  if (!findSdCli() && !mfluxAvailable()) return { available: false, models, active, reason: 'no image runtime found' };
-  if (!models.length) return { available: false, models, active, reason: 'no image model installed' };
-  return { available: true, models, active };
+  if (!findSdCli() && !mfluxAvailable())
+    return { available: false, models, active, reason: 'no image runtime found' }
+  if (!models.length)
+    return { available: false, models, active, reason: 'no image model installed' }
+  return { available: true, models, active }
 }
 
 export interface ImageGenParams {
-  prompt: string;
-  negativePrompt?: string;
-  width?: number;
-  height?: number;
-  steps?: number;
-  seed?: number;
-  cfgScale?: number;
+  prompt: string
+  negativePrompt?: string
+  width?: number
+  height?: number
+  steps?: number
+  seed?: number
+  cfgScale?: number
   /** Model filename in the models dir; defaults to the preferred installed model. */
-  model?: string;
+  model?: string
   /** Local path to an init image for img2img. */
-  initImage?: string;
-  strength?: number;
+  initImage?: string
+  strength?: number
   /** LoRA adapters to apply: name (filename w/o ext) + weight (e.g. 0.8). */
-  loras?: { name: string; weight: number }[];
+  loras?: { name: string; weight: number }[]
   /** Use the TAESD tiny decoder instead of the full VAE — a large speed win on
    *  the VAE decode (multi-second -> sub-second on Metal at ≥768px), at a small
    *  cost in decode fidelity. No-op if the matching taesd file isn't installed. */
-  fastVae?: boolean;
+  fastVae?: boolean
 }
 
 export interface ImageGenOutput {
-  dataUrl: string;
-  path: string;
-  seed: number;
-  model: string;
+  dataUrl: string
+  path: string
+  seed: number
+  model: string
 }
 
 export interface ImageGenProgress {
-  step: number;
-  total: number;
-  secPerStep: number;
+  step: number
+  total: number
+  secPerStep: number
   // sd-cli prints an "N/N - Xs/it" sequence for the denoising loop AND again for
   // the VAE-tiling decode. Tag which one so the UI shows "Decoding" instead of a
   // confusing second 0→N count.
-  phase?: 'sampling' | 'decoding';
+  phase?: 'sampling' | 'decoding'
 }
 
-let running = false;
-let currentChild: ChildProcess | null = null;
-let cancelled = false;
+let running = false
+let currentChild: ChildProcess | null = null
+let cancelled = false
 
 /** Kill an in-progress generation. Returns true if one was running. */
 export function cancelImageGen(): boolean {
-  cancelMflux(); // no-op if mflux isn't the active runtime
-  void sdServer.cancelCurrent(); // cancels the in-flight job on the resident server (no-op if idle)
+  cancelMflux() // no-op if mflux isn't the active runtime
+  void sdServer.cancelCurrent() // cancels the in-flight job on the resident server (no-op if idle)
   if (currentChild) {
-    cancelled = true;
-    currentChild.kill('SIGKILL');
-    return true;
+    cancelled = true
+    currentChild.kill('SIGKILL')
+    return true
   }
-  return running; // mflux/persistent-server gen has no currentChild but sets running
+  return running // mflux/persistent-server gen has no currentChild but sets running
 }
 
 /**
@@ -382,33 +434,33 @@ export function cancelImageGen(): boolean {
  */
 export async function generateImage(
   params: ImageGenParams,
-  onProgress?: (p: ImageGenProgress & { preview?: string }) => void,
+  onProgress?: (p: ImageGenProgress & { preview?: string }) => void
 ): Promise<ImageGenOutput> {
   // The queue evicts 'llm' before this runs AND re-warms it (mode-aware) when the
   // job finishes — so the image path no longer touches llm.pause/resume itself.
-  return modalityQueue.run(IMAGE_JOB, () => runImageGen(params, onProgress));
+  return modalityQueue.run(IMAGE_JOB, () => runImageGen(params, onProgress))
 }
 
 async function runImageGen(
   params: ImageGenParams,
-  onProgress?: (p: ImageGenProgress & { preview?: string }) => void,
+  onProgress?: (p: ImageGenProgress & { preview?: string }) => void
 ): Promise<ImageGenOutput> {
-  if (running) throw new Error('An image is already generating — please wait for it to finish.');
-  if (!params.prompt.trim()) throw new Error('A prompt is required.');
+  if (running) throw new Error('An image is already generating — please wait for it to finish.')
+  if (!params.prompt.trim()) throw new Error('A prompt is required.')
 
   // --- MLX / mflux runtime branch (FLUX / Z-Image with native LoRA) ----------
   // Self-contained: reuses the single-flight guard; the LLM is already evicted by the
   // queue (evicts: ['llm']) before we get here, then delegates the spawn to the mflux
   // module. Returns before the sd-cli path.
   if (isMfluxModelId(params.model)) {
-    const def = getMfluxModel(params.model)!;
-    const outDir = path.join(dataDir(), 'generated-images');
-    fs.mkdirSync(outDir, { recursive: true });
-    const outPath = path.join(outDir, `img-${String(Date.now())}.png`);
-    running = true;
-    cancelled = false;
+    const def = getMfluxModel(params.model)!
+    const outDir = path.join(dataDir(), 'generated-images')
+    fs.mkdirSync(outDir, { recursive: true })
+    const outPath = path.join(outDir, `img-${String(Date.now())}.png`)
+    running = true
+    cancelled = false
     // Give the OS a moment to reclaim the freed LLM pages before the image load spike.
-    await new Promise((r) => setTimeout(r, 2500));
+    await new Promise((r) => setTimeout(r, 2500))
     try {
       await runMflux(
         {
@@ -422,20 +474,25 @@ async function runImageGen(
           // sd-cli's --lora-model-dir). Resolve a bare filename to the loras dir;
           // pass absolute paths and HF repo ids (contain '/') through unchanged.
           loras: (params.loras ?? []).map((l) => {
-            if (path.isAbsolute(l.name) || l.name.includes('/')) return l;
-            const local = path.join(loraDir(), ensureCheckpointExt(l.name));
-            return fs.existsSync(local) ? { ...l, name: local } : l;
-          }),
+            if (path.isAbsolute(l.name) || l.name.includes('/')) return l
+            const local = path.join(loraDir(), ensureCheckpointExt(l.name))
+            return fs.existsSync(local) ? { ...l, name: local } : l
+          })
         },
         outPath,
-        (p) => onProgress?.({ step: p.step, total: p.total, secPerStep: p.secPerStep }),
-      );
-      if (!fs.existsSync(outPath)) throw new Error('MLX generation produced no output file.');
-      const b64 = fs.readFileSync(outPath).toString('base64');
-      return { dataUrl: `data:image/png;base64,${b64}`, path: outPath, seed: params.seed ?? -1, model: def.label };
+        (p) => onProgress?.({ step: p.step, total: p.total, secPerStep: p.secPerStep })
+      )
+      if (!fs.existsSync(outPath)) throw new Error('MLX generation produced no output file.')
+      const b64 = fs.readFileSync(outPath).toString('base64')
+      return {
+        dataUrl: `data:image/png;base64,${b64}`,
+        path: outPath,
+        seed: params.seed ?? -1,
+        model: def.label
+      }
     } finally {
-      running = false;
-      currentChild = null;
+      running = false
+      currentChild = null
       // LLM warm-back-up happens once in the generateImage() wrapper's finally.
     }
   }
@@ -445,28 +502,30 @@ async function runImageGen(
   // default — which is much slower and can blow past client timeouts.
   if (params.initImage && (!params.width || !params.height)) {
     try {
-      const sharp = (await import('sharp')).default;
-      const meta = await sharp(params.initImage).metadata();
+      const sharp = (await import('sharp')).default
+      const meta = await sharp(params.initImage).metadata()
       if (meta.width && meta.height) {
-        const r64 = (n: number): number => Math.max(256, Math.min(2048, Math.round(n / 64) * 64));
-        params.width = params.width ?? r64(meta.width);
-        params.height = params.height ?? r64(meta.height);
+        const r64 = (n: number): number => Math.max(256, Math.min(2048, Math.round(n / 64) * 64))
+        params.width = params.width ?? r64(meta.width)
+        params.height = params.height ?? r64(meta.height)
       }
     } catch {
       /* fall back to model defaults */
     }
   }
 
-  const model = resolveModel(params.model);
-  if (!model) throw new Error('No image model installed. Download one from Models.');
+  const model = resolveModel(params.model)
+  if (!model) throw new Error('No image model installed. Download one from Models.')
   // Core ML models are directories of .mlmodelc resources → routed to the ANE
   // Swift helper; everything else (GGUF) runs on sd-cli.
-  const coreml = isCoreMLModelDir(model);
-  const cli = coreml ? findCoreMLBin() : findSdCli();
+  const coreml = isCoreMLModelDir(model)
+  const cli = coreml ? findCoreMLBin() : findSdCli()
   if (!cli) {
-    throw new Error(coreml
-      ? 'Core ML helper (coreml-sd) not found in resources/bin/coreml-sd.'
-      : 'Image generation binary (sd-cli) not found in resources/bin/sd.');
+    throw new Error(
+      coreml
+        ? 'Core ML helper (coreml-sd) not found in resources/bin/coreml-sd.'
+        : 'Image generation binary (sd-cli) not found in resources/bin/sd.'
+    )
   }
 
   // Memory guard (GGUF only) — on Apple Silicon unified memory, an oversized
@@ -474,34 +533,38 @@ async function runImageGen(
   // Core ML runs on the ANE with its own streaming, so it's exempt.
   // Reserve scales with RAM so an 8GB machine isn't blocked outright (a flat
   // 7GB reserve would leave it ~1GB and reject everything).
-  const totalGb = os.totalmem() / 1e9;
+  const totalGb = os.totalmem() / 1e9
   const safeSizeGb = (p: string | null | undefined): number => {
-    try { return p && fs.existsSync(p) ? fs.statSync(p).size / 1e9 : 0; } catch { return 0; }
-  };
+    try {
+      return p && fs.existsSync(p) ? fs.statSync(p).size / 1e9 : 0
+    } catch {
+      return 0
+    }
+  }
   // Z-Image is a 3-model stack (diffusion transformer + Qwen3-4B text encoder +
   // FLUX VAE) all resident at once — the diffusion file alone wildly understates
   // its footprint. Count the encoder + VAE too, or the guard waves through a
   // combo that then overflows unified memory and freezes the box.
-  const zImageStack = isZImageModel(path.basename(model));
+  const zImageStack = isZImageModel(path.basename(model))
   const guard = evaluateMemoryGuard({
     totalGb,
     modelSizeGb: safeSizeGb(model),
     coreml,
     zImageStack,
     zEncoderGb: zImageStack ? safeSizeGb(findInModels(/qwen3-4b-instruct.*\.gguf$/i)) : 0,
-    zVaeGb: zImageStack ? safeSizeGb(findInModels(/^ae\.(safetensors|sft)$|^ae.*\.gguf$/i)) : 0,
-  });
+    zVaeGb: zImageStack ? safeSizeGb(findInModels(/^ae\.(safetensors|sft)$|^ae.*\.gguf$/i)) : 0
+  })
   if (guard.overBudget) {
     throw new Error(
       `Not enough memory to run ${path.basename(model)} (~${guard.modelGb.toFixed(1)}GB resident) on this ${totalGb.toFixed(0)}GB machine. ` +
-      `Pick a lighter image model (e.g. SDXL-Lightning or SD 1.5) in the image options.`
-    );
+        `Pick a lighter image model (e.g. SDXL-Lightning or SD 1.5) in the image options.`
+    )
   }
 
   // LoRA adapters: inject <lora:NAME:WEIGHT> into the prompt (Core ML helper
   // doesn't support LoRA, so skip there). The --lora-model-dir flag is added to
   // the sd-cli args below.
-  const loras = (params.loras || []).filter((l) => l.name && Number.isFinite(l.weight));
+  const loras = (params.loras || []).filter((l) => l.name && Number.isFinite(l.weight))
   if (!coreml && loras.length) {
     // HARD LIMIT: stable-diffusion.cpp can only merge a LoRA into FULL-PRECISION
     // (f16/f32) weights. Our shipped checkpoints are quantized (q8_0 / Q4_K) to
@@ -511,21 +574,21 @@ async function runImageGen(
     if (isQuantizedModel(path.basename(model))) {
       throw new Error(
         `LoRAs can't be applied to "${path.basename(model)}" — it's a quantized model, and the image engine can only merge a LoRA into a full-precision (f16) model. LoRA support needs a non-quantized base model (not yet shipped).`
-      );
+      )
     }
-    const tags = loras.map((l) => `<lora:${l.name}:${l.weight}>`).join(' ');
-    params.prompt = `${params.prompt} ${tags}`;
+    const tags = loras.map((l) => `<lora:${l.name}:${l.weight}>`).join(' ')
+    params.prompt = `${params.prompt} ${tags}`
   }
 
-  const outDir = path.join(dataDir(), 'generated-images');
-  fs.mkdirSync(outDir, { recursive: true });
-  const seed = params.seed ?? -1;
-  const stamp = String(Date.now());
-  const outPath = path.join(outDir, `img-${stamp}.png`);
-  const previewPath = path.join(outDir, `preview-${stamp}.png`);
+  const outDir = path.join(dataDir(), 'generated-images')
+  fs.mkdirSync(outDir, { recursive: true })
+  const seed = params.seed ?? -1
+  const stamp = String(Date.now())
+  const outPath = path.join(outDir, `img-${stamp}.png`)
+  const previewPath = path.join(outDir, `preview-${stamp}.png`)
 
-  const base = path.basename(model);
-  const isZImage = isZImageModel(base);
+  const base = path.basename(model)
+  const isZImage = isZImageModel(base)
 
   // --- RESIDENT fast path (opt-in) --------------------------------------------
   // When the user sets image residency to 'resident', a plain full-checkpoint
@@ -536,15 +599,26 @@ async function runImageGen(
   // image gen (evicts:['llm']) AND evicts this server when another modality needs
   // the RAM (image is registered as a ManagedRuntime). Default is 'on-demand',
   // which skips this entirely and uses the one-shot sd-cli path below (unchanged).
-  const residentImage = getResidencyMode('image') === 'resident';
-  const eligibleForServer = residentImage && !coreml && !isZImage && !loras.length && !params.initImage && ggufIsFullCheckpoint(model);
+  const residentImage = getResidencyMode('image') === 'resident'
+  const eligibleForServer =
+    residentImage &&
+    !coreml &&
+    !isZImage &&
+    !loras.length &&
+    !params.initImage &&
+    ggufIsFullCheckpoint(model)
   if (eligibleForServer) {
-    const { defaultSize, defaultSteps, defaultCfg, sampler, scheduler } = standardModelDefaults(base);
-    const taesd = params.fastVae ? resolveTaesd(base) : undefined;
-    running = true;
-    cancelled = false;
+    const { defaultSize, defaultSteps, defaultCfg, sampler, scheduler } =
+      standardModelDefaults(base)
+    const taesd = params.fastVae ? resolveTaesd(base) : undefined
+    running = true
+    cancelled = false
     try {
-      await sdServer.ensureUp({ modelPath: model, diffusionFa: true, taesdPath: taesd ?? undefined });
+      await sdServer.ensureUp({
+        modelPath: model,
+        diffusionFa: true,
+        taesdPath: taesd ?? undefined
+      })
       const { png, seed: usedSeed } = await sdServer.generate(
         {
           prompt: params.prompt,
@@ -555,15 +629,20 @@ async function runImageGen(
           cfgScale: params.cfgScale ?? defaultCfg,
           sampleMethod: sampler,
           scheduler,
-          seed,
+          seed
         },
-        (p) => onProgress?.({ step: p.step, total: p.total, secPerStep: 0 }),
-      );
-      await fs.promises.writeFile(outPath, png);
-      return { dataUrl: `data:image/png;base64,${png.toString('base64')}`, path: outPath, seed: usedSeed, model: base };
+        (p) => onProgress?.({ step: p.step, total: p.total, secPerStep: 0 })
+      )
+      await fs.promises.writeFile(outPath, png)
+      return {
+        dataUrl: `data:image/png;base64,${png.toString('base64')}`,
+        path: outPath,
+        seed: usedSeed,
+        model: base
+      }
     } finally {
-      running = false;
-      currentChild = null;
+      running = false
+      currentChild = null
     }
   }
 
@@ -584,12 +663,19 @@ async function runImageGen(
   // on exit (no resident pressure). sdServer.cancelCurrent() above stays a harmless
   // no-op. Re-introduce a resident server only if proven safe on 16GB + good output.
 
-  const threads = String(Math.max(1, os.cpus().length - 2));
+  const threads = String(Math.max(1, os.cpus().length - 2))
   // Live preview: write a rough partial image every step ('proj' needs no extra
   // model) so the UI can show the image forming step-by-step.
-  const previewArgs = ['--preview', 'proj', '--preview-path', previewPath, '--preview-interval', '1'];
+  const previewArgs = [
+    '--preview',
+    'proj',
+    '--preview-path',
+    previewPath,
+    '--preview-interval',
+    '1'
+  ]
 
-  let args: string[];
+  let args: string[]
   if (coreml) {
     // Core ML (ANE) helper — directory model, prompt to PNG. No preview file.
     args = buildCoreMLArgs({
@@ -598,18 +684,23 @@ async function runImageGen(
       outPath,
       steps: params.steps,
       seed,
-      negativePrompt: params.negativePrompt,
-    });
+      negativePrompt: params.negativePrompt
+    })
   } else if (isZImage) {
     // Z-Image is a separate stack: diffusion transformer + Qwen3-4B text encoder
     // (--llm) + FLUX VAE (--vae). Resolve the companion files here (I/O); the
     // pure builder assembles the flags with the turbo defaults.
-    const llm = findInModels(/qwen3-4b-instruct.*\.gguf$/i);
-    const vae = findInModels(/^ae\.(safetensors|sft)$|^ae.*\.gguf$/i);
-    if (!llm) throw new Error('Z-Image text encoder (Qwen3-4B-Instruct) not found — download it from Models.');
-    if (!vae) throw new Error('Z-Image VAE (ae.safetensors) not found — download it from Models.');
+    const llm = findInModels(/qwen3-4b-instruct.*\.gguf$/i)
+    const vae = findInModels(/^ae\.(safetensors|sft)$|^ae.*\.gguf$/i)
+    if (!llm)
+      throw new Error(
+        'Z-Image text encoder (Qwen3-4B-Instruct) not found — download it from Models.'
+      )
+    if (!vae) throw new Error('Z-Image VAE (ae.safetensors) not found — download it from Models.')
     args = buildZImageArgs({
-      model, llm, vae,
+      model,
+      llm,
+      vae,
       prompt: params.prompt,
       outPath,
       width: params.width,
@@ -618,39 +709,51 @@ async function runImageGen(
       cfgScale: params.cfgScale,
       seed,
       threads,
-      previewArgs,
-    });
+      previewArgs
+    })
   } else {
     // Full checkpoint → load with -m. UNET-only quant → load the diffusion model
     // separately and supply SDXL CLIP-L/CLIP-G + VAE; if those companions aren't
     // installed, fail with a clear message instead of the cryptic sd.cpp abort.
-    let modelFlags: string[];
+    let modelFlags: string[]
     if (ggufIsFullCheckpoint(model)) {
-      modelFlags = ['-m', model];
+      modelFlags = ['-m', model]
     } else {
-      const clipL = findInModels(/clip[_-]?l.*\.(safetensors|gguf)$/i);
-      const clipG = findInModels(/clip[_-]?g.*\.(safetensors|gguf)$/i);
-      const sdxlVae = findInModels(/(sdxl[_-]?vae|vae[_-]?sdxl|sdxl.*vae).*\.(safetensors|gguf)$/i);
+      const clipL = findInModels(/clip[_-]?l.*\.(safetensors|gguf)$/i)
+      const clipG = findInModels(/clip[_-]?g.*\.(safetensors|gguf)$/i)
+      const sdxlVae = findInModels(/(sdxl[_-]?vae|vae[_-]?sdxl|sdxl.*vae).*\.(safetensors|gguf)$/i)
       if (clipL && clipG && sdxlVae) {
-        modelFlags = ['--diffusion-model', model, '--clip_l', clipL, '--clip_g', clipG, '--vae', sdxlVae];
+        modelFlags = [
+          '--diffusion-model',
+          model,
+          '--clip_l',
+          clipL,
+          '--clip_g',
+          clipG,
+          '--vae',
+          sdxlVae
+        ]
       } else {
-        const dir = modelsDir();
+        const dir = modelsDir()
         const usable = listImageModels()
-          .filter((f) => /z[-_]?image|lightning/i.test(f) || ggufIsFullCheckpoint(path.join(dir, f)))
-          .map((f) => path.basename(f));
+          .filter(
+            (f) => /z[-_]?image|lightning/i.test(f) || ggufIsFullCheckpoint(path.join(dir, f))
+          )
+          .map((f) => path.basename(f))
         throw new Error(
           `"${base}" is a UNET-only model — it has no built-in text encoder or VAE, so it can't generate on its own ` +
-          `(it needs SDXL CLIP-L, CLIP-G and a VAE, which aren't installed). ` +
-          (usable.length ? `Pick a complete model instead: ${usable.slice(0, 4).join(', ')}.`
-                          : `Download a complete checkpoint (e.g. SDXL-Lightning) or Z-Image.`)
-        );
+            `(it needs SDXL CLIP-L, CLIP-G and a VAE, which aren't installed). ` +
+            (usable.length
+              ? `Pick a complete model instead: ${usable.slice(0, 4).join(', ')}.`
+              : `Download a complete checkpoint (e.g. SDXL-Lightning) or Z-Image.`)
+        )
       }
     }
     // Per-model defaults (steps/cfg/schedule/size) come from the shared
     // standardModelDefaults inside the pure builder — single source of truth.
     // TAESD decode is OFF by default; resolve it here (I/O) only when fastVae is
     // set, and the builder decides taesd-vs-vae-tiling.
-    const cliTaesd = params.fastVae ? resolveTaesd(base) : null;
+    const cliTaesd = params.fastVae ? resolveTaesd(base) : null
     args = buildStandardArgs({
       base,
       modelFlags,
@@ -666,17 +769,17 @@ async function runImageGen(
       taesdPath: cliTaesd,
       negativePrompt: params.negativePrompt,
       initImage: params.initImage,
-      strength: params.strength,
-    });
+      strength: params.strength
+    })
   }
 
   // Point sd-cli at the LoRA folder so the <lora:NAME:weight> tags resolve.
   if (!coreml && loras.length) {
-    args.push('--lora-model-dir', loraDir());
+    args.push('--lora-model-dir', loraDir())
   }
 
-  running = true;
-  cancelled = false;
+  running = true
+  cancelled = false
   // CRITICAL on Apple Silicon (unified memory): the LLM (gemma) and the image
   // model can't both be resident — together they overflow RAM and the whole
   // system swaps/hangs. The ModalityQueue has already evicted the LLM (evicts:
@@ -684,58 +787,61 @@ async function runImageGen(
   // tier-2 job holds the slot.
   // Give the OS time to actually reclaim the freed LLM pages before the image
   // model's load spike — otherwise the brief overlap causes a short stutter.
-  await new Promise((r) => setTimeout(r, 2500));
+  await new Promise((r) => setTimeout(r, 2500))
   try {
     await new Promise<void>((resolve, reject) => {
       // cwd at the binary dir so @executable_path rpath resolves libstable-diffusion.dylib.
-      const child = spawn(cli, args, { cwd: path.dirname(cli) });
-      currentChild = child;
-      let log = '';
+      const child = spawn(cli, args, { cwd: path.dirname(cli) })
+      currentChild = child
+      let log = ''
       // Pure progress reducer owns the seed parse + the denoise->decode phase
       // transition; the shell only handles the preview PNG read + the callback.
-      let progress = initialProgressState(seed);
+      let progress = initialProgressState(seed)
       const capture = (d: Buffer): void => {
-        const s = d.toString();
-        log += s;
-        const { state, event } = reduceProgress(progress, s);
-        progress = state;
+        const s = d.toString()
+        log += s
+        const { state, event } = reduceProgress(progress, s)
+        progress = state
         if (onProgress && event) {
-          let preview: string | undefined;
+          let preview: string | undefined
           try {
-            if (fs.existsSync(previewPath)) preview = `data:image/png;base64,${fs.readFileSync(previewPath).toString('base64')}`;
-          } catch { /* preview not ready */ }
-          onProgress({ ...event, preview });
+            if (fs.existsSync(previewPath))
+              preview = `data:image/png;base64,${fs.readFileSync(previewPath).toString('base64')}`
+          } catch {
+            /* preview not ready */
+          }
+          onProgress({ ...event, preview })
         }
-      };
-      child.stdout.on('data', capture);
-      child.stderr.on('data', capture);
-      child.on('error', reject);
+      }
+      child.stdout.on('data', capture)
+      child.stderr.on('data', capture)
+      child.on('error', reject)
       child.on('close', (code) => {
         if (cancelled) {
-          reject(new Error('Image generation cancelled.'));
+          reject(new Error('Image generation cancelled.'))
         } else if (code === 0) {
           // stash the resolved seed for the caller via closure
-          (params as ImageGenParams & { _seed?: number })._seed = progress.resolvedSeed;
-          resolve();
+          ;(params as ImageGenParams & { _seed?: number })._seed = progress.resolvedSeed
+          resolve()
         } else {
-          reject(new Error(`Image generation failed (exit ${String(code)}): ${log.slice(-400)}`));
+          reject(new Error(`Image generation failed (exit ${String(code)}): ${log.slice(-400)}`))
         }
-      });
-    });
+      })
+    })
 
-    if (!fs.existsSync(outPath)) throw new Error('Image generation produced no output file.');
-    const b64 = fs.readFileSync(outPath).toString('base64');
-    const finalSeed = (params as ImageGenParams & { _seed?: number })._seed ?? seed;
+    if (!fs.existsSync(outPath)) throw new Error('Image generation produced no output file.')
+    const b64 = fs.readFileSync(outPath).toString('base64')
+    const finalSeed = (params as ImageGenParams & { _seed?: number })._seed ?? seed
     return {
       dataUrl: `data:image/png;base64,${b64}`,
       path: outPath,
       seed: finalSeed,
-      model: path.basename(model),
-    };
+      model: path.basename(model)
+    }
   } finally {
-    running = false;
-    currentChild = null;
-    fs.promises.unlink(previewPath).catch(() => {});
+    running = false
+    currentChild = null
+    fs.promises.unlink(previewPath).catch(() => {})
     // LLM warm-back-up happens once in the generateImage() wrapper's finally
     // (covers both this sd-cli path and the mflux path).
   }
@@ -748,7 +854,13 @@ async function runImageGen(
  *  sd-cli/mflux paths hold nothing between jobs. */
 export const imageRuntime: ManagedRuntime = {
   modality: 'image',
-  evict: () => { sdServer.stop(); },
-  warm: () => { /* lazily re-spawned by ensureUp on the next resident generation */ },
-  release: () => { sdServer.stop(); },
-};
+  evict: () => {
+    sdServer.stop()
+  },
+  warm: () => {
+    /* lazily re-spawned by ensureUp on the next resident generation */
+  },
+  release: () => {
+    sdServer.stop()
+  }
+}

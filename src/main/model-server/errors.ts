@@ -3,8 +3,11 @@
 // unit-testable and defined once.
 
 /** OpenAI-shaped error body. */
-export function errBody(message: string, type = 'invalid_request_error'): { error: { message: string; type: string } } {
-  return { error: { message, type } };
+export function errBody(
+  message: string,
+  type = 'invalid_request_error'
+): { error: { message: string; type: string } } {
+  return { error: { message, type } }
 }
 
 /**
@@ -14,8 +17,8 @@ export function errBody(message: string, type = 'invalid_request_error'): { erro
  * everything else -> server_error.
  */
 export function errMeta(e: unknown): { status: number; type: string; message: string } {
-  const status = (e as { status?: number } | undefined)?.status ?? 500;
-  const message = e instanceof Error ? e.message : String(e);
+  const status = (e as { status?: number } | undefined)?.status ?? 500
+  const message = e instanceof Error ? e.message : String(e)
   const type =
     status === 501
       ? 'not_installed'
@@ -23,6 +26,6 @@ export function errMeta(e: unknown): { status: number; type: string; message: st
         ? 'upstream_error'
         : status === 400
           ? 'invalid_request_error'
-          : 'server_error';
-  return { status, type, message };
+          : 'server_error'
+  return { status, type, message }
 }

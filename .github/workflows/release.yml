@@ -87,9 +87,10 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.sha }} # the exact bumped commit
           fetch-depth: 0
-          lfs: true # resources/bin/* (llama-server, sd-cli, whisper, ffmpeg, dylibs)
-                    # are Git LFS — without this CI bundles pointer stubs and every
-                    # runtime spawn fails with ENOEXEC.
+          lfs:
+            true # resources/bin/* (llama-server, sd-cli, whisper, ffmpeg, dylibs)
+            # are Git LFS — without this CI bundles pointer stubs and every
+            # runtime spawn fails with ENOEXEC.
       - name: Pull LFS binaries
         run: git lfs pull
       # Rebuild the chat engine from source with a PINNED macOS deployment target.

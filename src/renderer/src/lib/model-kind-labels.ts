@@ -10,10 +10,10 @@ export const MODEL_KIND_LABELS: Record<string, string> = {
   voice: 'Voice',
   transcription: 'Transcription',
   other: 'Other'
-};
+}
 
 /** Display label for a model kind, falling back to the raw kind for anything
  *  outside the known set. */
 export function modelKindLabel(kind: string): string {
-  return MODEL_KIND_LABELS[kind] ?? kind;
+  return MODEL_KIND_LABELS[kind] ?? kind
 }

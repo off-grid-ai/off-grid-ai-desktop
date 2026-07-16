@@ -1,97 +1,98 @@
-import { useState, useEffect, useCallback } from 'react';
-import { motion } from 'motion/react';
-import { BorderBeam } from './ui/border-beam';
-import { GridBackdrop } from './ui/grid-backdrop';
-import { cn } from '@renderer/lib/utils';
-import { Shield, Eye, Check, X, ArrowsClockwise as RefreshCw, Cpu } from '@phosphor-icons/react';
-import { SetupPanel } from './setup/SetupPanel';
+import { useState, useEffect, useCallback } from 'react'
+import { motion } from 'motion/react'
+import { BorderBeam } from './ui/border-beam'
+import { GridBackdrop } from './ui/grid-backdrop'
+import { cn } from '@renderer/lib/utils'
+import { Shield, Eye, Check, X, ArrowsClockwise as RefreshCw, Cpu } from '@phosphor-icons/react'
+import { SetupPanel } from './setup/SetupPanel'
 
 interface PermissionGateProps {
-  children: React.ReactNode;
+  children: React.ReactNode
 }
 
-
 export function PermissionGate({ children }: PermissionGateProps) {
-  const [permissionStatus, setPermissionStatus] = useState<PermissionStatus | null>(null);
-  const [isChecking, setIsChecking] = useState(true);
-  const [modelStatus, setModelStatus] = useState<{ downloaded: boolean; modelsDir: string } | null>(null);
+  const [permissionStatus, setPermissionStatus] = useState<PermissionStatus | null>(null)
+  const [isChecking, setIsChecking] = useState(true)
+  const [modelStatus, setModelStatus] = useState<{ downloaded: boolean; modelsDir: string } | null>(
+    null
+  )
   // Pro setup is NON-blocking: users go straight into the shell to look around.
   // The detailed setup screen opens on demand; a slim nudge can be dismissed.
-  const [showSetup, setShowSetup] = useState(false);
-  const [setupDismissed, setSetupDismissed] = useState(false);
+  const [showSetup, setShowSetup] = useState(false)
+  const [setupDismissed, setSetupDismissed] = useState(false)
 
   // Capture permissions (Accessibility + Screen Recording) are only needed by the
   // Pro "sees" layer. The free build runs chat/projects/models and gates on the
   // model alone.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const isPro = !!(window as any).api?.isPro;
-  const permsOk = isPro ? (permissionStatus?.allGranted ?? false) : true;
+  const isPro = !!(window as any).api?.isPro
+  const permsOk = isPro ? (permissionStatus?.allGranted ?? false) : true
 
   const checkPermissions = useCallback(async () => {
     try {
-      const status = await window.api.getPermissionStatus();
-      console.log('Permission status:', status);
-      setPermissionStatus(status);
-      setIsChecking(false);
-      return status.allGranted;
+      const status = await window.api.getPermissionStatus()
+      console.log('Permission status:', status)
+      setPermissionStatus(status)
+      setIsChecking(false)
+      return status.allGranted
     } catch (e) {
-      console.error('Failed to check permissions:', e);
-      setIsChecking(false);
-      return false;
+      console.error('Failed to check permissions:', e)
+      setIsChecking(false)
+      return false
     }
-  }, []);
+  }, [])
 
   const checkModelStatus = useCallback(async () => {
     try {
-      const status = await window.api.checkModelStatus();
-      console.log('Model status:', status);
-      setModelStatus(status);
-      return status.downloaded;
+      const status = await window.api.checkModelStatus()
+      console.log('Model status:', status)
+      setModelStatus(status)
+      return status.downloaded
     } catch (e) {
-      console.error('Failed to check model status:', e);
-      return false;
+      console.error('Failed to check model status:', e)
+      return false
     }
-  }, []);
+  }, [])
 
   // Initial check
   useEffect(() => {
-    checkPermissions();
-    checkModelStatus();
-  }, [checkPermissions, checkModelStatus]);
+    checkPermissions()
+    checkModelStatus()
+  }, [checkPermissions, checkModelStatus])
 
   // Poll for permission changes when permissions are not granted
   useEffect(() => {
-    if (permsOk && modelStatus?.downloaded) return;
+    if (permsOk && modelStatus?.downloaded) return
 
     const interval = setInterval(() => {
-      if (isPro) checkPermissions();
-      checkModelStatus();
-    }, 2000);
+      if (isPro) checkPermissions()
+      checkModelStatus()
+    }, 2000)
 
-    return () => clearInterval(interval);
-  }, [permsOk, isPro, modelStatus?.downloaded, checkPermissions, checkModelStatus]);
+    return () => clearInterval(interval)
+  }, [permsOk, isPro, modelStatus?.downloaded, checkPermissions, checkModelStatus])
 
   const handleOpenAccessibilitySettings = async () => {
     try {
-      await window.api.openAccessibilitySettings();
+      await window.api.openAccessibilitySettings()
     } catch (e) {
-      console.error('Failed to open accessibility settings:', e);
+      console.error('Failed to open accessibility settings:', e)
     }
-  };
+  }
 
   const handleOpenScreenRecordingSettings = async () => {
     try {
-      await window.api.openScreenRecordingSettings();
+      await window.api.openScreenRecordingSettings()
     } catch (e) {
-      console.error('Failed to open screen recording settings:', e);
+      console.error('Failed to open screen recording settings:', e)
     }
-  };
+  }
 
   const handleRefresh = () => {
-    setIsChecking(true);
-    checkPermissions();
-    checkModelStatus();
-  };
+    setIsChecking(true)
+    checkPermissions()
+    checkModelStatus()
+  }
 
   // Loading state
   if (isChecking && !permissionStatus) {
@@ -108,7 +109,7 @@ export function PermissionGate({ children }: PermissionGateProps) {
           <p className="text-neutral-500 text-sm">Checking permissions</p>
         </motion.div>
       </div>
-    );
+    )
   }
 
   // Both tiers flow through the same NON-blocking path. "Ready" = a model is
@@ -116,8 +117,7 @@ export function PermissionGate({ children }: PermissionGateProps) {
   // free this is just "has a model". Either way it's a dismissible nudge, never a
   // wall — so free users also get the "Configure for me" prompt when they have no
   // model yet (the most useful first-run action).
-  const ready = permsOk && !!modelStatus?.downloaded;
-
+  const ready = permsOk && !!modelStatus?.downloaded
 
   // Default (NON-blocking): drop straight into the shell so people can look around.
   // Show a slim, dismissible nudge when capture perms or a model are still missing.
@@ -133,7 +133,7 @@ export function PermissionGate({ children }: PermissionGateProps) {
           />
         )}
       </>
-    );
+    )
   }
 
   // Detailed setup screen — opened on demand from the nudge (no longer a hard wall).
@@ -199,10 +199,10 @@ export function PermissionGate({ children }: PermissionGateProps) {
                   // app shell (already mounted behind this gate) listens for og:navigate
                   // and switches view — replaceState alone wouldn't re-derive it. Keep
                   // the URL in sync, then dismiss the gate.
-                  window.dispatchEvent(new CustomEvent('og:navigate', { detail: 'models' }));
-                  window.history.replaceState(null, '', '/models');
-                  setSetupDismissed(true);
-                  setShowSetup(false);
+                  window.dispatchEvent(new CustomEvent('og:navigate', { detail: 'models' }))
+                  window.history.replaceState(null, '', '/models')
+                  setSetupDismissed(true)
+                  setShowSetup(false)
                 }}
                 className="text-xs text-neutral-500 underline-offset-2 transition-colors hover:text-neutral-300 hover:underline"
               >
@@ -221,11 +221,14 @@ export function PermissionGate({ children }: PermissionGateProps) {
             <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-neutral-400">
               {['Chat', 'Vision', 'Images', 'Voice', 'Speech'].map((c) => (
                 <span key={c} className="flex items-center gap-1.5">
-                  <span className="h-1 w-1 rounded-full bg-green-500" />{c}
+                  <span className="h-1 w-1 rounded-full bg-green-500" />
+                  {c}
                 </span>
               ))}
             </div>
-            <p className="text-[11px] text-neutral-600">One app · every open model · all on your device</p>
+            <p className="text-[11px] text-neutral-600">
+              One app · every open model · all on your device
+            </p>
           </motion.div>
 
           {/* Capture permissions — Pro only. */}
@@ -274,14 +277,14 @@ export function PermissionGate({ children }: PermissionGateProps) {
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
                 className={cn(
-                  "w-full py-3 rounded-xl font-medium transition-all",
-                  "bg-neutral-900/80 border border-neutral-800 text-neutral-300",
-                  "hover:bg-neutral-800 hover:border-neutral-700 hover:text-white",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                  "flex items-center justify-center gap-2"
+                  'w-full py-3 rounded-xl font-medium transition-all',
+                  'bg-neutral-900/80 border border-neutral-800 text-neutral-300',
+                  'hover:bg-neutral-800 hover:border-neutral-700 hover:text-white',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                  'flex items-center justify-center gap-2'
                 )}
               >
-                <RefreshCw className={cn("w-4 h-4", isChecking && "animate-spin")} />
+                <RefreshCw className={cn('w-4 h-4', isChecking && 'animate-spin')} />
                 {isChecking ? 'Checking' : 'Check permissions again'}
               </motion.button>
               <motion.div
@@ -300,7 +303,7 @@ export function PermissionGate({ children }: PermissionGateProps) {
         </motion.div>
       </div>
     </div>
-  );
+  )
 }
 
 // Slim, dismissible setup nudge shown over the shell when Pro setup is incomplete.
@@ -308,20 +311,20 @@ export function PermissionGate({ children }: PermissionGateProps) {
 function SetupNudge({
   missingModel,
   onOpen,
-  onDismiss,
+  onDismiss
 }: {
-  missingModel: boolean;
-  onOpen: () => void;
-  onDismiss: () => void;
+  missingModel: boolean
+  onOpen: () => void
+  onDismiss: () => void
 }) {
   // Model-first wording. Missing a model is the thing that actually blocks you, and
   // "Configure for me" handles it in one click — so lead with that for both tiers.
   // Capture permissions (Pro-only) are the secondary, optional step.
-  const title = missingModel ? 'Set up your local AI' : 'Finish setting up capture';
+  const title = missingModel ? 'Set up your local AI' : 'Finish setting up capture'
   const detail = missingModel
     ? 'Pick a model yourself, or let Off Grid configure one for your Mac.'
-    : 'Grant screen & accessibility access so Off Grid can see & remember.';
-  const cta = missingModel ? 'Configure' : 'Set up';
+    : 'Grant screen & accessibility access so Off Grid can see & remember.'
+  const cta = missingModel ? 'Configure' : 'Set up'
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -348,19 +351,26 @@ function SetupNudge({
         <X className="h-3.5 w-3.5" />
       </button>
     </motion.div>
-  );
+  )
 }
 
 interface PermissionCardProps {
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  granted: boolean;
-  onOpenSettings: () => void;
-  delay?: number;
+  title: string
+  description: string
+  icon: React.ReactNode
+  granted: boolean
+  onOpenSettings: () => void
+  delay?: number
 }
 
-function PermissionCard({ title, description, icon, granted, onOpenSettings, delay = 0 }: PermissionCardProps) {
+function PermissionCard({
+  title,
+  description,
+  icon,
+  granted,
+  onOpenSettings,
+  delay = 0
+}: PermissionCardProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -368,29 +378,25 @@ function PermissionCard({ title, description, icon, granted, onOpenSettings, del
       transition={{ delay, duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
       whileHover={{ scale: 1.01 }}
       className={cn(
-        "relative rounded-xl border p-4 transition-all duration-300 overflow-hidden",
+        'relative rounded-xl border p-4 transition-all duration-300 overflow-hidden',
         granted
-          ? "bg-neutral-900/60 border-neutral-700"
-          : "bg-neutral-900/40 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900/60"
+          ? 'bg-neutral-900/60 border-neutral-700'
+          : 'bg-neutral-900/40 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900/60'
       )}
     >
-      {granted && (
-        <BorderBeam
-          size={200}
-          duration={10}
-          borderWidth={1.5}
-        />
-      )}
+      {granted && <BorderBeam size={200} duration={10} borderWidth={1.5} />}
 
       {/* Vertical column card (desktop grid) */}
       <div className="flex h-full flex-col gap-3">
         <div className="flex items-center justify-between">
-          <div className={cn(
-            "w-12 h-12 rounded-xl flex items-center justify-center border transition-all duration-300",
-            granted
-              ? "bg-neutral-800 border-neutral-700 text-neutral-300"
-              : "bg-neutral-800/60 border-neutral-800 text-neutral-500"
-          )}>
+          <div
+            className={cn(
+              'w-12 h-12 rounded-xl flex items-center justify-center border transition-all duration-300',
+              granted
+                ? 'bg-neutral-800 border-neutral-700 text-neutral-300'
+                : 'bg-neutral-800/60 border-neutral-800 text-neutral-500'
+            )}
+          >
             {icon}
           </div>
           {granted && (
@@ -401,11 +407,17 @@ function PermissionCard({ title, description, icon, granted, onOpenSettings, del
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-0.5">
             <h3 className="font-medium text-white text-sm">{title}</h3>
-            <div className={cn(
-              "w-4 h-4 rounded-full flex items-center justify-center transition-all duration-300",
-              granted ? "bg-neutral-700" : "bg-neutral-800/60"
-            )}>
-              {granted ? <Check className="w-2.5 h-2.5 text-neutral-300" /> : <X className="w-2.5 h-2.5 text-neutral-600" />}
+            <div
+              className={cn(
+                'w-4 h-4 rounded-full flex items-center justify-center transition-all duration-300',
+                granted ? 'bg-neutral-700' : 'bg-neutral-800/60'
+              )}
+            >
+              {granted ? (
+                <Check className="w-2.5 h-2.5 text-neutral-300" />
+              ) : (
+                <X className="w-2.5 h-2.5 text-neutral-600" />
+              )}
             </div>
           </div>
           <p className="text-xs text-neutral-500">{description}</p>
@@ -415,9 +427,9 @@ function PermissionCard({ title, description, icon, granted, onOpenSettings, del
           <button
             onClick={onOpenSettings}
             className={cn(
-              "w-full px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200",
-              "bg-neutral-800 border border-neutral-700 text-neutral-300",
-              "hover:bg-neutral-700 hover:text-white"
+              'w-full px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200',
+              'bg-neutral-800 border border-neutral-700 text-neutral-300',
+              'hover:bg-neutral-700 hover:text-white'
             )}
           >
             Open Settings
@@ -425,5 +437,5 @@ function PermissionCard({ title, description, icon, granted, onOpenSettings, del
         )}
       </div>
     </motion.div>
-  );
+  )
 }

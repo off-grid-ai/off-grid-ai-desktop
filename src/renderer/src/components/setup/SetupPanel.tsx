@@ -1,105 +1,153 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { MagicWand, CheckCircle, WarningCircle, ChatCircle, Image as ImageIcon, SpeakerHigh, Microphone, DownloadSimple } from '@phosphor-icons/react';
-import { cn } from '@renderer/lib/utils';
-import { HealthPanel } from './HealthPanel';
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  MagicWand,
+  CheckCircle,
+  WarningCircle,
+  ChatCircle,
+  Image as ImageIcon,
+  SpeakerHigh,
+  Microphone,
+  DownloadSimple
+} from '@phosphor-icons/react'
+import { cn } from '@renderer/lib/utils'
+import { HealthPanel } from './HealthPanel'
 
-type Mode = 'conservative' | 'balanced' | 'extreme';
+type Mode = 'conservative' | 'balanced' | 'extreme'
 
 const MODES: { id: Mode; label: string; hint: string }[] = [
-  { id: 'conservative', label: 'Conservative', hint: 'Lightest — small, fast, low memory (skips the image model)' },
-  { id: 'balanced', label: 'Balanced', hint: 'Recommended — capable vision model within a safe share of RAM' },
-  { id: 'extreme', label: 'Extreme', hint: 'Largest model & context your RAM allows' },
-];
+  {
+    id: 'conservative',
+    label: 'Conservative',
+    hint: 'Lightest — small, fast, low memory (skips the image model)'
+  },
+  {
+    id: 'balanced',
+    label: 'Balanced',
+    hint: 'Recommended — capable vision model within a safe share of RAM'
+  },
+  { id: 'extreme', label: 'Extreme', hint: 'Largest model & context your RAM allows' }
+]
 
-type ItemKind = 'chat' | 'transcription' | 'voice' | 'image';
-const KIND_ICON: Record<ItemKind, React.ComponentType<{ className?: string; weight?: 'fill' | 'regular' }>> = {
+type ItemKind = 'chat' | 'transcription' | 'voice' | 'image'
+const KIND_ICON: Record<
+  ItemKind,
+  React.ComponentType<{ className?: string; weight?: 'fill' | 'regular' }>
+> = {
   chat: ChatCircle,
   transcription: Microphone,
   voice: SpeakerHigh,
-  image: ImageIcon,
-};
+  image: ImageIcon
+}
 
 interface SetupProgress {
-  phase: 'select' | 'download' | 'activate' | 'start' | 'verify' | 'done' | 'error';
-  message: string;
-  modelId?: string;
-  modelName?: string;
-  percent?: number;
-  downloadedMB?: string;
-  totalMB?: string;
+  phase: 'select' | 'download' | 'activate' | 'start' | 'verify' | 'done' | 'error'
+  message: string
+  modelId?: string
+  modelName?: string
+  percent?: number
+  downloadedMB?: string
+  totalMB?: string
 }
-interface SetupItem { kind: ItemKind; capability: string; id: string; name: string; sizeGb: number; installed: boolean; required: boolean }
-interface SetupPlan { mode: Mode; ramGb: number; items: SetupItem[]; totalDownloadGb: number }
+interface SetupItem {
+  kind: ItemKind
+  capability: string
+  id: string
+  name: string
+  sizeGb: number
+  installed: boolean
+  required: boolean
+}
+interface SetupPlan {
+  mode: Mode
+  ramGb: number
+  items: SetupItem[]
+  totalDownloadGb: number
+}
 
 interface SetupPanelProps {
-  onConfigured?: () => void; // called once auto-configure succeeds (e.g. to dismiss a gate)
-  hideHealth?: boolean;      // hide the embedded health panel (first-run gate)
+  onConfigured?: () => void // called once auto-configure succeeds (e.g. to dismiss a gate)
+  hideHealth?: boolean // hide the embedded health panel (first-run gate)
 }
 
 /** The reusable setup surface: pick a resource mode, see exactly which model it'll
  *  install, then one-click Configure. Used on the first-run gate and in Settings. */
 export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React.ReactElement {
-  const api = (window as { api?: Record<string, (...args: unknown[]) => Promise<unknown>> }).api;
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<SetupProgress | null>(null);
-  const [mode, setMode] = useState<Mode>('balanced');
-  const [plan, setPlan] = useState<SetupPlan | null>(null);
-  const firedConfigured = useRef(false);
+  const api = (window as { api?: Record<string, (...args: unknown[]) => Promise<unknown>> }).api
+  const [running, setRunning] = useState(false)
+  const [progress, setProgress] = useState<SetupProgress | null>(null)
+  const [mode, setMode] = useState<Mode>('balanced')
+  const [plan, setPlan] = useState<SetupPlan | null>(null)
+  const firedConfigured = useRef(false)
 
-  const loadPlan = useCallback(async (m: Mode) => {
-    try {
-      const p = (await api?.setupPlan?.(m)) as SetupPlan | null;
-      setPlan(p ?? null);
-    } catch { setPlan(null); }
-  }, [api]);
+  const loadPlan = useCallback(
+    async (m: Mode) => {
+      try {
+        const p = (await api?.setupPlan?.(m)) as SetupPlan | null
+        setPlan(p ?? null)
+      } catch {
+        setPlan(null)
+      }
+    },
+    [api]
+  )
 
   // Initial: read the saved mode, then preview its full plan.
   useEffect(() => {
     void (async () => {
-      let m: Mode = 'balanced';
+      let m: Mode = 'balanced'
       try {
-        const s = (await api?.getLlmSettings?.()) as { performanceMode?: Mode } | undefined;
-        if (s?.performanceMode) m = s.performanceMode;
-      } catch { /* default */ }
-      setMode(m);
-      void loadPlan(m);
-    })();
-  }, [api, loadPlan]);
+        const s = (await api?.getLlmSettings?.()) as { performanceMode?: Mode } | undefined
+        if (s?.performanceMode) m = s.performanceMode
+      } catch {
+        /* default */
+      }
+      setMode(m)
+      void loadPlan(m)
+    })()
+  }, [api, loadPlan])
 
   // Progress stream for the whole lifetime.
   useEffect(() => {
-    const off = (api as unknown as { onSetupProgress?: (cb: (p: SetupProgress) => void) => () => void })
-      .onSetupProgress?.((p) => {
-        setProgress(p);
-        if (p.phase === 'done' || p.phase === 'error') setRunning(false);
-        if (p.phase === 'done' && !firedConfigured.current) { firedConfigured.current = true; onConfigured?.(); }
-      });
-    return () => off?.();
-  }, [api, onConfigured]);
+    const off = (
+      api as unknown as { onSetupProgress?: (cb: (p: SetupProgress) => void) => () => void }
+    ).onSetupProgress?.((p) => {
+      setProgress(p)
+      if (p.phase === 'done' || p.phase === 'error') setRunning(false)
+      if (p.phase === 'done' && !firedConfigured.current) {
+        firedConfigured.current = true
+        onConfigured?.()
+      }
+    })
+    return () => off?.()
+  }, [api, onConfigured])
 
   const pickMode = (m: Mode): void => {
-    setMode(m);
-    api?.setLlmSettings?.({ performanceMode: m }); // persist + apply preset
-    void loadPlan(m);
-  };
+    setMode(m)
+    api?.setLlmSettings?.({ performanceMode: m }) // persist + apply preset
+    void loadPlan(m)
+  }
 
   const configure = async (): Promise<void> => {
-    if (running) return;
-    firedConfigured.current = false;
-    setRunning(true);
-    setProgress({ phase: 'select', message: 'Picking a model that fits your Mac…' });
-    try { await api?.autoConfigure?.(); }
-    catch (e) { setProgress({ phase: 'error', message: e instanceof Error ? e.message : 'Setup failed.' }); setRunning(false); }
-  };
+    if (running) return
+    firedConfigured.current = false
+    setRunning(true)
+    setProgress({ phase: 'select', message: 'Picking a model that fits your Mac…' })
+    try {
+      await api?.autoConfigure?.()
+    } catch (e) {
+      setProgress({ phase: 'error', message: e instanceof Error ? e.message : 'Setup failed.' })
+      setRunning(false)
+    }
+  }
 
   const cancel = (): void => {
-    const id = progress?.modelId;
-    if (id) void api?.cancelModelDownload?.(id); // aborts the in-flight download; autoConfigure emits the cancelled/error state
-  };
+    const id = progress?.modelId
+    if (id) void api?.cancelModelDownload?.(id) // aborts the in-flight download; autoConfigure emits the cancelled/error state
+  }
 
-  const done = progress?.phase === 'done';
-  const errored = progress?.phase === 'error';
-  const pct = typeof progress?.percent === 'number' ? progress.percent : null;
+  const done = progress?.phase === 'done'
+  const errored = progress?.phase === 'error'
+  const pct = typeof progress?.percent === 'number' ? progress.percent : null
 
   return (
     <div className="space-y-4 font-mono">
@@ -110,14 +158,16 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-white">Configure it for me</div>
-            <div className="text-xs text-neutral-500">Pick how much of your Mac to use, then one click does the rest.</div>
+            <div className="text-xs text-neutral-500">
+              Pick how much of your Mac to use, then one click does the rest.
+            </div>
           </div>
           <button
             onClick={configure}
             disabled={running}
             className={cn(
               'shrink-0 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-medium transition-colors',
-              'bg-green-600 text-white hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-60',
+              'bg-green-600 text-white hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-60'
             )}
           >
             {running ? 'Setting up…' : done ? 'Run again' : 'Configure'}
@@ -126,7 +176,9 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
 
         {/* Resource-use selector (Conservative / Balanced / Extreme) */}
         <div className="mt-4">
-          <div className="mb-1.5 text-[10px] uppercase tracking-widest text-neutral-600">Resource use</div>
+          <div className="mb-1.5 text-[10px] uppercase tracking-widest text-neutral-600">
+            Resource use
+          </div>
           <div className="flex overflow-hidden rounded-lg border border-neutral-800">
             {MODES.map((m) => (
               <button
@@ -135,14 +187,18 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
                 aria-pressed={mode === m.id}
                 className={cn(
                   'flex-1 px-2 py-1.5 text-xs transition-colors',
-                  mode === m.id ? 'bg-green-500/15 text-green-500' : 'text-neutral-400 hover:bg-neutral-800/60',
+                  mode === m.id
+                    ? 'bg-green-500/15 text-green-500'
+                    : 'text-neutral-400 hover:bg-neutral-800/60'
                 )}
               >
                 {m.label}
               </button>
             ))}
           </div>
-          <div className="mt-1.5 text-[11px] text-neutral-500">{MODES.find((m) => m.id === mode)?.hint}</div>
+          <div className="mt-1.5 text-[11px] text-neutral-500">
+            {MODES.find((m) => m.id === mode)?.hint}
+          </div>
         </div>
 
         {/* Exactly which models it will set up — the full baseline, no surprises */}
@@ -151,22 +207,31 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
             <div className="mb-1.5 flex items-center justify-between text-[10px] uppercase tracking-widest text-neutral-600">
               <span>Will set up</span>
               <span className="normal-case tracking-normal text-neutral-500">
-                {plan.totalDownloadGb > 0 ? `~${plan.totalDownloadGb.toFixed(1)} GB to download` : 'all installed'}
-                {' · sized for your '}{plan.ramGb} GB Mac
+                {plan.totalDownloadGb > 0
+                  ? `~${plan.totalDownloadGb.toFixed(1)} GB to download`
+                  : 'all installed'}
+                {' · sized for your '}
+                {plan.ramGb} GB Mac
               </span>
             </div>
             <ul className="divide-y divide-neutral-800/70 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950/40">
               {plan.items.map((it) => {
-                const Icon = KIND_ICON[it.kind];
+                const Icon = KIND_ICON[it.kind]
                 return (
                   <li key={it.id} className="flex items-center gap-3 px-3 py-2">
                     <Icon className="h-4 w-4 shrink-0 text-green-500" weight="regular" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-xs text-white">
                         {it.name}
-                        {it.kind === 'chat' && <span className="ml-1.5 text-[10px] text-neutral-500">· chat + vision</span>}
+                        {it.kind === 'chat' && (
+                          <span className="ml-1.5 text-[10px] text-neutral-500">
+                            · chat + vision
+                          </span>
+                        )}
                       </div>
-                      <div className="text-[10px] uppercase tracking-wider text-neutral-600">{it.capability}</div>
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-600">
+                        {it.capability}
+                      </div>
                     </div>
                     {it.installed ? (
                       <span className="flex shrink-0 items-center gap-1 text-[10px] text-green-500">
@@ -174,18 +239,24 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
                       </span>
                     ) : (
                       <span className="flex shrink-0 items-center gap-1 text-[10px] text-neutral-500">
-                        <DownloadSimple className="h-3.5 w-3.5" /> {it.sizeGb ? `${it.sizeGb.toFixed(1)} GB` : '—'}
+                        <DownloadSimple className="h-3.5 w-3.5" />{' '}
+                        {it.sizeGb ? `${it.sizeGb.toFixed(1)} GB` : '—'}
                       </span>
                     )}
                   </li>
-                );
+                )
               })}
             </ul>
             <div className="mt-1.5 text-[11px] text-neutral-600">
-              Chat first (you’re in as soon as it’s ready); voice, speech{plan.items.some((i) => i.kind === 'image') ? ' & image' : ''} finish in the background.
+              Chat first (you’re in as soon as it’s ready); voice, speech
+              {plan.items.some((i) => i.kind === 'image') ? ' & image' : ''} finish in the
+              background.
             </div>
             <div className="mt-2 rounded-md border border-neutral-800 bg-neutral-900/40 px-2.5 py-1.5 text-[11px] text-neutral-500">
-              For solid reasoning &amp; tool use, <span className="text-neutral-300">Gemma 4 E4B</span> is the recommended minimum (4B, ~6&nbsp;GB — fine on a 16&nbsp;GB Mac). Smaller 2B models are lighter and add vision, but are noticeably weaker at reasoning.
+              For solid reasoning &amp; tool use,{' '}
+              <span className="text-neutral-300">Gemma 4 E4B</span> is the recommended minimum (4B,
+              ~6&nbsp;GB — fine on a 16&nbsp;GB Mac). Smaller 2B models are lighter and add vision,
+              but are noticeably weaker at reasoning.
             </div>
           </div>
         )}
@@ -196,13 +267,22 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
             <div className="flex items-center gap-2 text-xs">
               {done && <CheckCircle weight="fill" className="h-4 w-4 text-green-500" />}
               {errored && <WarningCircle weight="fill" className="h-4 w-4 text-neutral-300" />}
-              <span className={cn(done ? 'text-green-500' : errored ? 'text-neutral-300' : 'text-neutral-400')}>{progress.message}</span>
+              <span
+                className={cn(
+                  done ? 'text-green-500' : errored ? 'text-neutral-300' : 'text-neutral-400'
+                )}
+              >
+                {progress.message}
+              </span>
             </div>
             {running && progress.phase === 'download' && (
               <div className="mt-2">
                 <div className="flex items-center gap-2">
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-800">
-                    <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${pct ?? 0}%` }} />
+                    <div
+                      className="h-full rounded-full bg-green-500 transition-all"
+                      style={{ width: `${pct ?? 0}%` }}
+                    />
                   </div>
                   <button
                     onClick={cancel}
@@ -212,7 +292,10 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
                   </button>
                 </div>
                 <div className="mt-1 text-[10px] text-neutral-600">
-                  {pct ?? 0}%{progress.totalMB ? ` · ${progress.downloadedMB ?? '0'} / ${progress.totalMB} MB` : ''}
+                  {pct ?? 0}%
+                  {progress.totalMB
+                    ? ` · ${progress.downloadedMB ?? '0'} / ${progress.totalMB} MB`
+                    : ''}
                 </div>
               </div>
             )}
@@ -227,5 +310,5 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
 
       {!hideHealth && <HealthPanel />}
     </div>
-  );
+  )
 }

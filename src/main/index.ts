@@ -5,7 +5,10 @@ import fs from 'fs'
 // Custom scheme to serve local capture screenshots to the renderer (file:// is
 // blocked there). Registered before app 'ready'; handled after.
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'ogcapture', privileges: { secure: true, supportFetchAPI: true, bypassCSP: true, stream: true } },
+  {
+    scheme: 'ogcapture',
+    privileges: { secure: true, supportFetchAPI: true, bypassCSP: true, stream: true }
+  }
 ])
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -40,7 +43,6 @@ guardConsoleStreams([process.stdout, process.stderr])
 // because that's the dev binary's bundle name; the packaged build's CFBundleName
 // comes from electron-builder `productName`, so it's correct there.)
 app.setName('Off Grid AI')
-
 ;(function unifyUserDataPath(): void {
   try {
     // Test/CI seam: let a harness isolate userData (e.g. screenshot capture of
@@ -75,7 +77,7 @@ app.setName('Off Grid AI')
 })()
 
 // FORCE UPDATE VERIFICATION: 3 - SHELL OVERWRITE
-console.log("MAIN PROCESS: LOADING CUSTOM ENTRY POINT (SHELL OVERWRITE)");
+console.log('MAIN PROCESS: LOADING CUSTOM ENTRY POINT (SHELL OVERWRITE)')
 
 function createWindow(): void {
   // Create the browser window.
@@ -127,15 +129,15 @@ function createWindow(): void {
 // recorder. Bail before whenReady if we can't get the lock; focus the existing
 // window instead.
 if (!app.requestSingleInstanceLock()) {
-  app.quit();
+  app.quit()
 } else {
   app.on('second-instance', () => {
-    const win = BrowserWindow.getAllWindows()[0];
+    const win = BrowserWindow.getAllWindows()[0]
     if (win) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
+      if (win.isMinimized()) win.restore()
+      win.focus()
     }
-  });
+  })
 }
 
 app.whenReady().then(() => {
@@ -144,19 +146,36 @@ app.whenReady().then(() => {
   // own — `<app-binary> --server-only` (or OFFGRID_SERVER_ONLY=1) — while still
   // reusing the Electron-built native binaries. First step toward a standalone
   // gateway CLI (see docs/GATEWAY_SPINE.md "externalize later").
-  const serverOnly = process.argv.includes('--server-only') || process.env.OFFGRID_SERVER_ONLY === '1';
+  const serverOnly =
+    process.argv.includes('--server-only') || process.env.OFFGRID_SERVER_ONLY === '1'
   if (serverOnly) {
-    console.log('[gateway] server-only mode — gateway on :7878, no UI/capture');
-    if (process.platform === 'darwin' && app.dock) { try { app.dock.hide(); } catch { /* ignore */ } }
-    try { startModelServer(); } catch (e) { console.error('[gateway] start failed', e); }
-    void import('./llm').then(({ llm }) => llm.init().catch((err) => console.error('[gateway] LLM init failed', err)));
-    return; // skip window, tray, watcher, IPC, capture, connectors — gateway only
+    console.log('[gateway] server-only mode — gateway on :7878, no UI/capture')
+    if (process.platform === 'darwin' && app.dock) {
+      try {
+        app.dock.hide()
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      startModelServer()
+    } catch (e) {
+      console.error('[gateway] start failed', e)
+    }
+    void import('./llm').then(({ llm }) =>
+      llm.init().catch((err) => console.error('[gateway] LLM init failed', err))
+    )
+    return // skip window, tray, watcher, IPC, capture, connectors — gateway only
   }
 
-  console.log("APP READY: Initializing Services...");
+  console.log('APP READY: Initializing Services...')
 
   // One-time, idempotent cleanup of the old "My Memories" AI-chat imports.
-  try { purgeLegacyChatImports(); } catch (e) { console.warn('[startup] legacy purge failed', e); }
+  try {
+    purgeLegacyChatImports()
+  } catch (e) {
+    console.warn('[startup] legacy purge failed', e)
+  }
 
   // Dock icon = the Off Grid green chip logo (in dev macOS otherwise shows the
   // default Electron icon; the packaged build uses build/icon from electron-builder).
@@ -184,19 +203,24 @@ app.whenReady().then(() => {
   // NOTE: keep this in sync with the dirs the renderer requests over ogcapture://.
   // 'generated-images' + 'style-thumbs' were missing, so every image-gen output and
   // every style-picker thumbnail 403'd and rendered as a broken image.
-  const ogCaptureRoots = ['meetings', 'uploads', 'captures', 'entity-photos', 'generated-images', 'style-thumbs'].map((d) =>
-    join(app.getPath('userData'), d),
-  );
+  const ogCaptureRoots = [
+    'meetings',
+    'uploads',
+    'captures',
+    'entity-photos',
+    'generated-images',
+    'style-thumbs'
+  ].map((d) => join(app.getPath('userData'), d))
   protocol.handle('ogcapture', async (request) => {
     // Canonicalize the request path BEFORE any fs use (resolve symlinks + `..`), validate it
     // against the allowlist, then hand the VALIDATED path to serveCaptureFile — the fs reads
     // happen there, behind this guard, never on the raw request input. Mirrors media-server.
-    const p = canonical(decodeURIComponent(request.url.slice('ogcapture://'.length)));
+    const p = canonical(decodeURIComponent(request.url.slice('ogcapture://'.length)))
     if (!isPathAllowed(p, ogCaptureRoots)) {
-      return new Response(null, { status: 403 });
+      return new Response(null, { status: 403 })
     }
-    return serveCaptureFile(p, request.headers.get('Range'));
-  });
+    return serveCaptureFile(p, request.headers.get('Range'))
+  })
 
   // Meeting recorder: grant SYSTEM AUDIO (loopback) for getDisplayMedia so the
   // recorder can capture remote participants on macOS 13+ via ScreenCaptureKit.
@@ -205,26 +229,26 @@ app.whenReady().then(() => {
     session.defaultSession.setDisplayMediaRequestHandler(
       async (_request, callback) => {
         try {
-          const sources = await desktopCapturer.getSources({ types: ['screen'] });
+          const sources = await desktopCapturer.getSources({ types: ['screen'] })
           // Multi-monitor: record the display the user is actually on (cursor),
           // not an arbitrary sources[0].
-          let pick = sources[0];
+          let pick = sources[0]
           try {
-            const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-            const m = sources.find((s) => s.display_id === String(disp.id));
-            if (m) pick = m;
+            const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+            const m = sources.find((s) => s.display_id === String(disp.id))
+            if (m) pick = m
           } catch {
             /* single display */
           }
-          callback({ video: pick, audio: 'loopback' });
+          callback({ video: pick, audio: 'loopback' })
         } catch {
-          callback({});
+          callback({})
         }
       },
       { useSystemPicker: false }
-    );
+    )
   } catch (e) {
-    console.warn('[meetings] display-media handler setup failed', e);
+    console.warn('[meetings] display-media handler setup failed', e)
   }
 
   // Grant microphone access for in-app voice input (STT). The OS still gates the
@@ -232,10 +256,10 @@ app.whenReady().then(() => {
   // lets the renderer's getUserMedia request through Electron's permission layer.
   try {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-      callback(permission === 'media');
-    });
+      callback(permission === 'media')
+    })
   } catch (e) {
-    console.warn('[voice] permission handler setup failed', e);
+    console.warn('[voice] permission handler setup failed', e)
   }
 
   // NOTE: Accessibility is a Pro (capture) permission — the free build never asks
@@ -250,68 +274,74 @@ app.whenReady().then(() => {
       applicationName: 'Off Grid AI',
       applicationVersion: app.getVersion(),
       copyright: 'Off Grid AI — private, on-device AI',
-      website: 'https://getoffgridai.co',
+      website: 'https://getoffgridai.co'
     })
-  } catch { /* not supported on this platform */ }
+  } catch {
+    /* not supported on this platform */
+  }
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
-
-
   // 2. Setup IPC Handlers (core) + the local model gateway
   try {
-     // Licensing first: load the cached Keygen entitlement into memory and register
-     // the SYNC `pro:is-enabled` handler BEFORE createWindow() (line below) so the
-     // preload's sendSync resolves and window.api.isPro reflects the real license.
-     initLicensing();
-     setupLicenseIpc();
-     setupIPC();
-     setupRagIPC();
-     setupMcpIpc(); // basic MCP connectors (management + chat tool extension)
-     startModelServer(); // one OpenAI-compatible local gateway on :7878 (LLM + STT)
-     startMediaServer(); // loopback HTTP for seekable local media (meeting videos)
-     ipcMain.handle('media:url', (_e, absPath: string) => mediaUrlFor(absPath));
-     // (clipboard is now a pro feature — setupClipboard runs in pro's activateMain)
-     // Pro features (capture, CRM, meetings, connectors, secretary, proactive,
-     // skills engine, console, tray) register their own IPC + intervals + watchers
-     // here. No-op in the free build (the pro submodule is absent → stub).
-     void loadProFeaturesMain().catch((e) => console.error('[pro] load failed', e));
-     // Demo seeder for testing: OFFGRID_SEED=1 seeds once; OFFGRID_SEED=force re-seeds.
-     if (process.env.OFFGRID_SEED) {
-       void import('./dev-seed').then((m) => m.seedDemo(process.env.OFFGRID_SEED === 'force')).catch((e) => console.error('[seed]', e));
-     }
-     console.log("IPC Handlers Registered.");
+    // Licensing first: load the cached Keygen entitlement into memory and register
+    // the SYNC `pro:is-enabled` handler BEFORE createWindow() (line below) so the
+    // preload's sendSync resolves and window.api.isPro reflects the real license.
+    initLicensing()
+    setupLicenseIpc()
+    setupIPC()
+    setupRagIPC()
+    setupMcpIpc() // basic MCP connectors (management + chat tool extension)
+    startModelServer() // one OpenAI-compatible local gateway on :7878 (LLM + STT)
+    startMediaServer() // loopback HTTP for seekable local media (meeting videos)
+    ipcMain.handle('media:url', (_e, absPath: string) => mediaUrlFor(absPath))
+    // (clipboard is now a pro feature — setupClipboard runs in pro's activateMain)
+    // Pro features (capture, CRM, meetings, connectors, secretary, proactive,
+    // skills engine, console, tray) register their own IPC + intervals + watchers
+    // here. No-op in the free build (the pro submodule is absent → stub).
+    void loadProFeaturesMain().catch((e) => console.error('[pro] load failed', e))
+    // Demo seeder for testing: OFFGRID_SEED=1 seeds once; OFFGRID_SEED=force re-seeds.
+    if (process.env.OFFGRID_SEED) {
+      void import('./dev-seed')
+        .then((m) => m.seedDemo(process.env.OFFGRID_SEED === 'force'))
+        .catch((e) => console.error('[seed]', e))
+    }
+    console.log('IPC Handlers Registered.')
   } catch (e) {
-     console.error("FATAL: IPC Setup failed", e);
+    console.error('FATAL: IPC Setup failed', e)
   }
 
   // 3. Initialize LLM (Async)
   // We don't await this to avoid blocking window creation
   import('./llm').then(({ llm }) => {
-      // Register the chat engine through the shared residency seam (runtime-manager),
-      // exactly like every other engine — the queue evicts it before a competing
-      // heavy job and re-warms it mode-aware (resident = reload; on-demand = release
-      // the pause block so it lazily respawns on next use, freeing RAM meanwhile).
-      registerRuntime(llm.runtime);
-      // Apply persisted queue settings (defaults: enabled, tier-1 coexists).
-      modalityQueue.setEnabled(getSetting('modalityQueueEnabled', true));
-      modalityQueue.setTier1CoexistsWithTier2(getSetting('modalityTier1CoexistsWithTier2', true));
-      llm.init().catch(err => console.error("Failed to init LLM:", err));
-  });
+    // Register the chat engine through the shared residency seam (runtime-manager),
+    // exactly like every other engine — the queue evicts it before a competing
+    // heavy job and re-warms it mode-aware (resident = reload; on-demand = release
+    // the pause block so it lazily respawns on next use, freeing RAM meanwhile).
+    registerRuntime(llm.runtime)
+    // Apply persisted queue settings (defaults: enabled, tier-1 coexists).
+    modalityQueue.setEnabled(getSetting('modalityQueueEnabled', true))
+    modalityQueue.setTier1CoexistsWithTier2(getSetting('modalityTier1CoexistsWithTier2', true))
+    llm.init().catch((err) => console.error('Failed to init LLM:', err))
+  })
   // Every other engine joins the SAME residency seam (runtime-manager), lazily so
   // module load never blocks window creation. Registration only stores hooks — it
   // doesn't spawn anything until the engine is actually used.
-  import('./tts').then(({ ttsRuntime }) => registerRuntime(ttsRuntime)).catch(() => {});
-  import('./imagegen').then(({ imageRuntime }) => registerRuntime(imageRuntime)).catch(() => {});
-  import('./transcription/select').then(({ sttRuntime }) => registerRuntime(sttRuntime)).catch(() => {});
+  import('./tts').then(({ ttsRuntime }) => registerRuntime(ttsRuntime)).catch(() => {})
+  import('./imagegen').then(({ imageRuntime }) => registerRuntime(imageRuntime)).catch(() => {})
+  import('./transcription/select')
+    .then(({ sttRuntime }) => registerRuntime(sttRuntime))
+    .catch(() => {})
 
   createWindow()
 
   // Auto-update from GitHub Releases (production only; dev has no update feed).
   if (!is.dev) {
-    import('./updater').then((m) => m.startAutoUpdates()).catch((e) => console.error('[update] init', e))
+    import('./updater')
+      .then((m) => m.startAutoUpdates())
+      .catch((e) => console.error('[update] init', e))
   }
 
   app.on('activate', function () {

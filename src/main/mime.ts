@@ -29,7 +29,7 @@ const EXT_MIME: Record<string, string> = {
   gif: 'image/gif',
   bmp: 'image/bmp',
   heic: 'image/heic'
-};
+}
 
 /**
  * Resolve a MIME type from a file extension. Accepts the ext with or without a
@@ -38,6 +38,6 @@ const EXT_MIME: Record<string, string> = {
  * file-serving callers; pass `image/png` for image-attachment callers).
  */
 export function mimeForExt(ext: string, fallback = 'application/octet-stream'): string {
-  const e = ext.replace(/^\.+/, '').toLowerCase();
-  return EXT_MIME[e] ?? fallback;
+  const e = ext.replace(/^\.+/, '').toLowerCase()
+  return EXT_MIME[e] ?? fallback
 }

@@ -10,8 +10,8 @@
 // conversation's own messages; this function makes that the only option.
 
 export interface HistoryTurn {
-  role: string;
-  content: string;
+  role: string
+  content: string
 }
 
 /** Build the last `limit` turns of history for a send.
@@ -23,15 +23,15 @@ export function buildSendHistory<T extends HistoryTurn>(
   convMsgs: readonly T[],
   regen: boolean,
   newUserText: string,
-  limit = 20,
+  limit = 20
 ): HistoryTurn[] {
-  const flat = convMsgs.map((m) => ({ role: m.role, content: m.content }));
-  let base: HistoryTurn[];
+  const flat = convMsgs.map((m) => ({ role: m.role, content: m.content }))
+  let base: HistoryTurn[]
   if (regen) {
-    const lastUserIdx = flat.map((m) => m.role).lastIndexOf('user');
-    base = lastUserIdx >= 0 ? flat.slice(0, lastUserIdx + 1) : flat;
+    const lastUserIdx = flat.map((m) => m.role).lastIndexOf('user')
+    base = lastUserIdx >= 0 ? flat.slice(0, lastUserIdx + 1) : flat
   } else {
-    base = [...flat, { role: 'user', content: newUserText }];
+    base = [...flat, { role: 'user', content: newUserText }]
   }
-  return base.slice(-limit);
+  return base.slice(-limit)
 }

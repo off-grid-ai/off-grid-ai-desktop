@@ -12,12 +12,12 @@ export async function persistToggle<T>(
   next: T,
   prev: T,
   apply: (v: T) => void,
-  persist: (v: T) => Promise<unknown> | unknown,
+  persist: (v: T) => Promise<unknown> | unknown
 ): Promise<void> {
-  apply(next);
+  apply(next)
   try {
-    await persist(next);
+    await persist(next)
   } catch {
-    apply(prev); // persist failed — never leave the UI showing an unsaved value
+    apply(prev) // persist failed — never leave the UI showing an unsaved value
   }
 }

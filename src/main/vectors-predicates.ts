@@ -5,12 +5,12 @@
 /** Build the `kind IN (...)` predicate for a set of kinds, SQL-escaping single
  *  quotes (`'` -> `''`) in each value. */
 export function kindsPredicate(kinds: string[]): string {
-  const list = kinds.map((k) => `'${String(k).replace(/'/g, "''")}'`).join(', ');
-  return `kind IN (${list})`;
+  const list = kinds.map((k) => `'${String(k).replace(/'/g, "''")}'`).join(', ')
+  return `kind IN (${list})`
 }
 
 /** Append the age filter to a kinds predicate. `cutoffMs` is floored to an
  *  integer so a fractional epoch-ms never produces a malformed literal. */
 export function olderThanPredicate(kinds: string[], cutoffMs: number): string {
-  return `${kindsPredicate(kinds)} AND ts < ${Math.floor(cutoffMs)}`;
+  return `${kindsPredicate(kinds)} AND ts < ${Math.floor(cutoffMs)}`
 }

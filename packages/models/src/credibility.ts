@@ -2,10 +2,10 @@
 // Verified quantizer / Community, with labels + colors for badges. Shared so
 // desktop and mobile rank sources identically.
 
-export type Credibility = 'offgrid' | 'official' | 'verified-quantizer' | 'community';
+export type Credibility = 'offgrid' | 'official' | 'verified-quantizer' | 'community'
 
 // HF authors published/curated by Off Grid (our own converted + verified models).
-export const OFFGRID_AUTHORS = ['offgrid-ai', 'offgrid'];
+export const OFFGRID_AUTHORS = ['offgrid-ai', 'offgrid']
 
 export const OFFICIAL_MODEL_AUTHORS: Record<string, string> = {
   'meta-llama': 'Meta',
@@ -28,8 +28,8 @@ export const OFFICIAL_MODEL_AUTHORS: Record<string, string> = {
   CohereForAI: 'Cohere',
   allenai: 'Allen AI',
   nvidia: 'NVIDIA',
-  apple: 'Apple',
-};
+  apple: 'Apple'
+}
 
 export const VERIFIED_QUANTIZERS: Record<string, string> = {
   TheBloke: 'TheBloke',
@@ -44,20 +44,31 @@ export const VERIFIED_QUANTIZERS: Record<string, string> = {
   ggerganov: 'Georgi Gerganov',
   // Strong community quantizers (formerly badged separately) — trusted GGUFs.
   'lmstudio-community': 'Community GGUF',
-  'lmstudio-ai': 'Community GGUF',
-};
+  'lmstudio-ai': 'Community GGUF'
+}
 
-export const CREDIBILITY_LABELS: Record<Credibility, { label: string; description: string; color: string }> = {
-  offgrid: { label: 'Off Grid', description: 'Curated & converted by Off Grid — verified to run on-device', color: '#34D399' },
+export const CREDIBILITY_LABELS: Record<
+  Credibility,
+  { label: string; description: string; color: string }
+> = {
+  offgrid: {
+    label: 'Off Grid',
+    description: 'Curated & converted by Off Grid — verified to run on-device',
+    color: '#34D399'
+  },
   official: { label: 'Official', description: 'From the original model creator', color: '#22C55E' },
-  'verified-quantizer': { label: 'Verified', description: 'From a trusted quantization provider', color: '#A78BFA' },
-  community: { label: 'Community', description: 'Community contributed model', color: '#64748B' },
-};
+  'verified-quantizer': {
+    label: 'Verified',
+    description: 'From a trusted quantization provider',
+    color: '#A78BFA'
+  },
+  community: { label: 'Community', description: 'Community contributed model', color: '#64748B' }
+}
 
 /** Classify a HF author into a credibility tier. */
 export function determineCredibility(author: string): Credibility {
-  if (OFFGRID_AUTHORS.includes(author)) return 'offgrid';
-  if (author in OFFICIAL_MODEL_AUTHORS) return 'official';
-  if (author in VERIFIED_QUANTIZERS) return 'verified-quantizer';
-  return 'community';
+  if (OFFGRID_AUTHORS.includes(author)) return 'offgrid'
+  if (author in OFFICIAL_MODEL_AUTHORS) return 'official'
+  if (author in VERIFIED_QUANTIZERS) return 'verified-quantizer'
+  return 'community'
 }

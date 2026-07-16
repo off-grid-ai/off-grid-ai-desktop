@@ -25,8 +25,8 @@ extraResources:
   - from: resources
     to: .
     filter:
-      - "**/*"
-      - "!models/**"
+      - '**/*'
+      - '!models/**'
 win:
   executableName: off-grid-ai
 nsis:

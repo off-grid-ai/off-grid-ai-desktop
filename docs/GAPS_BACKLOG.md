@@ -30,7 +30,7 @@ the coverage floor held (~97/92/96/98) throughout.
   `saveSetting('imageParams', …)`; a model change never clobbers a typed value. Render test asserts
   the payload carries the user's steps (10), not the model default (28).
 - **T1c. `imgSeed`/`imgNegative`/`imgStrength`/`imgStyle` not persisted** → FIXED. Persisted +
-  reloaded through the data layer (`MemoryChat.tsx:314-317, 332-335`). (`imgInit` stays transient  - 
+  reloaded through the data layer (`MemoryChat.tsx:314-317, 332-335`). (`imgInit` stays transient -
   a per-turn init-image path, correctly not persisted.)
 - **T1d. Image params had no persisted owner** → FIXED (subsumed by T1a–T1c). Image-gen params now
   have a single persisted owner (the settings store); the composer binds to it and writes through.
@@ -50,7 +50,7 @@ the coverage floor held (~97/92/96/98) throughout.
 - **Preload `setLlmSettings` type omitted kvCacheType/flashAttn/gpuLayers/threads/batchSize/mode** →
   FIXED (`src/preload/index.ts:244` - the type now carries every field the handler accepts;
   runtime was always passing the whole object, this closes the type-check blind spot).
-- **Settings identity fields saved on `blur` only (edit lost if closed without blurring)** → FIXED  - 
+- **Settings identity fields saved on `blur` only (edit lost if closed without blurring)** → FIXED -
   now also commits on Enter (`Settings.tsx:472-473`), the standard keyboard commit, calling the same
   `saveIdentity`.
 - **`ctxSize` halved + persisted by crash recovery (`llm.ts:479-483`)** → BY DESIGN, not a bug. This

@@ -13,11 +13,11 @@
 
 export interface ProSettingsSlot {
   /** Matches the id a registered SettingsSection claims when pro is active. */
-  id: string;
+  id: string
   /** Entrance-animation delay, kept in sync with the surrounding core cards. */
-  delay: number;
+  delay: number
   /** Free-build teaser. null = render nothing when the slot isn't registered. */
-  placeholder: { title: string; description: string } | null;
+  placeholder: { title: string; description: string } | null
 }
 
 // Array order IS the render order in the Settings screen (between "Setup & health"
@@ -29,8 +29,8 @@ export const PRO_SETTINGS_SLOTS: ProSettingsSlot[] = [
     placeholder: {
       title: 'Capture',
       description:
-        'See whether screen capture is running, and pause, resume, or restart it - a control that works even if the menu-bar icon is unavailable.',
-    },
+        'See whether screen capture is running, and pause, resume, or restart it - a control that works even if the menu-bar icon is unavailable.'
+    }
   },
   {
     id: 'identity',
@@ -38,8 +38,8 @@ export const PRO_SETTINGS_SLOTS: ProSettingsSlot[] = [
     placeholder: {
       title: 'You',
       description:
-        'Tell Off Grid who you are so it can attribute your messages, commitments, and calendar - part of the Pro intelligence layer.',
-    },
+        'Tell Off Grid who you are so it can attribute your messages, commitments, and calendar - part of the Pro intelligence layer.'
+    }
   },
   {
     id: 'proactive',
@@ -47,8 +47,8 @@ export const PRO_SETTINGS_SLOTS: ProSettingsSlot[] = [
     placeholder: {
       title: 'Proactive delivery',
       description:
-        'A morning briefing and a heads-up before each meeting - native notifications, even when the window is closed.',
-    },
+        'A morning briefing and a heads-up before each meeting - native notifications, even when the window is closed.'
+    }
   },
   {
     id: 'secretary',
@@ -56,9 +56,9 @@ export const PRO_SETTINGS_SLOTS: ProSettingsSlot[] = [
     placeholder: {
       title: 'What Off Grid has learned',
       description:
-        'Preferences distilled from the suggestions you dismiss, fed back to your assistant so it gets sharper over time.',
-    },
+        'Preferences distilled from the suggestions you dismiss, fed back to your assistant so it gets sharper over time.'
+    }
   },
   // "Your Pro plan" has no free teaser — only shown once pro registers it.
-  { id: 'pro-plan', delay: 0.3, placeholder: null },
-];
+  { id: 'pro-plan', delay: 0.3, placeholder: null }
+]

@@ -9,44 +9,59 @@
 // calls the rag:delete-conversation handler makes (deleteArtifactsForConversation +
 // deleteRagConversation), and assert the terminal artifact — surviving rows + files.
 
-import { describe, it, expect, afterAll, vi } from 'vitest';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { describe, it, expect, afterAll, vi } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 
-const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-convdel-'));
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-convdel-'))
 
 vi.mock('electron', () => ({
   app: { getPath: () => TMP_DIR, isPackaged: false, getAppPath: () => process.cwd() },
-  safeStorage: { isEncryptionAvailable: () => false, encryptString: (s: string) => Buffer.from(s), decryptString: (b: Buffer) => b.toString() },
-}));
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+    encryptString: (s: string) => Buffer.from(s),
+    decryptString: (b: Buffer) => b.toString()
+  }
+}))
 
-import * as dbmod from '../database';
-import { saveArtifact, listArtifacts, deleteArtifactsForConversation } from '../artifacts';
+import * as dbmod from '../database'
+import { saveArtifact, listArtifacts, deleteArtifactsForConversation } from '../artifacts'
 
 const count = (sql: string, ...args: unknown[]): number =>
-  (dbmod.getDB().prepare(sql).get(...args) as { c: number }).c;
+  (
+    dbmod
+      .getDB()
+      .prepare(sql)
+      .get(...args) as { c: number }
+  ).c
 
-afterAll(() => { try { fs.rmSync(TMP_DIR, { recursive: true, force: true }); } catch { /* best effort */ } });
+afterAll(() => {
+  try {
+    fs.rmSync(TMP_DIR, { recursive: true, force: true })
+  } catch {
+    /* best effort */
+  }
+})
 
 describe('deleting a conversation removes its messages + artifacts (D23)', () => {
   it('leaves no orphaned rag_messages or artifacts', () => {
-    dbmod.createRagConversation('c1', 'A chat', null);
-    dbmod.addRagMessage('c1', 'user', 'make me a chart');
-    dbmod.addRagMessage('c1', 'assistant', 'here');
-    saveArtifact({ kind: 'text', code: 'chart code', title: 'Chart', conversationId: 'c1' });
+    dbmod.createRagConversation('c1', 'A chat', null)
+    dbmod.addRagMessage('c1', 'user', 'make me a chart')
+    dbmod.addRagMessage('c1', 'assistant', 'here')
+    saveArtifact({ kind: 'text', code: 'chart code', title: 'Chart', conversationId: 'c1' })
 
     // Precondition: the messages + artifact are really there.
-    expect(count('SELECT COUNT(*) AS c FROM rag_messages WHERE conversation_id = ?', 'c1')).toBe(2);
-    expect(listArtifacts({ conversationId: 'c1' }).length).toBe(1);
+    expect(count('SELECT COUNT(*) AS c FROM rag_messages WHERE conversation_id = ?', 'c1')).toBe(2)
+    expect(listArtifacts({ conversationId: 'c1' }).length).toBe(1)
 
     // Exactly what the rag:delete-conversation handler does.
-    deleteArtifactsForConversation('c1');
-    dbmod.deleteRagConversation('c1');
+    deleteArtifactsForConversation('c1')
+    dbmod.deleteRagConversation('c1')
 
     // Terminal artifact: nothing scoped to the deleted conversation survives.
-    expect(count('SELECT COUNT(*) AS c FROM rag_conversations WHERE id = ?', 'c1')).toBe(0);
-    expect(count('SELECT COUNT(*) AS c FROM rag_messages WHERE conversation_id = ?', 'c1')).toBe(0);
-    expect(listArtifacts({ conversationId: 'c1' }).length).toBe(0);
-  });
-});
+    expect(count('SELECT COUNT(*) AS c FROM rag_conversations WHERE id = ?', 'c1')).toBe(0)
+    expect(count('SELECT COUNT(*) AS c FROM rag_messages WHERE conversation_id = ?', 'c1')).toBe(0)
+    expect(listArtifacts({ conversationId: 'c1' }).length).toBe(0)
+  })
+})

@@ -12,9 +12,9 @@
  * Ported verbatim from mobile/src/services/keygenClient.ts (RN logger → console).
  * Uses the global `fetch` (Electron main runs on Node 18+).
  */
-import { KEYGEN_API_BASE, KEYGEN_PRODUCT_ID } from './keygen-config';
+import { KEYGEN_API_BASE, KEYGEN_PRODUCT_ID } from './keygen-config'
 
-const JSON_API = 'application/vnd.api+json';
+const JSON_API = 'application/vnd.api+json'
 
 type ValidationCode =
   | 'VALID'
@@ -27,27 +27,27 @@ type ValidationCode =
   | 'BANNED'
   | 'OVERDUE'
   | 'NOT_FOUND'
-  | 'UNKNOWN';
+  | 'UNKNOWN'
 
 export interface KeygenLicense {
-  id: string;
-  expiry: string | null; // ISO timestamp, or null for a perpetual (lifetime) key
-  metadata: Record<string, unknown>;
-  name: string | null;
+  id: string
+  expiry: string | null // ISO timestamp, or null for a perpetual (lifetime) key
+  metadata: Record<string, unknown>
+  name: string | null
 }
 
 export interface ValidateResult {
-  valid: boolean;
-  code: ValidationCode;
-  license: KeygenLicense | null;
+  valid: boolean
+  code: ValidationCode
+  license: KeygenLicense | null
 }
 
 export interface KeygenMachine {
-  id: string;
-  fingerprint: string;
-  platform: string | null;
-  name: string | null;
-  lastSeen: string | null;
+  id: string
+  fingerprint: string
+  platform: string | null
+  name: string | null
+  lastSeen: string | null
 }
 
 /** Raised on a network/transport failure (offline), never on a 4xx from Keygen. */
@@ -55,9 +55,9 @@ export class KeygenNetworkError extends Error {}
 
 async function request(path: string, init: RequestInit): Promise<Response> {
   try {
-    return await fetch(`${KEYGEN_API_BASE}${path}`, init);
+    return await fetch(`${KEYGEN_API_BASE}${path}`, init)
   } catch (e) {
-    throw new KeygenNetworkError(e instanceof Error ? e.message : String(e));
+    throw new KeygenNetworkError(e instanceof Error ? e.message : String(e))
   }
 }
 
@@ -65,18 +65,18 @@ async function request(path: string, init: RequestInit): Promise<Response> {
  *  path — rejects anything that isn't a plain id so tainted data can't reshape the URL
  *  (Sonar S7044/S8476). Keygen ids are UUIDs, so this never rejects a real id. */
 function safeId(id: string): string {
-  if (!/^[A-Za-z0-9._-]{1,128}$/.test(id)) throw new Error('invalid Keygen resource id');
-  return id;
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(id)) throw new Error('invalid Keygen resource id')
+  return id
 }
 
 export function toLicense(data: any): KeygenLicense | null {
-  if (!data || !data.id) return null;
+  if (!data || !data.id) return null
   return {
     id: data.id,
     expiry: data.attributes?.expiry ?? null,
     metadata: data.attributes?.metadata ?? {},
-    name: data.attributes?.name ?? null,
-  };
+    name: data.attributes?.name ?? null
+  }
 }
 
 /** Turn a validate-key JSON:API body into our ValidateResult shape. Pure. */
@@ -84,8 +84,8 @@ export function parseValidateResult(body: any): ValidateResult {
   return {
     valid: !!body?.meta?.valid,
     code: (body?.meta?.code ?? 'UNKNOWN') as ValidationCode,
-    license: toLicense(body?.data),
-  };
+    license: toLicense(body?.data)
+  }
 }
 
 /**
@@ -93,29 +93,34 @@ export function parseValidateResult(body: any): ValidateResult {
  * Pure — 201 means activated; a 422 whose errors carry a LIMIT code or a "machine
  * limit" detail means the device cap was hit. Any other non-201 is a plain failure.
  */
-export function parseActivateResult(status: number, body: any): { ok: boolean; limitReached: boolean } {
-  if (status === 201) return { ok: true, limitReached: false };
-  const errors: any[] = body?.errors ?? [];
+export function parseActivateResult(
+  status: number,
+  body: any
+): { ok: boolean; limitReached: boolean } {
+  if (status === 201) return { ok: true, limitReached: false }
+  const errors: any[] = body?.errors ?? []
   const limitReached =
     status === 422 &&
     errors.some(
       (e) =>
         String(e?.code ?? '').includes('LIMIT') ||
-        String(e?.detail ?? '').toLowerCase().includes('machine limit'),
-    );
-  return { ok: false, limitReached };
+        String(e?.detail ?? '')
+          .toLowerCase()
+          .includes('machine limit')
+    )
+  return { ok: false, limitReached }
 }
 
 /** Turn a list-machines JSON:API body into our KeygenMachine[] shape. Pure. */
 export function parseMachines(body: any): KeygenMachine[] {
-  const data: any[] = body?.data ?? [];
+  const data: any[] = body?.data ?? []
   return data.map((m) => ({
     id: m.id,
     fingerprint: m.attributes?.fingerprint ?? '',
     platform: m.attributes?.platform ?? null,
     name: m.attributes?.name ?? null,
-    lastSeen: m.attributes?.lastHeartbeat ?? m.attributes?.created ?? null,
-  }));
+    lastSeen: m.attributes?.lastHeartbeat ?? m.attributes?.created ?? null
+  }))
 }
 
 /** Validate a key, scoped to this product + device fingerprint. No auth needed. */
@@ -124,20 +129,20 @@ export async function validateKey(key: string, fingerprint: string): Promise<Val
     method: 'POST',
     headers: { 'Content-Type': JSON_API, Accept: JSON_API },
     body: JSON.stringify({
-      meta: { key, scope: { product: KEYGEN_PRODUCT_ID, fingerprint } },
-    }),
-  });
-  const body: any = await res.json().catch(() => ({}));
-  return parseValidateResult(body);
+      meta: { key, scope: { product: KEYGEN_PRODUCT_ID, fingerprint } }
+    })
+  })
+  const body: any = await res.json().catch(() => ({}))
+  return parseValidateResult(body)
 }
 
 /** Register this device as a machine on the license. Enforces the device cap. */
 export async function activateMachine(
   key: string,
   licenseId: string,
-  device: { fingerprint: string; platform: string },
+  device: { fingerprint: string; platform: string }
 ): Promise<{ ok: boolean; limitReached: boolean }> {
-  const { fingerprint, platform } = device;
+  const { fingerprint, platform } = device
   const res = await request('/machines', {
     method: 'POST',
     headers: { 'Content-Type': JSON_API, Accept: JSON_API, Authorization: `License ${key}` },
@@ -145,36 +150,38 @@ export async function activateMachine(
       data: {
         type: 'machines',
         attributes: { fingerprint, platform, metadata: { platform } },
-        relationships: { license: { data: { type: 'licenses', id: licenseId } } },
-      },
-    }),
-  });
-  if (res.status === 201) return { ok: true, limitReached: false };
-  const body: any = await res.json().catch(() => ({}));
-  const result = parseActivateResult(res.status, body);
+        relationships: { license: { data: { type: 'licenses', id: licenseId } } }
+      }
+    })
+  })
+  if (res.status === 201) return { ok: true, limitReached: false }
+  const body: any = await res.json().catch(() => ({}))
+  const result = parseActivateResult(res.status, body)
   if (!result.limitReached) {
     // Strip CR/LF from the server-returned error before logging (anti log-forging) and cap it.
-    const errStr = JSON.stringify(body?.errors ?? []).replace(/[\r\n]+/g, ' ').slice(0, 300);
-    console.error(`[Keygen] activate failed (${res.status}): ${errStr}`);
+    const errStr = JSON.stringify(body?.errors ?? [])
+      .replace(/[\r\n]+/g, ' ')
+      .slice(0, 300)
+    console.error(`[Keygen] activate failed (${res.status}): ${errStr}`)
   }
-  return result;
+  return result
 }
 
 /** List the machines currently activated on a license. */
 export async function listMachines(key: string, licenseId: string): Promise<KeygenMachine[]> {
   const res = await request(`/licenses/${safeId(licenseId)}/machines`, {
     method: 'GET',
-    headers: { Accept: JSON_API, Authorization: `License ${key}` },
-  });
-  const body: any = await res.json().catch(() => ({}));
-  return parseMachines(body);
+    headers: { Accept: JSON_API, Authorization: `License ${key}` }
+  })
+  const body: any = await res.json().catch(() => ({}))
+  return parseMachines(body)
 }
 
 /** Free a device slot. */
 export async function deactivateMachine(key: string, machineId: string): Promise<boolean> {
   const res = await request(`/machines/${safeId(machineId)}`, {
     method: 'DELETE',
-    headers: { Accept: JSON_API, Authorization: `License ${key}` },
-  });
-  return res.status === 204 || res.ok;
+    headers: { Accept: JSON_API, Authorization: `License ${key}` }
+  })
+  return res.status === 204 || res.ok
 }

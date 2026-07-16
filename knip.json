@@ -17,10 +17,17 @@
   "ignore": ["**/*.d.ts", "component-library-animations/**"],
   "tags": ["-public"],
   "ignoreDependencies": [
-    "tailwindcss", "@tailwindcss/vite", "postcss", "autoprefixer",
-    "@vitejs/plugin-react", "@electron-toolkit/preload", "@offgrid/design",
-    "better-sqlite3", "@types/better-sqlite3",
-    "kokoro-js", "ollama"
+    "tailwindcss",
+    "@tailwindcss/vite",
+    "postcss",
+    "autoprefixer",
+    "@vitejs/plugin-react",
+    "@electron-toolkit/preload",
+    "@offgrid/design",
+    "better-sqlite3",
+    "@types/better-sqlite3",
+    "kokoro-js",
+    "ollama"
   ],
   "ignoreBinaries": ["swift", "osascript", "pkill", "xattr", "lsof", "ps", "playwright"]
 }

@@ -1,6 +1,6 @@
-import { motion, MotionStyle, Transition } from "motion/react"
+import { motion, MotionStyle, Transition } from 'motion/react'
 
-import { cn } from "@renderer/lib/utils"
+import { cn } from '@renderer/lib/utils'
 
 interface BorderBeamProps {
   /**
@@ -56,27 +56,27 @@ export const BorderBeam = ({
   duration = 6,
   // Off Grid is emerald-only: the beam rides the brand accent (theme-aware via
   // the --og-* tokens), never the stock orange/purple gradient.
-  colorFrom = "var(--og-primary-light)",
-  colorTo = "var(--og-primary)",
+  colorFrom = 'var(--og-primary-light)',
+  colorTo = 'var(--og-primary)',
   transition,
   style,
   reverse = false,
   initialOffset = 0,
-  borderWidth = 1,
+  borderWidth = 1
 }: BorderBeamProps) => {
   return (
     <div
       className="pointer-events-none absolute inset-0 rounded-[inherit] border-(length:--border-beam-width) border-transparent mask-[linear-gradient(transparent,transparent),linear-gradient(#000,#000)] mask-intersect [mask-clip:padding-box,border-box]"
       style={
         {
-          "--border-beam-width": `${borderWidth}px`,
+          '--border-beam-width': `${borderWidth}px`
         } as React.CSSProperties
       }
     >
       <motion.div
         className={cn(
-          "absolute aspect-square",
-          "bg-linear-to-l from-(--color-from) via-(--color-to) to-transparent",
+          'absolute aspect-square',
+          'bg-linear-to-l from-(--color-from) via-(--color-to) to-transparent',
           className
         )}
         style={
@@ -85,23 +85,23 @@ export const BorderBeam = ({
             // Path radius must match the card's border-radius (rounded-xl = 12px),
             // not the beam size, or the beam misaligns on wide/short cards.
             offsetPath: `rect(0 auto auto 0 round 12px)`,
-            "--color-from": colorFrom,
-            "--color-to": colorTo,
-            ...style,
+            '--color-from': colorFrom,
+            '--color-to': colorTo,
+            ...style
           } as MotionStyle
         }
         initial={{ offsetDistance: `${initialOffset}%` }}
         animate={{
           offsetDistance: reverse
             ? [`${100 - initialOffset}%`, `${-initialOffset}%`]
-            : [`${initialOffset}%`, `${100 + initialOffset}%`],
+            : [`${initialOffset}%`, `${100 + initialOffset}%`]
         }}
         transition={{
           repeat: Infinity,
-          ease: "linear",
+          ease: 'linear',
           duration,
           delay: -delay,
-          ...transition,
+          ...transition
         }}
       />
     </div>

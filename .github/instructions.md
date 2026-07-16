@@ -31,6 +31,7 @@ This system creates interfaces that feel like high-end personal analytics—calm
 ## Color Palette
 
 ### Monochromatic Scale
+
 The palette moves from near-black backgrounds through ascending grays to white text. No accent colors. No gradients. No color-coding for categories or status.
 
 ```css
@@ -64,6 +65,7 @@ text-neutral-600       /* Placeholders, very muted text */
 ```
 
 ### Effect Colors
+
 ```css
 /* Border Beams */
 from-transparent via-neutral-500 to-transparent      /* Modal beam */
@@ -82,6 +84,7 @@ hover:border-red-500/40
 ```
 
 ### Entity Graph Colors (Exception)
+
 The entity graph is the one place where color appears. Node types have distinct but muted, desaturated colors that feel cohesive with the monochromatic system.
 
 ---
@@ -91,6 +94,7 @@ The entity graph is the one place where color appears. Node types have distinct 
 Light, not bold. Large numbers and headlines use light font weights. This creates elegance at scale.
 
 ### Font Weights
+
 ```css
 font-light       /* Hero stats (3xl-6xl numbers), main titles - PREFERRED for large text */
 font-normal      /* Body text default */
@@ -100,6 +104,7 @@ font-semibold    /* Important labels, type tags, markdown headings */
 ```
 
 ### Font Size Scale
+
 ```css
 text-[9px]       /* Very small labels */
 text-[10px]      /* Tags, timestamps, progress indicators */
@@ -114,6 +119,7 @@ text-3xl-6xl     /* Hero stats (responsive) */
 ```
 
 ### Letter Spacing
+
 Uppercase whispers. Section labels are small, uppercase, and widely tracked.
 
 ```css
@@ -125,6 +131,7 @@ tracking-[0.2em]   /* Questionnaire progress labels */
 ```
 
 ### Text Transforms
+
 ```css
 uppercase          /* Tags, type badges, progress labels, section headers */
 capitalize         /* Chat titles */
@@ -132,32 +139,37 @@ lowercase          /* Formatting normalization */
 ```
 
 ### Hierarchy Examples
-| Element | Size | Weight | Color | Tracking |
-|---------|------|--------|-------|----------|
-| Hero numbers | 3xl-6xl | light | white | tight |
-| Page titles | lg-xl | light | white | normal |
-| Card counts | 2xl | light | white | tight |
-| Section labels | xs | medium | neutral-500 | widest, uppercase |
-| Body text | sm | normal | neutral-300 | normal |
-| Metadata | [10px]-xs | normal | neutral-500 | normal |
+
+| Element        | Size      | Weight | Color       | Tracking          |
+| -------------- | --------- | ------ | ----------- | ----------------- |
+| Hero numbers   | 3xl-6xl   | light  | white       | tight             |
+| Page titles    | lg-xl     | light  | white       | normal            |
+| Card counts    | 2xl       | light  | white       | tight             |
+| Section labels | xs        | medium | neutral-500 | widest, uppercase |
+| Body text      | sm        | normal | neutral-300 | normal            |
+| Metadata       | [10px]-xs | normal | neutral-500 | normal            |
 
 ---
 
 ## Animation System
 
 ### Core Philosophy: Sequential Revelation
+
 When a view loads, elements appear sequentially—hero content first, then supporting sections, then list items one by one. The interface "wakes up."
 
 ### Signature Easing Curves
+
 ```tsx
-[0.25, 0.46, 0.45, 0.94]  /* Main page transitions (smooth deceleration) */
-[0.25, 0.1, 0.25, 1]      /* Questionnaire animations */
-[0.4, 0, 0.2, 1]          /* Accordion expand/collapse */
-[0.16, 1, 0.3, 1]         /* GlowingEffect movement */
-type: "spring"            /* Tabs, modals (bounce: 0.2-0.3, stiffness: 260, damping: 15) */
+;[0.25, 0.46, 0.45, 0.94] /* Main page transitions (smooth deceleration) */[
+  (0.25, 0.1, 0.25, 1)
+] /* Questionnaire animations */[(0.4, 0, 0.2, 1)] /* Accordion expand/collapse */[
+  (0.16, 1, 0.3, 1)
+] /* GlowingEffect movement */
+type: 'spring' /* Tabs, modals (bounce: 0.2-0.3, stiffness: 260, damping: 15) */
 ```
 
 ### Page Transitions (Blur-to-Clear)
+
 Headlines and pages animate from blurred to sharp. This creates a sense of focus emerging.
 
 ```tsx
@@ -168,6 +180,7 @@ transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
 ```
 
 ### Text Generate Effect (Word-by-Word)
+
 Words animate in with staggered blur-to-clear:
 
 ```tsx
@@ -178,6 +191,7 @@ duration: 0.4s
 ```
 
 ### Card/List Animations (Staggered Entry)
+
 ```tsx
 // Standard entry
 initial={{ opacity: 0, y: 20 }}
@@ -191,6 +205,7 @@ whileHover={{ scale: 1.02 }}  /* Compact cards */
 ```
 
 ### Accordion/Expand Animations
+
 ```tsx
 initial={{ height: 0, opacity: 0 }}
 animate={{ height: "auto", opacity: 1 }}
@@ -199,6 +214,7 @@ transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
 ```
 
 ### Modal Animations (Spring-based 3D)
+
 ```tsx
 initial={{ opacity: 0, scale: 0.5, rotateX: 40, y: 40 }}
 animate={{ opacity: 1, scale: 1, rotateX: 0, y: 0 }}
@@ -207,12 +223,14 @@ transition={{ type: "spring", stiffness: 260, damping: 15 }}
 ```
 
 ### Tab Indicator (Shared Layout)
+
 ```tsx
 layoutId="activeTab"
 transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
 ```
 
 ### Animated Counter (Growth, Not Pop)
+
 Numbers count up. Things build rather than appear.
 
 ```tsx
@@ -222,6 +240,7 @@ increment: value / steps
 ```
 
 ### Progress Bar Growth
+
 ```tsx
 initial={{ width: 0 }}
 animate={{ width: `${percentage}%` }}
@@ -232,6 +251,7 @@ transition={{ duration: 0.5, delay: 0.8 + idx * 0.04 }}
 ```
 
 ### Loading States
+
 ```tsx
 // Spinner
 "w-6 h-6 border-2 border-neutral-600 border-t-transparent rounded-full animate-spin"
@@ -248,15 +268,16 @@ className={cn("w-5 h-5", loading && "animate-spin")}
 ## UI Components
 
 ### BorderBeam
+
 Animated border effect that travels around card edges. A traveling highlight that adds premium feel without color.
 
 ```tsx
 // Modal beam (prominent)
-<BorderBeam duration={4-6} size={380-400} borderWidth={2} 
+<BorderBeam duration={4-6} size={380-400} borderWidth={2}
   className="from-transparent via-neutral-500 to-transparent" />
 
 // Card selection beam (subtle)
-<BorderBeam size={150} duration={8} borderWidth={1} 
+<BorderBeam size={150} duration={8} borderWidth={1}
   className="from-neutral-600/30 via-neutral-400/40 to-neutral-600/30" />
 
 // Double beam effect (staggered)
@@ -265,27 +286,28 @@ Animated border effect that travels around card edges. A traveling highlight tha
 ```
 
 ### ProgressiveBlur
+
 Essential component for scroll containers. Creates depth by fading content at edges.
 
 ```tsx
 <ProgressiveBlur
-  height="60px"           /* 60-80px typical */
-  position="bottom"       /* or "top" */
+  height="60px" /* 60-80px typical */
+  position="bottom" /* or "top" */
   className="pointer-events-none"
 />
 ```
 
 **Required for all scrollable containers:**
+
 ```tsx
 <div className="relative flex-1 min-h-0">
-  <div className="absolute inset-0 overflow-y-auto pb-16">
-    {/* Scrollable content */}
-  </div>
+  <div className="absolute inset-0 overflow-y-auto pb-16">{/* Scrollable content */}</div>
   <ProgressiveBlur height="80px" position="bottom" className="pointer-events-none" />
 </div>
 ```
 
 ### 3D Card Glare Effect
+
 Premium hover effect with perspective rotation and light reflection.
 
 ```tsx
@@ -296,9 +318,9 @@ rotateX: ((y - 50) / 50) * -2   /* max 2 degrees, inverted */
 transition: 'transform 0.2s ease-out'
 
 // Glare overlay gradient (follows cursor)
-background: `radial-gradient(circle at ${x}% ${y}%, 
-    rgba(255,255,255,0.15) 0%, 
-    rgba(255,255,255,0.05) 40%, 
+background: `radial-gradient(circle at ${x}% ${y}%,
+    rgba(255,255,255,0.15) 0%,
+    rgba(255,255,255,0.05) 40%,
     rgba(255,255,255,0) 70%)`
 opacity: 0.15 (on hover)
 
@@ -308,6 +330,7 @@ opacity: glareStyle.opacity * 1.5
 ```
 
 ### Focus-Blur Pattern
+
 When one card is hovered, siblings blur to create focus.
 
 ```tsx
@@ -320,15 +343,19 @@ className={cn(
 ```
 
 ### LampContainer
+
 Dramatic lighting effect. **Used exclusively in onboarding** for hero moments.
 
 ### OrbitingCircles
+
 Animated orbiting elements. Used in onboarding to show supported AI platforms.
 
 ### StarsBackground & ShootingStars
+
 Ambient background effects. Always at z-0, content at z-10+.
 
 ### TextGenerateEffect
+
 Staggered word-by-word text reveal animation with blur-to-clear.
 
 ---
@@ -336,6 +363,7 @@ Staggered word-by-word text reveal animation with blur-to-clear.
 ## Layout Patterns
 
 ### Generous Breathing Room
+
 Sections have significant vertical spacing. Cards have comfortable internal padding. Lists have relaxed row heights.
 
 ```css
@@ -354,6 +382,7 @@ p-6             /* Page padding, modal content */
 ```
 
 ### Border Radius Scale
+
 ```css
 rounded-lg      /* Small cards, buttons (8px) */
 rounded-xl      /* Standard cards (12px) */
@@ -362,6 +391,7 @@ rounded-full    /* Pills, tabs, badges */
 ```
 
 ### Bento-Style Grids
+
 Content cards arrange in flexible grids—not rigid columns. Cards can span different widths.
 
 ```tsx
@@ -372,9 +402,11 @@ Memories + Entities: split remaining 50% side-by-side
 ```
 
 ### Master-Detail Pattern
+
 Lists on the left, detail on the right. The selected state is subtle—a slightly lighter background or border change.
 
 ### Scroll Container Pattern
+
 **All scrollable lists must have ProgressiveBlur:**
 
 ```tsx
@@ -382,15 +414,16 @@ Lists on the left, detail on the right. The selected state is subtle—a slightl
   <div className="absolute inset-0 overflow-y-auto pb-16">
     {/* Content with adequate bottom padding */}
   </div>
-  <ProgressiveBlur 
-    height="80px" 
-    position="bottom" 
-    className="pointer-events-none absolute bottom-0 left-0 w-full" 
+  <ProgressiveBlur
+    height="80px"
+    position="bottom"
+    className="pointer-events-none absolute bottom-0 left-0 w-full"
   />
 </div>
 ```
 
 ### Sticky Headers
+
 Page titles stay visible. Counts update in headers so users always know where they are.
 
 ---
@@ -398,6 +431,7 @@ Page titles stay visible. Counts update in headers so users always know where th
 ## Tech Stack
 
 ### Frontend
+
 - **React** - UI framework
 - **TypeScript** - Type safety
 - **Tailwind CSS** - Utility-first styling
@@ -408,12 +442,15 @@ Page titles stay visible. Counts update in headers so users always know where th
 - **Lucide React** - Additional icons
 
 ### Backend (Electron Main Process)
+
 - **Electron** - Desktop application framework
 - **better-sqlite3** - SQLite database
 - **electron-vite** - Build tooling
 
 ### AI Integrations
+
 The app monitors and extracts conversations from:
+
 - Claude (Desktop & Web)
 - ChatGPT
 - Gemini
@@ -427,6 +464,7 @@ The app monitors and extracts conversations from:
 ### Hover States
 
 #### Cards & Items
+
 ```tsx
 // Border brightens
 hover:border-neutral-700  /* From border-neutral-800 */
@@ -447,6 +485,7 @@ whileHover={{ scale: 1.01 }}
 ```
 
 #### Reveal on Hover
+
 Interactive elements show affordances on hover—arrows appear, text brightens, borders highlight.
 
 ```tsx
@@ -458,6 +497,7 @@ className="opacity-0 group-hover:opacity-100"
 ```
 
 ### Focus States
+
 ```tsx
 focus:outline-none
 focus:border-neutral-600           /* Input fields */
@@ -466,24 +506,28 @@ focus-visible:ring-2 focus-visible:ring-neutral-500/40  /* Cards */
 ```
 
 ### Selected States
+
 Subtle—a slightly lighter background or border change.
 
 ```tsx
 // Selected card
-"bg-neutral-800/40 border-neutral-700"
+'bg-neutral-800/40 border-neutral-700'
 
 // With BorderBeam
-{isSelected && <BorderBeam size={150} duration={8} borderWidth={1} />}
+{
+  isSelected && <BorderBeam size={150} duration={8} borderWidth={1} />
+}
 
 // Highlight ring
-"ring-2 ring-neutral-500 ring-offset-2 ring-offset-neutral-950"
+;('ring-2 ring-neutral-500 ring-offset-2 ring-offset-neutral-950')
 ```
 
 ### Destructive States (Delete only)
+
 ```tsx
-hover:bg-red-500/20
-hover:text-red-400
-hover:border-red-500/40
+hover: bg - red - 500 / 20
+hover: text - red - 400
+hover: border - red - 500 / 40
 ```
 
 ---
@@ -491,6 +535,7 @@ hover:border-red-500/40
 ## Component Catalog
 
 ### Cards
+
 Cards are containers, not decorations. Subtle borders, transparent backgrounds, comfortable padding.
 
 ```tsx
@@ -510,6 +555,7 @@ muted: "border-neutral-800/60 bg-neutral-900/30 hover:bg-neutral-900/60"
 ```
 
 ### Lists
+
 List items have generous vertical padding and hairline dividers. Last item has no divider.
 
 ```tsx
@@ -524,6 +570,7 @@ List items have generous vertical padding and hairline dividers. Last item has n
 ```
 
 ### Hero Stats
+
 Large numbers centered with tiny labels beneath. Numbers animate up from zero.
 
 ```tsx
@@ -537,26 +584,26 @@ Large numbers centered with tiny labels beneath. Numbers animate up from zero.
 
 ```tsx
 // Type tag (uppercase)
-"px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700"
+'px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700'
 
 // Count pill
-"px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 border border-neutral-700"
+'px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 border border-neutral-700'
 
 // Simple badge
-"px-1.5 py-0.5 rounded bg-neutral-800/50 text-neutral-600"
+'px-1.5 py-0.5 rounded bg-neutral-800/50 text-neutral-600'
 ```
 
 ### Buttons
 
 ```tsx
 // Primary button
-"bg-neutral-800 border border-neutral-700 text-white hover:bg-neutral-700 hover:border-neutral-600 rounded-lg px-4 py-2"
+'bg-neutral-800 border border-neutral-700 text-white hover:bg-neutral-700 hover:border-neutral-600 rounded-lg px-4 py-2'
 
 // Icon button (square)
-"h-8 w-8 rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white hover:border-neutral-700"
+'h-8 w-8 rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white hover:border-neutral-700'
 
 // Panel button (larger)
-"h-[42px] w-[42px] rounded-xl border border-neutral-800/60 bg-neutral-900/50"
+'h-[42px] w-[42px] rounded-xl border border-neutral-800/60 bg-neutral-900/50'
 ```
 
 ### Inputs
@@ -573,6 +620,7 @@ Large numbers centered with tiny labels beneath. Numbers animate up from zero.
 ```
 
 ### Tabs & Filters
+
 Pill-style with subtle backgrounds. Active state has sliding indicator.
 
 ```tsx
@@ -589,6 +637,7 @@ Pill-style with subtle backgrounds. Active state has sliding indicator.
 ```
 
 ### Modals
+
 Centered card on dimmed backdrop. Simple header with title and close.
 
 ```tsx
@@ -604,6 +653,7 @@ animate={{ opacity: 1, scale: 1, rotateX: 0, y: 0 }}
 ```
 
 ### Empty States
+
 Centered icon in a rounded container, title below, description beneath.
 
 ```tsx
@@ -617,6 +667,7 @@ Centered icon in a rounded container, title below, description beneath.
 ```
 
 ### Data Visualizations
+
 Minimal. No gridlines, no axis labels, no legends unless essential.
 
 ```tsx
@@ -628,26 +679,25 @@ animate={{ height: `${value}%` }}
 // Distribution bar (horizontal)
 <div className="flex h-2 rounded-full overflow-hidden bg-neutral-800">
   {segments.map((s, i) => (
-    <div 
+    <div
       key={i}
-      className="h-full" 
-      style={{ 
+      className="h-full"
+      style={{
         width: `${s.percent}%`,
         backgroundColor: `rgba(255,255,255,${0.6 - i * 0.15})` /* Descending grays */
-      }} 
+      }}
     />
   ))}
 </div>
 ```
 
 ### Scroll Container Pattern
+
 **All scrollable content requires ProgressiveBlur:**
 
 ```tsx
 <div className="relative flex-1 min-h-0">
-  <div className="absolute inset-0 overflow-y-auto pb-16">
-    {/* Content */}
-  </div>
+  <div className="absolute inset-0 overflow-y-auto pb-16">{/* Content */}</div>
   <ProgressiveBlur height="80px" position="bottom" className="pointer-events-none" />
 </div>
 ```
@@ -686,11 +736,13 @@ App.tsx
 ## Iconography
 
 ### Usage Rules
+
 - Sparse and functional—icons appear for navigation, actions, and metadata counts
 - They never decorate
 - Small and muted by default, brightening on hover or when active
 
 ### Sizing
+
 ```css
 w-4 h-4      /* Inline icons, metadata */
 w-5 h-5      /* Interactive icons, buttons */
@@ -703,6 +755,7 @@ w-8 h-8      /* Empty state icons */
 ## Content Guidelines
 
 ### Truncation
+
 Long titles truncate with ellipsis. Long descriptions clamp to 2-3 lines.
 
 ```css
@@ -712,9 +765,11 @@ line-clamp-3               /* 3 lines max */
 ```
 
 ### Number Formatting
+
 Large numbers use locale formatting (commas/periods). Numbers in tables align with tabular figures.
 
 ### Timestamps
+
 Relative when recent: "2 hours ago" not "1/20/2026, 2:00 PM" for recent items. Full timestamps for older content.
 
 ---
@@ -722,6 +777,7 @@ Relative when recent: "2 hours ago" not "1/20/2026, 2:00 PM" for recent items. F
 ## Voice & Tone
 
 The interface speaks quietly:
+
 - Labels are terse: "Memories" not "Your Saved Memories"
 - Descriptions are brief
 - Empty states are encouraging but not chatty
@@ -751,6 +807,7 @@ Before considering a screen complete:
 ## Allowed vs Not Allowed
 
 ### ✓ Allowed
+
 - Monochromatic grays from near-black to white
 - Light font weights for large text
 - Uppercase labels with wide letter-spacing
@@ -767,6 +824,7 @@ Before considering a screen complete:
 - Muted categorical colors in the graph only
 
 ### ✗ Not Allowed
+
 - Accent colors for emphasis or status
 - Gradients anywhere
 - Bold text for emphasis
@@ -786,18 +844,22 @@ Before considering a screen complete:
 ## Badge & Tag Reference
 
 ### Standard Badge
+
 ```tsx
-className="bg-neutral-800 text-neutral-400 border border-neutral-700"
+className = 'bg-neutral-800 text-neutral-400 border border-neutral-700'
 ```
 
 ### Count Pill
+
 ```tsx
-className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-neutral-700 text-neutral-300"
+className = 'px-2 py-0.5 rounded-full text-[10px] font-medium bg-neutral-700 text-neutral-300'
 ```
 
 ### Type Tag
+
 ```tsx
-className="px-2 py-0.5 text-[10px] font-semibold uppercase rounded bg-neutral-800 text-neutral-400 border border-neutral-700"
+className =
+  'px-2 py-0.5 text-[10px] font-semibold uppercase rounded bg-neutral-800 text-neutral-400 border border-neutral-700'
 ```
 
 ---
@@ -805,18 +867,23 @@ className="px-2 py-0.5 text-[10px] font-semibold uppercase rounded bg-neutral-80
 ## Input & Button Reference
 
 ### Text Input
+
 ```tsx
-className="bg-neutral-900/80 border border-neutral-800 text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-600"
+className =
+  'bg-neutral-900/80 border border-neutral-800 text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-600'
 ```
 
 ### Primary Button
+
 ```tsx
-className="bg-neutral-800 border border-neutral-700 text-white hover:bg-neutral-700 hover:border-neutral-600"
+className =
+  'bg-neutral-800 border border-neutral-700 text-white hover:bg-neutral-700 hover:border-neutral-600'
 ```
 
 ### Icon Button
+
 ```tsx
-className="p-2 rounded-lg bg-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-700"
+className = 'p-2 rounded-lg bg-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-700'
 ```
 
 ---
@@ -824,6 +891,7 @@ className="p-2 rounded-lg bg-neutral-800 text-neutral-400 hover:text-white hover
 ## Empty State Reference
 
 Centered layout with muted icon and text:
+
 ```tsx
 <div className="h-full flex flex-col items-center justify-center text-center px-4">
   <div className="w-16 h-16 rounded-2xl bg-neutral-800 border border-neutral-700 flex items-center justify-center mb-4">

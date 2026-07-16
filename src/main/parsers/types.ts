@@ -4,8 +4,8 @@
  */
 
 export interface ParseResult {
-    messages: { role: string; content: string; timestamp?: string }[];
-    chatTitle?: string;
-    windowTitle?: string;
-    browserUrl?: string;
+  messages: { role: string; content: string; timestamp?: string }[]
+  chatTitle?: string
+  windowTitle?: string
+  browserUrl?: string
 }

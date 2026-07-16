@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { buildParakeetArgs, parseParakeetOutput, matchParakeetFiles, activeMatchesEntry, type ParakeetModel } from '../parakeet-cli'
+import {
+  buildParakeetArgs,
+  parseParakeetOutput,
+  matchParakeetFiles,
+  activeMatchesEntry,
+  type ParakeetModel
+} from '../parakeet-cli'
 
 const model: ParakeetModel = {
   dir: '/m',
@@ -27,7 +33,9 @@ describe('buildParakeetArgs', () => {
 
   it('does not pass a --model-type flag (sherpa infers transducer)', () => {
     // v1.13.3 has no --model-type; passing one errors. Regression guard.
-    expect(buildParakeetArgs(model, '/tmp/a.wav').some((a) => a.startsWith('--model-type'))).toBe(false)
+    expect(buildParakeetArgs(model, '/tmp/a.wav').some((a) => a.startsWith('--model-type'))).toBe(
+      false
+    )
   })
 })
 
@@ -67,7 +75,7 @@ describe('parseParakeetOutput', () => {
     const real =
       '{"lang": "", "emotion": "", "event": "", "text": "Well, I don\'t wish to see it any more, observed Phebe, turning away her eyes.", "timestamps": [0.40, 0.64], "tokens": [" Well", ","], "words": []}'
     expect(parseParakeetOutput(real)).toBe(
-      "Well, I don't wish to see it any more, observed Phebe, turning away her eyes.",
+      "Well, I don't wish to see it any more, observed Phebe, turning away her eyes."
     )
   })
 })
@@ -78,45 +86,47 @@ describe('matchParakeetFiles', () => {
       'parakeet-v2.encoder.int8.onnx',
       'parakeet-v2.decoder.int8.onnx',
       'parakeet-v2.joiner.int8.onnx',
-      'parakeet-v2.tokens.txt',
-    ]);
+      'parakeet-v2.tokens.txt'
+    ])
     expect(m).toEqual({
       encoder: 'parakeet-v2.encoder.int8.onnx',
       decoder: 'parakeet-v2.decoder.int8.onnx',
       joiner: 'parakeet-v2.joiner.int8.onnx',
-      tokens: 'parakeet-v2.tokens.txt',
-    });
-  });
+      tokens: 'parakeet-v2.tokens.txt'
+    })
+  })
 
   it('requires .onnx for the model parts and .txt for tokens', () => {
     // a stray "encoder" text file must not satisfy the encoder role
-    expect(matchParakeetFiles(['encoder.txt', 'decoder.onnx', 'joiner.onnx', 'tokens.txt'])).toBeNull();
-  });
+    expect(
+      matchParakeetFiles(['encoder.txt', 'decoder.onnx', 'joiner.onnx', 'tokens.txt'])
+    ).toBeNull()
+  })
 
   it('returns null when a role is missing', () => {
-    expect(matchParakeetFiles(['encoder.onnx', 'decoder.onnx', 'tokens.txt'])).toBeNull();
-  });
+    expect(matchParakeetFiles(['encoder.onnx', 'decoder.onnx', 'tokens.txt'])).toBeNull()
+  })
 })
 
 describe('activeMatchesEntry', () => {
   const entry = {
     id: 'csukuangfj/parakeet-v2',
-    files: [{ name: 'parakeet-v2.encoder.int8.onnx' }, { name: 'parakeet-v2.tokens.txt' }],
-  };
+    files: [{ name: 'parakeet-v2.encoder.int8.onnx' }, { name: 'parakeet-v2.tokens.txt' }]
+  }
 
   it('matches by catalog id', () => {
-    expect(activeMatchesEntry('csukuangfj/parakeet-v2', entry)).toBe(true);
-  });
+    expect(activeMatchesEntry('csukuangfj/parakeet-v2', entry)).toBe(true)
+  })
 
   it('matches by a primary/on-disk filename (active-slot may store the filename)', () => {
-    expect(activeMatchesEntry('parakeet-v2.encoder.int8.onnx', entry)).toBe(true);
-  });
+    expect(activeMatchesEntry('parakeet-v2.encoder.int8.onnx', entry)).toBe(true)
+  })
 
   it('does not match a different pick', () => {
-    expect(activeMatchesEntry('ggml-base.bin', entry)).toBe(false);
-  });
+    expect(activeMatchesEntry('ggml-base.bin', entry)).toBe(false)
+  })
 
   it('returns false when nothing is active', () => {
-    expect(activeMatchesEntry(null, entry)).toBe(false);
-  });
+    expect(activeMatchesEntry(null, entry)).toBe(false)
+  })
 })

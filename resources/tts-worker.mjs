@@ -11,68 +11,68 @@
 //   tts-worker.mjs voices            -> prints JSON array of voice ids to stdout
 //   tts-worker.mjs speak <out> <voice>  -> reads text from stdin, writes WAV to <out>
 
-import fs from 'node:fs';
+import fs from 'node:fs'
 
-const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
-const DEFAULT_VOICE = 'af_heart';
+const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX'
+const DEFAULT_VOICE = 'af_heart'
 
 // kokoro-js' RawAudio.toWav() emits 32-bit IEEE-float WAV (format 3), which
 // Chromium's <audio>/new Audio() refuses to decode — so playback is silent.
 // Re-encode the float samples to 16-bit PCM, which plays everywhere.
 function encodeWavPcm16(float32, sampleRate) {
-  const n = float32.length;
-  const buf = Buffer.alloc(44 + n * 2);
-  buf.write('RIFF', 0);
-  buf.writeUInt32LE(36 + n * 2, 4);
-  buf.write('WAVE', 8);
-  buf.write('fmt ', 12);
-  buf.writeUInt32LE(16, 16);
-  buf.writeUInt16LE(1, 20);            // PCM
-  buf.writeUInt16LE(1, 22);            // mono
-  buf.writeUInt32LE(sampleRate, 24);
-  buf.writeUInt32LE(sampleRate * 2, 28); // byte rate
-  buf.writeUInt16LE(2, 32);            // block align
-  buf.writeUInt16LE(16, 34);           // bits per sample
-  buf.write('data', 36);
-  buf.writeUInt32LE(n * 2, 40);
-  let off = 44;
+  const n = float32.length
+  const buf = Buffer.alloc(44 + n * 2)
+  buf.write('RIFF', 0)
+  buf.writeUInt32LE(36 + n * 2, 4)
+  buf.write('WAVE', 8)
+  buf.write('fmt ', 12)
+  buf.writeUInt32LE(16, 16)
+  buf.writeUInt16LE(1, 20) // PCM
+  buf.writeUInt16LE(1, 22) // mono
+  buf.writeUInt32LE(sampleRate, 24)
+  buf.writeUInt32LE(sampleRate * 2, 28) // byte rate
+  buf.writeUInt16LE(2, 32) // block align
+  buf.writeUInt16LE(16, 34) // bits per sample
+  buf.write('data', 36)
+  buf.writeUInt32LE(n * 2, 40)
+  let off = 44
   for (let i = 0; i < n; i++) {
-    const s = Math.max(-1, Math.min(1, float32[i]));
-    buf.writeInt16LE((s < 0 ? s * 0x8000 : s * 0x7fff) | 0, off);
-    off += 2;
+    const s = Math.max(-1, Math.min(1, float32[i]))
+    buf.writeInt16LE((s < 0 ? s * 0x8000 : s * 0x7fff) | 0, off)
+    off += 2
   }
-  return buf;
+  return buf
 }
 
 async function synthToFile(tts, text, voice, outPath) {
-  const clean = (text || '').trim().slice(0, 2000);
-  if (!clean) throw new Error('no text');
-  const audio = await tts.generate(clean, { voice: voice || DEFAULT_VOICE });
-  const samples = audio.audio || audio.data;
-  const sr = audio.sampling_rate || audio.sampleRate || 24000;
-  fs.writeFileSync(outPath, encodeWavPcm16(samples, sr));
+  const clean = (text || '').trim().slice(0, 2000)
+  if (!clean) throw new Error('no text')
+  const audio = await tts.generate(clean, { voice: voice || DEFAULT_VOICE })
+  const samples = audio.audio || audio.data
+  const sr = audio.sampling_rate || audio.sampleRate || 24000
+  fs.writeFileSync(outPath, encodeWavPcm16(samples, sr))
 }
 
 async function main() {
-  const mode = process.argv[2];
-  const { KokoroTTS } = await import('kokoro-js');
-  const tts = await KokoroTTS.from_pretrained(MODEL_ID, { dtype: 'q8', device: 'cpu' });
+  const mode = process.argv[2]
+  const { KokoroTTS } = await import('kokoro-js')
+  const tts = await KokoroTTS.from_pretrained(MODEL_ID, { dtype: 'q8', device: 'cpu' })
 
   if (mode === 'voices') {
-    const voices = Object.keys(tts.voices || {});
-    process.stdout.write(JSON.stringify(voices));
-    return { persist: false };
+    const voices = Object.keys(tts.voices || {})
+    process.stdout.write(JSON.stringify(voices))
+    return { persist: false }
   }
 
   if (mode === 'speak') {
-    const outPath = process.argv[3];
-    const voice = process.argv[4] || DEFAULT_VOICE;
-    if (!outPath) throw new Error('speak mode requires an output path');
-    let text = '';
-    process.stdin.setEncoding('utf8');
-    for await (const chunk of process.stdin) text += chunk;
-    await synthToFile(tts, text, voice, outPath);
-    return { persist: false };
+    const outPath = process.argv[3]
+    const voice = process.argv[4] || DEFAULT_VOICE
+    if (!outPath) throw new Error('speak mode requires an output path')
+    let text = ''
+    process.stdin.setEncoding('utf8')
+    for await (const chunk of process.stdin) text += chunk
+    await synthToFile(tts, text, voice, outPath)
+    return { persist: false }
   }
 
   if (mode === 'serve') {
@@ -80,30 +80,36 @@ async function main() {
     // request per line on stdin ({ id, text, voice, out }) and we reply with one
     // JSON line per request ({ id, ok } or { id, error }). Stays alive until the
     // parent kills us (the queue's evict), so the ~330MB model is warm across calls.
-    process.stdout.write(JSON.stringify({ ready: true }) + '\n');
-    let buf = '';
-    process.stdin.setEncoding('utf8');
+    process.stdout.write(JSON.stringify({ ready: true }) + '\n')
+    let buf = ''
+    process.stdin.setEncoding('utf8')
     for await (const chunk of process.stdin) {
-      buf += chunk;
-      let nl;
+      buf += chunk
+      let nl
       while ((nl = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, nl).trim();
-        buf = buf.slice(nl + 1);
-        if (!line) continue;
-        let req;
-        try { req = JSON.parse(line); } catch { continue; }
+        const line = buf.slice(0, nl).trim()
+        buf = buf.slice(nl + 1)
+        if (!line) continue
+        let req
         try {
-          await synthToFile(tts, req.text, req.voice, req.out);
-          process.stdout.write(JSON.stringify({ id: req.id, ok: true }) + '\n');
+          req = JSON.parse(line)
+        } catch {
+          continue
+        }
+        try {
+          await synthToFile(tts, req.text, req.voice, req.out)
+          process.stdout.write(JSON.stringify({ id: req.id, ok: true }) + '\n')
         } catch (e) {
-          process.stdout.write(JSON.stringify({ id: req.id, error: String(e && e.message ? e.message : e) }) + '\n');
+          process.stdout.write(
+            JSON.stringify({ id: req.id, error: String(e && e.message ? e.message : e) }) + '\n'
+          )
         }
       }
     }
-    return { persist: true }; // stdin closed -> parent is done with us
+    return { persist: true } // stdin closed -> parent is done with us
   }
 
-  throw new Error(`unknown mode: ${String(mode)}`);
+  throw new Error(`unknown mode: ${String(mode)}`)
 }
 
 // onnxruntime-node crashes (SIGABRT, "mutex lock failed") inside its static
@@ -114,13 +120,17 @@ async function main() {
 // tick to flush, then kill.
 function hardExit() {
   setTimeout(() => {
-    try { process.kill(process.pid, 'SIGKILL'); } catch { process.exit(0); }
-  }, 40);
+    try {
+      process.kill(process.pid, 'SIGKILL')
+    } catch {
+      process.exit(0)
+    }
+  }, 40)
 }
 
 main()
   .then(() => hardExit())
   .catch((e) => {
-    process.stderr.write(String(e && e.stack ? e.stack : e));
-    hardExit();
-  });
+    process.stderr.write(String(e && e.stack ? e.stack : e))
+    hardExit()
+  })
