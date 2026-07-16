@@ -5,7 +5,7 @@ import { app, safeStorage } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
-import { createSettingsStore } from './settings-store'
+import { createSettingsStore, initializeSettingsStore } from './settings-store'
 
 let db: Database.Database | null = null
 
@@ -260,14 +260,7 @@ export function getDB(): Database.Database {
     );
   `)
 
-  // App Settings Table - stores application settings as key-value pairs
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `)
+  initializeSettingsStore(db)
 
   // Triggers to keep FTS in sync
   const triggers = [

@@ -1,19 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
-import { createSettingsStore, type SettingsStore } from '../settings-store'
+import { createSettingsStore, initializeSettingsStore, type SettingsStore } from '../settings-store'
 
 let database: DatabaseSync
 let store: SettingsStore
 
 beforeEach(() => {
   database = new DatabaseSync(':memory:')
-  database.exec(`
-    CREATE TABLE app_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `)
+  initializeSettingsStore(database)
   store = createSettingsStore(database)
 })
 

@@ -4,6 +4,7 @@ interface SettingsStatement {
 }
 
 export interface SettingsDatabase {
+  exec(sql: string): unknown
   prepare(sql: string): SettingsStatement
 }
 
@@ -11,6 +12,16 @@ export interface SettingsStore {
   get<T>(key: string, defaultValue: T): T
   set(key: string, value: unknown): void
   delete(key: string): void
+}
+
+export function initializeSettingsStore(database: SettingsDatabase): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
 }
 
 /** Create the app-settings repository over any compatible SQLite driver. */
