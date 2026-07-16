@@ -8,6 +8,21 @@
 //
 // Resolution order: explicit configure() → env vars → Electron `app` → cwd.
 import path from 'path'
+import fs from 'fs'
+import { createRequire } from 'module'
+
+const loadOptionalModule = createRequire(import.meta.url)
+
+interface OptionalElectronApp {
+  getPath?: (name: 'userData') => string
+  getAppPath?: () => string
+  isPackaged?: boolean
+  on?: (event: 'before-quit', listener: () => void) => unknown
+}
+
+function optionalElectronApp(): OptionalElectronApp | undefined {
+  return (loadOptionalModule('electron') as { app?: OptionalElectronApp }).app
+}
 
 interface RuntimeConfig {
   dataDir?: string // writable per-user dir (models, caches, generated output)
@@ -26,21 +41,23 @@ export function configureRuntime(c: RuntimeConfig): void {
 // Lazily probe Electron without a hard dependency (so the module loads in plain Node).
 function electron(): { dataDir: string; binRoots: string[]; resourceDirs: string[] } | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { app } = require('electron')
+    const app = optionalElectronApp()
     if (!app?.getPath) return null
-    const packaged = app.isPackaged
+    const packaged = app.isPackaged === true
     return {
       dataDir: app.getPath('userData'),
       binRoots: packaged
         ? [path.join(process.resourcesPath, 'bin')]
         : [
-            path.join(app.getAppPath(), 'resources', 'bin'),
+            path.join(app.getAppPath?.() ?? process.cwd(), 'resources', 'bin'),
             path.join(process.cwd(), 'resources', 'bin')
           ],
       resourceDirs: packaged
         ? [process.resourcesPath]
-        : [path.join(app.getAppPath(), 'resources'), path.join(process.cwd(), 'resources')]
+        : [
+            path.join(app.getAppPath?.() ?? process.cwd(), 'resources'),
+            path.join(process.cwd(), 'resources')
+          ]
     }
   } catch {
     return null
@@ -82,8 +99,7 @@ export function resourceFile(name: string): string | null {
   for (const d of resourceDirs()) {
     const p = path.join(d, name)
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      if (require('fs').existsSync(p)) return p
+      if (fs.existsSync(p)) return p
     } catch {
       /* ignore */
     }
@@ -95,8 +111,7 @@ export function resourceFile(name: string): string | null {
 export function isPackaged(): boolean {
   if (process.env.OFFGRID_PACKAGED) return process.env.OFFGRID_PACKAGED === '1'
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return !!require('electron')?.app?.isPackaged
+    return optionalElectronApp()?.isPackaged === true
   } catch {
     return false
   }
@@ -106,8 +121,7 @@ export function isPackaged(): boolean {
  *  hosts handle process teardown themselves (no-op here). */
 export function onHostQuit(fn: () => void): void {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    require('electron')?.app?.on?.('before-quit', fn)
+    optionalElectronApp()?.on?.('before-quit', fn)
   } catch {
     /* standalone: host owns shutdown */
   }

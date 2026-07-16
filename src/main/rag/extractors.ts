@@ -34,17 +34,15 @@ export const desktopExtraction: ExtractionBridges = {
   },
 
   async extractPdf(p, maxChars) {
-    // pdf-parse is CJS with a debug side-effect on import; require lazily.
-    const pdfParse = require('pdf-parse') as (b: Buffer) => Promise<{ text: string }>
+    // pdf-parse has a debug side-effect on import, so load it only when needed.
+    const { default: pdfParse } = await import('pdf-parse')
     const buf = await fs.promises.readFile(p)
     const { text } = await pdfParse(buf)
     return maxChars ? text.slice(0, maxChars) : text
   },
 
   async extractDocx(p, maxChars) {
-    const mammoth = require('mammoth') as {
-      extractRawText(o: { path: string }): Promise<{ value: string }>
-    }
+    const { default: mammoth } = await import('mammoth')
     const { value } = await mammoth.extractRawText({ path: p })
     return maxChars ? value.slice(0, maxChars) : value
   },
