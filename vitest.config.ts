@@ -65,7 +65,7 @@ export default defineConfig({
         // Vendored / built - not our source (its own package builds + tests it).
         '**/dist/**',
         'packages/**',
-        // Native-DB-bound: covered by the 97 tests in *.dbtest.ts via `npm run test:db`
+        // Native-DB-bound: covered by the 103 tests in *.dbtest.ts via `npm run test:db`
         // (rebuilds better-sqlite3 for the node ABI); can't load the native module here.
         'src/main/database.ts',
         'src/main/rag/store.ts',
@@ -105,6 +105,8 @@ export default defineConfig({
         'src/main/mcp.ts',
         'src/main/mcp-oauth.ts',
         'src/main/mcp-server.ts', // MCP tool registration; parseDataUrl extracted+tested
+        // Connector DB/network orchestration; pure schema/result rules are measured separately.
+        'src/main/tools/mcpConnectorToolExtension.ts',
         'src/main/updater.ts',
         'src/main/dev-seed.ts',
         'src/main/vision.ts',

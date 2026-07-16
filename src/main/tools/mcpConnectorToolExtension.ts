@@ -9,18 +9,41 @@
 import type { ToolExtension } from '../tools'
 import { listConnectors, fetchTools, callConnectorTool, setConnectorStatus } from '../mcp'
 import { callHook } from '../bootstrap/hookRegistry'
+import {
+  MCP_TOOL_PREFIX,
+  buildConnectorToolSchema,
+  formatConnectorToolResult,
+  isActionTool,
+  type ConnectorToolDefinition
+} from './mcpConnectorToolExtension-logic'
 
-const MCP_PREFIX = 'mcp__'
-
-// A connector tool is a read (safe to run) if it starts with a known read verb;
-// anything else is treated as an action needing approval. Exported for testing.
-export function isActionTool(tool: string): boolean {
-  return !/^(list|get|search|read|fetch|whoami|describe)[_-]/i.test(tool)
+interface ConnectorCallResult {
+  ok: boolean
+  result?: unknown
+  error?: string
 }
 
-class McpConnectorToolExtension implements ToolExtension {
+export interface McpConnectorToolBoundary {
+  fetchTools: (connectorId: number) => Promise<ConnectorToolDefinition[]>
+  callTool: (
+    connectorId: number,
+    tool: string,
+    args: Record<string, unknown>
+  ) => Promise<ConnectorCallResult>
+  proposeApproval: (request: Record<string, unknown>) => boolean | undefined
+}
+
+const productionBoundary: McpConnectorToolBoundary = {
+  fetchTools,
+  callTool: callConnectorTool,
+  proposeApproval: (request) => callHook<boolean>('mcp:proposeApproval', request)
+}
+
+export class McpConnectorToolExtension implements ToolExtension {
   id = 'mcp-connectors'
   private byName = new Map<string, { id: number; tool: string; connector: string }>()
+
+  constructor(private readonly boundary: McpConnectorToolBoundary = productionBoundary) {}
 
   async schemas(): Promise<unknown[]> {
     this.byName.clear()
@@ -32,7 +55,7 @@ class McpConnectorToolExtension implements ToolExtension {
       const loaded = await Promise.all(
         enabled.map(async (c) => {
           try {
-            return { c, tools: await fetchTools(c.id) }
+            return { c, tools: await this.boundary.fetchTools(c.id) }
           } catch (e) {
             // A connector shown "connected" whose token expired / server is down
             // must NOT silently vanish: mark it errored so the UI prompts a
@@ -48,19 +71,10 @@ class McpConnectorToolExtension implements ToolExtension {
       )
       for (const { c, tools } of loaded) {
         for (const t of tools) {
-          const fnName = `${MCP_PREFIX}${c.id}__${t.name}`
+          const schema = buildConnectorToolSchema(c, t)
+          const fnName = schema.function.name
           this.byName.set(fnName, { id: c.id, tool: t.name, connector: c.name })
-          out.push({
-            type: 'function',
-            function: {
-              name: fnName,
-              description: `[${c.name}] ${t.description ?? t.name}`,
-              parameters: (t.inputSchema as Record<string, unknown> | undefined) ?? {
-                type: 'object',
-                properties: {}
-              }
-            }
-          })
+          out.push(schema)
         }
       }
     } catch (e) {
@@ -70,7 +84,7 @@ class McpConnectorToolExtension implements ToolExtension {
   }
 
   canHandle(name: string): boolean {
-    return name.startsWith(MCP_PREFIX)
+    return name.startsWith(MCP_TOOL_PREFIX)
   }
 
   async execute(name: string, args: Record<string, unknown>): Promise<string> {
@@ -78,7 +92,7 @@ class McpConnectorToolExtension implements ToolExtension {
     if (!meta) return `Error: unknown connector tool ${name}`
     // Pro can intercept writes for approval; returns true if it queued the action.
     if (isActionTool(meta.tool)) {
-      const queued = callHook<boolean>('mcp:proposeApproval', {
+      const queued = this.boundary.proposeApproval({
         title: `${meta.tool} via ${meta.connector}`,
         detail: `Requested from chat. Arguments: ${JSON.stringify(args)}`,
         connector: meta.connector,
@@ -91,10 +105,9 @@ class McpConnectorToolExtension implements ToolExtension {
       }
     }
     try {
-      const r = await callConnectorTool(meta.id, meta.tool, args)
+      const r = await this.boundary.callTool(meta.id, meta.tool, args)
       if (!r.ok) return `Error: ${r.error ?? 'connector call failed'}`
-      const o = typeof r.result === 'string' ? r.result : JSON.stringify(r.result)
-      return o.length > 8000 ? o.slice(0, 8000) + '… (truncated)' : o
+      return formatConnectorToolResult(r.result)
     } catch (e) {
       return `Error: ${(e as Error).message}`
     }
