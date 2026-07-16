@@ -48,7 +48,8 @@ import {
   openAccessibilitySettings,
   openScreenRecordingSettings
 } from './permissions'
-import { getPrompt, getAllPromptDefs, resetPrompt, getPromptTemplate } from './prompts'
+import { getAllPromptDefs } from './prompts'
+import { getPrompt, getPromptTemplate, resetPrompt } from './prompt-store'
 import {
   safeParseJson,
   tokenizeQuery,

@@ -2,24 +2,22 @@
  * Unit tests for the prompt template engine + registry contract.
  *
  * fillTemplate does {{VAR}} substitution and — per its implementation — LEAVES an
- * unknown/absent placeholder untouched (returns the literal match). getPromptTemplate
+ * unknown/absent placeholder untouched (returns the literal match). Default resolution
  * throws on an unknown key. The CONTRACT GUARD (mirrors extract-prompt.test.ts) asserts
  * every variable a PromptDef declares actually appears as {{NAME}} in its template, so a
  * declared var can never silently go unused — the registry is the single source of truth.
  *
- * Only ./database is mocked (getPromptTemplate reads getSetting for user overrides); the
- * template engine + registry are pure and tested for real.
+ * The template engine and registry are exercised without replacing any Off Grid module.
+ * Persistence behavior runs against real SQLite in settings-consumers.dbtest.ts.
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 
-// getSetting must return the default (2nd arg) so getPromptTemplate yields the built-in
-// template; deleteSetting is unused here but imported by the module under test.
-vi.mock('../database', () => ({
-  getSetting: <T>(_key: string, fallback: T): T => fallback,
-  deleteSetting: vi.fn()
-}))
-
-import { fillTemplate, getPromptTemplate, PROMPT_REGISTRY, getAllPromptDefs } from '../prompts'
+import {
+  fillTemplate,
+  getDefaultPromptTemplate,
+  PROMPT_REGISTRY,
+  getAllPromptDefs
+} from '../prompts'
 
 describe('fillTemplate', () => {
   it('substitutes a single variable', () => {
@@ -52,16 +50,19 @@ describe('fillTemplate', () => {
   })
 })
 
-describe('getPromptTemplate', () => {
-  it('returns the default template for a known key', () => {
-    const t = getPromptTemplate('ragChat')
-    expect(t).toContain('{{QUERY}}')
-    expect(t).toContain('{{CONTEXT_BLOCK}}')
+describe('getDefaultPromptTemplate', () => {
+  it('throws on an unknown key', () => {
+    expect(() => getDefaultPromptTemplate('nope.not-a-key')).toThrow(/Unknown prompt key/)
   })
 
-  it('throws on an unknown key', () => {
-    expect(() => getPromptTemplate('nope.not-a-key')).toThrow(/Unknown prompt key/)
-  })
+  it.each(PROMPT_REGISTRY.map((prompt) => prompt.key))(
+    'resolves the registered default for "%s"',
+    (key) => {
+      expect(getDefaultPromptTemplate(key)).toBe(
+        PROMPT_REGISTRY.find((prompt) => prompt.key === key)?.defaultTemplate
+      )
+    }
+  )
 })
 
 describe('PROMPT_REGISTRY contract', () => {
@@ -75,7 +76,7 @@ describe('PROMPT_REGISTRY contract', () => {
   })
 
   // CONTRACT GUARD: every declared variable must appear as {{NAME}} in the template,
-  // and getPromptTemplate must resolve for every registered key.
+  // so registry metadata and the templates consumed by production cannot drift.
   it.each(PROMPT_REGISTRY.map((d) => [d.key, d] as const))(
     'every declared variable of "%s" appears as {{NAME}} in its template',
     (_key, def) => {
@@ -84,9 +85,4 @@ describe('PROMPT_REGISTRY contract', () => {
       }
     }
   )
-
-  it.each(PROMPT_REGISTRY.map((d) => d.key))('getPromptTemplate resolves for "%s"', (key) => {
-    expect(typeof getPromptTemplate(key)).toBe('string')
-    expect(getPromptTemplate(key).length).toBeGreaterThan(0)
-  })
 })

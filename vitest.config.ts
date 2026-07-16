@@ -65,10 +65,14 @@ export default defineConfig({
         // Vendored / built - not our source (its own package builds + tests it).
         '**/dist/**',
         'packages/**',
-        // Native-DB-bound: covered by the 61 tests in *.dbtest.ts via `npm run test:db`
+        // Native-DB-bound: covered by the 97 tests in *.dbtest.ts via `npm run test:db`
         // (rebuilds better-sqlite3 for the node ABI); can't load the native module here.
         'src/main/database.ts',
         'src/main/rag/store.ts',
+        // SQLite settings shell; prompt registry and filling remain measured.
+        'src/main/prompt-store.ts',
+        // SQLite settings shell; policy is measured in runtime-residency-logic.ts.
+        'src/main/runtime-residency.ts',
         // Native / subprocess-spawning I/O shells. Their PURE logic was extracted into
         // sibling modules that ARE covered (imagegen/*, models/*, transcription/classify,
         // model-server/*); these husks spawn binaries / bind sockets - exercised via

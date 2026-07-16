@@ -4,7 +4,7 @@ import {
   DEFAULT_RESIDENCY,
   MODALITIES,
   isResidencyLocked
-} from '../runtime-residency'
+} from '../runtime-residency-logic'
 
 describe('normalizeResidency', () => {
   it('returns the defaults for empty/garbage input', () => {

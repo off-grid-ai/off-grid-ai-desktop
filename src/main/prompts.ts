@@ -1,5 +1,3 @@
-import { getSetting, deleteSetting } from './database'
-
 interface PromptVariable {
   name: string
   description: string
@@ -471,11 +469,11 @@ for (const def of PROMPT_REGISTRY) {
 // Public helpers
 // ---------------------------------------------------------------------------
 
-/** Returns the user-customized template if one exists, otherwise the default. */
-export function getPromptTemplate(key: string): string {
+/** Returns the registered default template and rejects unknown prompt keys. */
+export function getDefaultPromptTemplate(key: string): string {
   const def = registryMap.get(key)
   if (!def) throw new Error(`Unknown prompt key: ${key}`)
-  return getSetting<string>(`prompt:${key}`, def.defaultTemplate)
+  return def.defaultTemplate
 }
 
 /** Replaces {{VAR}} placeholders with the provided values. */
@@ -485,18 +483,7 @@ export function fillTemplate(template: string, vars: Record<string, string>): st
   })
 }
 
-/** Gets the (possibly customized) template for `key` and fills it with `vars`. */
-export function getPrompt(key: string, vars: Record<string, string>): string {
-  const template = getPromptTemplate(key)
-  return fillTemplate(template, vars)
-}
-
 /** Returns the full registry for the Settings UI. */
 export function getAllPromptDefs(): PromptDef[] {
   return PROMPT_REGISTRY
-}
-
-/** Deletes a custom override so the prompt reverts to its default. */
-export function resetPrompt(key: string): void {
-  deleteSetting(`prompt:${key}`)
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { ModalityQueue } from '../modality-queue/queue'
 import { registerRuntime, type ManagedRuntime } from '../runtime-manager'
-import { normalizeResidency, type Modality, type ResidencyMode } from '../runtime-residency'
+import { normalizeResidency, type Modality, type ResidencyMode } from '../runtime-residency-logic'
 
 // Integration test: the REAL ModalityQueue + REAL registerRuntime seam driving REAL
 // engine objects. No mocks of our own logic — each "engine" is a tiny in-memory
@@ -27,7 +27,12 @@ class FakeEngine implements ManagedRuntime {
 }
 
 /** Residency map backed by a plain object, mutated like the real persisted store. */
-function store(initial: Partial<Record<Modality, ResidencyMode>>) {
+interface MutableResidencyStore {
+  read: (modality: Modality) => ResidencyMode
+  set: (modality: Modality, mode: ResidencyMode) => void
+}
+
+function store(initial: Partial<Record<Modality, ResidencyMode>>): MutableResidencyStore {
   const map = normalizeResidency(initial)
   return {
     read: (m: Modality) => map[m],
