@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { resolve } from 'path';
 
 // Unit + integration tests (fast, deterministic). The Playwright Electron E2E lives
 // in e2e/ and runs via `npm run test:e2e`, NOT here.
@@ -10,6 +11,16 @@ import { defineConfig } from 'vitest/config';
 // The 85% floor is enforced here and on pre-push. `all: true` means a new pure module
 // with no test drags the number down, so untested logic cannot sneak in.
 export default defineConfig({
+  // Mirror the renderer path aliases from electron.vite.config.ts so tests that
+  // import renderer/shared modules by alias (e.g. proCatalog -> @renderer/lib/device
+  // -> @offgrid/core/shared/device) resolve the same way the app build does.
+  resolve: {
+    alias: {
+      '@renderer': resolve('src/renderer/src'),
+      '@': resolve('src/renderer/src'),
+      '@offgrid/core': resolve('src'),
+    },
+  },
   test: {
     include: ['src/**/*.test.ts', 'pro/**/*.test.ts'],
     exclude: ['e2e/**', 'node_modules/**', 'out/**'],

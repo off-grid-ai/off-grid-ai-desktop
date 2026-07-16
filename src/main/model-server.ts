@@ -472,7 +472,17 @@ async function handleModelsList(res: http.ServerResponse): Promise<void> {
   const upstream = await fetchUpstreamModels();
   const upData = Array.isArray(upstream.data) ? (upstream.data as Record<string, unknown>[]) : [];
   // Tag the LLM entries chat vs vision from their advertised capabilities.
-  const text: Record<string, unknown>[] = tagLlmEntries(upData);
+  let text: Record<string, unknown>[] = tagLlmEntries(upData);
+  // Fall back to the on-disk active model when the upstream llama-server hasn't
+  // loaded one yet (idle app, headless gateway, or a server that came up without
+  // a model). Without this, /v1/models reports an empty chat model even though one
+  // is installed and would load on the next request.
+  if (text.length === 0) {
+    const info = llm.activeModelInfo();
+    if (info) {
+      text = [{ id: info.id, object: 'model', created: now, owned_by: 'off-grid', kind: info.vision ? 'vision' : 'chat' }];
+    }
+  }
 
   const tag = (id: string, kind: string, extra: Record<string, unknown> = {}): Record<string, unknown> =>
     modelEntry(id, kind, now, extra);

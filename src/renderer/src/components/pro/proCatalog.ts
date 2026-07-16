@@ -12,6 +12,8 @@ import {
   ShieldCheck,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
+import { deviceNoun } from '@renderer/lib/device';
+import { isMac, type DevicePlatform } from '@offgrid/core/shared/device';
 
 // Static catalogue of the Pro features. This ships in the OPEN build so the free
 // app can advertise everything Pro unlocks — the sidebar shows these as locked
@@ -119,7 +121,7 @@ export const PRO_FEATURES: ProFeature[] = [
     icon: Waveform,
     tagline: 'Talk instead of type, fully local.',
     description:
-      'Hold Option+Space and speak — Off Grid AI Desktop transcribes on-device with whisper.cpp and pastes the text into whatever app you are in. Tap to toggle, hold to push-to-talk. Every recording and transcript is kept in a searchable library, and you can drop in any audio or video file to transcribe it. Runs in your Mac’s RAM; nothing leaves the device.',
+      `Hold Option+Space and speak — Off Grid AI Desktop transcribes on-device with whisper.cpp and pastes the text into whatever app you are in. Tap to toggle, hold to push-to-talk. Every recording and transcript is kept in a searchable library, and you can drop in any audio or video file to transcribe it. Runs in your ${deviceNoun()}'s RAM; nothing leaves the device.`,
     highlights: [
       'Option+Space push-to-talk or toggle, anywhere',
       'Paste-at-cursor + a searchable recordings library',
@@ -156,4 +158,25 @@ export const PRO_FEATURES: ProFeature[] = [
 
 export function getProFeature(route: string): ProFeature | undefined {
   return PRO_FEATURES.find((f) => f.route === route);
+}
+
+/**
+ * The base rule for Pro-feature availability: Pro is macOS-tested only for now,
+ * so a Pro subscriber on a non-Mac platform (Windows/Linux) must see a "coming
+ * soon" surface instead of the untested feature. Free users are unaffected (they
+ * still get the UpgradeScreen upsell). Defined once here so every Pro surface —
+ * the feature tabs (proFeatureComingSoon) and the pro Settings sections — gates
+ * on the SAME rule. Pure + unit-testable; callers pass platform + entitlement.
+ */
+export function proComingSoonHere(platform: DevicePlatform, isPro: boolean): boolean {
+  return isPro && !isMac(platform);
+}
+
+/**
+ * Whether a Pro *route* should show the coming-soon screen instead of the real
+ * feature. Same rule as proComingSoonHere, scoped to a real catalog route (so it
+ * never fires for core/unknown views).
+ */
+export function proFeatureComingSoon(route: string, platform: DevicePlatform, isPro: boolean): boolean {
+  return proComingSoonHere(platform, isPro) && getProFeature(route) !== undefined;
 }

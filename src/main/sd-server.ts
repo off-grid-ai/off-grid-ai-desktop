@@ -21,7 +21,7 @@ import { spawn, type ChildProcess, execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { binRoots, isPackaged } from './runtime-env';
+import { binRoots, isPackaged, exe } from './runtime-env';
 
 /** Off the LLM's 8439 so both engines can bind (they never run at once, but a
  *  lingering LLM shouldn't block the image server's port either). */
@@ -175,7 +175,7 @@ export class SdServerService {
 
   private findBinary(): string | null {
     for (const r of binRoots()) {
-      const p = path.join(r, 'sd', 'sd-server');
+      const p = path.join(r, 'sd', exe('sd-server'));
       if (fs.existsSync(p)) return p;
     }
     return null;
@@ -215,7 +215,17 @@ export class SdServerService {
 
     const args = buildSdServerContextArgs({ ...ctx, port: this.port });
     // cwd at the binary dir so @executable_path rpath resolves libstable-diffusion.dylib.
-    const proc = spawn(bin, args, { cwd: binDir, env: { ...process.env, DYLD_LIBRARY_PATH: binDir } });
+    // Windows: prepend binDir to PATH so the co-located stable-diffusion DLLs resolve.
+    const proc = spawn(bin, args, {
+      cwd: binDir,
+      env: {
+        ...process.env,
+        DYLD_LIBRARY_PATH: binDir,
+        ...(process.platform === 'win32'
+          ? { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` }
+          : {}),
+      },
+    });
     this.server = proc;
     this.stderrTail = [];
     const capture = (d: Buffer): void => {

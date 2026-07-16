@@ -4,6 +4,8 @@
 // led to real users (and us) guessing at code-signing when the truth was in the
 // stderr the whole time — e.g. "unknown model architecture: 'gemma4'".
 
+import { deviceNoun, type DevicePlatform } from '../shared/device';
+
 export interface LlamaFailure {
   /** Stable code for UI/branching. */
   code: 'engine_outdated' | 'os_too_old' | 'out_of_memory' | 'missing_library' | 'model_corrupt' | 'unknown';
@@ -16,7 +18,10 @@ export interface LlamaFailure {
  * text looks like a known fatal cause (so callers can fall back to a generic
  * message). Order matters: most specific first.
  */
-export function classifyLlamaError(stderr: string): LlamaFailure | null {
+export function classifyLlamaError(
+  stderr: string,
+  platform: DevicePlatform = process.platform,
+): LlamaFailure | null {
   const s = (stderr || '').toLowerCase();
   if (!s.trim()) return null;
 
@@ -39,7 +44,7 @@ export function classifyLlamaError(stderr: string): LlamaFailure | null {
 
   // Memory pressure on load (Metal/host alloc, OOM kill).
   if (/failed to allocate|out of memory|insufficient memory|cannot allocate|ggml_metal.*alloc|unable to allocate|vk_error_out_of_device_memory|oom/.test(s)) {
-    return { code: 'out_of_memory', reason: 'Out of memory - this model is too large for this Mac. Try a smaller model or Conservative mode.' };
+    return { code: 'out_of_memory', reason: `Out of memory - this model is too large for this ${deviceNoun(platform)}. Try a smaller model or Conservative mode.` };
   }
 
   // A required dylib is missing or unloadable.

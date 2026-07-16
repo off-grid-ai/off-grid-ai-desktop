@@ -312,7 +312,28 @@ export async function toolChat(
       }
     } catch (err) { console.error('[tools] extension schemas', e.id, err); }
   }
-  const tools = extSchemas.length ? [...schemas(imageAvailable), ...extSchemas] : schemas(imageAvailable);
+  const builtins = schemas(imageAvailable);
+  const rawTools = extSchemas.length ? [...builtins, ...extSchemas] : builtins;
+  // Keep the tool payload within the model's context. llama-server inlines every
+  // tool schema into the prompt AND compiles it to a grammar, so a big connector
+  // set can blow past the context window and 400 the whole turn. Budget to a
+  // fraction of the effective context (leaving room for system + history +
+  // answer); prune verbose schemas first, drop connector tools only if needed.
+  const { budgetTools } = await import('./tools/tool-budget');
+  const ctx = llm.effectiveContextSize();
+  // Cap tool tokens in ABSOLUTE terms too, not just as a fraction of context:
+  // llama-server re-processes the entire tool prompt every tool round (gemma-4's
+  // sliding-window attention defeats the prompt cache), so on CPU-only inference a
+  // large tool payload dominates latency. ~4k keeps a useful connector set while
+  // roughly halving per-round prompt cost vs the old 45%-of-a-big-context budget.
+  const MAX_TOOL_TOKENS = 4000;
+  const toolBudget = Math.max(1024, Math.min(Math.floor(ctx * 0.4), MAX_TOOL_TOKENS));
+  const budgeted = budgetTools(rawTools, toolBudget, builtins.length);
+  if (budgeted.pruned || budgeted.droppedCount) {
+    console.warn(`[tools] context budget ${toolBudget} tok: pruned schemas${budgeted.droppedCount ? `, dropped ${budgeted.droppedCount} connector tool(s)` : ''} to fit (final ~${budgeted.estTokens} tok)`);
+    if (budgeted.droppedCount) hints.push(`Note: ${budgeted.droppedCount} connector tool(s) were omitted this turn to fit the context window; ask the user to disable some connectors if a needed tool is missing.`);
+  }
+  const tools = budgeted.tools;
   const sys = 'You are Off Grid, a private on-device assistant. Use the provided tools when they help answer precisely. Keep answers concise.'
     + (hints.length ? ' ' + hints.join(' ') : '');
 

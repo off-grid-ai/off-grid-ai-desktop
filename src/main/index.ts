@@ -84,7 +84,7 @@ function createWindow(): void {
     show: false,
     title: 'Off Grid AI',
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform === 'linux' || process.platform === 'win32' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false, // REQUIRED for IPC

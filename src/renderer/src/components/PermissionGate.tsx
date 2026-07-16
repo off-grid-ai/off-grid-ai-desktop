@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { BorderBeam } from './ui/border-beam';
 import { GridBackdrop } from './ui/grid-backdrop';
 import { cn } from '@renderer/lib/utils';
+import { deviceNoun } from '@renderer/lib/device';
 import { Shield, Eye, Check, X, ArrowsClockwise as RefreshCw, Cpu } from '@phosphor-icons/react';
 import { SetupPanel } from './setup/SetupPanel';
 
@@ -319,7 +320,7 @@ function SetupNudge({
   // Capture permissions (Pro-only) are the secondary, optional step.
   const title = missingModel ? 'Set up your local AI' : 'Finish setting up capture';
   const detail = missingModel
-    ? 'Pick a model yourself, or let Off Grid configure one for your Mac.'
+    ? `Pick a model yourself, or let Off Grid configure one for your ${deviceNoun()}.`
     : 'Grant screen & accessibility access so Off Grid can see & remember.';
   const cta = missingModel ? 'Configure' : 'Set up';
   return (

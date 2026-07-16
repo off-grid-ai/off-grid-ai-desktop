@@ -10,6 +10,9 @@ try {
     // pro tabs without an async round-trip. See main/license-ipc.ts (`pro:is-enabled`).
     // Falls back to false if the handler isn't registered (should never happen).
     isPro: ipcRenderer.sendSync('pro:is-enabled') === true,
+    // Host OS, read synchronously at preload time (Node context) so renderer
+    // copy can name the machine correctly ('Mac' vs 'device'). See shared/device.ts.
+    platform: process.platform,
     // License (Keygen) activation + status for the upgrade/settings UI.
     license: {
       status: () => ipcRenderer.invoke('license:status'),

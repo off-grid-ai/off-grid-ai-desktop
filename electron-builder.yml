@@ -29,6 +29,10 @@ extraResources:
       - "!models/**"
 win:
   executableName: off-grid-ai
+  # Without this, electron-builder ships the default Electron icon on Windows (the
+  # mac block sets its own icon below). The 512x512 PNG is auto-converted to a
+  # multi-size Windows ICO for the exe + NSIS installer.
+  icon: resources/icon.png
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

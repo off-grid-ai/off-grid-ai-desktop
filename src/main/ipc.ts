@@ -641,12 +641,6 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       }
   });
 
-  ipcMain.handle('llm:status', async () => {
-      const { llm } = await import('./llm');
-      return {
-          ready: llm.isReady()
-      };
-  });
 
   // Cancel an in-flight streaming turn; chatStream resolves with the partial answer.
   ipcMain.on('rag:cancel', (_evt, streamId: string) => {

@@ -16,6 +16,7 @@ import {
   IconStarFilled,
 } from '@tabler/icons-react';
 import { StoragePanel } from './setup/StoragePanel';
+import { deviceNoun } from '@renderer/lib/device';
 import {
   filterAndSort,
   parseParamCount,
@@ -84,7 +85,7 @@ const USE_CASES: UseCase[] = [
   { id: 'general', label: 'General', blurb: 'Everyday questions, drafting, and brainstorming.', match: () => true },
   { id: 'coding', label: 'Coding', blurb: 'Code generation — larger models reason better.', match: (m) => (m.params ?? 0) >= 4 },
   { id: 'writing', label: 'Writing', blurb: 'Long-form drafting — long context helps.', match: (m) => (m.params ?? 0) >= 2 },
-  { id: 'legal', label: 'Legal', blurb: 'Dense docs, careful reasoning — on-device, nothing leaves your Mac.', match: (m) => (m.params ?? 0) >= 7 },
+  { id: 'legal', label: 'Legal', blurb: `Dense docs, careful reasoning — on-device, nothing leaves your ${deviceNoun()}.`, match: (m) => (m.params ?? 0) >= 7 },
   { id: 'vision', label: 'Vision', blurb: 'Understand images, screenshots, documents.', match: (m) => m.kind === 'vision' },
   { id: 'lightweight', label: 'Lightweight', blurb: 'Fast, low-memory — for modest machines.', match: (m) => (m.params ?? 0) <= 4 },
 ];
@@ -398,11 +399,13 @@ export function ModelsScreen() {
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-6 py-3">
         <h1 className="text-xs font-medium uppercase tracking-widest text-neutral-400">Models</h1>
-        <button onClick={importModel} disabled={importing}
-          className="flex items-center gap-1.5 rounded border border-neutral-700 px-2.5 py-1 text-[10px] text-neutral-400 transition-all duration-150 hover:border-green-500/60 hover:text-green-400 active:scale-95 disabled:opacity-50">
-          {importing ? <IconLoader2 className="h-3 w-3 animate-spin" /> : <IconUpload className="h-3 w-3" />}
-          {importing ? 'Importing…' : 'Import .gguf'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={importModel} disabled={importing}
+            className="flex items-center gap-1.5 rounded border border-neutral-700 px-2.5 py-1 text-[10px] text-neutral-400 transition-all duration-150 hover:border-green-500/60 hover:text-green-400 active:scale-95 disabled:opacity-50">
+            {importing ? <IconLoader2 className="h-3 w-3 animate-spin" /> : <IconUpload className="h-3 w-3" />}
+            {importing ? 'Importing…' : 'Import .gguf'}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -580,7 +583,7 @@ export function ModelsScreen() {
                 </dl>
                 {ramGb && bytes > 0 && (
                   <p className="mt-4 text-[10px] text-neutral-500">
-                    {bytes / 1e9 <= ramGb * 0.38 ? 'Comfortable fit on your Mac.' : bytes / 1e9 <= ramGb * 0.55 ? 'Tight on RAM — context will be reduced.' : 'Large for your Mac — may run slowly.'}
+                    {bytes / 1e9 <= ramGb * 0.38 ? `Comfortable fit on your ${deviceNoun()}.` : bytes / 1e9 <= ramGb * 0.55 ? 'Tight on RAM — context will be reduced.' : `Large for your ${deviceNoun()} — may run slowly.`}
                   </p>
                 )}
                 {m.imageModes && m.imageModes.length > 0 && (

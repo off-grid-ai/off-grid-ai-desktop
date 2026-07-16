@@ -67,6 +67,13 @@ export function binRoots(): string[] {
   return [path.join(process.cwd(), 'resources', 'bin')];
 }
 
+/** Append the platform executable extension to a bundled binary's base name:
+ *  `.exe` on Windows, nothing on macOS/Linux. Use this at every spawn site so
+ *  `llama-server` resolves to `llama-server.exe` on win32. */
+export function exe(name: string): string {
+  return process.platform === 'win32' ? `${name}.exe` : name;
+}
+
 /** App/package root (cwd for spawned helpers that resolve their own deps). */
 export function appRoot(): string {
   if (process.env.OFFGRID_APP_ROOT) return process.env.OFFGRID_APP_ROOT;

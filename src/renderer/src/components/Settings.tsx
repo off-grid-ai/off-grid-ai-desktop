@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { LockKey, X, CheckCircle, Desktop, EnvelopeSimple, CaretDown } from '@phosphor-icons/react';
+import { LockKey, X, CheckCircle, Desktop, EnvelopeSimple, CaretDown, Clock } from '@phosphor-icons/react';
 import { cn } from '@renderer/lib/utils';
+import { currentPlatform, deviceNoun } from '@renderer/lib/device';
+import { proComingSoonHere } from './pro/proCatalog';
 import { ProgressiveBlur } from './ui/progressive-blur';
 import { SetupPanel } from './setup/SetupPanel';
 import { StoragePanel } from './setup/StoragePanel';
@@ -51,7 +53,21 @@ function SettingsCard({
 
 // A Pro section shown (disabled) in the free build: title + description + a
 // "Pro" badge, dimmed and non-interactive.
-function ProPlaceholder({ title, description, delay = 0.18 }: { title: string; description: string; delay?: number }): React.ReactElement {
+// Dimmed placeholder for a Pro section. Default badge is the "Pro" lock (free
+// build upsell). `comingSoon` swaps it for a neutral "Coming soon" clock — used
+// for a Pro subscriber on a non-Mac platform, where the section is a real feature
+// they own but that isn't ready on their device yet.
+function ProPlaceholder({
+  title,
+  description,
+  delay = 0.18,
+  comingSoon = false,
+}: {
+  title: string;
+  description: string;
+  delay?: number;
+  comingSoon?: boolean;
+}): React.ReactElement {
   return (
     <motion.div
       className="relative rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6"
@@ -59,9 +75,15 @@ function ProPlaceholder({ title, description, delay = 0.18 }: { title: string; d
       animate={{ opacity: 1, filter: 'blur(0px)' }}
       transition={{ duration: 0.6, delay }}
     >
-      <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-green-400">
-        <LockKey weight="bold" className="h-3 w-3" /> Pro
-      </span>
+      {comingSoon ? (
+        <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-800/50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-300">
+          <Clock weight="bold" className="h-3 w-3" /> Coming soon
+        </span>
+      ) : (
+        <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-green-400">
+          <LockKey weight="bold" className="h-3 w-3" /> Pro
+        </span>
+      )}
       <h3 className="mb-1 pr-28 text-base font-medium text-neutral-300">{title}</h3>
       <p className="text-sm text-neutral-600">{description}</p>
     </motion.div>
@@ -403,6 +425,10 @@ export function Settings() {
   // and are hidden in the free build.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isPro = !!(window as any).api?.isPro;
+  // Pro subscriber on a non-Mac platform: backend-dependent Pro sections (proactive
+  // delivery, learned prefs) aren't ready on this device yet, so show a coming-soon
+  // placeholder. Identity + plan management stay available (they work cross-platform).
+  const proComingSoon = proComingSoonHere(currentPlatform(), isPro);
   const [idName, setIdName] = useState('');
   const [idEmail, setIdEmail] = useState('');
   const [appVersion, setAppVersion] = useState('');
@@ -477,15 +503,21 @@ export function Settings() {
             <ProPlaceholder delay={0.15} title="You" description="Tell Off Grid who you are so it can attribute your messages, commitments, and calendar - part of the Pro intelligence layer." />
           )}
 
-          {/* Pro sections — shown but disabled in the free build. */}
-          {isPro ? (
+          {/* Pro sections — shown but disabled in the free build; on a non-Mac
+              platform a Pro subscriber sees a coming-soon placeholder (the
+              feature is theirs, just not ready on this device yet). */}
+          {proComingSoon ? (
+            <ProPlaceholder comingSoon delay={0.18} title="Proactive delivery" description={`A morning briefing and a heads-up before each meeting. Live on Mac and your phone now - coming to your ${deviceNoun()} soon.`} />
+          ) : isPro ? (
             <SettingsCard title="Proactive delivery" summary="A morning briefing and a heads-up before each meeting." delay={0.18}>
               <ProactiveSection />
             </SettingsCard>
           ) : (
             <ProPlaceholder title="Proactive delivery" description="A morning briefing and a heads-up before each meeting - native notifications, even when the window is closed." />
           )}
-          {isPro ? (
+          {proComingSoon ? (
+            <ProPlaceholder comingSoon delay={0.22} title="What Off Grid has learned" description={`Preferences distilled from the suggestions you dismiss. Live on Mac and your phone now - coming to your ${deviceNoun()} soon.`} />
+          ) : isPro ? (
             <SettingsCard title="What Off Grid has learned" summary="Preferences distilled from your dismissals, fed back to the assistant." delay={0.22}>
               <SecretaryPrefs />
             </SettingsCard>

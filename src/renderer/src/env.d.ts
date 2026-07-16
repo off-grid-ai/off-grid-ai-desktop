@@ -121,6 +121,9 @@ interface AppSettings {
 interface IElectronAPI {
   // Open-core bridge
   isPro?: boolean
+  // Host OS (process.platform), bridged at preload time. Used by lib/device.ts
+  // to name the machine ('Mac' on darwin, else 'device').
+  platform?: string
   proInvoke?: (channel: string, ...args: unknown[]) => Promise<unknown>
   proOn?: (channel: string, cb: (...a: unknown[]) => void) => () => void
   proOff?: (channel: string) => void
