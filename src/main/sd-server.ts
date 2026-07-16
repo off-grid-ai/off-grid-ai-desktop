@@ -138,6 +138,18 @@ export function parseJobResult(job: unknown): JobOutcome {
   return { done: false, ok: false, progress };
 }
 
+/** Turn a REJECTED fetch to the resident sd-server into an ACTIONABLE message. A bare
+ *  "fetch failed" (connection refused) means the server stopped accepting connections
+ *  mid-job — it crashed, usually under memory pressure (image weights + the chat model on
+ *  unified memory). Surface its recent stderr so the cause is visible instead of guessed —
+ *  the same lesson as llama-error.ts (never let an engine die with an opaque error). Pure. */
+export function describeSdFetchFailure(serverAlive: boolean, stderrTail: string[], raw: unknown): string {
+  const reason = serverAlive ? 'became unreachable' : 'crashed';
+  const tail = stderrTail.slice(-6).join(' | ').trim();
+  const rawMsg = raw instanceof Error ? raw.message : String(raw);
+  return `sd-server ${reason} during image generation` + (tail ? `: ${tail}` : ` (${rawMsg})`);
+}
+
 interface SdGenProgress {
   step: number;
   total: number;
@@ -172,6 +184,17 @@ class SdServerService {
 
   private base(): string {
     return `http://127.0.0.1:${this.port}`;
+  }
+
+  /** fetch() to the resident server, but a REJECTION (server died mid-job) is re-thrown
+   *  with the server's stderr tail so the failure is actionable, not an opaque "fetch
+   *  failed" (the user-facing symptom we saw). A non-2xx response is left to the caller. */
+  private async sdFetch(url: string, init?: RequestInit): Promise<Response> {
+    try {
+      return await fetch(url, init);
+    } catch (e) {
+      throw new Error(describeSdFetchFailure(this.server !== null, this.stderrTail, e));
+    }
   }
 
   private findBinary(): string | null {
@@ -264,7 +287,7 @@ class SdServerService {
     this.clearIdleTimer();
     const total = req.steps ?? 4;
     try {
-      const submit = await fetch(`${this.base()}/sdcpp/v1/img_gen`, {
+      const submit = await this.sdFetch(`${this.base()}/sdcpp/v1/img_gen`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildImgGenRequest(req)),
@@ -284,7 +307,7 @@ class SdServerService {
       let lastProgress = -1;
       for (;;) {
         await new Promise((r) => setTimeout(r, 150));
-        const res = await fetch(`${this.base()}${pollUrl}`);
+        const res = await this.sdFetch(`${this.base()}${pollUrl}`);
         if (!res.ok) throw new Error(`job poll failed (HTTP ${res.status}).`);
         const status = await res.json();
         const outcome = parseJobResult(status);

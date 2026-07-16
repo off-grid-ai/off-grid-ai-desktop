@@ -13,6 +13,7 @@ import {
   contextKey,
   buildImgGenRequest,
   parseJobResult,
+  describeSdFetchFailure,
 } from '../sd-server';
 
 describe('buildSdServerContextArgs', () => {
@@ -109,5 +110,27 @@ describe('parseJobResult', () => {
   it('treats queued/running as not-done and forwards progress', () => {
     expect(parseJobResult({ status: 'queued', queue_position: 0 }).done).toBe(false);
     expect(parseJobResult({ status: 'running', progress: 0.5 })).toMatchObject({ done: false, progress: 0.5 });
+  });
+});
+
+describe('describeSdFetchFailure — actionable error when the resident server dies mid-job', () => {
+  it('surfaces the server stderr tail when the process crashed (never a bare "fetch failed")', () => {
+    const msg = describeSdFetchFailure(false, ['ggml_metal: out of memory', 'sd-server aborting'], new TypeError('fetch failed'));
+    expect(msg).toContain('crashed');
+    expect(msg).toContain('out of memory');   // the actionable cause, not "fetch failed"
+    expect(msg).not.toBe('fetch failed');
+  });
+
+  it('says "became unreachable" and falls back to the raw error when there is no stderr', () => {
+    const msg = describeSdFetchFailure(true, [], new TypeError('fetch failed'));
+    expect(msg).toContain('became unreachable');
+    expect(msg).toContain('fetch failed'); // no stderr captured → surface the raw reason
+  });
+
+  it('keeps only the last few stderr lines (a wall of logs is not actionable)', () => {
+    const many = Array.from({ length: 20 }, (_, i) => `line${i}`);
+    const msg = describeSdFetchFailure(false, many, 'x');
+    expect(msg).toContain('line19');       // most recent kept
+    expect(msg).not.toContain('line0');    // old lines trimmed
   });
 });
