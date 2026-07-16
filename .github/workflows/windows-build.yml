@@ -29,6 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false # don't leave the token in .git/config for npm postinstall scripts
           lfs: false # the repo's LFS binaries are macOS-only; Windows runtimes
                      # come from fetch-win-binaries.ps1, so don't pull ~235MB of
                      # dylibs we won't ship.
@@ -45,6 +46,7 @@ jobs:
           token: ${{ secrets.PRO_REPO_TOKEN }}
           path: pro
           fetch-depth: 1
+          persist-credentials: false # keep PRO_REPO_TOKEN out of pro/.git/config
       - name: Drop nested .git from pro/
         if: env.HAS_PRO_TOKEN == 'true'
         shell: bash

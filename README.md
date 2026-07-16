@@ -223,7 +223,7 @@ locked until a valid key is activated.
 
 Grab the latest build from [Releases](https://github.com/off-grid-ai/desktop/releases/latest):
 
-- **macOS** (Apple Silicon) — signed + notarized `.dmg`
+- **macOS** (Apple Silicon) - signed + notarized `.dmg`
 - **Windows** (x64) — NSIS installer (`.exe`)
 
 ## Build from source
@@ -231,7 +231,7 @@ Grab the latest build from [Releases](https://github.com/off-grid-ai/desktop/rel
 ```bash
 git clone https://github.com/off-grid-ai/desktop.git
 cd desktop
-git lfs install && git lfs pull   # pull the bundled native binaries (LFS) — REQUIRED
+git lfs install && git lfs pull   # pull the bundled native binaries (LFS) - REQUIRED
 npm install
 npm run dev          # full app
 npm run gateway      # headless gateway only (:7878)
@@ -246,7 +246,7 @@ npm run build:mac    # package a macOS app
 
 The committed LFS binaries are macOS-only; the Windows runtimes are fetched from
 upstream releases at build time. **Build on a Windows machine** (native modules
-must compile there — cross-building from macOS is not supported):
+must compile there - cross-building from macOS is not supported):
 
 ```powershell
 git clone https://github.com/off-grid-ai/desktop.git

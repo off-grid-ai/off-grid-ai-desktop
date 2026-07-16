@@ -19,31 +19,45 @@ const SRC = fs.readFileSync(
   'utf-8',
 );
 
+// Scope every assertion to the UPGRADE (buy) branch of the aside ternary, so a test
+// can't pass if the notice or the buy CTA drifts into the coming-soon branch. The
+// upgrade branch runs from the notice comment to the shared cross-sell block.
+const UPGRADE_BRANCH = SRC.slice(SRC.indexOf('Off macOS, Pro is not yet tested'), SRC.indexOf('Cross-sell'));
+// The coming-soon branch is everything in the aside before the upgrade branch.
+const COMINGSOON_BRANCH = SRC.slice(SRC.indexOf('You have Pro'), SRC.indexOf('Off macOS, Pro is not yet tested'));
+
 describe('UpgradeScreen - non-Mac "coming soon" notice on the buy screen', () => {
   it('imports the isMac platform helper', () => {
     expect(SRC).toMatch(/import\s*\{[^}]*\bisMac\b[^}]*\}\s*from\s*'@renderer\/lib\/device'/);
   });
 
-  it('gates the notice on !isMac()', () => {
-    expect(SRC).toMatch(/!isMac\(\)\s*&&/);
+  it('scoping anchors exist (guards this test against a refactor of the variants)', () => {
+    expect(UPGRADE_BRANCH.length).toBeGreaterThan(0);
+    expect(COMINGSOON_BRANCH.length).toBeGreaterThan(0);
   });
 
-  it('tells the user Pro is coming soon and works on Mac + phone', () => {
-    expect(SRC).toMatch(/Coming soon to your \{deviceNoun\(\)\}/);
-    expect(SRC).toMatch(/macOS-tested/);
-    expect(SRC).toMatch(/phone app/);
+  it('gates the notice on !isMac() within the upgrade branch', () => {
+    expect(UPGRADE_BRANCH).toMatch(/!isMac\(\)\s*&&/);
   });
 
-  it('keeps the buy CTA on the upgrade variant (not replaced by the notice)', () => {
+  it('tells the user Pro is coming soon and works on Mac + phone (upgrade branch)', () => {
+    expect(UPGRADE_BRANCH).toMatch(/Coming soon to your \{deviceNoun\(\)\}/);
+    expect(UPGRADE_BRANCH).toMatch(/macOS-tested/);
+    expect(UPGRADE_BRANCH).toMatch(/phone app/);
+  });
+
+  it('keeps the buy CTA in the upgrade branch (not replaced by the notice)', () => {
     // The purchase path must remain: the license is valid on Mac + phone today.
-    expect(SRC).toMatch(/Get Pro/);
-    expect(SRC).toMatch(/PRO_PAY_URL/);
+    expect(UPGRADE_BRANCH).toMatch(/Get Pro/);
+    expect(UPGRADE_BRANCH).toMatch(/PRO_PAY_URL/);
+    // ...and the buy CTA must NOT have leaked into the coming-soon branch.
+    expect(COMINGSOON_BRANCH).not.toMatch(/PRO_PAY_URL/);
   });
 
   it('follows brand voice: uses " - " not an em dash in the notice copy', () => {
     // Em dash is unambiguous - code never uses it, so scanning the block is safe.
-    const block = SRC.slice(SRC.indexOf('!isMac()'), SRC.indexOf('Unlock Pro'));
-    expect(block).not.toMatch(/—/);
-    expect(block).toMatch(/ - /); // the brand-approved separator
+    const notice = UPGRADE_BRANCH.slice(0, UPGRADE_BRANCH.indexOf('Unlock Pro'));
+    expect(notice).not.toMatch(/—/);
+    expect(notice).toMatch(/ - /); // the brand-approved separator
   });
 });

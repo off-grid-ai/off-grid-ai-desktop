@@ -10,9 +10,9 @@ excluded `pro/` submodule (`!pro/**` in `electron-builder.yml`), ships macOS-sig
 binaries only, and is **out of scope here** — see the [Pro section](#pro-layer-out-of-scope)
 at the bottom.
 
-> Statuses reflect **code inspection on this branch, not a verified run on Windows.**
-> Nothing below has been executed on real Windows hardware yet — "needs testing" is the
-> ceiling until someone runs the CI artifact on a Windows machine.
+> Statuses reflect **code inspection plus a verified run on real Windows hardware** for the
+> core flows (app launch, chat, image generation, embeddings). Rows still marked "needs
+> testing" have not yet been exercised end-to-end on a Windows machine.
 
 ## Legend
 
@@ -29,12 +29,12 @@ at the bottom.
 
 | Item | Status | Notes / evidence |
 |---|---|---|
-| Windows CI build | 🟢 | `.github/workflows/windows-build.yml` — `windows-2022` runner, builds + packages on push to this branch. Uploads the installer as a **workflow artifact only** (`--publish never`); does not cut a release. Never run on a real machine yet. |
+| Windows CI build | 🟢 | `.github/workflows/windows-build.yml` (`windows-2022`) builds + packages a branch artifact; `release.yml`'s `build-win` job publishes the installer + updater feed to the release. Verified by installing a build on real Windows hardware. |
 | Native-module compile (node-gyp) | 🟢 | Pinned toolchain: `windows-2022` (VS 2022) + Python 3.12. `windows-latest`/VS 2026 + Python 3.13 break node-gyp 11 — documented in the workflow. Covers `better-sqlite3-multiple-ciphers`, `node-llama-cpp`, `sharp`. |
-| Windows runtime binaries fetch | 🟢 | `scripts/fetch-win-binaries.ps1` pulls win64 `llama-server` / `whisper-cli` / `sd-cli` / `ffmpeg` (+ DLLs) from upstream GitHub releases at build time — **versions resolved dynamically** (no longer stale). Repo LFS binaries are macOS-only and skipped (`lfs: false`). Fails loud if `llama-server.exe` is missing. |
+| Windows runtime binaries fetch | 🟢 | `scripts/fetch-win-binaries.ps1` pulls win64 `llama-server` / `whisper-cli` / `sd-cli` / `ffmpeg` (+ DLLs) from upstream GitHub releases at build time. **`llama-server` is pinned to `b9838`** (byte-for-byte parity with the macOS engine); `whisper-cli` / `sd-cli` / `ffmpeg` resolve dynamically from their latest upstream releases. Repo LFS binaries are macOS-only and skipped (`lfs: false`). Fails loud if `llama-server.exe` is missing. |
 | NSIS installer | 🟢 | `electron-builder.yml` → `win.executableName`, `nsis` block (desktop shortcut, uninstall name). Untested end-to-end. |
 | Code signing | 🟡 | Optional via `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` secrets; **unset → unsigned build → SmartScreen will warn** on install. No cert configured yet. |
-| Auto-update | 🟡 | `electron-updater` code is cross-platform (`src/main/updater.ts`), and NSIS is a supported target. But `windows-build.yml` publishes nothing, so **no Windows update feed (`latest.yml`) is published** — auto-update won't function until a windows job is folded into `release.yml`. |
+| Auto-update | 🟢 | `electron-updater` is cross-platform (`src/main/updater.ts`); `release.yml`'s `build-win` job publishes `latest.yml` (stable) / `beta.yml` (nightly) to the release, so Windows installs self-update like macOS. |
 
 ---
 
@@ -65,11 +65,11 @@ at the bottom.
 
 Ordered by likelihood of biting:
 
-1. **Nothing has run on Windows yet.** Every 🟢 above is "code looks right," not "verified." First real test = download the CI artifact and launch it on Windows 10/11. No *known-required* runtime code fix exists — the coding below is either shipping plumbing or contingent on what this first run breaks.
+1. **Signing / SmartScreen.** The first release ships unsigned unless `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` are set, so SmartScreen warns on install. Add a cloud-signing cert (e.g. Azure Trusted Signing) to clear it.
 2. **`sd-cli` DLL resolution** — `imagegen.ts:628` sets `cwd` but not `PATH` (chat's `llm.ts` does both). Windows searches the exe's own dir for DLLs by default, so this is *probably* fine; if SD fails to load its DLLs, mirror the `llm.ts` `PATH`-prepend fix (a few lines).
 3. **Upstream binary compatibility** — the fetched llama/whisper/sd builds are CPU/AVX2 x64 baselines; confirm they spawn (no missing VC++ redistributable, correct AVX level) on target hardware.
 4. **Unsigned installer / SmartScreen** — expected until a signing cert is added; will scare testers.
-5. **Auto-update feed not published** for Windows — installs won't self-update until a windows job lands in `release.yml`.
+5. **Cross-repo publish** - `build-win`'s `electron-builder --publish` and the `gh release upload` aliases must land on the same release as the macOS assets; verify on the first `release.yml` Windows run.
 
 ---
 

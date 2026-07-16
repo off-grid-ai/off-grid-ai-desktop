@@ -305,6 +305,7 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.sha }} # the exact bumped commit, same as build-mac
           lfs: false # Windows runtimes come from fetch-win-binaries.ps1, not the LFS dylibs
+          persist-credentials: false # don't leave the token in .git/config for npm postinstall scripts
       - name: Check out private pro source into pro/
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -312,6 +313,7 @@ jobs:
           token: ${{ secrets.PRO_REPO_TOKEN }}
           path: pro
           fetch-depth: 1
+          persist-credentials: false # keep PRO_REPO_TOKEN out of pro/.git/config
       - name: Drop nested .git from pro/
         shell: bash
         run: rm -rf pro/.git # don't nest a repo inside the build tree

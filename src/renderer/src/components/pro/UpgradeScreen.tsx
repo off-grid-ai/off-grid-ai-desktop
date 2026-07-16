@@ -176,7 +176,7 @@ export function UpgradeScreen({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-xs font-medium text-neutral-200">Use Pro on your Mac</span>
-                  <span className="mt-0.5 block text-[11px] leading-tight text-neutral-500">Install Off Grid for Mac and sign in with the same license.</span>
+                  <span className="mt-0.5 block text-[11px] leading-tight text-neutral-500">Install Off Grid AI Desktop for Mac and sign in with the same license.</span>
                 </span>
                 <ArrowSquareOut weight="bold" className="h-4 w-4 shrink-0 text-neutral-500" />
               </button>
@@ -205,7 +205,7 @@ export function UpgradeScreen({
                 Get Pro <ArrowSquareOut weight="bold" className="h-4 w-4" />
               </button>
               <p className="text-[11px] leading-relaxed text-neutral-600">
-                One-time purchase. Runs entirely on your device — no subscription, no cloud, no account.
+                One-time purchase. Runs entirely on your device - no subscription, no cloud, no account.
               </p>
 
               {/* Guard kept so a pure-core build (no pro code) wouldn't show an inert box;
