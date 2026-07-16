@@ -20,7 +20,6 @@ import userEvent from '@testing-library/user-event'
 import { MemoryChat } from '../MemoryChat'
 import { TooltipProvider } from '../ui/tooltip'
 import { readReasoning } from '@renderer/lib/message-persistence'
-
 ;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver ??= class {
   observe() {}
   unobserve() {}

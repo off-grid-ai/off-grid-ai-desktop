@@ -1,4 +1,4 @@
-import { _electron as electron } from 'playwright'
+import { _electron as electron } from '@playwright/test'
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const APP_BIN = process.env.APP_BIN
 const app = await electron.launch({

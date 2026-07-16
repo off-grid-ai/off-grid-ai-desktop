@@ -8,7 +8,7 @@ import { mimeForExt } from './mime'
  *  never call controller.error/close after a cancel, or Chromium treats the seek as a
  *  failed load and resets the player to 0:00. (net.fetch(file://) sidesteps this but
  *  doesn't honour Range, so seeking would be dead.) */
-export function fileStreamToWeb(rs: fs.ReadStream): ReadableStream<Uint8Array> {
+function fileStreamToWeb(rs: fs.ReadStream): ReadableStream<Uint8Array> {
   let done = false
   return new ReadableStream<Uint8Array>({
     start(controller) {

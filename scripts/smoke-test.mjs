@@ -4,7 +4,7 @@
 //
 //   APP_BIN="/Volumes/Off Grid AI 0.0.18-arm64/Off Grid AI.app/Contents/MacOS/Off Grid AI" \
 //   node scripts/smoke-test.mjs
-import { _electron as electron } from 'playwright'
+import { _electron as electron } from '@playwright/test'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'

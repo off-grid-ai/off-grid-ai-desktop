@@ -1,4 +1,4 @@
-import { _electron as electron } from 'playwright'
+import { _electron as electron } from '@playwright/test'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'

@@ -14,7 +14,7 @@
     "src/renderer/src/components/ui/**/*.{ts,tsx}"
   ],
   "project": ["src/**/*.{ts,tsx}", "pro/**/*.{ts,tsx}"],
-  "ignore": ["**/*.d.ts", "component-library-animations/**"],
+  "ignore": ["**/*.d.ts"],
   "tags": ["-public"],
   "ignoreDependencies": [
     "tailwindcss",
@@ -29,5 +29,5 @@
     "kokoro-js",
     "ollama"
   ],
-  "ignoreBinaries": ["swift", "osascript", "pkill", "xattr", "lsof", "ps", "playwright"]
+  "ignoreBinaries": ["swift", "xattr"]
 }

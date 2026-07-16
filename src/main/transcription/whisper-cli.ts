@@ -20,7 +20,7 @@ import type { TranscriptionService, Transcript, TranscribeOptions, Seg } from '.
 const execFileAsync = promisify(execFile)
 
 /** Resolve the bundled whisper-cli across dev / packaged layouts. */
-export function whisperBin(): string | null {
+function whisperBin(): string | null {
   return existing(binRoots().map((r) => path.join(r, 'whisper', exe('whisper-cli'))))
 }
 

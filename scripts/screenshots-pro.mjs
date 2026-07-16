@@ -2,7 +2,7 @@
 // demo seed in an ISOLATED profile (never the real DB), then captures each pro
 // screen. Output: pro/docs/screenshots/ (private repo). No blur — data is fake.
 //   node scripts/screenshots-pro.mjs
-import { _electron as electron } from 'playwright'
+import { _electron as electron } from '@playwright/test'
 import { mkdirSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'

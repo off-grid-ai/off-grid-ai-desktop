@@ -12,7 +12,7 @@
 import * as http from 'http'
 import type { AddressInfo } from 'net'
 
-export interface FakeToolCall {
+interface FakeToolCall {
   id?: string
   name: string
   /** Arguments object; serialized to the JSON string llama-server emits. */
@@ -20,7 +20,7 @@ export interface FakeToolCall {
   /** Raw arguments string, emitted verbatim — for exercising malformed (non-JSON) args. */
   argsRaw?: string
 }
-export interface FakeTurn {
+interface FakeTurn {
   /** Answer text streamed as content deltas (split into a few frames like the engine). */
   content?: string
   /** Reasoning streamed on the reasoning_content channel before the answer. */

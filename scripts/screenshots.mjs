@@ -2,7 +2,7 @@
 // screen, and saves PNGs to docs/screenshots/. Uses the seeded demo data.
 // Re-launches between states (no reload — the SPA rewrites the URL).
 //   node scripts/screenshots.mjs
-import { _electron as electron } from 'playwright'
+import { _electron as electron } from '@playwright/test'
 import { mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'

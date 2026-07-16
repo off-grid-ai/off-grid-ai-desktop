@@ -92,7 +92,21 @@ const goldStandardRatchet = {
 }
 
 export default defineConfig(
-  { ignores: ['**/node_modules', '**/dist', '**/out'] },
+  {
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/out/**',
+      '**/coverage/**',
+      '.claude/**',
+      '.offgrid/**',
+      '.demo-profile/**',
+      'component-library-animations/**',
+      'resources/artifacts/**',
+      '**/*.min.js',
+      '**/*.min.css'
+    ]
+  },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],

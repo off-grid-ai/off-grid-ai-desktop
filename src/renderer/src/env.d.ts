@@ -255,10 +255,7 @@ interface IElectronAPI {
     title: string
     created: number
   }>
-  listArtifacts: (scope?: {
-    conversationId?: string
-    projectId?: string | null
-  }) => Promise<
+  listArtifacts: (scope?: { conversationId?: string; projectId?: string | null }) => Promise<
     {
       id: string
       kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'
@@ -282,9 +279,7 @@ interface IElectronAPI {
 
   // Skills
   listSkills: () => Promise<{ name: string; description: string }[]>
-  getSkill: (
-    name: string
-  ) => Promise<{
+  getSkill: (name: string) => Promise<{
     name: string
     description: string
     instructions: string
