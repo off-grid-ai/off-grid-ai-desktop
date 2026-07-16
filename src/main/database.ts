@@ -5,6 +5,7 @@ import { app, safeStorage } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
+import { createSettingsStore } from './settings-store'
 
 let db: Database.Database | null = null
 
@@ -1473,31 +1474,13 @@ export function getSettings(): AppSettings {
 }
 
 export function saveSetting(key: string, value: any): void {
-  const db = getDB()
-  const valueJson = JSON.stringify(value)
-  db.prepare(
-    `
-        INSERT INTO app_settings (key, value, updated_at)
-        VALUES (?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
-    `
-  ).run(key, valueJson, valueJson)
+  createSettingsStore(getDB()).set(key, value)
 }
 
 export function getSetting<T>(key: string, defaultValue: T): T {
-  const db = getDB()
-  const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key) as
-    | { value: string }
-    | undefined
-  if (!row) return defaultValue
-  try {
-    return JSON.parse(row.value) as T
-  } catch {
-    return defaultValue
-  }
+  return createSettingsStore(getDB()).get(key, defaultValue)
 }
 
 export function deleteSetting(key: string): void {
-  const db = getDB()
-  db.prepare('DELETE FROM app_settings WHERE key = ?').run(key)
+  createSettingsStore(getDB()).delete(key)
 }
