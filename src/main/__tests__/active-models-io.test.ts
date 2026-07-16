@@ -5,90 +5,129 @@
  * against a REAL temp dir (no mock of our own logic) so a corrupt/absent file, a round
  * trip, and the null-clear path all fail loudly if the behavior breaks.
  *
- * modelsDir (from runtime-env, Electron-bound) is redirected to a per-test temp dir —
- * that is the only boundary mocked; the fs reads/writes are real.
+ * The store receives a per-test temp directory. The JSON serialization and
+ * filesystem reads/writes are the production implementation.
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
+import {
+  ActiveModalityStore,
+  getActiveModal,
+  getAllActiveModals,
+  setActiveModal
+} from '../active-models'
+
 let tmpDir: string
-vi.mock('../runtime-env', () => ({ modelsDir: () => tmpDir }))
+let store: ActiveModalityStore
+const originalDataDir = process.env.OFFGRID_DATA_DIR
 
-import { getActiveModal, setActiveModal, getAllActiveModals } from '../active-models'
-
-const storePath = () => path.join(tmpDir, 'active-modalities.json')
+const storePath = (): string => path.join(tmpDir, 'active-modalities.json')
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-active-models-'))
+  store = new ActiveModalityStore(() => tmpDir)
+  process.env.OFFGRID_DATA_DIR = tmpDir
 })
 afterEach(() => {
+  if (originalDataDir === undefined) {
+    delete process.env.OFFGRID_DATA_DIR
+  } else {
+    process.env.OFFGRID_DATA_DIR = originalDataDir
+  }
   fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 
 describe('getActiveModal', () => {
   it('returns null for every modality when the store file is absent', () => {
-    expect(getActiveModal('image')).toBeNull()
-    expect(getActiveModal('speech')).toBeNull()
-    expect(getActiveModal('transcription')).toBeNull()
+    expect(store.get('image')).toBeNull()
+    expect(store.get('speech')).toBeNull()
+    expect(store.get('transcription')).toBeNull()
   })
 
   it('returns null when the store file is corrupt JSON (readAll swallows the parse error)', () => {
     fs.writeFileSync(storePath(), '{ this is not json')
-    expect(getActiveModal('transcription')).toBeNull()
+    expect(store.get('transcription')).toBeNull()
   })
 
   it('reads back a persisted value', () => {
     fs.writeFileSync(storePath(), JSON.stringify({ transcription: 'csukuangfj/parakeet-v2' }))
-    expect(getActiveModal('transcription')).toBe('csukuangfj/parakeet-v2')
+    expect(store.get('transcription')).toBe('csukuangfj/parakeet-v2')
   })
 })
 
 describe('setActiveModal', () => {
   it('writes a value that getActiveModal reads back (round trip)', () => {
-    setActiveModal('image', 'org/jugg')
-    expect(getActiveModal('image')).toBe('org/jugg')
+    store.set('image', 'org/jugg')
+    expect(store.get('image')).toBe('org/jugg')
     // Persisted as pretty JSON in the store file.
     expect(JSON.parse(fs.readFileSync(storePath(), 'utf-8')).image).toBe('org/jugg')
   })
 
   it('creates the models dir if it does not exist yet', () => {
     const nested = path.join(tmpDir, 'nested', 'dir')
-    tmpDir = nested // point modelsDir() at a not-yet-created path
-    setActiveModal('speech', 'kokoro')
-    expect(getActiveModal('speech')).toBe('kokoro')
+    tmpDir = nested
+    store.set('speech', 'kokoro')
+    expect(store.get('speech')).toBe('kokoro')
   })
 
   it('updates one modality without clobbering the others', () => {
-    setActiveModal('image', 'img-1')
-    setActiveModal('speech', 'voice-1')
-    setActiveModal('image', 'img-2') // overwrite image only
-    expect(getActiveModal('image')).toBe('img-2')
-    expect(getActiveModal('speech')).toBe('voice-1')
+    store.set('image', 'img-1')
+    store.set('speech', 'voice-1')
+    store.set('image', 'img-2')
+    expect(store.get('image')).toBe('img-2')
+    expect(store.get('speech')).toBe('voice-1')
   })
 
   it('clears a slot when set to null', () => {
-    setActiveModal('transcription', 'whisper-small')
-    setActiveModal('transcription', null)
-    expect(getActiveModal('transcription')).toBeNull()
+    store.set('transcription', 'whisper-small')
+    store.set('transcription', null)
+    expect(store.get('transcription')).toBeNull()
+  })
+
+  it('leaves the slot empty when the configured directory cannot be created', () => {
+    const fileInPlaceOfDirectory = path.join(tmpDir, 'not-a-directory')
+    fs.writeFileSync(fileInPlaceOfDirectory, 'occupied')
+    const failingStore = new ActiveModalityStore(() => fileInPlaceOfDirectory)
+
+    expect(() => failingStore.set('image', 'img-x')).not.toThrow()
+    expect(failingStore.get('image')).toBeNull()
   })
 })
 
 describe('getAllActiveModals', () => {
   it('fills every modality with null when the store is empty', () => {
-    expect(getAllActiveModals()).toEqual({ image: null, speech: null, transcription: null })
+    expect(store.all()).toEqual({ image: null, speech: null, transcription: null })
   })
 
   it('returns all three modalities, defaulting the unset ones to null', () => {
-    setActiveModal('image', 'img-x')
-    expect(getAllActiveModals()).toEqual({ image: 'img-x', speech: null, transcription: null })
+    store.set('image', 'img-x')
+    expect(store.all()).toEqual({ image: 'img-x', speech: null, transcription: null })
   })
 
   it('reflects a full round trip across all three modalities', () => {
-    setActiveModal('image', 'a')
-    setActiveModal('speech', 'b')
-    setActiveModal('transcription', 'c')
-    expect(getAllActiveModals()).toEqual({ image: 'a', speech: 'b', transcription: 'c' })
+    store.set('image', 'a')
+    store.set('speech', 'b')
+    store.set('transcription', 'c')
+    expect(store.all()).toEqual({ image: 'a', speech: 'b', transcription: 'c' })
+  })
+})
+
+describe('production active-model functions', () => {
+  it('persist and read all modalities in the configured runtime profile', () => {
+    setActiveModal('image', 'image-model')
+    setActiveModal('speech', 'speech-model')
+
+    expect(getActiveModal('image')).toBe('image-model')
+    expect(getAllActiveModals()).toEqual({
+      image: 'image-model',
+      speech: 'speech-model',
+      transcription: null
+    })
+    expect(
+      JSON.parse(fs.readFileSync(path.join(tmpDir, 'models', 'active-modalities.json'), 'utf-8'))
+    ).toEqual({ image: 'image-model', speech: 'speech-model' })
   })
 })

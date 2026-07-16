@@ -3,14 +3,11 @@
  * chat LLM ever showed/activated — image/voice/transcription must light up when
  * their modality's chosen value matches (stored as id OR primary filename).
  *
- * active-models.ts pulls modelsDir from runtime-env (Electron-bound), so we mock
- * that to import the pure helpers without a real app.
+ * These rules are isolated from the Electron-bound storage location so the
+ * production decision logic can be exercised directly.
  */
-import { describe, it, expect, vi } from 'vitest'
-
-vi.mock('../runtime-env', () => ({ modelsDir: () => '/tmp/models' }))
-
-import { modalityForKind, isModelActive } from '../active-models'
+import { describe, it, expect } from 'vitest'
+import { modalityForKind, isModelActive } from '../active-models-logic'
 
 const NONE = { image: null, speech: null, transcription: null } as const
 
