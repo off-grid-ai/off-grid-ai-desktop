@@ -15,6 +15,7 @@ import { setupMcpIpc } from './mcp-ipc'
 import { startModelServer } from './model-server'
 import { startMediaServer, mediaUrlFor } from './media-server'
 import { isPathAllowed, canonical } from './media-range'
+import { serveCaptureFile } from './ogcapture-serve'
 import { ipcMain } from 'electron'
 import { loadProFeaturesMain } from './bootstrap/loadProFeaturesMain'
 import { initLicensing } from './licensing/license-service'
@@ -24,7 +25,6 @@ import { purgeLegacyChatImports, getSetting } from './database'
 import { modalityQueue } from './modality-queue/queue'
 import { registerRuntime } from './runtime-manager'
 import { guardConsoleStreams } from './stream-guards'
-import { mimeForExt } from './mime'
 
 // Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
 // must never crash main via an uncaught EPIPE. See stream-guards.ts.
@@ -178,23 +178,6 @@ app.whenReady().then(() => {
   // tear the file stream down SILENTLY — never call controller.error/close after a
   // cancel — otherwise Chromium treats the seek as a failed load and resets to 0:00.
   // (net.fetch(file://) sidesteps this but doesn't honour Range, so seeking is dead.)
-  const fileStreamToWeb = (rs: fs.ReadStream): ReadableStream<Uint8Array> => {
-    let done = false;
-    return new ReadableStream<Uint8Array>({
-      start(controller) {
-        rs.on('data', (chunk: string | Buffer) => {
-          if (done) return;
-          controller.enqueue(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : new Uint8Array(chunk));
-          if ((controller.desiredSize ?? 1) <= 0) rs.pause();
-        });
-        rs.on('end', () => { if (!done) { done = true; try { controller.close(); } catch { /* closed */ } } });
-        rs.on('error', (err) => { if (!done) { done = true; try { controller.error(err); } catch { /* errored */ } } });
-      },
-      pull() { if (!done) rs.resume(); },
-      // Player cancelled (seek / teardown): kill the fd quietly, NEVER touch the controller.
-      cancel() { done = true; rs.destroy(); },
-    });
-  };
   // Only serve files inside the app's own media dirs — this scheme is reachable
   // from the renderer, so serving an arbitrary decoded path would be a local-file
   // read primitive. isPathAllowed is symlink-safe (canonicalizes both sides).
@@ -205,47 +188,14 @@ app.whenReady().then(() => {
     join(app.getPath('userData'), d),
   );
   protocol.handle('ogcapture', async (request) => {
-    // Canonicalize the request path BEFORE any fs use (resolve symlinks + `..`), then
-    // serve only that sanitized path — a symlink inside a root can't smuggle a path
-    // outside it, and every fs op below reads the validated `p`, never the raw request
-    // input. Mirrors the loopback media-server guard.
+    // Canonicalize the request path BEFORE any fs use (resolve symlinks + `..`), validate it
+    // against the allowlist, then hand the VALIDATED path to serveCaptureFile — the fs reads
+    // happen there, behind this guard, never on the raw request input. Mirrors media-server.
     const p = canonical(decodeURIComponent(request.url.slice('ogcapture://'.length)));
     if (!isPathAllowed(p, ogCaptureRoots)) {
       return new Response(null, { status: 403 });
     }
-    try {
-      const stat = await fs.promises.stat(p);
-      const size = stat.size;
-      const ext = p.split('.').pop()?.toLowerCase() ?? '';
-      const type = mimeForExt(ext);
-      const range = request.headers.get('Range');
-      const m = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
-      if (m && (m[1] || m[2])) {
-        const start = m[1] ? parseInt(m[1], 10) : Math.max(0, size - parseInt(m[2]!, 10));
-        const end = m[1] && m[2] ? Math.min(parseInt(m[2], 10), size - 1) : size - 1;
-        if (start >= size || start > end) {
-          return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
-        }
-        const rs = fs.createReadStream(p, { start, end });
-        return new Response(fileStreamToWeb(rs), {
-          status: 206,
-          headers: {
-            'Content-Type': type,
-            'Content-Length': String(end - start + 1),
-            'Content-Range': `bytes ${start}-${end}/${size}`,
-            'Accept-Ranges': 'bytes',
-          },
-        });
-      }
-      const rs = fs.createReadStream(p);
-      return new Response(fileStreamToWeb(rs), {
-        status: 200,
-        headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' },
-      });
-    } catch (e) {
-      console.error('[ogcapture] serve failed for', p, e);
-      return new Response(null, { status: 404 });
-    }
+    return serveCaptureFile(p, request.headers.get('Range'));
   });
 
   // Meeting recorder: grant SYSTEM AUDIO (loopback) for getDisplayMedia so the

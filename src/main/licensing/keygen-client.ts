@@ -61,6 +61,14 @@ async function request(path: string, init: RequestInit): Promise<Response> {
   }
 }
 
+/** Validate a Keygen resource id (a UUID/token) BEFORE it is placed into a request URL
+ *  path — rejects anything that isn't a plain id so tainted data can't reshape the URL
+ *  (Sonar S7044/S8476). Keygen ids are UUIDs, so this never rejects a real id. */
+function safeId(id: string): string {
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(id)) throw new Error('invalid Keygen resource id');
+  return id;
+}
+
 export function toLicense(data: any): KeygenLicense | null {
   if (!data || !data.id) return null;
   return {
@@ -154,7 +162,7 @@ export async function activateMachine(
 
 /** List the machines currently activated on a license. */
 export async function listMachines(key: string, licenseId: string): Promise<KeygenMachine[]> {
-  const res = await request(`/licenses/${encodeURIComponent(licenseId)}/machines`, {
+  const res = await request(`/licenses/${safeId(licenseId)}/machines`, {
     method: 'GET',
     headers: { Accept: JSON_API, Authorization: `License ${key}` },
   });
@@ -164,7 +172,7 @@ export async function listMachines(key: string, licenseId: string): Promise<Keyg
 
 /** Free a device slot. */
 export async function deactivateMachine(key: string, machineId: string): Promise<boolean> {
-  const res = await request(`/machines/${encodeURIComponent(machineId)}`, {
+  const res = await request(`/machines/${safeId(machineId)}`, {
     method: 'DELETE',
     headers: { Accept: JSON_API, Authorization: `License ${key}` },
   });
