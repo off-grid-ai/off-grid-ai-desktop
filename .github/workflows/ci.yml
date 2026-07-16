@@ -31,6 +31,9 @@ jobs:
           token: ${{ secrets.CI_CROSS_REPO_TOKEN }}
           path: pro
           ref: ${{ github.head_ref || github.ref_name }}
+          # Don't leave the cross-repo PAT in ./pro/.git/config where a later
+          # PR-controlled step could reuse it — we only need it for the clone.
+          persist-credentials: false
       - name: Fall back to pro main if no matching branch
         if: ${{ steps.pro_branch.outcome != 'success' || hashFiles('pro/tsconfig.json') == '' }}
         continue-on-error: true
@@ -39,6 +42,16 @@ jobs:
           repository: off-grid-ai/desktop-pro
           token: ${{ secrets.CI_CROSS_REPO_TOKEN }}
           path: pro
+          persist-credentials: false
+      # pro MUST be present: without it the guarded typecheck/coverage path is skipped and
+      # CI would pass core-only with cratered/misleading coverage (the failure the
+      # matching-branch checkout above was added to fix). Fail loudly instead of silently.
+      - name: Require pro checkout to have succeeded
+        run: |
+          if [ ! -f pro/tsconfig.json ]; then
+            echo "::error::pro (desktop-pro) was not checked out — cannot validate the open-core build. Check CI_CROSS_REPO_TOKEN / repo access."
+            exit 1
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '24' # node:sqlite (used by integration tests) is available unflagged
