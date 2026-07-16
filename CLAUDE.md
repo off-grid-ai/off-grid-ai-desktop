@@ -74,13 +74,24 @@ progress by committing continuously, not at the end:
 - **Small commits are the record** (merge, never squash — see the workspace multi-agent model), so
   each step stays reviewable and revertible. A giant end-of-session commit is a defect.
 
-## Pending hygiene adoption — READ BEFORE EVERY PUSH
+## Code hygiene (adopted)
 
-**TODO (deferred to its own PR — do NOT bundle into an unrelated PR):** adopt the wednesday-solutions
-gold-standard code hygiene. The pre-push hook echoes this reminder so it isn't forgotten. Two parts:
+The wednesday-solutions gold-standard hygiene is **adopted** (landed on the quality-hardening
+release branch, not a separate PR). Two parts:
 
-1. **Prettier — repo-wide reformat.** Adopt `.prettierrc`: `{ printWidth: 120, tabWidth: 2, useTabs: false, singleQuote: true, trailingComma: 'none' }`. Desktop has no `.prettierrc` today (prettier defaults), so applying this reformats the whole tree — a huge diff. Do it ALONE, in its own PR/commit, so it never swamps a feature/refactor diff.
-2. **ESLint — tighten to the gold-standard rules** (adapted to desktop's flat config + React web, not RN/redux): `curly: all`, `no-console: [allow error,warn]`, `no-else-return`, `no-empty`, `prefer-template`, `max-params: 3`, `complexity` (gold standard is 5 — start looser, e.g. 15-20, and ratchet), `max-lines-per-function: 250`, `max-lines: 350`, `@typescript-eslint/no-shadow`. Many current files violate the structural caps (MemoryChat 2601, ipc.ts 1707, etc.), so introduce them with a **ratchet** like the coverage floor: set to `warn` (or grandfather the known-large files) and tighten to `error` as the god-files get decomposed — never lower a threshold to pass. Gold-standard source: github.com/wednesday-solutions/react-template (`.eslintrc.js`, `.prettierrc`).
+1. **Prettier — applied repo-wide.** Config: `.prettierrc.yaml` (`singleQuote`, `semi: false`,
+   `printWidth: 100`, `trailingComma: none`) — the repo settled on 100/semi-false rather than the
+   120 originally sketched. The whole tree is formatted to it; `eslintConfigPrettier` runs
+   `prettier/prettier` as a lint rule so drift is caught. `.prettierignore` (core + `pro/`) excludes
+   vendored/ephemeral trees (`.claude` worktrees, `resources/artifacts` + `**/*.min.*`, tsconfig
+   jsonc, local scratch). Re-run with `npm run format`.
+2. **ESLint — gold-standard rules as a warn RATCHET** (`eslint.config.mjs`, `goldStandardRatchet`):
+   `curly: all`, `no-console: [allow error,warn]`, `no-else-return`, `no-empty`, `prefer-template`,
+   `max-params: 3`, `complexity: 15`, `max-lines-per-function: 250`, `max-lines: 350`,
+   `@typescript-eslint/no-shadow` — all at `warn` because the god-files (MemoryChat ~2.6k, ipc.ts
+   ~1.7k) exceed the structural caps. **Tighten toward `error` (and `complexity` toward the gold 5)
+   as those files decompose — never loosen to pass.** This is the same ratchet discipline as the
+   coverage floor. Source: github.com/wednesday-solutions/react-template.
 
 ## Testing — test every approved behavior change in the same pass
 
