@@ -8,8 +8,6 @@ import {
   IconCheck,
   IconX,
   IconTrash,
-  IconRefresh,
-  IconPlayerStop,
   IconUpload,
   IconInfoCircle,
   IconExternalLink,
@@ -128,10 +126,6 @@ export function ModelsScreen() {
   const refreshActive = (): void => { void api.getActiveModelIds?.().then((ids: string[]) => setActiveIds(new Set(ids ?? []))); };
   const [switching, setSwitching] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
-  // Local model-server control (dev/recovery). null = unknown until first probe.
-  const [serverReady, setServerReady] = useState<boolean | null>(null);
-  const [serverBusy, setServerBusy] = useState<'restart' | 'stop' | null>(null);
-  const [serverMsg, setServerMsg] = useState<string | null>(null);
   const [ramGb, setRamGb] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
   const [useCase, setUseCase] = useState('all');
@@ -186,48 +180,6 @@ export function ModelsScreen() {
     });
     return off;
   }, []);
-
-  // Poll the model server's status so the indicator reflects external changes
-  // (a crash, a model switch). Light-touch: every 4s, plus an immediate probe.
-  useEffect(() => {
-    let alive = true;
-    const probe = (): void => {
-      api.getServerStatus?.().then((s: { ready?: boolean } | undefined) => {
-        if (alive && s) setServerReady(!!s.ready);
-      }).catch(() => { /* ignore */ });
-    };
-    probe();
-    const t = setInterval(probe, 4000);
-    return () => { alive = false; clearInterval(t); };
-  }, []);
-
-  const restartServer = async (): Promise<void> => {
-    setServerBusy('restart');
-    setServerMsg(null);
-    try {
-      const res = await api.restartServer?.();
-      setServerReady(!!res?.ready);
-      setServerMsg(res?.ok ? 'Server restarted.' : (res?.error || 'Restart failed.'));
-    } catch (e) {
-      setServerMsg(e instanceof Error ? e.message : 'Restart failed.');
-    } finally {
-      setServerBusy(null);
-    }
-  };
-
-  const stopServer = async (): Promise<void> => {
-    setServerBusy('stop');
-    setServerMsg(null);
-    try {
-      const res = await api.stopServer?.();
-      setServerReady(!!res?.ready);
-      setServerMsg('Server stopped.');
-    } catch (e) {
-      setServerMsg(e instanceof Error ? e.message : 'Stop failed.');
-    } finally {
-      setServerBusy(null);
-    }
-  };
 
   const cancelDownload = (id: string): void => {
     void api.cancelModelDownload?.(id);
@@ -448,43 +400,6 @@ export function ModelsScreen() {
       <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-6 py-3">
         <h1 className="text-xs font-medium uppercase tracking-widest text-neutral-400">Models</h1>
         <div className="flex items-center gap-3">
-          {/* Local model-server control (dev/recovery): manually stop/restart the
-              llama-server if it gets into a bad state (e.g. up but no model loaded). */}
-          <div className="flex flex-col items-end gap-1">
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
-                <span
-                  className={`h-2 w-2 rounded-full ${
-                    serverReady === null ? 'bg-neutral-600' : serverReady ? 'bg-green-500' : 'bg-neutral-500'
-                  }`}
-                />
-                Model server
-              </span>
-              <button
-                onClick={restartServer}
-                disabled={serverBusy !== null}
-                title="Stop and restart the local model server, reloading the active model"
-                className="flex items-center gap-1.5 rounded-sm border border-neutral-800 px-2.5 py-1.5 text-[11px] text-neutral-300 transition-colors hover:border-green-500 hover:text-green-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {serverBusy === 'restart'
-                  ? <IconLoader2 className="h-3 w-3 animate-spin" />
-                  : <IconRefresh className="h-3 w-3" />}
-                Restart
-              </button>
-              <button
-                onClick={stopServer}
-                disabled={serverBusy !== null || serverReady === false}
-                title="Stop the local model server"
-                className="flex items-center gap-1.5 rounded-sm border border-neutral-800 px-2.5 py-1.5 text-[11px] text-neutral-300 transition-colors hover:border-red-500 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {serverBusy === 'stop'
-                  ? <IconLoader2 className="h-3 w-3 animate-spin" />
-                  : <IconPlayerStop className="h-3 w-3" />}
-                Stop
-              </button>
-            </div>
-            {serverMsg && <span className="text-[10px] text-neutral-500">{serverMsg}</span>}
-          </div>
           <button onClick={importModel} disabled={importing}
             className="flex items-center gap-1.5 rounded border border-neutral-700 px-2.5 py-1 text-[10px] text-neutral-400 transition-all duration-150 hover:border-green-500/60 hover:text-green-400 active:scale-95 disabled:opacity-50">
             {importing ? <IconLoader2 className="h-3 w-3 animate-spin" /> : <IconUpload className="h-3 w-3" />}

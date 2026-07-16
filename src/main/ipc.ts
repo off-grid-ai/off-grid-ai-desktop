@@ -641,30 +641,6 @@ ipcMain.handle('db:search-memories', async (_, query: string) => {
       }
   });
 
-  ipcMain.handle('llm:status', async () => {
-      const { llm } = await import('./llm');
-      return {
-          ready: llm.isReady()
-      };
-  });
-
-  // Dev/recovery: manually stop or restart the local model server from the
-  // Models page. Restart fully reloads the active model (and clears any orphan
-  // holding the port), resolving only once the model is loaded.
-  ipcMain.handle('llm:stop', async () => {
-      const { llm } = await import('./llm');
-      llm.stop();
-      return { ok: true, ready: llm.isReady() };
-  });
-  ipcMain.handle('llm:restart', async () => {
-      const { llm } = await import('./llm');
-      try {
-          await llm.restart();
-          return { ok: true, ready: llm.isReady() };
-      } catch (e) {
-          return { ok: false, ready: llm.isReady(), error: e instanceof Error ? e.message : String(e) };
-      }
-  });
 
   // Cancel an in-flight streaming turn; chatStream resolves with the partial answer.
   ipcMain.on('rag:cancel', (_evt, streamId: string) => {
