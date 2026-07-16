@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ArrowSquareOut, Check, Sparkle, Key, CircleNotch, DeviceMobile, Clock, Desktop } from '@phosphor-icons/react';
 import { PRO_PAY_URL, PRO_FEATURES, type ProFeature } from './proCatalog';
 import { OFF_GRID_MOBILE_URL, OFF_GRID_WEBSITE_URL, openExternal } from '../../constants/links';
-import { deviceNoun } from '@renderer/lib/device';
+import { deviceNoun, isMac } from '@renderer/lib/device';
 
 // License-key activation. Only meaningful in a pro-capable build (__OFFGRID_PRO__);
 // a core build has no pro code bundled, so entering a key would unlock nothing.
@@ -183,6 +183,18 @@ export function UpgradeScreen({
             </>
           ) : (
             <>
+              {/* Off macOS, Pro is not yet tested on this platform. Keep the buy CTA
+                  (the license is valid on Mac + phone today), but set expectations up
+                  front so a Windows/Linux user doesn't buy expecting it to run here. */}
+              {!isMac() && (
+                <div className="flex items-start gap-2 rounded-lg border border-neutral-700 bg-neutral-800/50 px-3 py-2.5 text-[11px] leading-relaxed text-neutral-300">
+                  <Clock weight="fill" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400" />
+                  <span>
+                    <span className="font-medium text-neutral-200">Coming soon to your {deviceNoun()}.</span>{' '}
+                    Off Grid Pro is macOS-tested today. Your purchase works right now on your Mac and the Off Grid phone app - up to 5 devices; we&apos;ll switch on {deviceNoun()} support once it&apos;s tested.
+                  </span>
+                </div>
+              )}
               <div className="text-[10px] uppercase tracking-widest text-neutral-500">Unlock Pro</div>
               {/* Single build: this app already contains Pro — a valid key unlocks it in
                   place (no separate download). So "Get Pro" (buy) + activate here. */}
