@@ -7,6 +7,27 @@
 // not reservation — never SIGKILL an unrelated app that happened to bind it).
 
 import { execSync } from 'child_process';
+import { existsSync } from 'fs';
+import path from 'path';
+
+/** Absolute path to a system tool, preferring fixed unwriteable locations over a PATH
+ *  lookup: a poisoned PATH must not let an attacker substitute the process-killing tools
+ *  we shell out to (Sonar S4036). Falls back to the bare name only if none of the known
+ *  absolute paths exist (unusual layout) so functionality is never lost. Exported for test. */
+export function sysTool(name: 'netstat' | 'tasklist' | 'taskkill' | 'lsof' | 'ps'): string {
+  const sys32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
+  const candidates: Record<string, string[]> = {
+    netstat: [path.join(sys32, 'netstat.exe')],
+    tasklist: [path.join(sys32, 'tasklist.exe')],
+    taskkill: [path.join(sys32, 'taskkill.exe')],
+    lsof: ['/usr/sbin/lsof', '/usr/bin/lsof'],
+    ps: ['/bin/ps', '/usr/bin/ps'],
+  };
+  for (const c of candidates[name] ?? []) {
+    if (existsSync(c)) return c;
+  }
+  return name;
+}
 
 /** Parse `netstat -ano -p tcp` output for the PIDs LISTENING on `port`. Handles both
  *  IPv4 (`127.0.0.1:8439`) and IPv6 (`[::]:8439`, `[::1]:8439`) local-address rows: the
@@ -35,21 +56,21 @@ export function killOrphansOnPort(port: number, matches: (procInfo: string) => b
   let killed = 0;
   try {
     if (process.platform === 'win32') {
-      const pids = parseWindowsListenerPids(execSync('netstat -ano -p tcp', { encoding: 'utf-8' }), port);
+      const pids = parseWindowsListenerPids(execSync(`"${sysTool('netstat')}" -ano -p tcp`, { encoding: 'utf-8' }), port);
       for (const pid of pids) {
         let img = '';
-        try { img = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: 'utf-8' }); } catch { continue; /* gone */ }
+        try { img = execSync(`"${sysTool('tasklist')}" /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: 'utf-8' }); } catch { continue; /* gone */ }
         if (!matches(img)) {
           console.warn(`[orphan] port ${port} held by non-${label} PID ${pid} — leaving it alone`);
           continue;
         }
-        try { execSync(`taskkill /PID ${pid} /F /T`, { stdio: 'ignore' }); killed++; console.log(`[orphan] killed orphaned ${label} ${pid} on port ${port}`); } catch { /* gone */ }
+        try { execSync(`"${sysTool('taskkill')}" /PID ${pid} /F /T`, { stdio: 'ignore' }); killed++; console.log(`[orphan] killed orphaned ${label} ${pid} on port ${port}`); } catch { /* gone */ }
       }
     } else {
-      const pids = execSync(`lsof -ti tcp:${port}`, { encoding: 'utf-8' }).trim().split('\n').filter(Boolean);
+      const pids = execSync(`"${sysTool('lsof')}" -ti tcp:${port}`, { encoding: 'utf-8' }).trim().split('\n').filter(Boolean);
       for (const pid of pids) {
         let cmd = '';
-        try { cmd = execSync(`ps -p ${pid} -o command=`, { encoding: 'utf-8' }).trim(); } catch { continue; /* already gone */ }
+        try { cmd = execSync(`"${sysTool('ps')}" -p ${pid} -o command=`, { encoding: 'utf-8' }).trim(); } catch { continue; /* already gone */ }
         if (!matches(cmd)) {
           console.warn(`[orphan] port ${port} held by non-${label} process ${pid} (${cmd.slice(0, 80)}) — leaving it alone`);
           continue;

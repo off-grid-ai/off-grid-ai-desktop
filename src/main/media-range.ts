@@ -5,8 +5,10 @@ import path from 'path';
 import fs from 'fs';
 
 /** Canonicalize a path: resolve symlinks + `..` to the real on-disk path. Falls
- *  back to a plain `path.resolve` when the path doesn't exist yet (realpath throws). */
-function canonical(p: string): string {
+ *  back to a plain `path.resolve` when the path doesn't exist yet (realpath throws).
+ *  Exported so callers serve the SANITIZED path (not the raw request input) after the
+ *  allowlist check — the ogcapture:// + loopback media handlers share this one guard. */
+export function canonical(p: string): string {
   try {
     return fs.realpathSync.native(p);
   } catch {

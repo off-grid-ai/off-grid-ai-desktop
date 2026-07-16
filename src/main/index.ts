@@ -14,7 +14,7 @@ import { setupRagIPC } from './rag-ipc'
 import { setupMcpIpc } from './mcp-ipc'
 import { startModelServer } from './model-server'
 import { startMediaServer, mediaUrlFor } from './media-server'
-import { isPathAllowed } from './media-range'
+import { isPathAllowed, canonical } from './media-range'
 import { ipcMain } from 'electron'
 import { loadProFeaturesMain } from './bootstrap/loadProFeaturesMain'
 import { initLicensing } from './licensing/license-service'
@@ -205,7 +205,11 @@ app.whenReady().then(() => {
     join(app.getPath('userData'), d),
   );
   protocol.handle('ogcapture', async (request) => {
-    const p = decodeURIComponent(request.url.slice('ogcapture://'.length));
+    // Canonicalize the request path BEFORE any fs use (resolve symlinks + `..`), then
+    // serve only that sanitized path — a symlink inside a root can't smuggle a path
+    // outside it, and every fs op below reads the validated `p`, never the raw request
+    // input. Mirrors the loopback media-server guard.
+    const p = canonical(decodeURIComponent(request.url.slice('ogcapture://'.length)));
     if (!isPathAllowed(p, ogCaptureRoots)) {
       return new Response(null, { status: 403 });
     }

@@ -817,9 +817,11 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
     if (!regen) {
       for (const a of atts) {
         if (a.kind === 'image' && a.path) {
-          try { void window.api.saveArtifact({ kind: 'image', code: a.path, title: a.name, conversationId: convId, projectId: projectId }); } catch { /* ignore */ }
+          // Best-effort cataloguing: handle the async rejection with .catch (a try/catch
+          // can't catch a floating promise's rejection — S4822).
+          void window.api.saveArtifact({ kind: 'image', code: a.path, title: a.name, conversationId: convId, projectId: projectId }).catch(() => { /* ignore */ });
         } else if (a.text) {
-          try { void window.api.saveArtifact({ kind: 'text', code: a.text, title: a.name, conversationId: convId, projectId: projectId }); } catch { /* ignore */ }
+          void window.api.saveArtifact({ kind: 'text', code: a.text, title: a.name, conversationId: convId, projectId: projectId }).catch(() => { /* ignore */ });
         }
       }
     }
@@ -1014,7 +1016,7 @@ export function MemoryChat({ onNavigateToMemory, onNavigateToChat, onNavigateToE
           // Inline-first: don't force the canvas open — the user opens the live
           // preview via the artifact card when they want it. Still save it, scoped
           // to this chat + project so the gallery can filter.
-          try { void window.api.saveArtifact({ kind: art.kind, code: art.code, conversationId: convId, projectId: projectId }); } catch { /* ignore */ }
+          void window.api.saveArtifact({ kind: art.kind, code: art.code, conversationId: convId, projectId: projectId }).catch(() => { /* ignore */ });
         }
         if (voiceMode) setAutoPlayId(streamId);
         try {

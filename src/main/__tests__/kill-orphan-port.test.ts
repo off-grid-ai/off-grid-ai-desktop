@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseWindowsListenerPids } from '../kill-orphan-port';
+import { parseWindowsListenerPids, sysTool } from '../kill-orphan-port';
+import { existsSync } from 'node:fs';
 
 // The win32 branch of killOrphansOnPort can't run in-process (needs netstat/tasklist), but the
 // PID-parsing is pure and is the part most likely to silently break on IPv6 rows - leaving a
@@ -34,6 +35,21 @@ describe('parseWindowsListenerPids', () => {
     // 8439 is the remote port here; this row must NOT be reaped (it is our client, not our server).
     const out = '  TCP    127.0.0.1:60123    127.0.0.1:8439    ESTABLISHED    66666\r\n';
     expect(parseWindowsListenerPids(out, 8439)).toEqual([]);
+  });
+
+  it('sysTool prefers a fixed absolute path over a PATH lookup (S4036 hardening)', () => {
+    // On this POSIX runner, ps lives at a known absolute path — sysTool must return THAT
+    // (a fixed, unwriteable location), not the bare name that a poisoned PATH could hijack.
+    const ps = sysTool('ps');
+    if (process.platform !== 'win32') {
+      expect(ps.startsWith('/')).toBe(true);
+      expect(existsSync(ps)).toBe(true);
+    }
+    // A Windows tool's System32 path doesn't exist on POSIX → falls back to the bare name
+    // (functionality preserved) rather than an invented path.
+    if (process.platform !== 'win32') {
+      expect(sysTool('netstat')).toBe('netstat');
+    }
   });
 
   it('dedupes repeated PIDs and returns empty for no matches', () => {

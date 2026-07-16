@@ -145,14 +145,16 @@ export async function activateMachine(
   const body: any = await res.json().catch(() => ({}));
   const result = parseActivateResult(res.status, body);
   if (!result.limitReached) {
-    console.error(`[Keygen] activate failed (${res.status}): ${JSON.stringify(body?.errors ?? [])}`);
+    // Strip CR/LF from the server-returned error before logging (anti log-forging) and cap it.
+    const errStr = JSON.stringify(body?.errors ?? []).replace(/[\r\n]+/g, ' ').slice(0, 300);
+    console.error(`[Keygen] activate failed (${res.status}): ${errStr}`);
   }
   return result;
 }
 
 /** List the machines currently activated on a license. */
 export async function listMachines(key: string, licenseId: string): Promise<KeygenMachine[]> {
-  const res = await request(`/licenses/${licenseId}/machines`, {
+  const res = await request(`/licenses/${encodeURIComponent(licenseId)}/machines`, {
     method: 'GET',
     headers: { Accept: JSON_API, Authorization: `License ${key}` },
   });
@@ -162,7 +164,7 @@ export async function listMachines(key: string, licenseId: string): Promise<Keyg
 
 /** Free a device slot. */
 export async function deactivateMachine(key: string, machineId: string): Promise<boolean> {
-  const res = await request(`/machines/${machineId}`, {
+  const res = await request(`/machines/${encodeURIComponent(machineId)}`, {
     method: 'DELETE',
     headers: { Accept: JSON_API, Authorization: `License ${key}` },
   });
