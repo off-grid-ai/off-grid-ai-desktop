@@ -3,6 +3,9 @@
      Pure test-only additions are NOT listed here (they change no app behavior).
      Updated as consolidation lands. Date started: 2026-07-09. -->
 
+> This is the historical checklist for one quality-hardening branch. The canonical,
+> reusable desktop release matrix is [`RELEASE_TEST_CHECKLIST.csv`](RELEASE_TEST_CHECKLIST.csv).
+
 # Release Test Checklist — `feat/consolidation-and-coverage`
 
 Everything here is behavior that a person should exercise on-device. Build + unit tests
