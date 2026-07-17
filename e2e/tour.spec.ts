@@ -99,26 +99,28 @@ test('Resource mode is selectable (Conservative)', async () => {
   await expect(cons).toHaveAttribute('aria-pressed', 'true')
 })
 
-test('Clipboard is a Pro tab in the core build (shows upgrade)', async () => {
-  // Clipboard moved to Pro: in the core/free tour (OFFGRID_PRO=0) the tab is
-  // locked and renders the upgrade screen, not the clipboard manager/settings.
-  // (Locked items carry a "Pro" lock label, so match by prefix, not exact.)
-  await page
-    .getByRole('button', { name: /Clipboard/ })
-    .first()
-    .click()
-  await page.waitForTimeout(500)
-  await expect(page.getByText('Off Grid Pro · Available now')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Clipboard' })).toBeVisible()
-})
+test('every locked Pro navigation item renders its matching upgrade screen', async () => {
+  // Discover the lock-bearing buttons rendered from the production Pro catalog. This
+  // avoids duplicating its route list in the test and fails when a new locked item is
+  // added without a working upgrade destination.
+  const lockedButtons = page.locator('button').filter({
+    has: page.locator('svg title').filter({ hasText: /^Pro$/ })
+  })
+  const count = await lockedButtons.count()
+  expect(count).toBeGreaterThan(2)
 
-test('Voice is a Pro tab in the core build (shows upgrade)', async () => {
-  // Voice/dictation is Pro: in the free tour (OFFGRID_PRO=0) the tab is locked and
-  // renders the upgrade screen, not the dictation library.
-  await page.getByRole('button', { name: /Voice/ }).first().click()
-  await page.waitForTimeout(500)
-  await expect(page.getByText('Off Grid Pro · Available now')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Voice' })).toBeVisible()
+  const labels: string[] = []
+  for (let index = 0; index < count; index += 1) {
+    const button = lockedButtons.nth(index)
+    const label = (await button.locator('span.flex-1').innerText()).trim()
+    labels.push(label)
+    await button.click()
+    await expect(page.getByText('Off Grid Pro · Available now')).toBeVisible()
+    await expect(page.getByRole('heading', { name: label, exact: true })).toBeVisible()
+  }
+
+  expect(new Set(labels).size).toBe(labels.length)
+  expect(await page.evaluate(() => window.api.isPro)).toBe(false)
 })
 
 test('Gateway screen renders', async () => {
