@@ -4,7 +4,13 @@
 // (the free build renders locked nav items straight from this data, so a malformed
 // entry ships a broken upsell tab).
 import { describe, it, expect } from 'vitest'
-import { getProFeature, PRO_FEATURES, PRO_PAY_URL } from '../../components/pro/proCatalog'
+import {
+  getProFeature,
+  proComingSoonHere,
+  proFeatureComingSoon,
+  PRO_FEATURES,
+  PRO_PAY_URL
+} from '../../components/pro/proCatalog'
 
 describe('getProFeature', () => {
   it('returns the matching feature for a known route', () => {
@@ -26,6 +32,44 @@ describe('getProFeature', () => {
     for (const feature of PRO_FEATURES) {
       expect(getProFeature(feature.route)).toBe(feature)
     }
+  })
+})
+
+describe('proComingSoonHere', () => {
+  it('gates Pro subscribers on non-Mac platforms', () => {
+    expect(proComingSoonHere('win32', true)).toBe(true)
+    expect(proComingSoonHere('linux', true)).toBe(true)
+    expect(proComingSoonHere('unknown', true)).toBe(true)
+  })
+
+  it('does not gate Mac subscribers or free users', () => {
+    expect(proComingSoonHere('darwin', true)).toBe(false)
+    expect(proComingSoonHere('win32', false)).toBe(false)
+    expect(proComingSoonHere('darwin', false)).toBe(false)
+  })
+})
+
+describe('proFeatureComingSoon', () => {
+  it('gates every Pro route for a Windows Pro subscriber', () => {
+    for (const feature of PRO_FEATURES) {
+      expect(
+        proFeatureComingSoon(feature.route, 'win32', true),
+        `coming-soon for ${feature.route}`
+      ).toBe(true)
+    }
+  })
+
+  it('does not gate routes on Mac or for free users', () => {
+    const route = PRO_FEATURES.at(0)?.route
+    if (!route) throw new Error('Pro catalog must not be empty')
+    expect(proFeatureComingSoon(route, 'darwin', true)).toBe(false)
+    expect(proFeatureComingSoon(route, 'win32', false)).toBe(false)
+  })
+
+  it('does not gate core or unknown routes', () => {
+    expect(proFeatureComingSoon('models', 'win32', true)).toBe(false)
+    expect(proFeatureComingSoon('does-not-exist', 'win32', true)).toBe(false)
+    expect(proFeatureComingSoon('', 'win32', true)).toBe(false)
   })
 })
 

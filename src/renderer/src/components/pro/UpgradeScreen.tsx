@@ -5,10 +5,13 @@ import {
   Sparkle,
   Key,
   CircleNotch,
-  DeviceMobile
+  DeviceMobile,
+  Clock,
+  Desktop
 } from '@phosphor-icons/react'
 import { PRO_PAY_URL, PRO_FEATURES, type ProFeature } from './proCatalog'
-import { OFF_GRID_MOBILE_URL, openExternal } from '../../constants/links'
+import { OFF_GRID_MOBILE_URL, OFF_GRID_WEBSITE_URL, openExternal } from '../../constants/links'
+import { deviceNoun, isMac } from '@renderer/lib/device'
 
 // License-key activation. Only meaningful in a pro-capable build (__OFFGRID_PRO__);
 // a core build has no pro code bundled, so entering a key would unlock nothing.
@@ -90,8 +93,15 @@ function LicenseActivation(): React.ReactElement {
 // writes up what the feature will do and points to early access (free waitlist)
 // or paying now (lifetime free + first access). People who've already paid are
 // reassured they're first in line.
-export function UpgradeScreen({ feature }: { feature?: ProFeature }): React.ReactElement {
+export function UpgradeScreen({
+  feature,
+  variant = 'upgrade'
+}: {
+  feature?: ProFeature
+  variant?: 'upgrade' | 'coming-soon'
+}): React.ReactElement {
   const f = feature
+  const comingSoon = variant === 'coming-soon'
   const open = (url: string): void => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const api = (window as any).api
@@ -104,9 +114,15 @@ export function UpgradeScreen({ feature }: { feature?: ProFeature }): React.Reac
       <div className="mx-auto grid max-w-5xl grid-cols-1 items-start gap-x-12 gap-y-8 lg:grid-cols-[1.4fr_minmax(320px,1fr)]">
         {/* Left — the pitch (left-aligned, desktop reading column) */}
         <div className="flex flex-col gap-5">
-          <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-[11px] uppercase tracking-wide text-green-400">
-            <Sparkle weight="fill" className="h-3.5 w-3.5" /> Off Grid Pro · Available now
-          </span>
+          {comingSoon ? (
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-800/50 px-3 py-1 text-[11px] uppercase tracking-wide text-neutral-300">
+              <Clock weight="fill" className="h-3.5 w-3.5" /> Off Grid Pro · Coming soon
+            </span>
+          ) : (
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-[11px] uppercase tracking-wide text-green-400">
+              <Sparkle weight="fill" className="h-3.5 w-3.5" /> Off Grid Pro · Available now
+            </span>
+          )}
 
           <div className="flex items-start gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900/60">
@@ -161,29 +177,81 @@ export function UpgradeScreen({ feature }: { feature?: ProFeature }): React.Reac
           </div>
         </div>
 
-        {/* Right — action card (buy + activate), the desktop side panel */}
+        {/* Right - account-aware action card, shared by upgrade and entitlement states. */}
         <aside className="flex flex-col gap-4 rounded-xl border border-neutral-800 bg-neutral-900/40 p-5 lg:sticky lg:top-10">
-          <div className="text-[10px] uppercase tracking-widest text-neutral-500">Unlock Pro</div>
-          {/* Single build: this app already contains Pro — a valid key unlocks it in
-              place (no separate download). So "Get Pro" (buy) + activate here. */}
-          <button
-            onClick={() => open(PRO_PAY_URL)}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-green-500"
-          >
-            Get Pro <ArrowSquareOut weight="bold" className="h-4 w-4" />
-          </button>
-          <p className="text-[11px] leading-relaxed text-neutral-600">
-            One-time purchase. Runs entirely on your device — no subscription, no cloud, no account.
-          </p>
-
-          {/* Guard kept so a pure-core build (no pro code) wouldn't show an inert box;
-              in the shipped single build __OFFGRID_PRO__ is always true. */}
-          {__OFFGRID_PRO__ ? (
+          {comingSoon ? (
             <>
+              <div className="text-[10px] uppercase tracking-widest text-neutral-500">
+                You have Pro
+              </div>
+              <p className="text-sm leading-relaxed text-neutral-300">
+                Your Pro features run on Mac and in the Off Grid phone app today - your license
+                covers both, up to 5 devices. Support for your {deviceNoun()} is on the way; it will
+                be enabled once it is tested.
+              </p>
+              <p className="text-[11px] leading-relaxed text-neutral-600">
+                Everything else in Off Grid works on your {deviceNoun()} today.
+              </p>
               <div className="border-t border-neutral-800" />
-              <LicenseActivation />
+              <button
+                onClick={() => openExternal(OFF_GRID_WEBSITE_URL)}
+                className="group flex items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-2.5 text-left transition-colors hover:border-green-500/30"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-700 bg-neutral-800 transition-colors group-hover:border-green-500/30">
+                  <Desktop
+                    weight="regular"
+                    className="h-4 w-4 text-neutral-300 transition-colors group-hover:text-green-400"
+                  />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-medium text-neutral-200">
+                    Use Pro on your Mac
+                  </span>
+                  <span className="mt-0.5 block text-[11px] leading-tight text-neutral-500">
+                    Install Off Grid AI Desktop for Mac and use the same license.
+                  </span>
+                </span>
+                <ArrowSquareOut weight="bold" className="h-4 w-4 shrink-0 text-neutral-500" />
+              </button>
             </>
-          ) : null}
+          ) : (
+            <>
+              {/* Off macOS, Pro is not yet tested on this platform. */}
+              {!isMac() && (
+                <div className="flex items-start gap-2 rounded-lg border border-neutral-700 bg-neutral-800/50 px-3 py-2.5 text-[11px] leading-relaxed text-neutral-300">
+                  <Clock weight="fill" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400" />
+                  <span>
+                    <span className="font-medium text-neutral-200">
+                      Coming soon to your {deviceNoun()}.
+                    </span>{' '}
+                    Off Grid Pro is macOS-tested today. Your purchase works now on Mac and the Off
+                    Grid phone app - up to 5 devices. Support for this {deviceNoun()} will be
+                    enabled once it is tested.
+                  </span>
+                </div>
+              )}
+              <div className="text-[10px] uppercase tracking-widest text-neutral-500">
+                Unlock Pro
+              </div>
+              <button
+                onClick={() => open(PRO_PAY_URL)}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-green-500"
+              >
+                Get Pro <ArrowSquareOut weight="bold" className="h-4 w-4" />
+              </button>
+              <p className="text-[11px] leading-relaxed text-neutral-600">
+                One-time purchase. Runs entirely on your device - no subscription, no cloud, no
+                account.
+              </p>
+
+              {__OFFGRID_PRO__ ? (
+                <>
+                  <div className="border-t border-neutral-800" />
+                  <LicenseActivation />
+                </>
+              ) : null}
+            </>
+          )}
 
           {/* Cross-sell: your Pro license spans both products. Mirrors mobile's
               "Get Off Grid AI Desktop" row on its Pro tab. */}

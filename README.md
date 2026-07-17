@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/off-grid-ai/desktop/releases/latest">Download (macOS)</a> ·
+  <a href="https://github.com/off-grid-ai/desktop/releases/latest">Download (macOS · Windows)</a> ·
   <a href="docs/FEATURES.md">Features</a> ·
   <a href="https://getoffgridai.co">getoffgridai.co</a> ·
   <a href="https://getoffgridai.co/pay">Get Pro</a>
@@ -23,6 +23,7 @@
 
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/macOS-Apple%20Silicon-black" />
+  <img alt="platform" src="https://img.shields.io/badge/Windows-x64-black" />
   <img alt="license" src="https://img.shields.io/badge/license-AGPL--3.0-blue" />
   <img alt="local" src="https://img.shields.io/badge/100%25-on--device-34D399" />
 </p>
@@ -233,16 +234,15 @@ locked until a valid key is activated.
 
 Grab the latest build from [Releases](https://github.com/off-grid-ai/desktop/releases/latest):
 
-- **macOS** (Apple Silicon) — signed + notarized `.dmg`
-
-macOS only for now.
+- **macOS** (Apple Silicon) - signed + notarized `.dmg`
+- **Windows** (x64) — NSIS installer (`.exe`)
 
 ## Build from source
 
 ```bash
 git clone https://github.com/off-grid-ai/desktop.git
 cd desktop
-git lfs install && git lfs pull   # pull the bundled native binaries (LFS) — REQUIRED
+git lfs install && git lfs pull   # pull the bundled native binaries (LFS) - REQUIRED
 npm install
 npm run dev          # full app
 npm run gateway      # headless gateway only (:7878)
@@ -257,7 +257,7 @@ npm run build:mac    # package a macOS app
 
 The committed LFS binaries are macOS-only; the Windows runtimes are fetched from
 upstream releases at build time. **Build on a Windows machine** (native modules
-must compile there — cross-building from macOS is not supported):
+must compile there - cross-building from macOS is not supported):
 
 ```powershell
 git clone https://github.com/off-grid-ai/desktop.git

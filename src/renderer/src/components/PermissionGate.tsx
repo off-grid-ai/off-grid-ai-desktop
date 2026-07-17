@@ -5,6 +5,7 @@ import { GridBackdrop } from './ui/grid-backdrop'
 import { cn } from '@renderer/lib/utils'
 import { Shield, Eye, Check, X, ArrowsClockwise as RefreshCw, Cpu } from '@phosphor-icons/react'
 import { SetupPanel } from './setup/SetupPanel'
+import { deviceNoun } from '@renderer/lib/device'
 import type { PermissionStatusContract } from '../../../shared/ipc-contracts'
 
 interface PermissionGateProps {
@@ -322,7 +323,7 @@ function SetupNudge({
   // Capture permissions (Pro-only) are the secondary, optional step.
   const title = missingModel ? 'Set up your local AI' : 'Finish setting up capture'
   const detail = missingModel
-    ? 'Pick a model yourself, or let Off Grid configure one for your Mac.'
+    ? `Pick a model yourself, or let Off Grid configure one for your ${deviceNoun()}.`
     : 'Grant screen & accessibility access so Off Grid can see & remember.'
   const cta = missingModel ? 'Configure' : 'Set up'
   return (

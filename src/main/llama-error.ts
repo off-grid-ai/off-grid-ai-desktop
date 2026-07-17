@@ -4,6 +4,8 @@
 // led to real users (and us) guessing at code-signing when the truth was in the
 // stderr the whole time — e.g. "unknown model architecture: 'gemma4'".
 
+import { deviceNoun, type DevicePlatform } from '../shared/device'
+
 export interface LlamaFailure {
   /** Stable code for UI/branching. */
   code:
@@ -22,7 +24,10 @@ export interface LlamaFailure {
  * text looks like a known fatal cause (so callers can fall back to a generic
  * message). Order matters: most specific first.
  */
-export function classifyLlamaError(stderr: string): LlamaFailure | null {
+export function classifyLlamaError(
+  stderr: string,
+  platform: DevicePlatform = process.platform
+): LlamaFailure | null {
   const s = (stderr || '').toLowerCase()
   if (!s.trim()) return null
 
@@ -58,8 +63,7 @@ export function classifyLlamaError(stderr: string): LlamaFailure | null {
   ) {
     return {
       code: 'out_of_memory',
-      reason:
-        'Out of memory - this model is too large for this Mac. Try a smaller model or Conservative mode.'
+      reason: `Out of memory - this model is too large for this ${deviceNoun(platform)}. Try a smaller model or Conservative mode.`
     }
   }
 

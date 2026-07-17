@@ -10,6 +10,8 @@ import { PRO_SETTINGS_SLOTS } from './pro/proSettingsCatalog'
 // Shared card chrome, in its own light module so the pro package can reuse it without
 // importing this whole god-file (which pulls SetupPanel/etc. + their window.api types).
 import { SettingsCard, ProPlaceholder } from './SettingsCard'
+import { currentPlatform } from '@renderer/lib/device'
+import { proComingSoonHere } from './pro/proCatalog'
 
 // ---------------------------------------------------------------------------
 // Software update — current version, manual check, automatic-update toggle
@@ -225,6 +227,7 @@ export function Settings() {
   // subtitle copy.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isPro = !!(window as any).api?.isPro
+  const proComingSoon = proComingSoonHere(currentPlatform(), isPro)
   // Pro sections registered by the pro renderer at activation (empty in free build).
   const registeredSections = getRegisteredSettingsSections()
   const [appVersion, setAppVersion] = useState('')
@@ -299,6 +302,17 @@ export function Settings() {
               proSettingsCatalog — core owns the inert shell, pro owns the logic. */}
           {PRO_SETTINGS_SLOTS.map((slot) => {
             const section = registeredSections.find((s) => s.id === slot.id)
+            if (section && proComingSoon && slot.macOnly) {
+              return (
+                <ProPlaceholder
+                  key={slot.id}
+                  delay={slot.delay}
+                  title={slot.placeholder?.title ?? slot.id}
+                  description={slot.comingSoonDescription ?? 'Support is coming soon.'}
+                  variant="coming-soon"
+                />
+              )
+            }
             if (section) {
               const Section = section.component
               return <Section key={slot.id} />

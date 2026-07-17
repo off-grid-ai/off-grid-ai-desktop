@@ -18,6 +18,8 @@ const offGridApi = {
   // pro tabs without an async round-trip. See main/license-ipc.ts (`pro:is-enabled`).
   // Falls back to false if the handler isn't registered (should never happen).
   isPro: ipcRenderer.sendSync('pro:is-enabled') === true,
+  // Host OS, bridged once so renderer copy and availability rules use the same value.
+  platform: process.platform,
   // License (Keygen) activation + status for the upgrade/settings UI.
   license: {
     status: () => ipcRenderer.invoke('license:status'),
@@ -316,10 +318,6 @@ const offGridApi = {
   setActiveModalModel: (kind: string, modelId: string | null) =>
     ipcRenderer.invoke('models:set-active-modal', kind, modelId),
   getActiveModalities: () => ipcRenderer.invoke('models:active-modalities'),
-  // Local model server control (dev/recovery from the Models page).
-  getServerStatus: () => ipcRenderer.invoke('llm:status'),
-  stopServer: () => ipcRenderer.invoke('llm:stop'),
-  restartServer: () => ipcRenderer.invoke('llm:restart'),
   onModelProgress: (
     callback: (data: {
       modelName: string

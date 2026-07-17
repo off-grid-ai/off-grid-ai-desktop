@@ -15,13 +15,13 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, waitFor } from '@testing-library/react'
 
-function stubApi(): void {
+function stubApi(platform = 'darwin'): void {
   const api = new Proxy(
     {},
     {
       get: (_t, prop) => {
         if (prop === 'isPro') return true
-        if (prop === 'platform') return 'darwin'
+        if (prop === 'platform') return platform
         if (prop === 'license') return { status: () => Promise.resolve({}) }
         if (prop === 'getAppVersion') return () => Promise.resolve('')
         return () => Promise.resolve({})
@@ -68,5 +68,29 @@ describe('Settings pro-section registry seam (D31)', () => {
     await waitFor(() => expect(screen.getByTestId('fake-proactive')).toBeTruthy())
     // ...and the placeholder for that slot is gone.
     expect(screen.queryByText(/native notifications, even when the window is closed/i)).toBeNull()
+  })
+
+  it('Windows Pro build: withholds Mac-only sections but keeps account sections available', async () => {
+    vi.resetModules()
+    stubApi('win32')
+    const { registerSettingsSection } = await import('../../bootstrap/sectionRegistry')
+    registerSettingsSection({
+      id: 'identity',
+      component: () => <div data-testid="fake-identity">FAKE IDENTITY SECTION</div>
+    })
+    registerSettingsSection({
+      id: 'proactive',
+      component: () => <div data-testid="fake-proactive">FAKE PROACTIVE SECTION</div>
+    })
+
+    const { Settings } = await import('../Settings')
+    render(<Settings />)
+
+    await waitFor(() => expect(screen.getByTestId('fake-identity')).toBeTruthy())
+    expect(screen.queryByTestId('fake-proactive')).toBeNull()
+    expect(
+      screen.getByText(/morning briefings and meeting alerts are available on Mac/i)
+    ).toBeTruthy()
+    expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0)
   })
 })

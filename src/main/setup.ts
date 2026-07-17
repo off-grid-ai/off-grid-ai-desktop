@@ -18,6 +18,7 @@ import {
   setActiveModalChoice
 } from './models-manager'
 import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports'
+import { deviceNoun } from '../shared/device'
 import type { RecMode } from './models/setup-types'
 import {
   normalizeMode,
@@ -345,7 +346,10 @@ export async function autoConfigure(
     }
   }
 
-  emit({ phase: 'select', message: 'Picking a model that fits your Mac…' })
+  emit({
+    phase: 'select',
+    message: `Picking a model that fits your ${deviceNoun(process.platform)}…`
+  })
   const model = await recommendChatModel()
   if (!model) {
     emit({ phase: 'error', message: 'No suitable model found.' })

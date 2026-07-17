@@ -4,6 +4,7 @@ import { LampContainer } from './ui/lamp'
 import { OrbitingCircles } from './ui/orbiting-circles'
 import { GridBackdrop } from './ui/grid-backdrop'
 import { cn } from '@renderer/lib/utils'
+import { deviceNoun } from '@renderer/lib/device'
 import logo from '@/assets/logo.png'
 import {
   ArrowRight,
@@ -128,7 +129,7 @@ const PRO_GRID = [
   {
     icon: ShieldCheck,
     label: 'Vault',
-    line: 'Encrypts passwords, keys, and secret files with a key that never leaves this Mac, so they stay yours alone.'
+    line: `Encrypts passwords, keys, and secret files with a key that never leaves this ${deviceNoun()}, so they stay yours alone.`
   },
   {
     icon: Waveform,
@@ -193,7 +194,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-6">
               <div className="mb-6 text-center">
                 <TextGenerate
-                  words="One app. Every model. On your Mac."
+                  words={`One app. Every model. On your ${deviceNoun()}.`}
                   className="text-3xl font-semibold tracking-tight text-white md:text-5xl"
                   delay={0}
                 />
@@ -332,7 +333,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             <GridBackdrop className="opacity-70" />
             <div className="relative z-10 mx-auto max-w-2xl text-center">
               <TextGenerate
-                words="It all runs in your Mac's RAM."
+                words={`It all runs in your ${deviceNoun()}'s RAM.`}
                 className="text-3xl font-semibold tracking-tight text-white md:text-5xl"
                 delay={0}
               />

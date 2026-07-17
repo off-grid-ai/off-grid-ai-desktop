@@ -3,7 +3,7 @@
 **For the tester:** You don't need to know this product beforehand. This doc tells you what
 each feature is, exactly what to click, and what _should_ happen. Your job is to run each
 test case on Windows and record **Pass / Fail / Blocked**, and file any problem using the
-[bug format](#how-to-report-a-bug) below.
+[bug format](#3-how-to-report-a-bug) below.
 
 Local setup is already done, so there are no install-from-source instructions here — you're
 testing the **packaged Windows build** (the `.exe` installer produced by CI, or a local
@@ -256,7 +256,7 @@ the single most important suite.
 
 1. With a chat model downloaded and the app open, run in PowerShell:
    ```powershell
-   curl.exe http://127.0.0.1:7878/v1/chat/completions -H "Content-Type: application/json" -d '{\"model\":\"local\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}'
+   curl.exe http://127.0.0.1:7878/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"local","messages":[{"role":"user","content":"Hello!"}]}'
    ```
 
 - **Expected:** A JSON response containing the AI's reply text.

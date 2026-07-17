@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { LockKey, CaretDown } from '@phosphor-icons/react'
+import { LockKey, CaretDown, Clock } from '@phosphor-icons/react'
 import { cn } from '@renderer/lib/utils'
 
 // Reusable Settings chrome, extracted from the Settings screen so both core and the
@@ -59,11 +59,13 @@ export function SettingsCard({
 export function ProPlaceholder({
   title,
   description,
-  delay = 0.18
+  delay = 0.18,
+  variant = 'pro'
 }: {
   title: string
   description: string
   delay?: number
+  variant?: 'pro' | 'coming-soon'
 }): React.ReactElement {
   return (
     <motion.div
@@ -72,9 +74,15 @@ export function ProPlaceholder({
       animate={{ opacity: 1, filter: 'blur(0px)' }}
       transition={{ duration: 0.6, delay }}
     >
-      <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-green-400">
-        <LockKey weight="bold" className="h-3 w-3" /> Pro
-      </span>
+      {variant === 'coming-soon' ? (
+        <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-800/50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-300">
+          <Clock weight="bold" className="h-3 w-3" /> Coming soon
+        </span>
+      ) : (
+        <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-green-400">
+          <LockKey weight="bold" className="h-3 w-3" /> Pro
+        </span>
+      )}
       <h3 className="mb-1 pr-28 text-base font-medium text-neutral-300">{title}</h3>
       <p className="text-sm text-neutral-600">{description}</p>
     </motion.div>

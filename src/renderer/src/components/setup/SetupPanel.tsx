@@ -10,6 +10,7 @@ import {
   DownloadSimple
 } from '@phosphor-icons/react'
 import { cn } from '@renderer/lib/utils'
+import { deviceNoun } from '@renderer/lib/device'
 import { HealthPanel } from './HealthPanel'
 
 type Mode = 'conservative' | 'balanced' | 'extreme'
@@ -131,7 +132,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
     if (running) return
     firedConfigured.current = false
     setRunning(true)
-    setProgress({ phase: 'select', message: 'Picking a model that fits your Mac…' })
+    setProgress({ phase: 'select', message: `Picking a model that fits your ${deviceNoun()}…` })
     try {
       await api.autoConfigure()
     } catch (e) {
@@ -159,7 +160,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-white">Configure it for me</div>
             <div className="text-xs text-neutral-500">
-              Pick how much of your Mac to use, then one click does the rest.
+              Pick how much of your {deviceNoun()} to use, then one click does the rest.
             </div>
           </div>
           <button
@@ -211,7 +212,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
                   ? `~${plan.totalDownloadGb.toFixed(1)} GB to download`
                   : 'all installed'}
                 {' · sized for your '}
-                {plan.ramGb} GB Mac
+                {plan.ramGb} GB {deviceNoun()}
               </span>
             </div>
             <ul className="divide-y divide-neutral-800/70 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950/40">
@@ -255,8 +256,8 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
             <div className="mt-2 rounded-md border border-neutral-800 bg-neutral-900/40 px-2.5 py-1.5 text-[11px] text-neutral-500">
               For solid reasoning &amp; tool use,{' '}
               <span className="text-neutral-300">Gemma 4 E4B</span> is the recommended minimum (4B,
-              ~6&nbsp;GB — fine on a 16&nbsp;GB Mac). Smaller 2B models are lighter and add vision,
-              but are noticeably weaker at reasoning.
+              ~6&nbsp;GB — fine on a 16&nbsp;GB {deviceNoun()}). Smaller 2B models are lighter and
+              add vision, but are noticeably weaker at reasoning.
             </div>
           </div>
         )}

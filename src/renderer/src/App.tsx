@@ -17,7 +17,8 @@ import type { SearchHit } from './types'
 import { loadProFeaturesRenderer } from './bootstrap/loadProFeaturesRenderer'
 import { renderProView, type ProViewContext } from './bootstrap/proView'
 import { UpgradeScreen } from './components/pro/UpgradeScreen'
-import { getProFeature } from './components/pro/proCatalog'
+import { getProFeature, proFeatureComingSoon } from './components/pro/proCatalog'
+import { currentPlatform, isMac } from './lib/device'
 import { NotificationProvider, useNotifications } from './hooks/useNotifications'
 import { ToastProvider } from './hooks/useToast'
 import { ReprocessingProvider, useReprocessing } from './hooks/useReprocessing'
@@ -215,8 +216,8 @@ function AppContent() {
   }, [])
 
   // Free users land on Models (download a model first, with the sidebar to
-  // explore); pro lands on Day. Never a locked Pro tab.
-  const [viewMode, setViewMode] = useState<ViewMode>(isPro ? 'day' : 'models')
+  // explore); Mac Pro users land on Day. Never land on a locked or unavailable tab.
+  const [viewMode, setViewMode] = useState<ViewMode>(isPro && isMac() ? 'day' : 'models')
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [selectedMemoryId, setSelectedMemoryId] = useState<number | null>(null)
   // Version of a downloaded-and-staged update (null = none). Surfaced as a banner
@@ -929,6 +930,8 @@ function AppContent() {
                     <GatewayScreen />
                   ) : viewMode === 'settings' ? (
                     <Settings />
+                  ) : proFeatureComingSoon(viewMode, currentPlatform(), isPro) ? (
+                    <UpgradeScreen variant="coming-soon" feature={getProFeature(viewMode)} />
                   ) : (
                     // Pro tabs: render through the pro view-router when active,
                     // otherwise show the upgrade writeup for that feature.

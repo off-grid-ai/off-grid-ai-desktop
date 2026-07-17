@@ -27,7 +27,9 @@ concurrency:
 # free = unlicensed (pro tabs locked), a valid Keygen key unlocks in place (no
 # re-download). The ASAR integrity fuse (electron-builder.yml) makes a tampered
 # app.asar refuse to load — our local-first anti-tamper lever (we don't phone home).
-# Actions are pinned to commit SHAs. Windows is parked.
+# Actions are pinned to commit SHAs. macOS (build-mac) and Windows (build-win) share
+# the one `version` job and publish to the same release; Windows runtimes come from
+# fetch-win-binaries.ps1 rather than the macOS-only LFS binaries.
 jobs:
   # Resolve the channel + version. STABLE (manual promote) bumps the patch and
   # commits it so main tracks the released version; BETA (every merge) stamps a
@@ -285,3 +287,100 @@ jobs:
           NOTES_FILE: release-notes.md
           RELEASE_URL: https://github.com/off-grid-ai/off-grid-ai-desktop/releases/tag/v${{ needs.version.outputs.version }}
         run: node scripts/notify-slack-release.mjs
+
+  # Windows release build. Mirrors build-mac: it consumes the SAME resolved version
+  # + channel from the `version` job and publishes the NSIS installer plus the
+  # Windows electron-updater feed (latest.yml for stable, beta.yml for nightly) to
+  # the SAME GitHub release, so Windows and macOS ship as one version with working
+  # auto-update. Runs AFTER build-mac so the v$VERSION release already exists — this
+  # avoids a release-creation race between two concurrent `electron-builder --publish`
+  # runs. Windows native runtimes are fetched by scripts/fetch-win-binaries.ps1
+  # (the repo's LFS binaries are macOS-only).
+  build-win:
+    needs: [version, build-mac]
+    # windows-2022 = VS 2022 toolchain. windows-latest ships VS 2026, which node-gyp 11
+    # can't parse, breaking native-module (better-sqlite3) compiles. Pin until it catches up.
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.version.outputs.sha }} # the exact bumped commit, same as build-mac
+          lfs: false # Windows runtimes come from fetch-win-binaries.ps1, not the LFS dylibs
+          persist-credentials: false # don't leave the token in .git/config for npm postinstall scripts
+      - name: Check out private pro source into pro/
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: off-grid-ai/desktop-pro
+          token: ${{ secrets.PRO_REPO_TOKEN }}
+          path: pro
+          fetch-depth: 1
+          persist-credentials: false # keep PRO_REPO_TOKEN out of pro/.git/config
+      - name: Drop nested .git from pro/
+        shell: bash
+        run: rm -rf pro/.git # don't nest a repo inside the build tree
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      # node-gyp (better-sqlite3-multiple-ciphers) fails on Python 3.13+; pin 3.12.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: npm ci
+      - name: Fetch Windows native binaries (llama/whisper/sd/ffmpeg)
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # raises the GitHub API rate limit
+        run: ./scripts/fetch-win-binaries.ps1
+      - name: Stamp build version
+        run: npm version "${{ needs.version.outputs.version }}" --no-git-tag-version --allow-same-version
+      - name: Build (typecheck + bundle)
+        run: npm run build
+      - name: Package & publish (NSIS installer + auto-update metadata)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional Windows code signing — a no-op if the secrets are absent (the
+          # build still publishes, unsigned; SmartScreen warns until a cert is added).
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          # Same version tag as build-mac -> both platforms land on ONE release.
+          #   stable -> latest.yml, published as a normal release (everyone)
+          #   beta   -> beta.yml (from the -beta suffix), published as a PRE-RELEASE
+          if [ "${{ needs.version.outputs.channel }}" = "stable" ]; then
+            npx electron-builder --win -c.publish.releaseType=release --publish always
+          else
+            npx electron-builder --win -c.publish.releaseType=prerelease --publish always
+          fi
+      # Permanent Windows download link — the Windows counterpart to the Mac
+      # OffGrid-latest.dmg alias. The versioned installer (off-grid-ai-<v>-setup.exe)
+      # changes name every release, so /releases/latest/download/<name> can't target
+      # it; upload a constant-named copy for a stable URL:
+      #   https://github.com/off-grid-ai/off-grid-ai-desktop/releases/latest/download/OffGrid-latest-setup.exe
+      # The versioned installer + latest.yml updater feed are untouched, so auto-update
+      # is unaffected. --clobber replaces the copy from the prior run.
+      - name: Publish stable latest-setup.exe alias
+        if: needs.version.outputs.channel == 'stable'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cp dist/*-setup.exe dist/OffGrid-latest-setup.exe
+          gh release upload "v$VERSION" dist/OffGrid-latest-setup.exe --clobber
+      # Constant nightly Windows link on the rolling 'nightly' pre-release (mirrors the
+      # Mac nightly.dmg link). build-win runs after build-mac, which already ensured the
+      # 'nightly' release exists — the fallback create is just belt-and-suspenders.
+      - name: Publish constant nightly-setup.exe link
+        if: needs.version.outputs.channel == 'beta'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp dist/*-setup.exe dist/OffGrid-nightly-setup.exe
+          gh release view nightly >/dev/null 2>&1 || \
+            gh release create nightly --prerelease --title "Nightly (rolling)" \
+              --notes "Rolling nightly build, auto-updated on every change. Pre-release - expect rough edges."
+          gh release upload nightly dist/OffGrid-nightly-setup.exe --clobber

@@ -18,6 +18,10 @@ export interface ProSettingsSlot {
   delay: number
   /** Free-build teaser. null = render nothing when the slot isn't registered. */
   placeholder: { title: string; description: string } | null
+  /** Runtime-backed section is withheld outside macOS until that implementation is tested. */
+  macOnly?: boolean
+  /** Copy shown to an entitled user when a Mac-only section is unavailable. */
+  comingSoonDescription?: string
 }
 
 // Array order IS the render order in the Settings screen (between "Setup & health"
@@ -26,6 +30,9 @@ export const PRO_SETTINGS_SLOTS: ProSettingsSlot[] = [
   {
     id: 'capture',
     delay: 0.14,
+    macOnly: true,
+    comingSoonDescription:
+      'Screen capture controls are available on Mac today. Support for this device is coming soon.',
     placeholder: {
       title: 'Capture',
       description:
@@ -44,6 +51,9 @@ export const PRO_SETTINGS_SLOTS: ProSettingsSlot[] = [
   {
     id: 'proactive',
     delay: 0.18,
+    macOnly: true,
+    comingSoonDescription:
+      'Morning briefings and meeting alerts are available on Mac and phone today. Support for this device is coming soon.',
     placeholder: {
       title: 'Proactive delivery',
       description:
@@ -53,6 +63,9 @@ export const PRO_SETTINGS_SLOTS: ProSettingsSlot[] = [
   {
     id: 'secretary',
     delay: 0.22,
+    macOnly: true,
+    comingSoonDescription:
+      'Learned preferences are available on Mac and phone today. Support for this device is coming soon.',
     placeholder: {
       title: 'What Off Grid has learned',
       description:
