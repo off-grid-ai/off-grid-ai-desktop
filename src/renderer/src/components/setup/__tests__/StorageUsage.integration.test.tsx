@@ -1,13 +1,23 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { downloadFailureMessage } from '@offgrid/core/main/models/download-error'
 import { DataPrivacyPanel } from '../DataPrivacyPanel'
 import { StoragePanel } from '../StoragePanel'
 
 describe('rendered storage usage', () => {
+  let api: {
+    getStorageInfo: ReturnType<typeof vi.fn>
+    listDownloads: ReturnType<typeof vi.fn>
+    getDataSummary: ReturnType<typeof vi.fn>
+    onModelProgress: ReturnType<typeof vi.fn>
+    retryDownload: ReturnType<typeof vi.fn>
+  }
+
   beforeEach(() => {
-    const api = {
+    api = {
       getStorageInfo: vi.fn(async () => ({
         dir: '/tmp/offgrid/models',
         totalBytes: 1_500_000_000,
@@ -47,7 +57,8 @@ describe('rendered storage usage', () => {
           bytes: 8_000_000
         }
       ]),
-      onModelProgress: vi.fn(() => () => {})
+      onModelProgress: vi.fn(() => () => {}),
+      retryDownload: vi.fn(async () => ({ success: false }))
     }
     ;(globalThis as unknown as { window: Window }).window.api = api as never
   })
@@ -75,5 +86,27 @@ describe('rendered storage usage', () => {
     expect(screen.getByText(/Captured frames and OCR.*120 items.*2 MB/)).toBeTruthy()
     expect(screen.getByText('Generated images & artifacts')).toBeTruthy()
     expect(screen.getByText(/Images, artifacts, and thumbnails.*3 items.*8 MB/)).toBeTruthy()
+  })
+
+  it('explains a disk-full download and keeps its retry action reachable', async () => {
+    const diskFullMessage = downloadFailureMessage(
+      Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' })
+    )
+    api.listDownloads.mockResolvedValue([
+      {
+        modelId: 'synthetic/text-model',
+        status: 'failed',
+        percent: 41,
+        error: diskFullMessage
+      }
+    ])
+    const user = userEvent.setup()
+
+    render(<StoragePanel />)
+
+    expect(await screen.findByText('synthetic/text-model')).toBeTruthy()
+    expect(screen.getByText(diskFullMessage)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(api.retryDownload).toHaveBeenCalledWith('synthetic/text-model')
   })
 })
