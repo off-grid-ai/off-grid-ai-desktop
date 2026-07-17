@@ -23,6 +23,9 @@ interface FakeToolCall {
 interface FakeTurn {
   /** Answer text streamed as content deltas (split into a few frames like the engine). */
   content?: string
+  /** Exact token-shaped content deltas. Long-answer tests use this to prove that more than
+   *  the old token cap crossed the native socket without approximating tokens from chars. */
+  contentDeltas?: string[]
   /** Reasoning streamed on the reasoning_content channel before the answer. */
   reasoning?: string
   /** Tool calls emitted on this turn (the agentic loop then runs them and calls back). */
@@ -74,7 +77,9 @@ function sseFramesFor(turn: FakeTurn): string[] {
   // Split content into a couple of frames so the real splitter/accumulator is exercised
   // across chunk boundaries, like the engine's token-by-token stream.
   const text = turn.content ?? ''
-  if (text) {
+  if (turn.contentDeltas) {
+    frames.push(...turn.contentDeltas.map((content) => delta({ content })))
+  } else if (text) {
     const mid = Math.ceil(text.length / 2)
     frames.push(delta({ content: text.slice(0, mid) }))
     frames.push(delta({ content: text.slice(mid) }))
