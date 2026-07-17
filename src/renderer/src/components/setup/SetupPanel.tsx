@@ -70,6 +70,10 @@ interface SetupPanelProps {
   hideHealth?: boolean // hide the embedded health panel (first-run gate)
 }
 
+function reportSetupFailure(operation: string, error: unknown): void {
+  console.error(`[setup] ${operation} failed`, error)
+}
+
 /** The reusable setup surface: pick a resource mode, see exactly which model it'll
  *  install, then one-click Configure. Used on the first-run gate and in Settings. */
 export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React.ReactElement {
@@ -94,7 +98,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
 
   // Initial: read the saved mode, then preview its full plan.
   useEffect(() => {
-    void (async () => {
+    const initialize = async (): Promise<void> => {
       let m: Mode = 'balanced'
       try {
         const s = (await api.getLlmSettings()) as { performanceMode?: Mode } | undefined
@@ -103,8 +107,9 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
         /* default */
       }
       setMode(m)
-      void loadPlan(m)
-    })()
+      await loadPlan(m)
+    }
+    initialize().catch((error: unknown) => reportSetupFailure('initialization', error))
   }, [api, loadPlan])
 
   // Progress stream for the whole lifetime.
@@ -124,8 +129,10 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
 
   const pickMode = (m: Mode): void => {
     setMode(m)
-    void api.setLlmSettings({ performanceMode: m }) // persist + apply preset
-    void loadPlan(m)
+    api
+      .setLlmSettings({ performanceMode: m })
+      .catch((error: unknown) => reportSetupFailure('resource-mode persistence', error))
+    loadPlan(m).catch((error: unknown) => reportSetupFailure('resource-plan loading', error))
   }
 
   const configure = async (): Promise<void> => {
@@ -143,12 +150,19 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
 
   const cancel = (): void => {
     const id = progress?.modelId
-    if (id) void api.cancelModelDownload(id) // aborts the in-flight download; autoConfigure emits the cancelled/error state
+    if (id) {
+      api
+        .cancelModelDownload(id)
+        .catch((error: unknown) => reportSetupFailure('model-download cancellation', error))
+    }
   }
 
   const done = progress?.phase === 'done'
   const errored = progress?.phase === 'error'
   const pct = typeof progress?.percent === 'number' ? progress.percent : null
+  let progressTextClass = 'text-neutral-400'
+  if (done) progressTextClass = 'text-green-500'
+  else if (errored) progressTextClass = 'text-neutral-300'
 
   return (
     <div className="space-y-4 font-mono">
@@ -268,13 +282,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
             <div className="flex items-center gap-2 text-xs">
               {done && <CheckCircle weight="fill" className="h-4 w-4 text-green-500" />}
               {errored && <WarningCircle weight="fill" className="h-4 w-4 text-neutral-300" />}
-              <span
-                className={cn(
-                  done ? 'text-green-500' : errored ? 'text-neutral-300' : 'text-neutral-400'
-                )}
-              >
-                {progress.message}
-              </span>
+              <span className={progressTextClass}>{progress.message}</span>
             </div>
             {running && progress.phase === 'download' && (
               <div className="mt-2">
