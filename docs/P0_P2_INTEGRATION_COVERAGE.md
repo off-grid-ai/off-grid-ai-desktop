@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 44 covered, 30 left.
-  - P1: 71 total, 29 covered, 42 left.
+  - P0: 74 total, 45 covered, 29 left.
+  - P1: 71 total, 34 covered, 37 left.
   - P2: 10 total, 3 covered, 7 left.
-  - Overall: 155 total, 76 covered, 79 left.
+  - Overall: 155 total, 82 covered, 73 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -31,6 +31,9 @@ manual claim does not count as complete integration coverage.
 - #13 - System Health is truthful. `e2e/smoke.spec.ts` launches a fresh profile, compares the real
   gateway `/health` payload with the System Health IPC components, verifies absent runtimes are
   reported as `not_installed`, and confirms the unavailable chat engine port is actually down.
+- #17 - Text model downloads. `model-download-matrix.integration.test.ts` streams deterministic
+  GGUF bytes through the production manager's HTTP boundary, verifies observable progress and
+  atomic promotion, then activates the installed catalog model through the real selection owner.
 - #25 - Interrupted download recovers. `model-integrity.integration.test.ts` interrupts a real
   streamed partial, reloads the manager, resumes with the correct HTTP range, verifies exact final
   bytes and installation, then reloads again to prove completed state stays cleared.
@@ -154,6 +157,20 @@ manual claim does not count as complete integration coverage.
 
 ## Covered P1 journeys
 
+- #18 - Vision model downloads. `model-download-matrix.integration.test.ts` proves a real catalog
+  vision model remains unavailable until both weights and projector finish, then activates the exact
+  primary/projector pair persisted by the production manager.
+- #19 - Speech model downloads. The same matrix downloads every Parakeet file, activates it through
+  the manager, and runs the production transcription selector against only a native executable fake
+  to return synthetic dictation text.
+- #20 - TTS model downloads. `model-download-tts.integration.dbtest.ts` downloads all voice files,
+  activates SQLite-backed speech residency, and drives production synthesis to a valid WAV through
+  only the heavyweight worker boundary.
+- #21 - Image model downloads. The model matrix holds a multi-file catalog image runtime unavailable
+  until its full file set lands, then proves the production image status and active selection agree.
+- #23 - Delete does not cancel another download. The matrix holds one real HTTP download pending,
+  deletes a different installed model through the production manager, then completes and installs
+  the untouched in-flight model.
 - #24 - Offline download fails clearly. `model-integrity.integration.test.ts` drives the real model
   manager through an offline fetch failure, verifies a clear network-unavailable error and clean
   filesystem state, preserves an existing installed model, then retries successfully with the same
@@ -274,13 +291,7 @@ manual claim does not count as complete integration coverage.
 
 ## Left - models and downloads
 
-- #17 - Text model downloads.
-- #18 - Vision model downloads.
-- #19 - Speech model downloads.
-- #20 - TTS model downloads.
-- #21 - Image model downloads.
 - #22 - Multiple downloads queue.
-- #23 - Delete does not cancel another download.
 - #31 - Models use desktop density.
 
 ## Left - chat and conversations
