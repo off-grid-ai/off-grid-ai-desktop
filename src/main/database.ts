@@ -557,19 +557,35 @@ export function getAllChatSummaries(): { session_id: string; summary: string }[]
 
 // === ENTITIES ===
 
-export function upsertEntity(name: string, type: string = 'Unknown'): number {
+/**
+ * SQLite persistence primitive for EntityDomain. Callers must use
+ * resolveEntityCandidate() so admission cannot be bypassed.
+ */
+export function resolveEntityRecord(
+  name: string,
+  type: string = 'Unknown'
+): { entityId: number; created: boolean } {
   const db = getDB()
-  const stmt = db.prepare(`
-      INSERT INTO entities (name, type, updated_at)
-      VALUES (?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(name, type) DO UPDATE SET updated_at = excluded.updated_at
-    `)
-  stmt.run(name.trim(), type.trim() || 'Unknown')
-
-  const row = db
-    .prepare('SELECT id FROM entities WHERE name = ? AND type = ?')
-    .get(name.trim(), type.trim() || 'Unknown') as { id: number } | undefined
-  return row?.id || 0
+  const resolvedType = type.trim() || 'Unknown'
+  const resolve = db.transaction(() => {
+    const insert = db
+      .prepare(
+        `INSERT INTO entities (name, type, updated_at)
+         VALUES (?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(name, type) DO NOTHING`
+      )
+      .run(name, resolvedType)
+    if (insert.changes === 0) {
+      db.prepare(
+        'UPDATE entities SET updated_at = CURRENT_TIMESTAMP WHERE name = ? AND type = ?'
+      ).run(name, resolvedType)
+    }
+    const row = db
+      .prepare('SELECT id FROM entities WHERE name = ? AND type = ?')
+      .get(name, resolvedType) as { id: number } | undefined
+    return { entityId: row?.id ?? 0, created: insert.changes > 0 }
+  })
+  return resolve()
 }
 
 export function updateEntitySummary(entityId: number, summary: string) {
@@ -972,13 +988,25 @@ export function getEntityGraph(
 
 // === DELETE FUNCTIONS ===
 
-export function deleteEntity(entityId: number): boolean {
+/**
+ * SQLite persistence primitive for EntityDomain. Core does not rely on foreign
+ * key enforcement here: native-driver defaults and historical profiles can
+ * differ, so all core dependants are removed explicitly in one transaction.
+ */
+export function deleteEntityRecord(entityId: number): boolean {
   const db = getDB()
-  // Foreign key cascade will handle entity_facts, entity_sessions, entity_edges
-  const stmt = db.prepare('DELETE FROM entities WHERE id = ?')
-  const info = stmt.run(entityId)
-  console.log(`Deleted entity ${entityId}, changes: ${info.changes}`)
-  return info.changes > 0
+  const remove = db.transaction(() => {
+    db.prepare('DELETE FROM entity_edges WHERE source_entity_id = ? OR target_entity_id = ?').run(
+      entityId,
+      entityId
+    )
+    db.prepare('DELETE FROM entity_facts WHERE entity_id = ?').run(entityId)
+    db.prepare('DELETE FROM entity_sessions WHERE entity_id = ?').run(entityId)
+    return db.prepare('DELETE FROM entities WHERE id = ?').run(entityId).changes > 0
+  })
+  const deleted = remove()
+  console.log(`Deleted entity ${entityId}, deleted: ${deleted}`)
+  return deleted
 }
 
 export function deleteMemory(memoryId: number): boolean {

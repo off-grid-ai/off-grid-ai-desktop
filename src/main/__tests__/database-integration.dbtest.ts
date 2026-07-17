@@ -27,6 +27,13 @@ vi.mock('electron', () => ({
 // Imported after the mock is registered so the module's top-level electron import
 // resolves to the stub above.
 import * as db from '../database'
+import * as entityDomain from '../entity-domain'
+
+function resolveEntity(name: string, type?: string): number {
+  const result = entityDomain.resolveEntityCandidate({ name, type })
+  if (!result.admitted) throw new Error(`Entity was rejected: ${result.reason}`)
+  return result.entityId
+}
 
 afterAll(() => {
   try {
@@ -209,22 +216,22 @@ describe('database.ts - RAG messages', () => {
 })
 
 describe('database.ts - entities and facts', () => {
-  it('upsertEntity creates an entity and returns a stable id on repeat (case-insensitive name)', () => {
-    const id = db.upsertEntity('Ada Lovelace', 'Person')
+  it('EntityDomain creates an entity and returns a stable id on repeat (case-insensitive name)', () => {
+    const id = resolveEntity('Ada Lovelace', 'Person')
     expect(id).toBeGreaterThan(0)
     // Same name+type upserts to the SAME row (UNIQUE(name,type)).
-    const idAgain = db.upsertEntity('Ada Lovelace', 'Person')
+    const idAgain = resolveEntity('Ada Lovelace', 'Person')
     expect(idAgain).toBe(id)
   })
 
-  it('upsertEntity defaults type to Unknown when blank', () => {
-    const id = db.upsertEntity('Mystery', '   ')
+  it('EntityDomain defaults type to Unknown when blank', () => {
+    const id = resolveEntity('Mystery', '   ')
     const { entity } = db.getEntityDetails(id) as { entity: { type: string } }
     expect(entity.type).toBe('Unknown')
   })
 
   it('addEntityFact inserts once and dedupes on repeat (INSERT OR IGNORE)', () => {
-    const id = db.upsertEntity('Grace Hopper', 'Person')
+    const id = resolveEntity('Grace Hopper', 'Person')
     expect(db.addEntityFact(id, 'Coined the term debugging', 'sess-1')).toBe(true)
     // duplicate fact for the same entity is ignored -> no change.
     expect(db.addEntityFact(id, 'Coined the term debugging', 'sess-1')).toBe(false)
@@ -233,14 +240,14 @@ describe('database.ts - entities and facts', () => {
   })
 
   it('updateEntitySummary persists a summary readable via getEntityDetails', () => {
-    const id = db.upsertEntity('Alan Turing', 'Person')
+    const id = resolveEntity('Alan Turing', 'Person')
     db.updateEntitySummary(id, 'Founder of theoretical computer science')
     const { entity } = db.getEntityDetails(id) as { entity: { summary: string } }
     expect(entity.summary).toBe('Founder of theoretical computer science')
   })
 
   it('getEntities returns fact_count aggregated per entity', () => {
-    const id = db.upsertEntity('Katherine Johnson', 'Person')
+    const id = resolveEntity('Katherine Johnson', 'Person')
     db.addEntityFact(id, 'Calculated trajectories for Mercury and Apollo')
     db.addEntityFact(id, 'Received the Presidential Medal of Freedom')
     const list = db.getEntities() as { id: number; fact_count: number }[]
@@ -249,7 +256,7 @@ describe('database.ts - entities and facts', () => {
   })
 
   it('getEntityDetails returns the entity plus its facts (newest first)', () => {
-    const id = db.upsertEntity('Margaret Hamilton', 'Person')
+    const id = resolveEntity('Margaret Hamilton', 'Person')
     db.addEntityFact(id, 'Led Apollo flight software')
     const { entity, facts } = db.getEntityDetails(id) as {
       entity: { id: number; name: string }
@@ -260,15 +267,15 @@ describe('database.ts - entities and facts', () => {
     expect(facts.some((f) => f.fact === 'Led Apollo flight software')).toBe(true)
   })
 
-  it('deleteEntity removes the entity and cascades its facts; false on a missing id', () => {
-    const id = db.upsertEntity('Temporary Person', 'Person')
+  it('EntityDomain deletes the entity and its facts; false on a missing id', () => {
+    const id = resolveEntity('Temporary Person', 'Person')
     db.addEntityFact(id, 'to be deleted')
-    expect(db.deleteEntity(id)).toBe(true)
+    expect(entityDomain.deleteEntityById(id)).toBe(true)
     const { entity, facts } = db.getEntityDetails(id) as { entity: unknown; facts: unknown[] }
     expect(entity).toBeUndefined()
     expect(facts).toHaveLength(0)
     // deleting again affects no rows.
-    expect(db.deleteEntity(id)).toBe(false)
+    expect(entityDomain.deleteEntityById(id)).toBe(false)
   })
 
   it('upsertEntitySession links entities to a session and getEntitiesForSession returns them', () => {
@@ -278,8 +285,8 @@ describe('database.ts - entities and facts', () => {
     handle
       .prepare('INSERT INTO conversations (id, app_name) VALUES (?, ?)')
       .run('sess-xyz', 'Notes')
-    const a = db.upsertEntity('Session Person A', 'Person')
-    const b = db.upsertEntity('Session Org B', 'Organization')
+    const a = resolveEntity('Session Person A', 'Person')
+    const b = resolveEntity('Session Org B', 'Organization')
     db.upsertEntitySession(a, 'sess-xyz')
     db.upsertEntitySession(b, 'sess-xyz')
     // idempotent link (INSERT OR IGNORE) - no throw on repeat.

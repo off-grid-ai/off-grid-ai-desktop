@@ -7,7 +7,6 @@ import {
   getMemoriesForSession,
   getMemoryRecordsForSession,
   getMasterMemory,
-  upsertEntity,
   addEntityFact,
   updateEntitySummary,
   getEntities,
@@ -16,7 +15,6 @@ import {
   rebuildEntityEdgesForSession,
   getEntityGraph,
   rebuildEntityEdgesForAllSessions,
-  deleteEntity,
   deleteMemory,
   getEntitiesForSession,
   getDashboardStats,
@@ -35,6 +33,7 @@ import {
   saveSetting,
   getSetting
 } from './database'
+import { deleteEntityById, resolveEntityCandidate } from './entity-domain'
 import { embeddings } from './embeddings'
 import {
   getResidency,
@@ -362,41 +361,6 @@ async function extractEntitiesForSession(sessionId: string): Promise<void> {
 
     if (parsed.entities.length === 0) return
 
-    // Blocklist of very common short entity names that are too generic
-    const ENTITY_BLOCKLIST = new Set([
-      'api',
-      'app',
-      'web',
-      'url',
-      'css',
-      'sql',
-      'cli',
-      'ide',
-      'ui',
-      'ux',
-      'html',
-      'http',
-      'json',
-      'xml',
-      'yaml',
-      'code',
-      'data',
-      'file',
-      'bug',
-      'server',
-      'client',
-      'database',
-      'frontend',
-      'backend',
-      'website',
-      'user',
-      'admin',
-      'test',
-      'dev',
-      'prod',
-      'staging'
-    ])
-
     const touchedEntityIds = new Set<number>()
     for (const entity of parsed.entities) {
       const name = (entity.name || '').trim()
@@ -409,13 +373,11 @@ async function extractEntitiesForSession(sessionId: string): Promise<void> {
             .filter(Boolean)
         : []
 
-      // Min name length: 3 chars
-      if (name.length < 3) continue
       if (facts.length === 0) continue
-      // Skip blocklisted generic names
-      if (ENTITY_BLOCKLIST.has(name.toLowerCase())) continue
 
-      const entityId = upsertEntity(name, type)
+      const resolution = resolveEntityCandidate({ name, type })
+      if (!resolution.admitted) continue
+      const entityId = resolution.entityId
       if (!entityId) continue
       touchedEntityIds.add(entityId)
       upsertEntitySession(entityId, sessionId)
@@ -1117,7 +1079,7 @@ export function setupIPC() {
   })
 
   ipcMain.handle('db:delete-entity', (_, entityId: number) => {
-    const result = deleteEntity(entityId)
+    const result = deleteEntityById(entityId)
     console.log(`[IPC] Deleted entity ${entityId}: ${result}`)
     return result
   })
