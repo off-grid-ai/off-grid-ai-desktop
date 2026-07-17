@@ -14,12 +14,15 @@ import path from 'path'
  *  lookup: a poisoned PATH must not let an attacker substitute the process-killing tools
  *  we shell out to (Sonar S4036). Falls back to the bare name only if none of the known
  *  absolute paths exist (unusual layout) so functionality is never lost. Exported for test. */
-export function sysTool(name: 'netstat' | 'tasklist' | 'taskkill' | 'lsof' | 'ps'): string {
+export function sysTool(
+  name: 'netstat' | 'tasklist' | 'taskkill' | 'powershell' | 'lsof' | 'ps'
+): string {
   const sys32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32')
   const candidates: Record<string, string[]> = {
     netstat: [path.join(sys32, 'netstat.exe')],
     tasklist: [path.join(sys32, 'tasklist.exe')],
     taskkill: [path.join(sys32, 'taskkill.exe')],
+    powershell: [path.join(sys32, 'WindowsPowerShell', 'v1.0', 'powershell.exe')],
     lsof: ['/usr/sbin/lsof', '/usr/bin/lsof'],
     ps: ['/bin/ps', '/usr/bin/ps']
   }
@@ -27,6 +30,46 @@ export function sysTool(name: 'netstat' | 'tasklist' | 'taskkill' | 'lsof' | 'ps
     if (existsSync(c)) return c
   }
   return name
+}
+
+export interface PortReapResult {
+  killed: number
+  /** Recognized server PIDs owned by a DIFFERENT live parent process. */
+  liveOwners: number[]
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/** Return a process's parent PID. An unknown parent is treated conservatively by callers: a
+ * process we cannot prove orphaned must never be killed merely because it owns our usual port. */
+function parentPid(pid: number): number | null {
+  try {
+    const output =
+      process.platform === 'win32'
+        ? execSync(
+            `"${sysTool('powershell')}" -NoProfile -NonInteractive -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').ParentProcessId"`,
+            { encoding: 'utf-8' }
+          )
+        : execSync(`"${sysTool('ps')}" -p ${pid} -o ppid=`, { encoding: 'utf-8' })
+    const parsed = Number(output.trim())
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function isOwnedByAnotherLiveProcess(pid: number): boolean {
+  const ownerPid = parentPid(pid)
+  if (ownerPid === null) return true
+  if (ownerPid <= 1 || ownerPid === process.pid) return false
+  return processIsAlive(ownerPid)
 }
 
 /** Parse `netstat -ano -p tcp` output for the PIDs LISTENING on `port`. Handles both
@@ -50,14 +93,17 @@ export function parseWindowsListenerPids(netstatOutput: string, port: number): s
  *  macOS+Linux. `matches` receives the process command line (posix `ps`, full path) or
  *  image name (win32 `tasklist`) — the caller decides how strict to be per platform, so
  *  the port is only ever reclaimed from a server we recognize, never an unrelated app.
- *  `label` is only for logging. Returns the count killed; never throws (missing tool /
- *  empty port is a no-op). */
-export function killOrphansOnPort(
+ *  A recognized process is only reaped when its parent is gone (a true orphan) or it belongs to
+ *  this process (an intentional replacement). A server owned by another live app is preserved
+ *  and reported to the caller. `label` is only for logging; missing tools and empty ports are
+ *  conservative no-ops. */
+export function reapOrphanProcessesOnPort(
   port: number,
   matches: (procInfo: string) => boolean,
   label = 'server'
-): number {
+): PortReapResult {
   let killed = 0
+  const liveOwners = new Set<number>()
   try {
     if (process.platform === 'win32') {
       const pids = parseWindowsListenerPids(
@@ -75,6 +121,13 @@ export function killOrphansOnPort(
         }
         if (!matches(img)) {
           console.warn(`[orphan] port ${port} held by non-${label} PID ${pid} — leaving it alone`)
+          continue
+        }
+        if (isOwnedByAnotherLiveProcess(Number(pid))) {
+          liveOwners.add(Number(pid))
+          console.warn(
+            `[orphan] port ${port} belongs to a live ${label} owner (PID ${pid}) - leaving it alone`
+          )
           continue
         }
         try {
@@ -103,6 +156,13 @@ export function killOrphansOnPort(
           )
           continue
         }
+        if (isOwnedByAnotherLiveProcess(Number(pid))) {
+          liveOwners.add(Number(pid))
+          console.warn(
+            `[orphan] port ${port} belongs to a live ${label} owner (PID ${pid}) - leaving it alone`
+          )
+          continue
+        }
         try {
           process.kill(Number(pid), 'SIGKILL')
           killed++
@@ -115,5 +175,14 @@ export function killOrphansOnPort(
   } catch {
     /* nothing on the port */
   }
-  return killed
+  return { killed, liveOwners: [...liveOwners] }
+}
+
+/** Backward-compatible count-only surface for resident runtimes that only need stale cleanup. */
+export function killOrphansOnPort(
+  port: number,
+  matches: (procInfo: string) => boolean,
+  label = 'server'
+): number {
+  return reapOrphanProcessesOnPort(port, matches, label).killed
 }

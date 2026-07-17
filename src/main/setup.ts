@@ -127,7 +127,9 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   // not_installed = no model on disk. down = model present but the process isn't
   // running. (Decision extracted to chat-health.ts so it's unit-tested.)
   const { status: chat, detail: chatDetail } = decideChatStatus({
-    healthy: !!llamaHealth,
+    // A healthy socket is not sufficient: another app/profile can own 8439. Only report Ready
+    // when THIS LLMService completed startup and the owned engine answers its health probe.
+    healthy: !!llamaHealth && llm.isReady(),
     loading: llm.isStarting(),
     modelsExist,
     activeModel,

@@ -14,9 +14,16 @@ export interface LlamaFailure {
     | 'out_of_memory'
     | 'missing_library'
     | 'model_corrupt'
+    | 'port_in_use'
     | 'unknown'
   /** One-line, user-facing explanation + what to do. */
   reason: string
+}
+
+/** One source of truth for a live second-instance conflict, whether it is detected before spawn
+ * from process ownership or reported by the native engine as EADDRINUSE. */
+export function modelPortConflictReason(port: number): string {
+  return `Model engine port ${port} is already owned by another Off Grid AI Desktop instance. Close the other app, development server, or capture run, then restart Chat model in Settings.`
 }
 
 /**
@@ -30,6 +37,14 @@ export function classifyLlamaError(
 ): LlamaFailure | null {
   const s = (stderr || '').toLowerCase()
   if (!s.trim()) return null
+
+  if (/eaddrinuse|address already in use|failed to (bind|listen).*port/.test(s)) {
+    const port = Number(stderr.match(/(?:port\s+|:)(\d{2,5})/i)?.[1] ?? 8439)
+    return {
+      code: 'port_in_use',
+      reason: modelPortConflictReason(port)
+    }
+  }
 
   // The model's architecture is newer than the bundled engine understands.
   // e.g. "error loading model architecture: unknown model architecture: 'gemma4'"

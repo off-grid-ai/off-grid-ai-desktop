@@ -54,6 +54,15 @@ main: exiting due to model loading error`
     )
   })
 
+  it('classifies native port contention as another live app, not model corruption (#146)', () => {
+    const failure = classifyLlamaError('error: listen tcp 127.0.0.1:8439: address already in use')
+    expect(failure).toEqual({
+      code: 'port_in_use',
+      reason:
+        'Model engine port 8439 is already owned by another Off Grid AI Desktop instance. Close the other app, development server, or capture run, then restart Chat model in Settings.'
+    })
+  })
+
   it('returns null for healthy / unrecognized output (caller falls back)', () => {
     expect(classifyLlamaError('srv  load_model: loading model ... server is listening')).toBeNull()
     expect(classifyLlamaError('')).toBeNull()

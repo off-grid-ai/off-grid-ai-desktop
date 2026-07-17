@@ -5,10 +5,10 @@ import { callHook } from './bootstrap/hookRegistry'
 import path from 'path'
 import * as fs from 'fs'
 import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit, exe } from './runtime-env'
-import { killOrphansOnPort as reapOrphansOnPort } from './kill-orphan-port'
+import { reapOrphanProcessesOnPort, type PortReapResult } from './kill-orphan-port'
 import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from './model-sizing'
 import { resolveMaxTokens } from './llm/gen-params'
-import { classifyLlamaError } from './llama-error'
+import { classifyLlamaError, modelPortConflictReason } from './llama-error'
 import type { ManagedRuntime } from './runtime-manager'
 import { LLAMA_SERVER_PORT } from '../shared/ports'
 import { DEFAULT_CTX_SIZE } from '../shared/llm-defaults'
@@ -446,7 +446,7 @@ export class LLMService {
     return this.initPromise
   }
 
-  private async _doInit() {
+  private async _doInit(): Promise<void> {
     if (this.initialized) return
 
     this.resolveModel()
@@ -514,15 +514,11 @@ export class LLMService {
       }
       this.server = null
     }
-    // ALSO kill an ORPHANED server from a previous app process — when the app
-    // restarts, the old llama-server keeps holding the port, so a new spawn can't
-    // bind and config changes (ctx size, model) silently never take effect. Worse,
-    // waitForReady would then talk to the ORPHAN (which may serve no/stale model),
-    // marking us "ready" with an empty /v1/models. Find whatever owns the port
-    // and kill it first.
-    if (this.killOrphansOnPort(this.port) > 0) {
-      await new Promise((r) => setTimeout(r, 400)) // let the port free
-    }
+    // Reap a true orphan from a crashed app (or our own process's replaceable child), but never
+    // kill an engine owned by another live app/dev/capture instance. Adopting that engine would
+    // serve stale settings; killing it would corrupt the first app's live session. In that case
+    // prepareModelPort records an actionable conflict for System Health and aborts this startup.
+    await this.prepareModelPort()
 
     for (let i = 0; i < serverPaths.length; i++) {
       const serverPath = serverPaths[i]
@@ -531,7 +527,7 @@ export class LLMService {
       if (i < serverPaths.length - 1) {
         console.warn(`[LLMService] engine at ${serverPath} failed to start; trying fallback engine`)
         // launchServer already tore its process down; free the port before retry.
-        if (this.killOrphansOnPort(this.port) > 0) await new Promise((r) => setTimeout(r, 400))
+        await this.prepareModelPort()
       }
     }
     console.error('[LLMService] all llama-server engines failed to start')
@@ -661,12 +657,23 @@ export class LLMService {
     }
   }
 
-  // Kill an orphaned llama-server still holding our port (from a crashed/previous app
-  // process). Delegates to the shared cross-platform reaper (kill-orphan-port.ts) —
-  // matched by name so we only ever kill a llama-server, never an unrelated app that
-  // happened to bind the port.
-  private killOrphansOnPort(port: number): number {
-    return reapOrphansOnPort(port, (c) => /llama-server/i.test(c), 'llama-server')
+  // Inspect a llama-server still holding our port. The shared cross-platform owner check reaps
+  // only our replaceable child or a true orphan; another live app's child is returned as a
+  // conflict. Command matching also ensures an unrelated app on the port is never killed.
+  private reapOrphansOnPort(port: number): PortReapResult {
+    return reapOrphanProcessesOnPort(port, (c) => /llama-server/i.test(c), 'llama-server')
+  }
+
+  private async prepareModelPort(): Promise<void> {
+    const ownership = this.reapOrphansOnPort(this.port)
+    if (ownership.liveOwners.length > 0) {
+      this.lastErrorMsg = modelPortConflictReason(this.port)
+      console.error(`[LLMService] ${this.lastErrorMsg}`)
+      throw new Error(this.lastErrorMsg)
+    }
+    if (ownership.killed > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 400))
+    }
   }
 
   /** Auto-recover from an unexpected llama-server crash. Backs off, and on repeated
