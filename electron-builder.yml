@@ -7,6 +7,11 @@ directories:
   buildResources: build
 files:
   - '!**/.vscode/*'
+  # Local profiles and agent worktrees may contain private user data, downloaded
+  # multi-GB models, nested builds, or symlinks outside the repository. They are
+  # never application inputs. Keep this boundary here rather than relying on
+  # .gitignore: electron-builder packages filesystem contents, not only git files.
+  - '!{.demo-profile,.offgrid,.claude,.Codex}/**'
   - '!src/*'
   - '!pro/**'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
