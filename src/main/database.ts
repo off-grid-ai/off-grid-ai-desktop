@@ -79,7 +79,13 @@ function cosineSimilarity(v1Str: string, v2Str: string): number {
 }
 
 export function getDB(): Database.Database {
-  if (db) return db
+  if (db?.open) return db
+
+  // better-sqlite3 keeps the Database object after close(), but every operation on
+  // that object fails with "The database connection is not open". Tests, profile
+  // lifecycle code, and shutdown/restart paths can legitimately close the shared
+  // handle, so a closed cached instance must be treated as absent.
+  db = null
 
   const dbPath = path.join(app.getPath('userData'), 'memories.db')
   console.log('Opening database at:', dbPath)

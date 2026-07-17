@@ -54,6 +54,22 @@ describe('database.ts - schema bootstrap (real temp SQLite)', () => {
     expect(db.getDB()).toBe(db.getDB())
   })
 
+  it('reopens the same profile after the cached handle is closed', () => {
+    const first = db.getDB()
+    first
+      .prepare('INSERT INTO conversations (id, title) VALUES (?, ?)')
+      .run('reopen-probe', 'Persisted across close')
+    first.close()
+
+    const reopened = db.getDB()
+    expect(reopened).not.toBe(first)
+    expect(reopened.open).toBe(true)
+    expect(
+      reopened.prepare('SELECT title FROM conversations WHERE id = ?').get('reopen-probe')
+    ).toEqual({ title: 'Persisted across close' })
+    expect(db.getDB()).toBe(reopened)
+  })
+
   it('runMigration runs idempotent DDL without throwing', () => {
     expect(() =>
       db.runMigration('CREATE TABLE IF NOT EXISTS it_probe (id INTEGER PRIMARY KEY)')
