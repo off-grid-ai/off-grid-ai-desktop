@@ -1,12 +1,15 @@
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const root = path.resolve(import.meta.dirname, '../../..')
 const electronVite = path.join(root, 'node_modules', '.bin', 'electron-vite')
 const tempRoots: string[] = []
+const execFileAsync = promisify(execFile)
+const BUILD_TIMEOUT_MS = 90_000
 
 function tempDir(prefix: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
@@ -30,6 +33,15 @@ function bundleText(dir: string): string {
 
 function writeExecutable(file: string, source: string): void {
   fs.writeFileSync(file, source, { mode: 0o755 })
+}
+
+async function buildArtifact(outDir: string, forceCore: '0' | '1'): Promise<void> {
+  await execFileAsync(electronVite, ['build', '--outDir', outDir, '--logLevel', 'error'], {
+    cwd: root,
+    env: { ...process.env, OFFGRID_FORCE_CORE: forceCore },
+    maxBuffer: 10 * 1024 * 1024,
+    timeout: BUILD_TIMEOUT_MS
+  })
 }
 
 type LlamaFixtureMode = 'healthy' | 'missing-rpath' | 'foreign-dependency'
@@ -106,21 +118,16 @@ describe.sequential('release packaging integration', () => {
   let coreOut: string
   let proOut: string
 
-  beforeAll(() => {
-    coreOut = tempDir('offgrid-core-bundle-')
-    proOut = tempDir('offgrid-pro-bundle-')
+  beforeAll(
+    async () => {
+      coreOut = tempDir('offgrid-core-bundle-')
+      proOut = tempDir('offgrid-pro-bundle-')
 
-    execFileSync(electronVite, ['build', '--outDir', coreOut, '--logLevel', 'error'], {
-      cwd: root,
-      env: { ...process.env, OFFGRID_FORCE_CORE: '1' },
-      stdio: 'pipe'
-    })
-    execFileSync(electronVite, ['build', '--outDir', proOut, '--logLevel', 'error'], {
-      cwd: root,
-      env: { ...process.env, OFFGRID_FORCE_CORE: '0' },
-      stdio: 'pipe'
-    })
-  }, 60_000)
+      await buildArtifact(coreOut, '1')
+      await buildArtifact(proOut, '0')
+    },
+    BUILD_TIMEOUT_MS * 2 + 10_000
+  )
 
   afterAll(() => {
     for (const dir of tempRoots) {
