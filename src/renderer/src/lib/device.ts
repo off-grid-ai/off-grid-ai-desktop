@@ -11,7 +11,9 @@ import {
 
 /** The current platform as seen by the renderer (single source for the wrappers). */
 export function currentPlatform(): DevicePlatform {
-  return (typeof window !== 'undefined' ? window.api.platform : undefined) ?? 'unknown'
+  if (typeof window === 'undefined') return 'unknown'
+  const bridge = (window as unknown as { api?: { platform?: DevicePlatform | null } }).api
+  return bridge?.platform ?? 'unknown'
 }
 
 /** The user-facing name for this machine ('Mac' on macOS, else 'device'). */
