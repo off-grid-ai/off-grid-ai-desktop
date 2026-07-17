@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 61 covered, 13 left.
-  - P1: 71 total, 60 covered, 11 left.
+  - P1: 71 total, 61 covered, 10 left.
   - P2: 10 total, 9 covered, 1 left.
-  - Overall: 155 total, 130 covered, 25 left.
+  - Overall: 155 total, 131 covered, 24 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -387,6 +387,10 @@ manual claim does not count as complete integration coverage.
 - #141 - Core and Pro override behavior. The licensing integration applies both development
   overrides through the production bootstrap seam and proves neither mutates the encrypted persisted
   entitlement; a core build remains incapable of force-loading Pro implementation code.
+- #142 - Manual update check. `update-check.integration.dbtest.ts` drives the rendered Settings
+  action through production updater IPC, real encrypted update preferences, and deterministic
+  updater events, proving current `0.0.103`, available `0.0.104`, and offline error states all leave
+  Checking, preserve the stable channel, and never call install without approval.
 - #143 - Update channel persists. `src/main/__tests__/settings-persistence.dbtest.ts` changes the
   channel through the production update IPC handler, closes the encrypted database, reloads every
   Off Grid module, and verifies the fresh update-preferences handler restores the beta channel.
@@ -489,7 +493,6 @@ manual claim does not count as complete integration coverage.
 ## Left - settings, privacy, licensing, and updates
 
 - #134 - Clear cache preserves user data.
-- #142 - Manual update check.
 
 ## Left - resilience and desktop polish
 
