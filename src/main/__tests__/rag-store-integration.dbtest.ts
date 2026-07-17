@@ -27,6 +27,16 @@ import { getDB } from '../database'
 import { desktopExtraction } from '../rag/extractors'
 import { RagService, type EmbeddingProvider } from '@offgrid/rag'
 
+function keywordEmbeddings(...keywords: string[]): EmbeddingProvider {
+  return {
+    dimension: keywords.length,
+    async embed(text) {
+      const normalized = text.toLowerCase()
+      return keywords.map((keyword) => Number(normalized.includes(keyword)))
+    }
+  }
+}
+
 afterAll(() => {
   try {
     fs.rmSync(TMP_DIR, { recursive: true, force: true })
@@ -115,14 +125,9 @@ describe('rag/store.ts - VectorStore documents + chunks', () => {
     // MiniLM is an uncontrollable local-model boundary in this suite. This faithful
     // deterministic provider preserves semantic separation while all Off Grid
     // extraction, chunking, storage, and retrieval code stays real.
-    const embed = async (text: string): Promise<number[]> => {
-      const normalized = text.toLowerCase()
-      return [Number(normalized.includes('quartz')), Number(normalized.includes('harbor'))]
-    }
-    const embeddings: EmbeddingProvider = { dimension: 2, embed }
     const service = new RagService({
       store: store.desktopVectorStore,
-      embeddings,
+      embeddings: keywordEmbeddings('quartz', 'harbor'),
       extraction: desktopExtraction,
       chunkOptions: { chunkSize: 80, overlap: 0, minChunkLength: 20 }
     })
@@ -177,6 +182,97 @@ describe('rag/store.ts - VectorStore documents + chunks', () => {
       )
       .get(projectId) as { documents: number; chunks: number }
     expect(rows).toEqual({ documents: 1, chunks: 2 })
+  })
+
+  it('grounds retrieval in only the selected project and its enabled documents', async () => {
+    const selectedProject = 'p-grounded-selected'
+    const otherProject = 'p-grounded-other'
+    store.createProject({ id: selectedProject, name: 'Selected project' })
+    store.createProject({ id: otherProject, name: 'Other project' })
+    store.updateProject(selectedProject, { includeMemory: false })
+    store.updateProject(otherProject, { includeMemory: false })
+
+    const files = [
+      {
+        projectId: selectedProject,
+        name: 'current-plan.md',
+        content: 'Project Quartz launches on October 14 after accessibility sign-off.'
+      },
+      {
+        projectId: selectedProject,
+        name: 'obsolete-plan.md',
+        content: 'An obsolete Project Quartz draft says the launch moved to December.'
+      },
+      {
+        projectId: otherProject,
+        name: 'private-plan.md',
+        content: 'The other project records a confidential Quartz launch in January.'
+      }
+    ] as const
+    const service = new RagService({
+      store: store.desktopVectorStore,
+      embeddings: keywordEmbeddings('quartz'),
+      extraction: desktopExtraction
+    })
+
+    const indexed = new Map<string, number>()
+    for (const file of files) {
+      const filePath = path.join(TMP_DIR, file.name)
+      fs.writeFileSync(filePath, file.content)
+      const result = await service.indexDocument({
+        projectId: file.projectId,
+        path: filePath,
+        fileName: file.name,
+        size: fs.statSync(filePath).size
+      })
+      indexed.set(file.name, result.docId)
+    }
+    await service.toggleDocument(indexed.get('obsolete-plan.md')!, false)
+
+    // Precondition: all three chunks really exist. The missing results below must
+    // come from production project/enabled filtering, not an incomplete fixture.
+    const persisted = getDB()
+      .prepare(
+        `SELECT d.project_id, d.name, d.enabled, COUNT(c.id) AS chunks
+         FROM rag_documents d
+         JOIN rag_chunks c ON c.doc_id = d.id
+         WHERE d.project_id IN (?, ?)
+         GROUP BY d.id
+         ORDER BY d.name`
+      )
+      .all(selectedProject, otherProject) as {
+      project_id: string
+      name: string
+      enabled: number
+      chunks: number
+    }[]
+    expect(persisted).toHaveLength(3)
+    expect(persisted.every((row) => row.chunks === 1)).toBe(true)
+    expect(persisted.find((row) => row.name === 'obsolete-plan.md')?.enabled).toBe(0)
+
+    const selected = await service.searchProject(selectedProject, 'When does Quartz launch?')
+    expect(selected.chunks).toEqual([
+      expect.objectContaining({
+        docId: indexed.get('current-plan.md'),
+        name: 'current-plan.md',
+        content: files[0].content
+      })
+    ])
+    const selectedPrompt = service.formatForPrompt(selected)
+    expect(selectedPrompt).toContain(`[Source: current-plan.md (part 1)]\n${files[0].content}`)
+    expect(selectedPrompt).not.toContain('obsolete-plan.md')
+    expect(selectedPrompt).not.toContain('private-plan.md')
+    expect(selectedPrompt).not.toContain('December')
+    expect(selectedPrompt).not.toContain('January')
+
+    const other = await service.searchProject(otherProject, 'When does Quartz launch?')
+    expect(other.chunks).toEqual([
+      expect.objectContaining({
+        docId: indexed.get('private-plan.md'),
+        name: 'private-plan.md',
+        content: files[2].content
+      })
+    ])
   })
 
   it('rejects a damaged PDF during extraction without leaving a half-indexed document', async () => {
