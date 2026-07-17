@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 46 covered, 28 left.
-  - P1: 71 total, 34 covered, 37 left.
+  - P0: 74 total, 48 covered, 26 left.
+  - P1: 71 total, 35 covered, 36 left.
   - P2: 10 total, 3 covered, 7 left.
-  - Overall: 155 total, 83 covered, 72 left.
+  - Overall: 155 total, 86 covered, 69 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -117,6 +117,13 @@ manual claim does not count as complete integration coverage.
 - #94 - Delete all removes capture corpus. `pro/main/__tests__/personal-data.integration.test.ts`
   registers the real Pro personal-data owner, runs the real delete-all path, and verifies the
   observations corpus is gone.
+- #95 - Meeting detection is truthful. `meeting-lifecycle.integration.test.ts` drives the production
+  classifier and controller with only active-window/native-recording boundaries controlled. It
+  proves supported presence starts once, explicit lobby/post-call states do not record, leaving
+  warns then stops, and the capture resource is released.
+- #96 - Manual meeting recording. `MeetingsScreen.integration.test.tsx` renders the real screen and
+  recorder hook, clicks Record then Stop, and proves exactly one sane-duration completed meeting is
+  visible with capture inactive.
 - #100 - Dictation pastes at cursor. `paste-at-cursor.test.ts` exercises the real dictation sink
   with only the OS automation boundary faked, including ordering and clipboard restoration.
 - #112 - Approval queue gates actions. `approvals.integration.test.ts` exercises real proposal,
@@ -233,6 +240,9 @@ manual claim does not count as complete integration coverage.
 - #91 - Search filters and sort apply. The universal-search DB integration proves production source,
   recency, and match filtering over fresh results; `SearchScreen.integration.test.tsx` drives the
   rendered filter and sort controls and verifies visible ordering changes without stale rows.
+- #98 - Meeting survives relaunch. `meeting-persistence.dbtest.ts` saves synthetic meeting media,
+  transcript, and local-model summary through production filesystem/SQLite owners, closes the DB,
+  resets modules, and proves the exact audio metadata, transcript, and summary restore.
 - #110 - Entity merge preserves evidence. `resolve.integration.test.ts` exercises real entity,
   aliases, observations, relationships, action reassignment, split, and merge persistence.
 - #113 - Action status survives persistence. `actions-status.integration.test.ts` exercises real
@@ -338,10 +348,7 @@ manual claim does not count as complete integration coverage.
 
 ## Left - meetings, voice, and dictation
 
-- #95 - Meeting detection is truthful.
-- #96 - Manual meeting recording.
 - #97 - Meeting transcript and summary.
-- #98 - Meeting survives relaunch.
 - #99 - Global dictation hotkey.
 - #101 - Dictation paste failure is visible.
 - #102 - Dictation engine selection.
