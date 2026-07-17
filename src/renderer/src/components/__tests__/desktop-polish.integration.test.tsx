@@ -135,9 +135,14 @@ describe('desktop collection and transient-layer integration', () => {
     expect(document.activeElement).toBe(nestedTrigger)
 
     await user.keyboard('{Escape}')
-    await waitFor(() => {
-      expect(screen.queryByRole('heading', { name: 'Transient details' })).toBeNull()
-    })
+    await waitFor(
+      () => {
+        expect(screen.queryByRole('heading', { name: 'Transient details' })).toBeNull()
+      },
+      // AnimatePresence keeps the closing layer mounted until the real spring exit
+      // finishes. Under full-suite load that can exceed Testing Library's 1s default.
+      { timeout: 5_000 }
+    )
     expect(screen.getByText('Underlying workspace remains selected')).not.toBeNull()
     expect(document.activeElement).toBe(trigger)
   })
