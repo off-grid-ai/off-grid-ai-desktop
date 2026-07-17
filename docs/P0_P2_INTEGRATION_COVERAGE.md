@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 57 covered, 17 left.
-  - P1: 71 total, 52 covered, 19 left.
-  - P2: 10 total, 8 covered, 2 left.
-  - Overall: 155 total, 117 covered, 38 left.
+  - P0: 74 total, 58 covered, 16 left.
+  - P1: 71 total, 55 covered, 16 left.
+  - P2: 10 total, 9 covered, 1 left.
+  - Overall: 155 total, 122 covered, 33 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -95,6 +95,10 @@ manual claim does not count as complete integration coverage.
 - #62 - Image cancellation is scoped. The same rendered integration starts an image job in one
   conversation, switches conversations, and proves progress and Stop stay with the owning
   conversation; stopping it calls the native cancellation boundary exactly once.
+- #63 - Image cancellation keeps text. `e2e/chat-memory.spec.ts` drives a real tool turn through a
+  fake native llama socket, renders and clicks the tool-owned image Stop action during pre-spawn
+  memory reclamation, proves the shared lifecycle prevents `sd-cli` from starting, then fully
+  relaunches Electron on the same real SQLite profile and restores the assistant text.
 - #68 - Vision answers about attachment. The rendered composer processes a ready image attachment,
   sends its persisted path and the exact typed question through the production vision path, and
   renders the returned answer.
@@ -297,6 +301,11 @@ manual claim does not count as complete integration coverage.
 - #98 - Meeting survives relaunch. `meeting-persistence.dbtest.ts` saves synthetic meeting media,
   transcript, and local-model summary through production filesystem/SQLite owners, closes the DB,
   resets modules, and proves the exact audio metadata, transcript, and summary restore.
+- #101 - Dictation paste failure is visible.
+  `dictation-paste-failure.ui.integration.dbtest.ts` connects the real rendered overlay, voice
+  bridge, IPC, controller, decode/transcription/storage path, and paste sink against denied
+  focus/paste platform boundaries, proving the transcript remains on the clipboard and the exact
+  actionable error stays visible after the controller broadcasts idle.
 - #102 - Dictation engine selection. `voice-journeys.dbtest.ts` persists Whisper and Parakeet
   choices through generic dictation settings and runs both real CLI implementations against native
   executable boundaries without caller-side engine branching.
@@ -317,6 +326,10 @@ manual claim does not count as complete integration coverage.
 - #111 - Action items are extracted. `entity-action-journeys.dbtest.ts` sends a synthetic commitment
   through the production extractor over a loopback native-model boundary and proves exactly one
   imperative action persists with its due date and source evidence.
+- #113 - Action status survives persistence. `approval-relaunch.dbtest.ts` approves, rejects, and
+  dismisses separate synthetic items through production encrypted SQLite and a real stdio MCP
+  child, closes and reopens the profile, proves every status remains, and verifies stale or
+  concurrent decisions cannot duplicate external execution or learning feedback.
 - #115 - Reflect uses real time ranges. `reflect.integration.test.ts` verifies real observation
   windows, dwell caps, category rollups, context switches, and seven-day aggregation.
 - #118 - Clipboard deduplicates repeated copy. `clipboard-store.integration.test.ts` exercises the
@@ -355,6 +368,9 @@ manual claim does not count as complete integration coverage.
 - #150 - Window resize preserves desktop layout. `e2e/desktop-polish.spec.ts` resizes the real
   Electron viewport from 1280 to 1800 pixels and proves the production Models collection expands
   from three to four computed columns while its search/filter context remains reachable.
+- #151 - Keyboard focus is visible. `e2e/desktop-polish.spec.ts` tabs through the real sidebar,
+  Models form controls, model actions, primary Download action, and command-palette focus trap,
+  proving logical order and the settled theme-aware two-pixel focus treatment at each surface.
 - #154 - External links use the system browser. `e2e/tour.spec.ts` drives the real locked-Pro
   surface through Electron preload and IPC, proves purchase and Mobile links reach
   `shell.openExternal` with their production URLs, and verifies the Electron page never navigates.
@@ -370,6 +386,9 @@ manual claim does not count as complete integration coverage.
 - #55 - Edit project. `rag-ipc-project-create.dbtest.ts` changes every editable field through the
   production project IPC handlers and real SQLite store, reloads the modules, and proves the updated
   project is returned with its exact name, description, prompt, icon, and memory setting.
+- #59 - Project list uses desktop layout. `e2e/projects-layout.spec.ts` seeds 12 projects and eight
+  chats through production IPC, then measures the real Electron master-detail geometry, scroll
+  reachability, adjacent detail controls, and a three-plus-column chat grid at desktop width.
 - #31 - Models use desktop density. `e2e/desktop-polish.spec.ts` resizes the real Electron window
   from 1280 to 1800 pixels and proves the production model collection forms three then four computed
   columns while its controls remain reachable.
@@ -414,11 +433,6 @@ manual claim does not count as complete integration coverage.
 
 - #64 - Image settings apply.
 - #66 - Image RAM guard is safe.
-- #63 - Image cancellation keeps text.
-
-## Left - projects and artifacts
-
-- #59 - Project list uses desktop layout.
 
 ## Left - integrations and gateway
 
@@ -436,12 +450,10 @@ manual claim does not count as complete integration coverage.
 - #97 - Meeting transcript and summary.
 - #99 - Global dictation hotkey.
 - #100 - Dictation pastes at cursor.
-- #101 - Dictation paste failure is visible.
 - #105 - Speak assistant reply.
 
 ## Left - entities, actions, and reflection
 
-- #113 - Action status survives relaunch.
 - #114 - Notifications open their target.
 
 ## Left - clipboard and vault
@@ -459,7 +471,6 @@ manual claim does not count as complete integration coverage.
 - #146 - Model ports are single-owner.
 - #148 - Low disk space is handled.
 - #149 - Large seeded collections stay usable.
-- #151 - Keyboard focus is visible.
 - #155 - No private data in release evidence.
 
 ## Next implementation order
