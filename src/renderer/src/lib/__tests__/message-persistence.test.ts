@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildAssistantContext, readReasoning } from '../message-persistence'
+import { buildAssistantContext, readReasoning, readResponseCutoff } from '../message-persistence'
 
 describe('message-persistence carrier', () => {
   it('round-trips reasoning through the context blob', () => {
@@ -55,5 +55,22 @@ describe('message-persistence carrier', () => {
     expect(readReasoning(null)).toBeUndefined()
     expect(readReasoning('not-json')).toBeUndefined()
     expect(readReasoning({ reasoning: 42 })).toBeUndefined()
+  })
+
+  it('round-trips the configured response cutoff with other assistant metadata', () => {
+    const cutoff = { reason: 'max_tokens' as const, maxTokens: 4096 }
+    const ctx = buildAssistantContext({ unified: [] }, { reasoning: 'why', cutoff })
+
+    expect(readResponseCutoff(ctx)).toEqual(cutoff)
+    expect(readReasoning(ctx)).toBe('why')
+    expect(ctx).toMatchObject({ unified: [] })
+  })
+
+  it('ignores malformed persisted cutoff values', () => {
+    expect(readResponseCutoff({ cutoff: { reason: 'stop', maxTokens: 4096 } })).toBeUndefined()
+    expect(readResponseCutoff({ cutoff: { reason: 'max_tokens', maxTokens: 1.5 } })).toBeUndefined()
+    expect(
+      readResponseCutoff({ cutoff: { reason: 'max_tokens', maxTokens: '4096' } })
+    ).toBeUndefined()
   })
 })

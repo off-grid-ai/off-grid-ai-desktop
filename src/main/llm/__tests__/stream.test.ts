@@ -44,10 +44,28 @@ describe('streamCompletion', () => {
     })
     expect(out.content).toBe('Hello, world')
     expect(out.toolCalls).toEqual([])
+    expect(out.finishReason).toBeNull()
     expect(seen).toEqual([
       { text: 'Hello', kind: 'content' },
       { text: ', world', kind: 'content' }
     ])
+  })
+
+  it('returns the native finish reason with the streamed answer', async () => {
+    const port = await serve((res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write(sse({ content: 'capped answer' }))
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'length' }] })}\n`)
+      res.write('data: [DONE]\n')
+      res.end()
+    })
+
+    await expect(
+      streamCompletion(port, '{}', () => {}, { timeoutMs: 5000 })
+    ).resolves.toMatchObject({
+      content: 'capped answer',
+      finishReason: 'length'
+    })
   })
 
   it('routes reasoning_content to the reasoning channel, separate from the answer', async () => {

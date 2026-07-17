@@ -21,9 +21,8 @@ import {
 } from './llm/settings-math'
 import { buildMessages, imageMime, thinkingPayload, type DecodedImage } from './llm/chat-payload'
 import { isValidGgufFile } from './models/gguf'
-import { type AssembledToolCall } from './llm/sse-stream'
 import { postCompletionOnce } from './llm/http-post'
-import { streamCompletion } from './llm/stream'
+import { streamCompletion, type StreamResult } from './llm/stream'
 
 export type { KvCacheType, PerformanceMode }
 
@@ -43,6 +42,11 @@ export interface LlmSettings {
   gpuLayers?: number // -ngl: layers offloaded to GPU (Metal). 99 = all.
   threads?: number // CPU threads for inference
   batchSize?: number // -b: prompt batch size
+}
+
+export interface ChatStreamResult extends StreamResult {
+  /** The resolved request cap, included so callers never duplicate settings lookup. */
+  maxTokens: number
 }
 
 export class LLMService {
@@ -820,14 +824,15 @@ export class LLMService {
     opts: { temperature?: number; thinking?: boolean; signal?: AbortSignal } = {},
     maxTokens?: number,
     timeoutMs: number = 300000
-  ): Promise<string> {
+  ): Promise<ChatStreamResult> {
     await this.ensureReady()
 
     const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resolvedMaxTokens = resolveMaxTokens(maxTokens, this.maxTokens)
     const payload: any = {
       messages,
-      max_tokens: resolveMaxTokens(maxTokens, this.maxTokens),
+      max_tokens: resolvedMaxTokens,
       temperature: opts.temperature ?? this.temperature,
       ...this.samplingPayload(),
       stream: true,
@@ -840,11 +845,11 @@ export class LLMService {
 
     // Single SSE transport (llm/stream.ts). The plain chat path sends no tools, so
     // the returned toolCalls are always empty — take only the answer text.
-    const { content } = await streamCompletion(this.port, body, onDelta, {
+    const result = await streamCompletion(this.port, body, onDelta, {
       signal: opts.signal,
       timeoutMs
     })
-    return content
+    return { ...result, maxTokens: resolvedMaxTokens }
   }
 
   // Lower-level streaming turn over a RAW messages array with optional tool-calling.
@@ -867,7 +872,7 @@ export class LLMService {
       maxTokens?: number
     } = {},
     timeoutMs: number = 300000
-  ): Promise<{ content: string; toolCalls: AssembledToolCall[] }> {
+  ): Promise<StreamResult> {
     await this.ensureReady()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = {

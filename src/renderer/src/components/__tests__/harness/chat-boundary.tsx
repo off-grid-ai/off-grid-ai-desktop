@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import { MemoryChat } from '../../MemoryChat'
 import { TooltipProvider } from '../../ui/tooltip'
+import type { RagChatResultContract } from '../../../../../shared/ipc-contracts'
 
 export type StreamEvent = {
   streamId: string
@@ -13,7 +14,7 @@ type ThinkSplitter = { push: (text: string) => void; answer: () => string }
 export type ThinkSplitterFactory = (
   emit: (event: { text: string; kind: 'content' | 'reasoning' }) => void
 ) => ThinkSplitter
-type RagResult = { answer: string; context: { unified: unknown[] } }
+type RagResult = RagChatResultContract
 type StoredMessage = { id: number; role: 'user' | 'assistant'; content: string; context?: unknown }
 type Conversation = {
   id: string
@@ -214,8 +215,12 @@ export class ChatBoundary {
     this.resolve(callIndex, answer)
   }
 
-  resolve(callIndex: number, answer: string): void {
-    this.calls[callIndex]!.turn.resolve({ answer, context: { unified: [] } })
+  resolve(
+    callIndex: number,
+    answer: string,
+    result: Omit<Partial<RagResult>, 'answer'> = {}
+  ): void {
+    this.calls[callIndex]!.turn.resolve({ answer, context: { unified: [] }, ...result })
   }
 
   reject(callIndex: number, error: unknown): void {

@@ -9,11 +9,14 @@
 // These two functions are exact inverses:
 //   buildAssistantContext(baseCtx, { reasoning }) → ctx   (write path)
 //   readReasoning(ctx) → string | undefined              (read path)
+import type { ResponseCutoffContract } from '../../../shared/ipc-contracts'
 
 /** Extra assistant-turn fields that ride in the persisted `context` blob. */
 export interface AssistantContextExtras {
   /** The model's reasoning / "Thinking" text for the turn, if any. */
   reasoning?: string
+  /** Why the model stopped before completing the response, if applicable. */
+  cutoff?: ResponseCutoffContract
 }
 
 /**
@@ -29,9 +32,10 @@ export function buildAssistantContext(
   extras: AssistantContextExtras = {}
 ): Record<string, unknown> | undefined {
   const reasoning = extras.reasoning?.trim() ? extras.reasoning : undefined
-  if (!baseCtx && reasoning === undefined) return undefined
+  if (!baseCtx && reasoning === undefined && extras.cutoff === undefined) return undefined
   const ctx: Record<string, unknown> = { ...(baseCtx ?? {}) }
   if (reasoning !== undefined) ctx.reasoning = reasoning
+  if (extras.cutoff !== undefined) ctx.cutoff = extras.cutoff
   return ctx
 }
 
@@ -45,4 +49,22 @@ export function readReasoning(ctx: unknown): string | undefined {
   if (!ctx || typeof ctx !== 'object') return undefined
   const r = (ctx as { reasoning?: unknown }).reasoning
   return typeof r === 'string' && r.trim() ? r : undefined
+}
+
+/** Restore only a valid persisted cutoff marker. Context is durable user data, so
+ * malformed or old values are ignored instead of reaching presentation state. */
+export function readResponseCutoff(ctx: unknown): ResponseCutoffContract | undefined {
+  if (!ctx || typeof ctx !== 'object') return undefined
+  const cutoff = (ctx as { cutoff?: unknown }).cutoff
+  if (!cutoff || typeof cutoff !== 'object') return undefined
+  const value = cutoff as { reason?: unknown; maxTokens?: unknown }
+  if (
+    value.reason !== 'max_tokens' ||
+    typeof value.maxTokens !== 'number' ||
+    !Number.isInteger(value.maxTokens) ||
+    value.maxTokens < 1
+  ) {
+    return undefined
+  }
+  return { reason: value.reason, maxTokens: value.maxTokens }
 }

@@ -26,6 +26,8 @@ interface FakeTurn {
   /** Exact token-shaped content deltas. Long-answer tests use this to prove that more than
    *  the old token cap crossed the native socket without approximating tokens from chars. */
   contentDeltas?: string[]
+  /** OpenAI-compatible terminal reason emitted beside the final empty delta. */
+  finishReason?: string
   /** Reasoning streamed on the reasoning_content channel before the answer. */
   reasoning?: string
   /** Tool calls emitted on this turn (the agentic loop then runs them and calls back). */
@@ -83,6 +85,11 @@ function sseFramesFor(turn: FakeTurn): string[] {
     const mid = Math.ceil(text.length / 2)
     frames.push(delta({ content: text.slice(0, mid) }))
     frames.push(delta({ content: text.slice(mid) }))
+  }
+  if (turn.finishReason) {
+    frames.push(
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: turn.finishReason }] })}\n\n`
+    )
   }
   frames.push('data: [DONE]\n\n')
   return frames

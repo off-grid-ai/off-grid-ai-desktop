@@ -17,6 +17,8 @@ import { modelRequestOptions, describeServerError } from './http-post'
 export interface StreamResult {
   content: string
   toolCalls: AssembledToolCall[]
+  /** Raw OpenAI-compatible stop reason. Product layers normalize this value. */
+  finishReason: string | null
 }
 
 export interface StreamOptions {
@@ -50,7 +52,12 @@ export function streamCompletion(
     // accumulates the answer text across chunk boundaries (see sse-stream.ts).
     const splitter = createThinkSplitter((ev) => onDelta(ev.text, ev.kind))
     const tools = createToolCallAccumulator()
-    const done = (): StreamResult => ({ content: splitter.answer(), toolCalls: tools.list() })
+    let finishReason: string | null = null
+    const done = (): StreamResult => ({
+      content: splitter.answer(),
+      toolCalls: tools.list(),
+      finishReason
+    })
     // opts.signal is REUSED across the whole tool loop, so every completed stream
     // must detach its abort listener — otherwise handlers accumulate on the shared
     // signal for the loop's lifetime. cleanup() runs on every terminal path.
@@ -91,10 +98,12 @@ export function streamCompletion(
         while ((nl = buf.indexOf('\n')) >= 0) {
           const line = buf.slice(0, nl)
           buf = buf.slice(nl + 1)
-          const delta = parseSseLine(line)
-          if (!delta) {
+          const frame = parseSseLine(line)
+          if (!frame) {
             continue
           }
+          const { delta } = frame
+          if (frame.finishReason) finishReason = frame.finishReason
           if (delta.reasoning_content) {
             onDelta(delta.reasoning_content, 'reasoning')
           }

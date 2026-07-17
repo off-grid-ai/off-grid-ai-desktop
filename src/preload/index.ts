@@ -2,7 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import {
   CACHE_CLEANUP_CHANNEL,
   type ArtifactKindContract,
-  type CacheCleanupResultContract
+  type CacheCleanupResultContract,
+  type RagChatResultContract
 } from '../shared/ipc-contracts'
 
 console.log('PRELOAD SCRIPT LOADED')
@@ -101,7 +102,7 @@ const offGridApi = {
       streamId,
       thinking,
       images
-    ),
+    ) as Promise<RagChatResultContract>,
   // Live token/reasoning/step events for an in-flight ragChat (matched by streamId).
   onRagStream: (
     callback: (data: {

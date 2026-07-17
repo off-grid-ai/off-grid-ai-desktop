@@ -19,17 +19,17 @@ import {
 describe('parseSseLine', () => {
   it('parses a normal content delta frame', () => {
     const d = parseSseLine('data: {"choices":[{"delta":{"content":"hi"}}]}')
-    expect(d).toEqual({ content: 'hi' })
+    expect(d).toEqual({ delta: { content: 'hi' }, finishReason: null })
   })
 
   it('parses a reasoning_content delta frame', () => {
     const d = parseSseLine('data: {"choices":[{"delta":{"reasoning_content":"why"}}]}')
-    expect(d).toEqual({ reasoning_content: 'why' })
+    expect(d).toEqual({ delta: { reasoning_content: 'why' }, finishReason: null })
   })
 
   it('handles an untrimmed line with leading/trailing whitespace (trims internally)', () => {
     const d = parseSseLine('  data: {"choices":[{"delta":{"content":"x"}}]}  ')
-    expect(d).toEqual({ content: 'x' })
+    expect(d).toEqual({ delta: { content: 'x' }, finishReason: null })
   })
 
   it('returns null for the [DONE] sentinel', () => {
@@ -53,7 +53,17 @@ describe('parseSseLine', () => {
 
   it('returns the empty delta object for an empty delta (no content/reasoning keys)', () => {
     // choices[0].delta === {} is a valid object - callers guard on the keys.
-    expect(parseSseLine('data: {"choices":[{"delta":{}}]}')).toEqual({})
+    expect(parseSseLine('data: {"choices":[{"delta":{}}]}')).toEqual({
+      delta: {},
+      finishReason: null
+    })
+  })
+
+  it('preserves a terminal length reason even when the frame has no delta', () => {
+    expect(parseSseLine('data: {"choices":[{"finish_reason":"length"}]}')).toEqual({
+      delta: {},
+      finishReason: 'length'
+    })
   })
 })
 

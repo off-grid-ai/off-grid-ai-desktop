@@ -1,13 +1,13 @@
 // Main-process adjacent evidence for RELEASE_TEST_CHECKLIST #49. This owns the real
 // persisted-settings -> fresh LLMService -> loopback native-model socket -> production SSE
 // parser chain. The paired renderer test owns the public preload event -> visible chat path.
-// Neither test claims the missing visible cutoff state for `finish_reason: "length"`.
 
 import { describe, expect, it } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { startFakeLlamaServer } from '../../__tests__/harness/fake-llama-server'
+import { toResponseGenerationResult } from '../response-result'
 
 const OLD_MAX_TOKENS = 2048
 const RAISED_MAX_TOKENS = 4096
@@ -43,17 +43,23 @@ describe('persisted response limit over the production local stream', () => {
       const nativeTokenDeltas = Array.from({ length: OLD_MAX_TOKENS + 2 }, (_, index) =>
         index === OLD_MAX_TOKENS + 1 ? ' LIMIT-END' : 'x'
       )
-      fake.enqueue({ contentDeltas: nativeTokenDeltas })
+      fake.enqueue({ contentDeltas: nativeTokenDeltas, finishReason: 'length' })
       const streamed: string[] = []
-      const answer = await reloaded.chatStream('Write a long answer', [], (text, kind) => {
+      const result = await reloaded.chatStream('Write a long answer', [], (text, kind) => {
         if (kind === 'content') streamed.push(text)
       })
 
       expect(fake.requests).toHaveLength(1)
       expect(fake.requests[0]!.max_tokens).toBe(RAISED_MAX_TOKENS)
       expect(streamed).toHaveLength(OLD_MAX_TOKENS + 2)
-      expect(streamed.join('')).toBe(answer)
-      expect(answer).toMatch(/LIMIT-END$/)
+      expect(streamed.join('')).toBe(result.content)
+      expect(result.content).toMatch(/LIMIT-END$/)
+      expect(result.finishReason).toBe('length')
+      expect(result.maxTokens).toBe(RAISED_MAX_TOKENS)
+      expect(toResponseGenerationResult(result)).toEqual({
+        answer: result.content,
+        cutoff: { reason: 'max_tokens', maxTokens: RAISED_MAX_TOKENS }
+      })
     } finally {
       await fake.close()
       fs.rmSync(dataDir, { recursive: true, force: true })

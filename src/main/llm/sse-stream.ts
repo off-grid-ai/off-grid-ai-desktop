@@ -31,6 +31,13 @@ export interface SseDelta {
   tool_calls?: SseToolCallDelta[]
 }
 
+/** One parsed OpenAI-compatible SSE choice. Finish metadata lives beside the
+ * delta on the wire, so keep it beside (not inside) the streamed token shape. */
+export interface SseFrame {
+  delta: SseDelta
+  finishReason: string | null
+}
+
 /** A fully-assembled tool call (after accumulating its streamed fragments). */
 export interface AssembledToolCall {
   id: string
@@ -69,20 +76,27 @@ export function createToolCallAccumulator(): {
 }
 
 /**
- * Parse ONE line of the SSE body. Returns the delta object when the line is a
+ * Parse ONE line of the SSE body. Returns the first choice when the line is a
  * usable `data:` frame, or null for anything to skip (blank line, non-data line,
  * the `[DONE]` sentinel, or an unparsable/partial frame). Mirrors the original
  * inline handling exactly: trim, require the `data:` prefix, strip it, trim, skip
- * `[DONE]`, JSON-parse, reach into choices[0].delta.
+ * `[DONE]`, JSON-parse, reach into choices[0]. A finish-only frame is usable even
+ * when its delta is omitted because the caller needs its cutoff metadata.
  */
-export function parseSseLine(rawLine: string): SseDelta | null {
+export function parseSseLine(rawLine: string): SseFrame | null {
   const line = rawLine.trim()
   if (!line.startsWith('data:')) return null
   const data = line.slice(5).trim()
   if (data === '[DONE]') return null
   try {
-    const delta = JSON.parse(data)?.choices?.[0]?.delta
-    if (delta && typeof delta === 'object') return delta as SseDelta
+    const choice = JSON.parse(data)?.choices?.[0]
+    if (!choice || typeof choice !== 'object') return null
+    const delta = choice.delta
+    const finishReason = typeof choice.finish_reason === 'string' ? choice.finish_reason : null
+    if (delta && typeof delta === 'object') {
+      return { delta: delta as SseDelta, finishReason }
+    }
+    if (finishReason) return { delta: {}, finishReason }
     return null
   } catch {
     // partial / ignorable line

@@ -61,6 +61,7 @@ interface DashboardStats {
 type RagConversation = import('../../shared/ipc-contracts').RagConversationContract
 
 type RagMessage = import('../../shared/ipc-contracts').RagMessageContract
+type RagChatResult = import('../../shared/ipc-contracts').RagChatResultContract
 
 // DUPLICATE (ambient decl). Canonical shape: the `reprocess:progress` IPC payload
 // emitted in src/main/ipc.ts. Keep in sync; guarded by ipc-type-parity.test.ts.
@@ -141,7 +142,7 @@ interface RendererAPIOverrides {
     streamId?: string,
     thinking?: boolean,
     images?: string[]
-  ) => Promise<{ answer: string; context: any }>
+  ) => Promise<RagChatResult>
   onRagStream: (
     callback: (data: {
       streamId: string

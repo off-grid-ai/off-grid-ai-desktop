@@ -30,6 +30,17 @@ export interface RagMessageContract {
   created_at: string
 }
 
+export interface ResponseCutoffContract {
+  reason: 'max_tokens'
+  maxTokens: number
+}
+
+export interface RagChatResultContract {
+  answer: string
+  context?: Record<string, unknown>
+  cutoff?: ResponseCutoffContract
+}
+
 export interface PermissionStatusContract {
   accessibility: boolean
   screenRecording: boolean

@@ -2,8 +2,7 @@
 //
 // Renderer-side adjacent evidence for RELEASE_TEST_CHECKLIST #49. The renderer stays on its
 // public preload/stream contracts; the paired main-process integration test owns settings-file
-// persistence, LLMService, and the native-model socket. This deliberately does not claim the
-// cutoff-state branch, because production currently drops `finish_reason: "length"` upstream.
+// persistence, LLMService, and the native-model socket.
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -35,7 +34,7 @@ describe('<MemoryChat/> - response limit through public renderer contracts', () 
     vi.unstubAllGlobals()
   })
 
-  it('raises the setting and renders the complete long answer from the stream contract', async () => {
+  it('raises the setting, renders a long answer, and preserves its visible cutoff state', async () => {
     const boundary = new ChatBoundary()
     let maxTokens = OLD_MAX_TOKENS
     const setLlmSettings = vi.fn(async (patch: { maxTokens?: number }) => {
@@ -73,15 +72,27 @@ describe('<MemoryChat/> - response limit through public renderer contracts', () 
     await send('Write beyond the previous response limit', user)
     await waitFor(() => expect(boundary.calls).toHaveLength(1))
     for (const chunk of longAnswer.match(/.{1,512}/g) ?? []) boundary.emit(0, chunk)
-    boundary.resolve(0, longAnswer)
+    boundary.resolve(0, longAnswer, {
+      cutoff: { reason: 'max_tokens', maxTokens: RAISED_MAX_TOKENS }
+    })
 
     expect(await screen.findByText(/LIMIT-END/)).toBeTruthy()
+    expect(
+      await screen.findByText('Response stopped at the configured 4,096-token limit.')
+    ).toBeTruthy()
     await waitFor(() => {
-      expect(
-        boundary.messages['conversation-b']!.find(
-          (message) => message.role === 'assistant' && message.content === longAnswer
-        )
-      ).toBeTruthy()
+      const persisted = boundary.messages['conversation-b']!.find(
+        (message) => message.role === 'assistant' && message.content === longAnswer
+      )
+      expect(persisted?.context).toMatchObject({
+        cutoff: { reason: 'max_tokens', maxTokens: RAISED_MAX_TOKENS }
+      })
     })
+
+    cleanup()
+    renderChat({ conversationId: 'conversation-b' })
+    expect(
+      await screen.findByText('Response stopped at the configured 4,096-token limit.')
+    ).toBeTruthy()
   })
 })

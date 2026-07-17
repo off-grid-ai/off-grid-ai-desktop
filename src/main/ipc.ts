@@ -51,6 +51,7 @@ import {
   openMicrophoneSettings
 } from './permissions'
 import { CACHE_CLEANUP_CHANNEL } from '../shared/ipc-contracts'
+import { toResponseGenerationResult, type ResponseGenerationResult } from './llm/response-result'
 import { getAllPromptDefs } from './prompts'
 import { getPrompt, getPromptTemplate, resetPrompt } from './prompt-store'
 import {
@@ -98,11 +99,12 @@ async function streamAnswer(
   prompt: string,
   thinking: boolean = false,
   images: string[] = []
-): Promise<string> {
+): Promise<ResponseGenerationResult> {
   const { llm } = await import('./llm')
   const { modalityQueue, CHAT_JOB } = await import('./modality-queue/queue')
 
-  // Non-stream fallback (no streamId/sender): a single blocking chat turn.
+  // No-renderer fallback still uses the same streaming transport with a no-op
+  // observer, so finish metadata and the configured cap cannot diverge by caller.
   if (!streamId || !event?.sender) {
     // Interactive chat is foreground work - Tier 2, a peer of image gen. During
     // image gen the LLM is evicted so this waits anyway (consistent); background
@@ -110,7 +112,7 @@ async function streamAnswer(
     // evicts nothing (evicting 'llm' would evict itself). run()'s finally releases
     // the slot even if fn throws, so we let errors propagate from inside.
     return modalityQueue.run(CHAT_JOB, async () =>
-      (await llm.chat(prompt, images, 300000, 2048, { disableThinking: !thinking })).trim()
+      toResponseGenerationResult(await llm.chatStream(prompt, images, () => {}, { thinking }))
     )
   }
 
@@ -125,7 +127,7 @@ async function streamAnswer(
     // the run() callback so the queue slot is held for the whole generation; the
     // cancel path aborts via the controller registered above.
     return await modalityQueue.run(CHAT_JOB, async () => {
-      const answer = await llm.chatStream(
+      const result = await llm.chatStream(
         prompt,
         images,
         (text, kind) => {
@@ -137,7 +139,7 @@ async function streamAnswer(
         },
         { thinking, signal: controller.signal }
       )
-      return answer.trim()
+      return toResponseGenerationResult(result)
     })
   } finally {
     streamControllers.delete(streamId)
@@ -711,8 +713,8 @@ export function setupIPC() {
         ]
           .filter(Boolean)
           .join('\n\n')
-        const answer = await streamAnswer(event, streamId, prompt, thinking, imgs)
-        return { answer, context: undefined }
+        const completion = await streamAnswer(event, streamId, prompt, thinking, imgs)
+        return { ...completion, context: undefined }
       }
 
       // No-memory mode: a plain on-device assistant — no retrieval at all.
@@ -732,8 +734,8 @@ export function setupIPC() {
           .filter(Boolean)
           .join('\n\n')
         void llm // retained for non-stream fallback inside streamAnswer
-        const answer = await streamAnswer(event, streamId, prompt, thinking, imgs)
-        return { answer, context: undefined }
+        const completion = await streamAnswer(event, streamId, prompt, thinking, imgs)
+        return { ...completion, context: undefined }
       }
 
       // Project-scoped chat: retrieve from the project's knowledge base (uploaded
@@ -786,9 +788,9 @@ export function setupIPC() {
               counts: { sources: search.chunks.length, projectChats: siblings.length }
             }
           })
-        const answer = await streamAnswer(event, streamId, prompt, thinking, imgs)
+        const completion = await streamAnswer(event, streamId, prompt, thinking, imgs)
         return {
-          answer,
+          ...completion,
           context: {
             sources: search.chunks.map((c) => ({
               name: c.name,
@@ -1029,9 +1031,9 @@ export function setupIPC() {
               }
             }
           })
-        const answer = await streamAnswer(event, streamId, prompt, thinking, imgs)
+        const completion = await streamAnswer(event, streamId, prompt, thinking, imgs)
         return {
-          answer,
+          ...completion,
           context: {
             masterMemory: null,
             memories,

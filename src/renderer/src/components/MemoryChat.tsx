@@ -15,7 +15,12 @@ import { SettingsPanel } from './SettingsPanel'
 import { ModelPicker } from './ModelPicker'
 import { resolveImageParams, setOverride, type ImageParamStore } from '@renderer/lib/image-params'
 import { shouldAutoRouteImage, cleanImagePrompt } from '@renderer/lib/image-intent'
-import { buildAssistantContext, readReasoning } from '@renderer/lib/message-persistence'
+import {
+  buildAssistantContext,
+  readReasoning,
+  readResponseCutoff
+} from '@renderer/lib/message-persistence'
+import type { ResponseCutoffContract } from '../../../shared/ipc-contracts'
 import { Button } from '@renderer/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import {
@@ -83,6 +88,7 @@ type ChatMessage = {
   imagePath?: string
   toolCalls?: { name: string; result: string }[]
   reasoning?: string
+  cutoff?: ResponseCutoffContract
   streaming?: boolean
   activity?: { kind: string; counts?: Record<string, number>; name?: string }
   attachments?: { name: string; kind: string; text?: string; path?: string }[]
@@ -186,6 +192,7 @@ function mapRagMessages(raw: any[]): ChatMessage[] {
       context: ctx,
       // Reasoning rides in the context blob so the "Thinking" block survives reload.
       reasoning: readReasoning(ctx),
+      cutoff: readResponseCutoff(ctx),
       toolCalls: Array.isArray(ctx?.toolCalls) ? ctx.toolCalls : undefined,
       image: ctx?.image ? `ogcapture://${ctx.image}` : undefined,
       imagePath: ctx?.image,
@@ -1447,6 +1454,7 @@ export function MemoryChat({
         thinkingEnabled,
         imagePaths
       )
+      const resultContext = result.context as RagContext | undefined
 
       // Stopped mid-stream: the abort keeps whatever streamed so far. Finalize the
       // partial text if any arrived; otherwise drop the empty placeholder. Never write
@@ -1457,12 +1465,12 @@ export function MemoryChat({
           setConvMessages(convId, (prev) =>
             prev.map((m) =>
               m.id === streamId
-                ? { ...m, content: partial, context: result.context, streaming: false }
+                ? { ...m, content: partial, context: resultContext, streaming: false }
                 : m
             )
           )
           try {
-            await window.api.addRagMessage(convId, 'assistant', partial, result.context)
+            await window.api.addRagMessage(convId, 'assistant', partial, resultContext)
           } catch {
             /* ignore */
           }
@@ -1536,7 +1544,8 @@ export function MemoryChat({
               ? {
                   ...m,
                   content: assistantContent,
-                  context: result.context,
+                  context: resultContext,
+                  cutoff: result.cutoff,
                   streaming: false,
                   variants: allVariants,
                   variantIndex: allVariants ? allVariants.length - 1 : undefined
@@ -1566,7 +1575,10 @@ export function MemoryChat({
             convId,
             'assistant',
             assistantContent,
-            buildAssistantContext(result.context, { reasoning: ragReasoning })
+            buildAssistantContext(resultContext, {
+              reasoning: ragReasoning,
+              cutoff: result.cutoff
+            })
           )
         } catch (e) {
           console.error('Failed to persist assistant message:', e)
@@ -2820,6 +2832,16 @@ export function MemoryChat({
                                   .trim()}
                           </ReactMarkdown>
                         )}
+                        {message.cutoff ? (
+                          <p
+                            role="status"
+                            className="mt-2 flex items-start gap-1.5 border-t border-amber-500/20 pt-2 text-[11px] text-amber-400"
+                          >
+                            <WarningCircle className="mt-0.5 h-3 w-3 shrink-0" weight="fill" />
+                            Response stopped at the configured{' '}
+                            {message.cutoff.maxTokens.toLocaleString()}-token limit.
+                          </p>
+                        ) : null}
                         {(() => {
                           if (message.role !== 'assistant') return null
                           const art = parseArtifact(message.content)
