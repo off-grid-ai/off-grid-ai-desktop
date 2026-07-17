@@ -214,4 +214,74 @@ describe('rag:chat on an empty memory corpus', () => {
     expect(second.answer).toBe('This second response is ready.')
     expect(fake.requests).toHaveLength(4)
   })
+
+  it('retrieves seeded local memory and returns its citation in All memory mode (#34)', async () => {
+    const handler = handlers.get('rag:chat')
+    expect(handler).toBeTypeOf('function')
+    const db = getDB()
+    const inserted = db
+      .prepare(
+        `INSERT INTO observations (summary, surface, url, ts)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
+      )
+      .run(
+        'Project Aurora uses the release code obsidian.',
+        'Synthetic release notes',
+        'offgrid://synthetic/aurora'
+      )
+    db.prepare('INSERT INTO observation_fts(rowid, summary) VALUES (?, ?)').run(
+      inserted.lastInsertRowid,
+      'Project Aurora uses the release code obsidian.'
+    )
+
+    const streamed: Array<{ channel: string; payload: unknown }> = []
+    const event: IpcEvent = {
+      sender: {
+        send: (channel, payload) => streamed.push({ channel, payload })
+      }
+    }
+    fake.enqueue(
+      { content: '{"intent":"chat","urls":[]}' },
+      { content: 'The Aurora release code is obsidian [S1].' }
+    )
+
+    const result = (await handler!(
+      event,
+      'Aurora release code obsidian',
+      'All',
+      [],
+      null,
+      'seeded-memory-chat',
+      false,
+      'seeded-memory-turn',
+      false,
+      []
+    )) as {
+      answer: string
+      context: { unified: Array<{ refId: number; snippet: string; surface: string }> }
+    }
+
+    expect(result.answer).toBe('The Aurora release code is obsidian [S1].')
+    expect(result.context.unified).toEqual([
+      expect.objectContaining({
+        refId: Number(inserted.lastInsertRowid),
+        snippet: 'Project Aurora uses the release code obsidian.',
+        surface: 'Synthetic release notes'
+      })
+    ])
+    const answerPrompt = JSON.stringify(fake.requests.at(-1)?.messages ?? [])
+    expect(answerPrompt).toContain('[S1]')
+    expect(answerPrompt).toContain('Project Aurora uses the release code obsidian.')
+    expect(streamed).toContainEqual({
+      channel: 'rag:stream',
+      payload: {
+        streamId: 'seeded-memory-turn',
+        type: 'step',
+        step: {
+          kind: 'memory',
+          counts: expect.objectContaining({ unified: 1 })
+        }
+      }
+    })
+  })
 })
