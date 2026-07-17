@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 50 covered, 24 left.
-  - P1: 71 total, 38 covered, 33 left.
+  - P0: 74 total, 54 covered, 20 left.
+  - P1: 71 total, 42 covered, 29 left.
   - P2: 10 total, 3 covered, 7 left.
-  - Overall: 155 total, 91 covered, 64 left.
+  - Overall: 155 total, 99 covered, 56 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -78,6 +78,18 @@ manual claim does not count as complete integration coverage.
 - #63 - Image cancellation keeps text. `MemoryChat.tool-image-cancel.test.tsx` drives the real
   rendered MemoryChat path with the image engine as the external boundary and verifies the text
   turn persists.
+- #61 - Text prompt generates an image. `MemoryChat.image.test.tsx` drives the real rendered image
+  composer through its preload boundary, holds the native image job pending, emits live production
+  progress, then proves exactly one generated image reaches the conversation.
+- #62 - Image cancellation is scoped. The same rendered integration starts an image job in one
+  conversation, switches conversations, and proves progress and Stop stay with the owning
+  conversation; stopping it calls the native cancellation boundary exactly once.
+- #68 - Vision answers about attachment. The rendered composer processes a ready image attachment,
+  sends its persisted path and the exact typed question through the production vision path, and
+  renders the returned answer.
+- #69 - Text-only model guards image input. The same integration proves an unavailable vision
+  capability produces a visible explanation before image processing or model delivery, then
+  completes a text-only turn normally.
 - #73 - Connector tool executes. The real connector extension executes a read-only tool through
   its remote boundary and returns the result; `tools-loop.dbtest.ts` proves extension output flows
   through the production tool loop into the final answer.
@@ -227,6 +239,12 @@ manual claim does not count as complete integration coverage.
   the real chat service against a native executable boundary, generates an image through the real
   modality queue to evict it, then proves a second native chat process starts and answers the next
   message without an application restart.
+- #67 - Generated image opens. `MemoryChat.image.test.tsx` opens the generated output in the shared
+  lightbox, exports the exact production path and filename through the native save boundary, and
+  closes the preview without duplicating the artifact.
+- #70 - Damaged image fails safely. `files-image-upload.dbtest.ts` real-decodes image bytes with
+  Sharp and proves invalid content never persists. The rendered composer shows the specific error
+  on the attachment and successfully completes the next text turn.
 - #72 - Connector tools load. `mcp-connector-tool-extension.dbtest.ts` discovers schemas through
   the production extension and real connector database, preserving enabled/disabled state while
   controlling only the remote MCP transport.
@@ -244,9 +262,15 @@ manual claim does not count as complete integration coverage.
 - #82 - Gateway failure envelope. `model-server-chat.integration.test.ts` sends malformed input
   through the real HTTP gateway, proves it receives the stable OpenAI-style JSON error contract
   without reaching the native model boundary, then calls the gateway again to verify it stays healthy.
+- #89 - Replay navigation preserves target. `DayReplay.integration.test.tsx` opens the rendered
+  Replay screen at an exact synthetic capture timestamp, serves the emitted `ogcapture://` file
+  through the production protocol owner, and proves keyboard playback advances to the next frame.
 - #91 - Search filters and sort apply. The universal-search DB integration proves production source,
   recency, and match filtering over fresh results; `SearchScreen.integration.test.tsx` drives the
   rendered filter and sort controls and verifies visible ordering changes without stale rows.
+- #92 - Day briefing renders. `DayReplay.integration.test.tsx` backs the rendered Day view with real
+  SQLite and filesystem owners plus the real LLM service over a native-engine HTTP boundary, then
+  proves priorities, meetings, suggestions, journal, time spent, and timeline all render.
 - #98 - Meeting survives relaunch. `meeting-persistence.dbtest.ts` saves synthetic meeting media,
   transcript, and local-model summary through production filesystem/SQLite owners, closes the DB,
   resets modules, and proves the exact audio metadata, transcript, and summary restore.
@@ -341,14 +365,8 @@ manual claim does not count as complete integration coverage.
 
 ## Left - image and vision
 
-- #61 - Text prompt generates an image.
-- #62 - Image cancellation is scoped.
 - #64 - Image settings apply.
 - #66 - Image RAM guard is safe.
-- #67 - Generated image opens.
-- #68 - Vision answers about attachment.
-- #69 - Text-only model guards image input.
-- #70 - Damaged image fails safely.
 
 ## Left - integrations and gateway
 
@@ -358,8 +376,6 @@ manual claim does not count as complete integration coverage.
 
 - #83 - Screen capture permission path.
 - #88 - Replay playback uses media server.
-- #89 - Replay navigation preserves target.
-- #92 - Day briefing renders.
 - #93 - Day links open correct records.
 
 ## Left - meetings, voice, and dictation
