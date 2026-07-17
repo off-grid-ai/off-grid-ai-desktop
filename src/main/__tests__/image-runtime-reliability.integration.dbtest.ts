@@ -12,6 +12,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { LLAMA_SERVER_PORT } from '../../shared/ports'
+import { createOfflineFetchBoundary, type OfflineFetchBoundary } from './harness/offline-fetch'
 
 const hostFetch = globalThis.fetch.bind(globalThis)
 
@@ -50,6 +51,7 @@ let generateImage: typeof import('../imagegen').generateImage
 let startModelServer: typeof import('../model-server').startModelServer
 let stopModelServer: typeof import('../model-server').stopModelServer
 let gatewayPort: number
+let offlineNetwork: OfflineFetchBoundary
 
 function executablePath(...parts: string[]): string {
   return path.join(fixture.binDir, ...parts)
@@ -180,18 +182,6 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
-function installOfflineReachabilityBoundary(): void {
-  vi.stubGlobal('fetch', (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-    const target = new URL(
-      typeof input === 'string' || input instanceof URL ? input.toString() : input.url
-    )
-    if (target.protocol === 'http:' && target.hostname === '127.0.0.1') {
-      return hostFetch(input, init)
-    }
-    throw new TypeError('network unavailable in offline integration fixture')
-  }) satisfies typeof fetch)
-}
-
 beforeAll(async () => {
   process.env.OFFGRID_DATA_DIR = fixture.dataDir
   process.env.OFFGRID_BIN_DIR = fixture.binDir
@@ -208,7 +198,8 @@ beforeAll(async () => {
   )
   installFakeLlamaBoundary()
   installFakeImageBoundary()
-  installOfflineReachabilityBoundary()
+  offlineNetwork = createOfflineFetchBoundary(hostFetch)
+  vi.stubGlobal('fetch', offlineNetwork.fetch)
 
   const [
     { llm: productionLlm },
@@ -242,6 +233,7 @@ afterAll(async () => {
     () => ownedProcessIds.every((pid) => !processIsAlive(pid)),
     'native model processes to exit'
   )
+  expect(offlineNetwork.blockedRequests).toEqual(['https://example.invalid/health'])
   vi.unstubAllGlobals()
   delete process.env.OFFGRID_DATA_DIR
   delete process.env.OFFGRID_BIN_DIR
@@ -292,7 +284,7 @@ describe('image runtime reliability', () => {
   it('keeps local chat usable when external network reachability is unavailable', async () => {
     startModelServer(gatewayPort)
     await expect(fetch('https://example.invalid/health')).rejects.toThrow(
-      'network unavailable in offline integration fixture'
+      'network unavailable in offline integration fixture: https://example.invalid'
     )
 
     const response = await fetch(`http://127.0.0.1:${String(gatewayPort)}/v1/chat/completions`, {

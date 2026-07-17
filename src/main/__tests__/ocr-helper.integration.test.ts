@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { execFileSync } from 'child_process'
 import { existsSync, mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
 import sharp from 'sharp'
+import { createOfflineFetchBoundary } from './harness/offline-fetch'
 
 // FUNCTIONAL integration test for the native macOS OCR helper (electron/accessibility/ocr,
 // built from ocr.swift via Vision). It is the capture -> OCR -> text step the whole "sees"
@@ -15,12 +16,14 @@ import sharp from 'sharp'
 // Vision OCR of a FILE needs no TCC permission, so it works headless.
 const OCR_BIN = path.resolve(__dirname, '../../../electron/accessibility/ocr')
 const HAVE_BIN = existsSync(OCR_BIN)
+const offlineNetwork = createOfflineFetchBoundary()
 
 describe.skipIf(!HAVE_BIN)('native OCR helper (Vision) extracts text from an image', () => {
   let imagePath: string
   const KNOWN = 'OFF GRID OCR'
 
   beforeAll(async () => {
+    vi.stubGlobal('fetch', offlineNetwork.fetch)
     const dir = mkdtempSync(path.join(tmpdir(), 'ogocr-'))
     imagePath = path.join(dir, 'fixture.png')
     // Render big, high-contrast text so Vision reads it deterministically.
@@ -30,6 +33,11 @@ describe.skipIf(!HAVE_BIN)('native OCR helper (Vision) extracts text from an ima
     </svg>`
     const png = await sharp(Buffer.from(svg)).png().toBuffer()
     writeFileSync(imagePath, png)
+  })
+
+  afterAll(() => {
+    expect(offlineNetwork.blockedRequests).toEqual([])
+    vi.unstubAllGlobals()
   })
 
   it('prints the recognized text for a rendered image', () => {
