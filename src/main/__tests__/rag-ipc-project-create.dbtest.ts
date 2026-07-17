@@ -26,7 +26,7 @@ afterAll(() => {
   fs.rmSync(TMP_DIR, { recursive: true, force: true })
 })
 
-describe('projects:create IPC', () => {
+describe('project IPC persistence', () => {
   it('creates durable projects with unique opaque identifiers', () => {
     setupRagIPC()
     const create = handlers.get('projects:create')
@@ -44,5 +44,41 @@ describe('projects:create IPC', () => {
         { id: second, name: 'Second project' }
       ])
     )
+  })
+
+  it('edits every project field and restores the persisted values after a module reload', async () => {
+    setupRagIPC()
+    const create = handlers.get('projects:create')
+    const update = handlers.get('projects:update')
+    expect(create).toBeTypeOf('function')
+    expect(update).toBeTypeOf('function')
+
+    const projectId = create!(undefined, {
+      name: 'Release planning',
+      description: 'Initial notes',
+      systemPrompt: 'Keep answers short',
+      icon: 'folder'
+    }) as string
+
+    update!(undefined, projectId, {
+      name: 'Launch planning',
+      description: 'Decisions and launch risks',
+      systemPrompt: 'Cite project documents before answering',
+      icon: 'rocket',
+      includeMemory: false
+    })
+
+    vi.resetModules()
+    const reloadedStore = await import('../rag/store')
+    const restored = reloadedStore.listProjects().find((project) => project.id === projectId)
+
+    expect(restored).toMatchObject({
+      id: projectId,
+      name: 'Launch planning',
+      description: 'Decisions and launch risks',
+      systemPrompt: 'Cite project documents before answering',
+      icon: 'rocket',
+      includeMemory: false
+    })
   })
 })
