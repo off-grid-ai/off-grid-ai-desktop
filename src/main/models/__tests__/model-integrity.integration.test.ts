@@ -310,3 +310,55 @@ describe('active model deletion', () => {
     }
   )
 })
+
+describe('active model persistence', () => {
+  it('keeps the selected text model active after a module-style relaunch', async () => {
+    const text = activeSelectionFixtures.find(({ kind }) => kind === 'text')
+    if (!text) throw new Error('Model catalog needs an installable text fixture')
+
+    for (const file of text.entry.files) {
+      fs.writeFileSync(path.join(dataDir, 'models', file.name), Buffer.alloc(2_048, 1))
+    }
+
+    expect(await manager.activateModel(text.entry.id)).toEqual({ success: true })
+    expect(manager.getActiveModalities().text).toBe(text.entry.id)
+    expect(await manager.getActiveModelIds()).toContain(text.entry.id)
+
+    vi.resetModules()
+    const restartedManager = await import('../../models-manager')
+
+    expect(restartedManager.getActiveModalities().text).toBe(text.entry.id)
+    expect(await restartedManager.getActiveModelIds()).toContain(text.entry.id)
+  })
+
+  it('keeps every selected modal model active after a module-style relaunch', async () => {
+    const modalModels = activeSelectionFixtures.filter(({ kind }) =>
+      ['image', 'voice', 'transcription'].includes(kind)
+    )
+    if (modalModels.length !== 3) {
+      throw new Error('Model catalog needs installable image, voice, and transcription fixtures')
+    }
+
+    for (const { entry } of modalModels) {
+      for (const file of entry.files) {
+        fs.writeFileSync(path.join(dataDir, 'models', file.name), Buffer.alloc(2_048, 1))
+      }
+      expect(await manager.activateModel(entry.id)).toEqual({ success: true })
+    }
+
+    const selectedIds = modalModels.map(({ entry }) => entry.id)
+    expect(await manager.getActiveModelIds()).toEqual(expect.arrayContaining(selectedIds))
+    const activeBeforeRestart = manager.getActiveModalities()
+    expect(activeBeforeRestart).toMatchObject({
+      image: expect.any(String),
+      speech: expect.any(String),
+      transcription: expect.any(String)
+    })
+
+    vi.resetModules()
+    const restartedManager = await import('../../models-manager')
+
+    expect(await restartedManager.getActiveModelIds()).toEqual(expect.arrayContaining(selectedIds))
+    expect(restartedManager.getActiveModalities()).toEqual(activeBeforeRestart)
+  })
+})
