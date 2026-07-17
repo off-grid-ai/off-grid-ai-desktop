@@ -76,7 +76,17 @@ type RagContext = {
     imagePath?: string | null
   }[]
   image?: string
+  imageMetadata?: ImageGenerationMetadata
   sources?: { name: string; position: number; score: number }[]
+}
+
+type ImageGenerationMetadata = {
+  width: number
+  height: number
+  steps: number
+  cfgScale: number
+  seed: number
+  model?: string
 }
 
 type ChatMessage = {
@@ -86,6 +96,7 @@ type ChatMessage = {
   context?: RagContext
   image?: string
   imagePath?: string
+  imageMetadata?: ImageGenerationMetadata
   toolCalls?: { name: string; result: string }[]
   reasoning?: string
   cutoff?: ResponseCutoffContract
@@ -196,10 +207,26 @@ function mapRagMessages(raw: any[]): ChatMessage[] {
       toolCalls: Array.isArray(ctx?.toolCalls) ? ctx.toolCalls : undefined,
       image: ctx?.image ? `ogcapture://${ctx.image}` : undefined,
       imagePath: ctx?.image,
+      imageMetadata: ctx?.imageMetadata,
       // Attachments persisted on the user turn (clickable chips survive reload).
       attachments: Array.isArray(ctx?.attachments) ? ctx.attachments : undefined
     }
   })
+}
+
+function ImageMetadata({
+  metadata
+}: {
+  metadata?: ImageGenerationMetadata
+}): React.JSX.Element | null {
+  if (!metadata) return null
+  return (
+    <p aria-label="Image generation metadata" className="mt-1.5 text-[10px] text-neutral-600">
+      {metadata.width} × {metadata.height} · {metadata.steps} steps · CFG {metadata.cfgScale} · seed{' '}
+      {metadata.seed}
+      {metadata.model ? ` · ${metadata.model}` : ''}
+    </p>
+  )
 }
 
 // Core (free) suggestions — generic chat/build/image. Pro adds memory-aware ones.
@@ -429,6 +456,7 @@ export function MemoryChat({
   const [imageAvailable, setImageAvailable] = useState(false)
   const [imgSize, setImgSize] = useState(512)
   const [imgSteps, setImgSteps] = useState(10)
+  const [imgCfgScale, setImgCfgScale] = useState(2)
   const [imgSeed, setImgSeed] = useState('')
   const [imgNegative, setImgNegative] = useState('')
   const [imgInit, setImgInit] = useState<string | null>(null)
@@ -839,9 +867,10 @@ export function MemoryChat({
   // store too, so persisted overrides apply once they load.
   useEffect(() => {
     if (!imgModel) return
-    const { steps, size } = resolveImageParams(imgModel, imgParamStore)
+    const { steps, size, cfgScale } = resolveImageParams(imgModel, imgParamStore)
     setImgSize(size)
     setImgSteps(steps)
+    setImgCfgScale(cfgScale)
   }, [imgModel, imgParamStore])
 
   // Composer image-model dropdown: write through to the SAME owner ModelPicker
@@ -872,6 +901,14 @@ export function MemoryChat({
       setImgSize(value)
       if (!imgModel) return
       setImgParamStore((prev) => setOverride(prev, imgModel, 'size', value))
+    },
+    [imgModel]
+  )
+  const setCfgScaleOverride = useCallback(
+    (value: number) => {
+      setImgCfgScale(value)
+      if (!imgModel) return
+      setImgParamStore((prev) => setOverride(prev, imgModel, 'cfgScale', value))
     },
     [imgModel]
   )
@@ -1243,6 +1280,7 @@ export function MemoryChat({
           width: imgSize,
           height: imgSize,
           steps: imgSteps,
+          cfgScale: imgCfgScale,
           seed: Number.isNaN(seedNum) ? -1 : seedNum,
           model: imgModel || undefined,
           initImage: imgInit || undefined,
@@ -1250,17 +1288,27 @@ export function MemoryChat({
           conversationId: convId, // the turn's own conversation (activeConversationId can lag for a fresh/queued chat)
           projectId: projectId
         })
+        const imageMetadata: ImageGenerationMetadata = {
+          width: imgSize,
+          height: imgSize,
+          steps: imgSteps,
+          cfgScale: imgCfgScale,
+          seed: typeof img.seed === 'number' ? img.seed : Number.isNaN(seedNum) ? -1 : seedNum,
+          model: typeof img.model === 'string' ? img.model : imgModel || undefined
+        }
         const assistantMessage: ChatMessage = {
           id: `a-${Date.now()}`,
           role: 'assistant',
           content: `Generated for: ${trimmed}`,
           image: img.dataUrl,
-          imagePath: img.path
+          imagePath: img.path,
+          imageMetadata
         }
         setConvMessages(convId, (prev) => [...prev, assistantMessage])
         try {
           await window.api.addRagMessage(convId, 'assistant', `Generated for: ${trimmed}`, {
-            image: img.path
+            image: img.path,
+            imageMetadata
           })
         } catch {
           /* ignore */
@@ -2578,17 +2626,20 @@ export function MemoryChat({
                         // Generated image in voice mode: show the image, no audio bubble.
                         if (message.image) {
                           return (
-                            <img
-                              src={message.image}
-                              alt="Generated"
-                              onClick={() =>
-                                setLightbox({
-                                  url: message.image as string,
-                                  path: message.imagePath
-                                })
-                              }
-                              className="max-w-[20rem] cursor-zoom-in rounded-md border border-neutral-800 transition-opacity hover:opacity-90"
-                            />
+                            <div>
+                              <img
+                                src={message.image}
+                                alt="Generated"
+                                onClick={() =>
+                                  setLightbox({
+                                    url: message.image as string,
+                                    path: message.imagePath
+                                  })
+                                }
+                                className="max-w-[20rem] cursor-zoom-in rounded-md border border-neutral-800 transition-opacity hover:opacity-90"
+                              />
+                              <ImageMetadata metadata={message.imageMetadata} />
+                            </div>
                           )
                         }
                         const transcript = (
@@ -2923,14 +2974,20 @@ export function MemoryChat({
                           )
                         })()}
                         {message.image ? (
-                          <img
-                            src={message.image}
-                            alt="Generated"
-                            onClick={() =>
-                              setLightbox({ url: message.image as string, path: message.imagePath })
-                            }
-                            className="mt-2 max-w-full cursor-zoom-in rounded-md border border-neutral-800 transition-opacity hover:opacity-90"
-                          />
+                          <div>
+                            <img
+                              src={message.image}
+                              alt="Generated"
+                              onClick={() =>
+                                setLightbox({
+                                  url: message.image as string,
+                                  path: message.imagePath
+                                })
+                              }
+                              className="mt-2 max-w-full cursor-zoom-in rounded-md border border-neutral-800 transition-opacity hover:opacity-90"
+                            />
+                            <ImageMetadata metadata={message.imageMetadata} />
+                          </div>
                         ) : null}
                       </div>
 
@@ -3577,6 +3634,20 @@ export function MemoryChat({
                       value={imgSteps}
                       onChange={(e) =>
                         setStepsOverride(Math.max(4, Math.min(50, Number(e.target.value) || 16)))
+                      }
+                      className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    Guidance
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      step={0.5}
+                      value={imgCfgScale}
+                      onChange={(e) =>
+                        setCfgScaleOverride(Math.max(0, Math.min(20, Number(e.target.value) || 0)))
                       }
                       className="w-14 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 outline-none focus:border-green-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                     />

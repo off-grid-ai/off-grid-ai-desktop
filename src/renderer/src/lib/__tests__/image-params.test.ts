@@ -35,7 +35,11 @@ describe('effectiveValue — override ?? default', () => {
 describe('resolveImageParams — model default vs user override', () => {
   it('with no store, returns the model defaults from the shared source of truth', () => {
     const d = standardModelDefaults(FULL)
-    expect(resolveImageParams(FULL, null)).toEqual({ steps: d.defaultSteps, size: d.defaultSize })
+    expect(resolveImageParams(FULL, null)).toEqual({
+      steps: d.defaultSteps,
+      size: d.defaultSize,
+      cfgScale: d.defaultCfg
+    })
   })
 
   it('a per-model steps override wins over the model default', () => {
@@ -44,6 +48,7 @@ describe('resolveImageParams — model default vs user override', () => {
     // The bug: this used to snap back to d.defaultSteps (28) on model change.
     expect(resolveImageParams(FULL, store).steps).toBe(10)
     expect(resolveImageParams(FULL, store).size).toBe(d.defaultSize)
+    expect(resolveImageParams(FULL, store).cfgScale).toBe(d.defaultCfg)
   })
 
   it('overrides are per-model — switching models does not clobber the other model', () => {
@@ -61,7 +66,19 @@ describe('resolveImageParams — model default vs user override', () => {
   it('resolves size overrides independently of steps', () => {
     const store: ImageParamStore = { [FEW_STEP]: { size: 768 } }
     const d = standardModelDefaults(FEW_STEP)
-    expect(resolveImageParams(FEW_STEP, store)).toEqual({ steps: d.defaultSteps, size: 768 })
+    expect(resolveImageParams(FEW_STEP, store)).toEqual({
+      steps: d.defaultSteps,
+      size: 768,
+      cfgScale: d.defaultCfg
+    })
+  })
+
+  it('resolves a guidance override from the same per-model store', () => {
+    const store: ImageParamStore = { [FULL]: { cfgScale: 5.5 } }
+    expect(resolveImageParams(FULL, store).cfgScale).toBe(5.5)
+    expect(resolveImageParams(FEW_STEP, store).cfgScale).toBe(
+      standardModelDefaults(FEW_STEP).defaultCfg
+    )
   })
 })
 
@@ -86,6 +103,13 @@ describe('setOverride — pure, per-model persistence', () => {
     const store: ImageParamStore = { [FULL]: { steps: 12, size: 768 } }
     const next = setOverride(store, FULL, 'steps', d.defaultSteps)
     expect(next[FULL]).toEqual({ size: 768 })
+  })
+
+  it('keeps guidance independent and clears it at the shared model default', () => {
+    const defaults = standardModelDefaults(FULL)
+    const store: ImageParamStore = { [FULL]: { steps: 12, cfgScale: 5.5 } }
+    const next = setOverride(store, FULL, 'cfgScale', defaults.defaultCfg)
+    expect(next[FULL]).toEqual({ steps: 12 })
   })
 
   it('overwrites an existing override with a new value', () => {

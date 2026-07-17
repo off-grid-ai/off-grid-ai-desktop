@@ -16,6 +16,7 @@ import { standardModelDefaults } from '../../../shared/image-defaults'
 export interface ImageParamOverride {
   steps?: number | null
   size?: number | null
+  cfgScale?: number | null
 }
 
 /** All persisted image-composer params, keyed by model filename. Shape mirrors
@@ -27,6 +28,7 @@ export type ImageParamStore = Record<string, ImageParamOverride>
 export interface EffectiveImageParams {
   steps: number
   size: number
+  cfgScale: number
 }
 
 /** override ?? default. A user override (any finite number) wins; absent (null /
@@ -51,8 +53,16 @@ export function resolveImageParams(
   const o = store?.[model]
   return {
     steps: effectiveValue(o?.steps, d.defaultSteps),
-    size: effectiveValue(o?.size, d.defaultSize)
+    size: effectiveValue(o?.size, d.defaultSize),
+    cfgScale: effectiveValue(o?.cfgScale, d.defaultCfg)
   }
+}
+
+function defaultForKey(model: string, key: keyof ImageParamOverride): number {
+  const defaults = standardModelDefaults(model)
+  if (key === 'steps') return defaults.defaultSteps
+  if (key === 'size') return defaults.defaultSize
+  return defaults.defaultCfg
 }
 
 /** Record a user override for one param of one model, returning a NEW store
@@ -65,15 +75,14 @@ export function setOverride(
   value: number
 ): ImageParamStore {
   const next: ImageParamStore = { ...(store ?? {}) }
-  const d = standardModelDefaults(model)
-  const modelDefault = key === 'steps' ? d.defaultSteps : d.defaultSize
+  const modelDefault = defaultForKey(model, key)
   const entry: ImageParamOverride = { ...(next[model] ?? {}) }
   if (value === modelDefault) {
     delete entry[key]
   } else {
     entry[key] = value
   }
-  if (entry.steps == null && entry.size == null) {
+  if (entry.steps == null && entry.size == null && entry.cfgScale == null) {
     delete next[model]
   } else {
     next[model] = entry

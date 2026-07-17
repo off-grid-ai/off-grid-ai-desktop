@@ -58,10 +58,11 @@ type GenPayload = {
   prompt?: string
   negativePrompt?: string
   seed?: number
+  cfgScale?: number
   conversationId?: string
 }
 
-type ImageResult = { dataUrl: string; path: string }
+type ImageResult = { dataUrl: string; path: string; seed?: number; model?: string }
 type ImageProgress = {
   phase: string
   step: number
@@ -136,9 +137,11 @@ function installApi(opts: InstallApiOptions): InstalledApi {
   let progress: ((value: ImageProgress) => void) | null = null
   const generateImage = vi.fn<(payload: GenPayload) => Promise<ImageResult>>(
     opts.generate ??
-      (async (_p: GenPayload) => ({
+      (async (payload: GenPayload) => ({
         dataUrl: 'data:image/png;base64,AAAA',
-        path: '/tmp/out.png'
+        path: '/tmp/out.png',
+        seed: payload.seed,
+        model: payload.model
       }))
   )
   const setActiveModalModel = vi.fn<(kind: string, model: string) => Promise<void>>(async () => {})
@@ -365,6 +368,7 @@ describe('<MemoryChat/> image mode — the generateImage payload is the terminal
     const sizeSelect = screen.getByLabelText('Size') as HTMLSelectElement
     await firstUser.selectOptions(sizeSelect, '768')
     typeSteps(17)
+    fireEvent.change(screen.getByLabelText('Guidance'), { target: { value: '5.5' } })
     const seedInput = screen.getByLabelText('Seed') as HTMLInputElement
     await firstUser.type(seedInput, '4242')
     await firstUser.type(screen.getByPlaceholderText('Negative prompt'), 'blurry, watermark')
@@ -378,9 +382,13 @@ describe('<MemoryChat/> image mode — the generateImage payload is the terminal
       width: 768,
       height: 768,
       steps: 17,
+      cfgScale: 5.5,
       seed: 4242
     })
     expect(await screen.findByAltText('Generated')).toBeTruthy()
+    expect(screen.getByLabelText('Image generation metadata').textContent).toContain(
+      '768 × 768 · 17 steps · CFG 5.5 · seed 4242'
+    )
 
     // The component persists per-model size/steps plus the global seed. A fresh
     // render must hydrate those controls and send the same values without editing.
@@ -393,6 +401,7 @@ describe('<MemoryChat/> image mode — the generateImage payload is the terminal
     expect((screen.getByLabelText('Model') as HTMLSelectElement).value).toBe(FULL)
     expect((screen.getByLabelText('Size') as HTMLSelectElement).value).toBe('768')
     expect(stepsInput().value).toBe('17')
+    expect((screen.getByLabelText('Guidance') as HTMLInputElement).value).toBe('5.5')
     expect((screen.getByLabelText('Seed') as HTMLInputElement).value).toBe('4242')
     expect((screen.getByPlaceholderText('Negative prompt') as HTMLInputElement).value).toBe(
       'blurry, watermark'
@@ -407,6 +416,7 @@ describe('<MemoryChat/> image mode — the generateImage payload is the terminal
       width: 768,
       height: 768,
       steps: 17,
+      cfgScale: 5.5,
       seed: 4242
     })
   })
