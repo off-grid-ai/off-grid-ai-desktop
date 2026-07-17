@@ -7,7 +7,7 @@ import path from 'node:path'
  * this list. Keeping admission in one place prevents a new media surface from
  * working through one transport while silently returning 403 through the other.
  */
-export const LOCAL_MEDIA_DIRS = [
+const LOCAL_MEDIA_DIRS = [
   'meetings',
   'uploads',
   'captures',

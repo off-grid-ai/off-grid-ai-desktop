@@ -25,7 +25,7 @@ export interface SseToolCallDelta {
 }
 
 /** Shape of a single streamed delta from the OpenAI-style chat-completions SSE. */
-export interface SseDelta {
+interface SseDelta {
   reasoning_content?: string
   content?: string
   tool_calls?: SseToolCallDelta[]

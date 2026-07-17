@@ -1,6 +1,6 @@
-export type EntityIdentifierKind = 'name' | 'email' | 'handle' | 'phone' | 'url'
+type EntityIdentifierKind = 'name' | 'email' | 'handle' | 'phone' | 'url'
 
-export interface EntityIdentifier {
+interface EntityIdentifier {
   kind: EntityIdentifierKind
   value: string
 }

@@ -1,4 +1,4 @@
-export type ActionsMode = 'todo' | 'approvals'
+type ActionsMode = 'todo' | 'approvals'
 
 export type ProNavigationIntent =
   | {

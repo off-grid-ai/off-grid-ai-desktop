@@ -1,4 +1,4 @@
-export const MAX_CONCURRENT_MODEL_DOWNLOADS = 3
+const MAX_CONCURRENT_MODEL_DOWNLOADS = 3
 
 export type DownloadQueueState = 'queued' | 'downloading' | 'cancelled'
 export type DownloadResult = { success: boolean; error?: string }

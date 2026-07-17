@@ -46,7 +46,7 @@ export function registerEntityDomain(domain: EntityDomain): () => void {
   }
 }
 
-export function getEntityDomain(): EntityDomain {
+function getEntityDomain(): EntityDomain {
   return registeredEntityDomain ?? sqliteEntityDomain
 }
 

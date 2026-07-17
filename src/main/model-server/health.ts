@@ -1,4 +1,4 @@
-export type GatewayModalityStatus = 'ready' | 'not_installed'
+type GatewayModalityStatus = 'ready' | 'not_installed'
 
 export interface GatewayCapabilityFacts {
   chat: boolean

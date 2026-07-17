@@ -10,7 +10,7 @@
     "e2e/**/*.spec.ts",
     "scripts/**/*.{ts,mjs,cjs,js}",
     "src/**/*.{test,dbtest}.{ts,tsx}",
-    "pro/**/*.test.{ts,tsx}",
+    "pro/**/*.{test,dbtest}.{ts,tsx}",
     "src/renderer/src/components/ui/**/*.{ts,tsx}"
   ],
   "project": ["src/**/*.{ts,tsx}", "pro/**/*.{ts,tsx}"],
@@ -26,6 +26,7 @@
     "@offgrid/design",
     "better-sqlite3",
     "@types/better-sqlite3",
+    "pdf-parse",
     "kokoro-js",
     "ollama"
   ],

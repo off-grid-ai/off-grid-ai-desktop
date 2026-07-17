@@ -8,7 +8,7 @@ import fs from 'fs'
  *  back to a plain `path.resolve` when the path doesn't exist yet (realpath throws).
  *  Exported so callers serve the SANITIZED path (not the raw request input) after the
  *  allowlist check — the ogcapture:// + loopback media handlers share this one guard. */
-export function canonical(p: string): string {
+function canonical(p: string): string {
   try {
     return fs.realpathSync.native(p)
   } catch {

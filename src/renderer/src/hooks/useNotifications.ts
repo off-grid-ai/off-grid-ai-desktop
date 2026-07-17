@@ -21,4 +21,4 @@ export function useNotifications(): NotificationContextType {
   return context
 }
 
-export type { Notification, NotificationInput } from './notification-state'
+export type { Notification } from './notification-state'
