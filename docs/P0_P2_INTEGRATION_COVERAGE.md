@@ -8,15 +8,15 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 25 covered, 49 left.
-  - P1: 71 total, 7 covered, 64 left.
+  - P0: 74 total, 27 covered, 47 left.
+  - P1: 71 total, 8 covered, 63 left.
   - P2: 10 total, 1 covered, 9 left.
-  - Overall: 155 total, 33 covered, 122 left.
+  - Overall: 155 total, 36 covered, 119 left.
 - Green gates today:
-  - `npm test`: 203 files passed, 1 skipped; 2,192 tests passed, 1 skipped.
+  - `npm test`: 205 files passed, 1 skipped; 2,195 tests passed, 1 skipped.
   - `npm run test:coverage`: 96.75% statements, 91.55% branches, 96.15% functions,
     97.52% lines.
-  - `npm run test:db`: 13 files and 105 real SQLite integration tests passed; Electron ABI
+  - `npm run test:db`: 14 files and 106 real SQLite integration tests passed; Electron ABI
     restored afterward.
   - `npm run test:e2e`: 28 Playwright Electron tests passed against fresh synthetic temp profiles.
   - Both TypeScript projects pass.
@@ -32,6 +32,9 @@ manual claim does not count as complete integration coverage.
 - #13 - System Health is truthful. `e2e/smoke.spec.ts` launches a fresh profile, compares the real
   gateway `/health` payload with the System Health IPC components, verifies absent runtimes are
   reported as `not_installed`, and confirms the unavailable chat engine port is actually down.
+- #26 - Truncated GGUF is rejected. `model-integrity.integration.test.ts` drives the real model
+  manager against a temp filesystem, with only HTTP delivery faked, and proves truncated downloads
+  and local imports are rejected before promotion, installation, copying, or registration.
 - #43 - Chat survives relaunch. `e2e/chat-memory.spec.ts` creates multiple scoped and unscoped
   conversations with messages and context through production IPC, fully closes Electron, reopens
   the same profile, and verifies every association and payload through the reloaded preload path.
@@ -54,6 +57,9 @@ manual claim does not count as complete integration coverage.
   with only the OS automation boundary faked, including ordering and clipboard restoration.
 - #112 - Approval queue gates actions. `approvals.integration.test.ts` exercises real proposal,
   decision, execution, failure, and audit persistence against SQLite.
+- #116 - CRM processing tolerates schema upgrades. `crm-schema-upgrade.dbtest.ts` creates a real
+  legacy SQLite schema, drives the production observation funnel, verifies additive migration and
+  row preservation, then reopens the database and proves processing remains idempotent.
 - #117 - Clipboard records text. `e2e/pro.spec.ts` writes unique text to the real OS clipboard and
   waits for the production poller and encrypted history store to expose that exact item over IPC.
 - #119 - Clipboard records images and files. `e2e/pro.spec.ts` captures real file URLs and a new
@@ -106,6 +112,10 @@ manual claim does not count as complete integration coverage.
   and TTS through the real Settings controls, verifies production IPC, fully relaunches Electron,
   and verifies all values reload. The SQLite and runtime-manager integrations prove that same map
   controls persistence and re-warm behavior.
+- #131 - Resource mode applies. `resource-mode.integration.test.ts` drives all three presets through
+  the real LLM settings owner, disk persistence, fresh-service launch arguments, recommendation,
+  and setup planner with only host RAM controlled; the Electron tour proves selection stays
+  responsive and the sizing guards enforce memory clamps.
 
 ## Covered P2 journeys
 
@@ -142,7 +152,6 @@ manual claim does not count as complete integration coverage.
 - #23 - Delete does not cancel another download.
 - #24 - Offline download fails clearly.
 - #25 - Interrupted download recovers.
-- #26 - Truncated GGUF is rejected.
 - #27 - Disk write failure does not crash.
 - #28 - Active text model survives relaunch.
 - #29 - Active modal models survive relaunch.
@@ -240,7 +249,6 @@ manual claim does not count as complete integration coverage.
 - #109 - Entity detail opens.
 - #111 - Action items are extracted.
 - #114 - Notifications open their target.
-- #116 - CRM processing tolerates schema upgrades.
 
 ## Left - clipboard and vault
 
@@ -248,7 +256,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - settings, privacy, licensing, and updates
 
-- #131 - Resource mode applies.
 - #132 - Settings survive relaunch.
 - #133 - Storage usage is truthful.
 - #134 - Clear cache preserves user data.
