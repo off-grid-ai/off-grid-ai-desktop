@@ -33,6 +33,7 @@ export function DictationOverlay(): React.JSX.Element | null {
   const startRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const errorHideRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const errorVisibleRef = useRef(false)
   const transcriptRef = useRef<HTMLDivElement | null>(null)
   // True while a live-interim request is in flight — the next timeslice waits for it,
   // so we never queue up overlapping interim passes (self-pacing).
@@ -163,6 +164,7 @@ export function DictationOverlay(): React.JSX.Element | null {
         clearTimeout(errorHideRef.current)
         errorHideRef.current = null
       }
+      errorVisibleRef.current = false
       setError(null)
       setInterim('')
       setLevel(0)
@@ -202,7 +204,7 @@ export function DictationOverlay(): React.JSX.Element | null {
         setInterim('')
       }),
       v.on('state', (s) => {
-        if (s === 'idle') {
+        if (s === 'idle' && !errorVisibleRef.current) {
           setActive(false)
           stopCapture()
           if (timerRef.current) {
@@ -212,11 +214,15 @@ export function DictationOverlay(): React.JSX.Element | null {
         }
       }),
       v.on('error', (msg) => {
+        errorVisibleRef.current = true
         setError(String(msg ?? 'Dictation error'))
         setActive(true)
         stopCapture()
         if (errorHideRef.current) clearTimeout(errorHideRef.current)
-        errorHideRef.current = setTimeout(() => setActive(false), 2600)
+        errorHideRef.current = setTimeout(() => {
+          errorVisibleRef.current = false
+          setActive(false)
+        }, 2600)
       })
     ]
     return () => {

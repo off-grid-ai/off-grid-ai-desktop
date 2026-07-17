@@ -8,7 +8,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@offgrid/core': resolve(__dirname, 'src'),
-      '@offgrid/pro': resolve(__dirname, 'pro')
+      '@offgrid/pro': resolve(__dirname, 'pro'),
+      '@renderer': resolve(__dirname, 'src/renderer/src')
     }
   },
   test: {
