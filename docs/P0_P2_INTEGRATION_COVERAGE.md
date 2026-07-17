@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 45 covered, 29 left.
+  - P0: 74 total, 46 covered, 28 left.
   - P1: 71 total, 34 covered, 37 left.
   - P2: 10 total, 3 covered, 7 left.
-  - Overall: 155 total, 82 covered, 73 left.
+  - Overall: 155 total, 83 covered, 72 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -154,6 +154,10 @@ manual claim does not count as complete integration coverage.
 - #145 - Cold relaunch after forced quit. `e2e/chat-memory.spec.ts` kills the real Electron main
   process during non-destructive chat activity, waits for process exit, reopens the same profile,
   and verifies clean boot, preload availability, usable input, and durable committed chat data.
+- #147 - Engine restart recovers. `image-runtime-reliability.integration.dbtest.ts` crashes the
+  native llama executable boundary while a real gateway request waits, proves the production service
+  marks it down, starts exactly one replacement, and returns the recovered chat response. Teardown
+  verifies the gateway/model ports rebind and every owned child process exits.
 
 ## Covered P1 journeys
 
@@ -372,7 +376,6 @@ manual claim does not count as complete integration coverage.
 
 - #144 - Local use works offline.
 - #146 - Model ports are single-owner.
-- #147 - Engine restart recovers.
 - #148 - Low disk space is handled.
 - #149 - Large seeded collections stay usable.
 - #150 - Window resize preserves desktop layout.
