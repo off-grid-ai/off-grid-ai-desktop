@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 72 covered, 2 left.
-  - P1: 71 total, 61 covered, 10 left.
-  - P2: 10 total, 9 covered, 1 left.
-  - Overall: 155 total, 142 covered, 13 left.
+  - P1: 71 total, 68 covered, 3 left.
+  - P2: 10 total, 10 covered, 0 left.
+  - Overall: 155 total, 150 covered, 5 left.
 - P0 handoff status:
   - Every P0 journey with an automatable application seam is integration-covered.
   - #1 Core DMG install and #2 Pro DMG install remain release-device checks against the signed,
@@ -279,6 +279,10 @@ manual claim does not count as complete integration coverage.
 - #14 - Chat engine stderr is surfaced. The same integration starts a native child that reports an
   incompatible `gemma4` architecture and exits, then proves System Health returns the classified
   engine-too-old reason rather than a generic down message.
+- #16 - Denied permission is recoverable. `permission-recovery.test.ts` and
+  `MemoryChat.microphone-permission.integration.test.tsx` drive the production permission owners
+  from denied to the correct System Settings target and prove the rendered microphone path stays
+  usable for retry without reloading the app.
 - #18 - Vision model downloads. `model-download-matrix.integration.test.ts` proves a real catalog
   vision model remains unavailable until both weights and projector finish, then activates the exact
   primary/projector pair persisted by the production manager.
@@ -290,6 +294,9 @@ manual claim does not count as complete integration coverage.
   only the heavyweight worker boundary.
 - #21 - Image model downloads. The model matrix holds a multi-file catalog image runtime unavailable
   until its full file set lands, then proves the production image status and active selection agree.
+- #22 - Multiple downloads queue. Production download ownership enforces three active transfers,
+  exposes FIFO queued state, rejects duplicate queued IDs, cancels queued work, and drains four real
+  transfer promises without dropping or prematurely resolving any model.
 - #23 - Delete does not cancel another download. The matrix holds one real HTTP download pending,
   deletes a different installed model through the production manager, then completes and installs
   the untouched in-flight model.
@@ -320,6 +327,9 @@ manual claim does not count as complete integration coverage.
 - #47 - Regenerate reply. `MemoryChat.chat-lifecycle.test.tsx` invokes the rendered Regenerate
   action, replaces the old assistant answer from the same user context, and proves both the visible
   and persisted transcripts contain one user turn and the new answer without duplication.
+- #49 - Long answer respects configured cap. The production stream adapters preserve native finish
+  reasons, normalize only the configured token-cap cutoff, render the visible limit, and persist and
+  restore that exact cutoff contract after conversation reload.
 - #54 - New chat inherits its project. `MemoryChat.project-inheritance.test.tsx` drives the real
   composer from a project target across the preload boundary and proves both conversation creation
   and RAG retrieval receive the same project ID; reopening a saved conversation restores that scope.
@@ -332,10 +342,17 @@ manual claim does not count as complete integration coverage.
 - #60 - Unsupported document fails clearly. The production picker excludes unsupported types;
   `rag-store-integration.dbtest.ts` drives a corrupt PDF through the real parser, RAG service, and
   SQLite store and proves extraction fails clearly before documents, chunks, or embeddings exist.
+- #64 - Image settings apply. `MemoryChat.image.test.tsx` drives the real image composer through
+  per-model size, steps, and guidance overrides plus seed and negative prompt, proves the exact
+  payload across remount, and restores generation metadata from persisted conversation context.
 - #65 - Image runtime eviction recovers. `image-runtime-reliability.integration.dbtest.ts` starts
   the real chat service against a native executable boundary, generates an image through the real
   modality queue to evict it, then proves a second native chat process starts and answers the next
   message without an application restart.
+- #66 - Image RAM guard is safe. `image-runtime-reliability.integration.dbtest.ts` proves an
+  over-budget request stops before native execution, while the rendered integration exposes one
+  explicit `Run anyway` recovery that retries the identical request and scope with the unsafe
+  override and no duplicate turn.
 - #67 - Generated image opens. `MemoryChat.image.test.tsx` opens the generated output in the shared
   lightbox, exports the exact production path and filename through the native save boundary, and
   closes the preview without duplicating the artifact.
@@ -359,6 +376,10 @@ manual claim does not count as complete integration coverage.
 - #82 - Gateway failure envelope. `model-server-chat.integration.test.ts` sends malformed input
   through the real HTTP gateway, proves it receives the stable OpenAI-style JSON error contract
   without reaching the native model boundary, then calls the gateway again to verify it stays healthy.
+- #88 - Replay playback uses media server. `media-server.integration.test.ts` runs the real
+  loopback server over temp PNG, MP4, WAV, and byte ranges, while rendered Replay follows its
+  emitted URL, fetches the exact bytes, advances playback, and shares the same media lifecycle with
+  Meetings and Voice.
 - #89 - Replay navigation preserves target. `e2e/pro.spec.ts` derives a query from an actual
   interior capture, opens its visible Search result through the production Pro router, and proves
   Replay lands on that exact image, app, timestamp, caption, and timeline position rather than the
@@ -414,6 +435,10 @@ manual claim does not count as complete integration coverage.
 - #120 - Clipboard live refresh keeps valid selection.
   `ClipboardScreen.integration.test.tsx` renders the real screen and proves selection is retained
   while the item exists, then moves to a valid remaining item after deletion.
+- #123 - Clipboard popup hotkey. Pro `clipboard-popup-journey.dbtest.ts` registers the production
+  `CommandOrControl+Shift+C` shortcut, waits for renderer readiness, reuses the popup, and preserves
+  failed selection; rendered popup integration proves search, arrows, Enter restore, reopen reset,
+  and visible retry without mocking clipboard logic.
 - #129 - Runtime residency toggles persist. `e2e/settings-residency.spec.ts` changes image, STT,
   and TTS through the real Settings controls, verifies production IPC, fully relaunches Electron,
   and verifies all values reload. The SQLite and runtime-manager integrations prove that same map
@@ -465,6 +490,9 @@ manual claim does not count as complete integration coverage.
 
 ## Covered P2 journeys
 
+- #44 - Rename conversation. `conversation-rename.dbtest.ts` renders production chat against real
+  temp SQLite and proves scoped and unscoped rename update the sidebar and tab, survive remount,
+  reject blank or missing rows with retry state, and cancel with Escape.
 - #50 - Keyboard and navigation shortcuts. `App.navigation.integration.test.tsx` drives the real
   shell through Project Beta to Integrations, then proves Cmd+[ and Cmd+] restore both routes and
   the selected project instead of losing screen state.
@@ -500,34 +528,14 @@ manual claim does not count as complete integration coverage.
 ## Left - onboarding and health
 
 - #12 - Onboarding resumes after relaunch.
-- #16 - Denied permission is recoverable.
-
-## Left - models and downloads
-
-- #22 - Multiple downloads queue.
-
-## Left - chat and conversations
-
-- #44 - Rename conversation.
-- #49 - Long answer respects configured cap.
-
-## Left - image and vision
-
-- #64 - Image settings apply.
-- #66 - Image RAM guard is safe.
 
 ## Left - capture, memory, and replay
 
-- #88 - Replay playback uses media server.
 - #93 - Day links open correct records.
 
 ## Left - entities, actions, and reflection
 
 - #114 - Notifications open their target.
-
-## Left - clipboard and vault
-
-- #123 - Clipboard popup hotkey.
 
 ## Next implementation order
 
