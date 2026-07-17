@@ -1,20 +1,24 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type -- Playwright JavaScript harness */
 // Screenshot harness: launches the built app (free/core), navigates each core
 // screen, and saves PNGs to docs/screenshots/. Uses the seeded demo data.
 // Re-launches between states (no reload — the SPA rewrites the URL).
 //   node scripts/screenshots.mjs
 import { _electron as electron } from '@playwright/test'
 import { mkdirSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
+import {
+  createEvidenceProfile,
+  evidenceEnvironment,
+  removeEvidenceProfile
+} from './release-evidence-profile.mjs'
 
 const OUT = 'docs/screenshots'
 mkdirSync(OUT, { recursive: true })
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
-async function launch(extraEnv = {}) {
+async function launch(profile, { seedCore = false } = {}) {
   const app = await electron.launch({
     args: ['.'],
-    env: { ...process.env, OFFGRID_PRO: '0', ...extraEnv }
+    env: evidenceEnvironment({ profile, seedCore })
   })
   const win = await app.firstWindow()
   await win.waitForLoadState('domcontentloaded')
@@ -43,13 +47,17 @@ const nav = async (win, label) => {
 }
 
 // --- Onboarding (fresh temp profile → no persisted flag → onboarding shows) ---
-const freshProfile = join(tmpdir(), `offgrid-shots-${process.pid}`)
-let { app, win } = await launch({ OFFGRID_USER_DATA: freshProfile })
+const onboardingProfile = createEvidenceProfile('core-onboarding')
+const tourProfile = createEvidenceProfile('core-tour')
+let { app, win } = await launch(onboardingProfile)
 await shot(win, '08-onboarding')
 await app.close()
 
-// --- Tour (default profile: already onboarded + seeded demo data) ---
-;({ app, win } = await launch())
+// --- Tour (isolated profile with synthetic demo data) ---
+;({ app, win } = await launch(tourProfile, { seedCore: true }))
+await win.evaluate(() => localStorage.setItem('onboarding_completed', 'true'))
+await app.close()
+;({ app, win } = await launch(tourProfile))
 try {
   await win.getByRole('button', { name: 'Expand sidebar' }).click({ timeout: 4000 })
 } catch {
@@ -75,4 +83,6 @@ await shot(win, '06-gateway')
 await nav(win, 'Day')
 await shot(win, '07-pro-upgrade') // locked Pro tab → upgrade
 await app.close()
+removeEvidenceProfile(onboardingProfile)
+removeEvidenceProfile(tourProfile)
 console.log('done → docs/screenshots/')

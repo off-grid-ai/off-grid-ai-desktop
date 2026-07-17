@@ -1,28 +1,21 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type -- Playwright JavaScript harness */
 // PRO screenshot harness — launches the built app with Pro ACTIVE and a SYNTHETIC
 // demo seed in an ISOLATED profile (never the real DB), then captures each pro
 // screen. Output: pro/docs/screenshots/ (private repo). No blur — data is fake.
 //   node scripts/screenshots-pro.mjs
 import { _electron as electron } from '@playwright/test'
-import { mkdirSync, rmSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
+import { mkdirSync } from 'fs'
+import {
+  createEvidenceProfile,
+  evidenceEnvironment,
+  removeEvidenceProfile
+} from './release-evidence-profile.mjs'
 
 const OUT = 'pro/docs/screenshots'
 mkdirSync(OUT, { recursive: true })
-const PROFILE = join(tmpdir(), 'offgrid-pro-demo')
-try {
-  rmSync(PROFILE, { recursive: true, force: true })
-} catch {
-  /* fresh */
-}
+const PROFILE = createEvidenceProfile('pro-tour')
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
-const baseEnv = {
-  ...process.env,
-  OFFGRID_PRO: '1',
-  OFFGRID_USER_DATA: PROFILE,
-  OFFGRID_NO_SERVICES: '1'
-}
 // Remove demo-only overlays before each shot: the setup nudge and the meeting
 // recording indicator (auto-triggered; not meaningful in a static demo).
 const killNudge = (win) =>
@@ -39,8 +32,17 @@ const killNudge = (win) =>
     })
     .catch(() => {})
 
-async function launch(extraEnv = {}) {
-  const app = await electron.launch({ args: ['.'], env: { ...baseEnv, ...extraEnv } })
+async function launch({ seedCore = false, seedPro = false } = {}) {
+  const app = await electron.launch({
+    args: ['.'],
+    env: evidenceEnvironment({
+      profile: PROFILE,
+      pro: true,
+      seedCore,
+      seedPro,
+      extra: { OFFGRID_NO_SERVICES: '1' }
+    })
+  })
   const win = await app.firstWindow()
   await win.waitForLoadState('domcontentloaded')
   await app.evaluate(({ BrowserWindow, screen }) => {
@@ -59,7 +61,7 @@ async function launch(extraEnv = {}) {
 }
 
 // Launch 1: seed the isolated DB (main process) + mark onboarding done, then quit.
-let { app, win } = await launch({ OFFGRID_SEED_PRO: '1' })
+let { app, win } = await launch({ seedCore: true, seedPro: true })
 await wait(6000) // let activateMain + seedProDemo finish
 await win.evaluate(async () => {
   localStorage.setItem('onboarding_completed', 'true')
@@ -194,4 +196,5 @@ for (const [label, file] of [
   await shot(file)
 }
 await app.close()
+removeEvidenceProfile(PROFILE)
 console.log('done →', OUT)
