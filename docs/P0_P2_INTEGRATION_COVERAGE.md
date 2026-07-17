@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 56 covered, 18 left.
-  - P1: 71 total, 42 covered, 29 left.
+  - P0: 74 total, 57 covered, 17 left.
+  - P1: 71 total, 48 covered, 23 left.
   - P2: 10 total, 3 covered, 7 left.
-  - Overall: 155 total, 101 covered, 54 left.
+  - Overall: 155 total, 108 covered, 47 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -52,6 +52,10 @@ manual claim does not count as complete integration coverage.
 - #33 - No memory scope works. The same rendered integration keeps No memory visibly selected,
   sends a turn through the production chat path with retrieval disabled and no project scope, then
   renders the conversation-only answer normally.
+- #34 - All memory scope works. `rag-empty-memory.dbtest.ts` seeds a synthetic capture into real
+  SQLite/FTS storage, invokes the production `rag:chat` IPC handler in All memory mode, and proves
+  the local-model prompt, answer, streamed retrieval count, and returned `[S1]` citation all carry
+  the exact matching source.
 - #38 - Stop before first token. `MemoryChat.chat-lifecycle.test.tsx` holds the real rendered turn
   at the preload persistence boundary, clicks Stop during the pre-stream window, proves the model
   transport never starts, and immediately completes a second turn normally.
@@ -280,8 +284,20 @@ manual claim does not count as complete integration coverage.
 - #98 - Meeting survives relaunch. `meeting-persistence.dbtest.ts` saves synthetic meeting media,
   transcript, and local-model summary through production filesystem/SQLite owners, closes the DB,
   resets modules, and proves the exact audio metadata, transcript, and summary restore.
+- #107 - Entities are synthesized. `entity-action-journeys.dbtest.ts` records person, project, and
+  company mentions through production observation and entity owners, proving one correctly typed
+  record per entity with automatic identifiers and two supporting observations.
+- #108 - Self mentions are filtered. The same real-DB integration stores the user's name and aliases,
+  passes mixed mentions through production identity filtering, and proves only the external person
+  becomes an entity.
+- #109 - Entity detail opens. `EntityNavigation.integration.test.tsx` drives the real Search result
+  gesture into the real Entities screen and proves the selected ID's type, narrative, handle, and
+  both evidence rows remain consistent across entry points.
 - #110 - Entity merge preserves evidence. `resolve.integration.test.ts` exercises real entity,
   aliases, observations, relationships, action reassignment, split, and merge persistence.
+- #111 - Action items are extracted. `entity-action-journeys.dbtest.ts` sends a synthetic commitment
+  through the production extractor over a loopback native-model boundary and proves exactly one
+  imperative action persists with its due date and source evidence.
 - #113 - Action status survives persistence. `actions-status.integration.test.ts` exercises real
   status, reopen, dismiss, feedback, ordering, and reason storage against SQLite.
 - #115 - Reflect uses real time ranges. `reflect.integration.test.ts` verifies real observation
@@ -306,6 +322,10 @@ manual claim does not count as complete integration coverage.
   the real LLM settings owner, disk persistence, fresh-service launch arguments, recommendation,
   and setup planner with only host RAM controlled; the Electron tour proves selection stays
   responsive and the sizing guards enforce memory clamps.
+- #133 - Storage usage is truthful. `storage-usage.integration.dbtest.ts` writes exact synthetic
+  model, capture, meeting, image, artifact, and thumbnail byte counts to a temp profile, then proves
+  production storage owners and the rendered Storage/Data Privacy panels report their real totals,
+  categories, models, and orphaned partials.
 - #139 - Invalid or exhausted license fails clearly. `licensing.integration.test.ts` drives invalid
   and device-limit responses through the production service and proves entitlement remains false;
   `UpgradeScreen.license.test.tsx` verifies distinct actionable messages remain on the locked screen.
@@ -318,6 +338,9 @@ manual claim does not count as complete integration coverage.
 - #143 - Update channel persists. `src/main/__tests__/settings-persistence.dbtest.ts` changes the
   channel through the production update IPC handler, closes the encrypted database, reloads every
   Off Grid module, and verifies the fresh update-preferences handler restores the beta channel.
+- #154 - External links use the system browser. `e2e/tour.spec.ts` drives the real locked-Pro
+  surface through Electron preload and IPC, proves purchase and Mobile links reach
+  `shell.openExternal` with their production URLs, and verifies the Electron page never navigates.
 
 ## Covered P2 journeys
 
@@ -356,7 +379,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - chat and conversations
 
-- #34 - All memory scope works.
 - #36 - Thinking streams separately.
 - #37 - Plain reply hides think markers.
 - #44 - Rename conversation.
@@ -395,10 +417,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - entities, actions, and reflection
 
-- #107 - Entities are synthesized.
-- #108 - Self mentions are filtered.
-- #109 - Entity detail opens.
-- #111 - Action items are extracted.
 - #114 - Notifications open their target.
 
 ## Left - clipboard and vault
@@ -407,7 +425,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - settings, privacy, licensing, and updates
 
-- #133 - Storage usage is truthful.
 - #134 - Clear cache preserves user data.
 
 ## Left - resilience and desktop polish
@@ -420,7 +437,6 @@ manual claim does not count as complete integration coverage.
 - #151 - Keyboard focus is visible.
 - #152 - Escape closes transient UI.
 - #153 - Reduced motion remains usable.
-- #154 - External links use the system browser.
 - #155 - No private data in release evidence.
 
 ## Next implementation order
