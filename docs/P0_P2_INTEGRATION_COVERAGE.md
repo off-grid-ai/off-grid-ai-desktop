@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 42 covered, 32 left.
-  - P1: 71 total, 23 covered, 48 left.
-  - P2: 10 total, 1 covered, 9 left.
-  - Overall: 155 total, 66 covered, 89 left.
+  - P1: 71 total, 25 covered, 46 left.
+  - P2: 10 total, 2 covered, 8 left.
+  - Overall: 155 total, 69 covered, 86 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -169,6 +169,12 @@ manual claim does not count as complete integration coverage.
 - #54 - New chat inherits its project. `MemoryChat.project-inheritance.test.tsx` drives the real
   composer from a project target across the preload boundary and proves both conversation creation
   and RAG retrieval receive the same project ID; reopening a saved conversation restores that scope.
+- #57 - Text artifact saves and reopens. `artifact-persistence.integration.test.ts` saves exact
+  text, title, conversation, and project scope through the production artifact service, reloads its
+  modules, and proves the persisted artifact reopens without content or ownership drift.
+- #58 - Image artifact saves and reopens. The same integration writes a real PNG to the disposable
+  user-data tree, persists its metadata through the production artifact service, reloads the service,
+  and proves both its source association and exact image bytes remain available.
 - #60 - Unsupported document fails clearly. The production picker excludes unsupported types;
   `rag-store-integration.dbtest.ts` drives a corrupt PDF through the real parser, RAG service, and
   SQLite store and proves extraction fails clearly before documents, chunks, or embeddings exist.
@@ -216,6 +222,9 @@ manual claim does not count as complete integration coverage.
 
 ## Covered P2 journeys
 
+- #55 - Edit project. `rag-ipc-project-create.dbtest.ts` changes every editable field through the
+  production project IPC handlers and real SQLite store, reloads the modules, and proves the updated
+  project is returned with its exact name, description, prompt, icon, and memory setting.
 - #124 - Clipboard retention applies. `clipboard-store.integration.test.ts` exercises the real
   retention-days and max-items policies against SQLite while preserving newer rows.
 
@@ -265,9 +274,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - projects and artifacts
 
-- #55 - Edit project.
-- #57 - Text artifact saves and reopens.
-- #58 - Image artifact saves and reopens.
 - #59 - Project list uses desktop layout.
 
 ## Left - image and vision
