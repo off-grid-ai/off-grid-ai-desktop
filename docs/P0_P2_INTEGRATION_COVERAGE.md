@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 43 covered, 31 left.
-  - P1: 71 total, 27 covered, 44 left.
+  - P1: 71 total, 28 covered, 43 left.
   - P2: 10 total, 3 covered, 7 left.
-  - Overall: 155 total, 73 covered, 82 left.
+  - Overall: 155 total, 74 covered, 81 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -184,6 +184,10 @@ manual claim does not count as complete integration coverage.
 - #60 - Unsupported document fails clearly. The production picker excludes unsupported types;
   `rag-store-integration.dbtest.ts` drives a corrupt PDF through the real parser, RAG service, and
   SQLite store and proves extraction fails clearly before documents, chunks, or embeddings exist.
+- #65 - Image runtime eviction recovers. `image-runtime-reliability.integration.dbtest.ts` starts
+  the real chat service against a native executable boundary, generates an image through the real
+  modality queue to evict it, then proves a second native chat process starts and answers the next
+  message without an application restart.
 - #72 - Connector tools load. `mcp-connector-tool-extension.dbtest.ts` discovers schemas through
   the production extension and real connector database, preserving enabled/disabled state while
   controlling only the remote MCP transport.
@@ -292,7 +296,6 @@ manual claim does not count as complete integration coverage.
 - #61 - Text prompt generates an image.
 - #62 - Image cancellation is scoped.
 - #64 - Image settings apply.
-- #65 - Image runtime eviction recovers.
 - #66 - Image RAM guard is safe.
 - #67 - Generated image opens.
 - #68 - Vision answers about attachment.
