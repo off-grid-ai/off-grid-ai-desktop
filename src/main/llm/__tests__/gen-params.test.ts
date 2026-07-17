@@ -24,17 +24,25 @@ describe('resolveMaxTokens (D10)', () => {
 
 describe('llm.ts routes every chat path through resolveMaxTokens (no divergence)', () => {
   const src = readFileSync(join(__dirname, '..', '..', 'llm.ts'), 'utf8')
+  const chatStream = src.slice(src.indexOf('async chatStream('), src.indexOf('async streamChat('))
+  const chatStreamCode = chatStream.replace(/\/\/.*$/gm, '').replace(/\s+/g, ' ')
 
   it('no longer contains the buggy `this.maxTokens || <caller>` precedence', () => {
     // Regression guard: this exact pattern is what made the caller's value dead.
     expect(src).not.toMatch(/this\.maxTokens\s*\|\|/)
   })
 
-  it('builds every max_tokens via resolveMaxTokens', () => {
-    const maxTokenLines = src.split('\n').filter((l) => /max_tokens:/.test(l))
-    expect(maxTokenLines.length).toBeGreaterThanOrEqual(3) // chat, chatStream, streamChat
-    for (const line of maxTokenLines) {
-      expect(line).toMatch(/resolveMaxTokens\(/)
-    }
+  it('resolves a streamed token cap once and reuses it for the payload and returned cutoff metadata', () => {
+    const resolution = chatStreamCode.match(
+      /const\s+(\w+)\s*=\s*resolveMaxTokens\(maxTokens,\s*this\.maxTokens\)/
+    )
+    expect(resolution).not.toBeNull()
+
+    const resolvedIdentifier = resolution![1]!
+    expect(chatStreamCode.match(/resolveMaxTokens\(/g)).toHaveLength(1)
+    expect(chatStreamCode).toMatch(new RegExp(`max_tokens\\s*:\\s*${resolvedIdentifier}\\b`))
+    expect(chatStreamCode).toMatch(
+      new RegExp(`return\\s*\\{\\s*\\.\\.\\.result,\\s*maxTokens\\s*:\\s*${resolvedIdentifier}\\b`)
+    )
   })
 })

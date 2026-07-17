@@ -16,18 +16,20 @@ import { join } from 'path'
 
 const src = readFileSync(join(__dirname, '..', 'MemoryChat.tsx'), 'utf8')
 const send = src.slice(src.indexOf('const sendMessage = async'), src.indexOf('const drainQueue ='))
+const sendCode = send.replace(/\/\/.*$/gm, '').replace(/\s+/g, ' ')
 
 describe('sendMessage locks the project for the turn (D21)', () => {
-  it('captures the active project once at send-start', () => {
-    expect(send).toMatch(/const projectId = activeProjectId\b/)
+  it('uses an explicit project override, otherwise captures the active project once at send-start', () => {
+    expect(sendCode).toMatch(
+      /const projectId = opts\?\.projectIdOverride !== undefined \? opts\.projectIdOverride : activeProjectId\b/
+    )
   })
 
   it('never reads the live activeProjectId inside the send (all attribution uses the captured projectId)', () => {
     // In CODE (comments stripped) `activeProjectId` may appear ONLY once — the
     // capture line. Any other occurrence is a live read that can sneak the switched
     // project in.
-    const code = send.replace(/\/\/.*$/gm, '')
-    const occurrences = (code.match(/activeProjectId/g) ?? []).length
+    const occurrences = (sendCode.match(/activeProjectId/g) ?? []).length
     expect(occurrences).toBe(1)
     // Concretely: the RAG call and artifact saves are scoped by the captured value.
     // Formatting-agnostic (prettier reflows these calls across lines).
