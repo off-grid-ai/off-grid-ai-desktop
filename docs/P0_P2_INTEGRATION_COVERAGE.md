@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 42 covered, 32 left.
-  - P1: 71 total, 25 covered, 46 left.
+  - P1: 71 total, 26 covered, 45 left.
   - P2: 10 total, 2 covered, 8 left.
-  - Overall: 155 total, 69 covered, 86 left.
+  - Overall: 155 total, 70 covered, 85 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -187,6 +187,11 @@ manual claim does not count as complete integration coverage.
 - #78 - Connector delete removes secrets. `connector-delete-secrets.dbtest.ts` deletes through the
   production connector repository, reopens the encrypted database, and proves all owned OAuth,
   PKCE, client-registration, and env secrets are gone while unrelated secrets remain readable.
+- #81 - Gateway image route. `model-server-image.integration.dbtest.ts` sends a real HTTP request
+  through the production gateway, image orchestrator, modality queue, SQLite residency owner,
+  argument builder, and generated-image filesystem. Only the native `sd-cli` executable is faked;
+  the test verifies its PNG reaches the OpenAI-compatible response and disk, plus the missing-runtime
+  path returns a stable `not_installed` envelope.
 - #82 - Gateway failure envelope. `model-server-chat.integration.test.ts` sends malformed input
   through the real HTTP gateway, proves it receives the stable OpenAI-style JSON error contract
   without reaching the native model boundary, then calls the gateway again to verify it stays healthy.
@@ -291,7 +296,6 @@ manual claim does not count as complete integration coverage.
 ## Left - integrations and gateway
 
 - #71 - Connector can be added.
-- #81 - Gateway image route.
 
 ## Left - capture, memory, and replay
 
