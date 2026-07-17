@@ -232,6 +232,124 @@ describe('model download release matrix', () => {
     expect(status.active).toBe(imageModel.files.find((file) => file.role === 'primary')!.name)
   })
 
+  it('keeps concurrent downloads ordered and isolated when the second completes first (#22)', async () => {
+    const concurrentModels = CATALOG.filter(
+      (candidate) => candidate.kind === 'text' && candidate.files.length === 1
+    ).slice(0, 2)
+    const [firstModel, secondModel] = concurrentModels
+    if (!firstModel || !secondModel) {
+      throw new Error('Model catalog needs two single-file text fixtures')
+    }
+
+    const firstFile = firstModel.files[0]!
+    const secondFile = secondModel.files[0]!
+    const firstBytes = modelBytes(firstFile, 31)
+    const secondBytes = modelBytes(secondFile, 47)
+
+    const pending = controlledHttp()
+    const firstProgress: ModelDownloadProgress[] = []
+    const secondProgress: ModelDownloadProgress[] = []
+
+    const firstDownload = manager.downloadModel(firstModel.id, (event) => firstProgress.push(event))
+    await waitFor(() => pending.length === 1)
+    const secondDownload = manager.downloadModel(secondModel.id, (event) =>
+      secondProgress.push(event)
+    )
+    await waitFor(() => pending.length === 2)
+
+    const initialOrder = manager.listDownloads().map((download) => download.modelId)
+    const firstWhileBothRun = manager.downloadStatus(firstModel.id)
+    const secondWhileBothRun = manager.downloadStatus(secondModel.id)
+    let secondResult: Awaited<typeof secondDownload> | undefined
+    let firstResult: Awaited<typeof firstDownload> | undefined
+    let installedAfterSecond: string[] = []
+    let firstWhileSecondDone: ModelDownloadProgress | null = null
+    try {
+      pending[1]!.resolve(
+        new Response(new Uint8Array(secondBytes), {
+          status: 200,
+          headers: { 'content-length': String(secondBytes.length) }
+        })
+      )
+      secondResult = await secondDownload
+      installedByTest.add(secondModel.id)
+      installedAfterSecond = await manager.listInstalled()
+      firstWhileSecondDone = manager.downloadStatus(firstModel.id)
+
+      pending[0]!.resolve(
+        new Response(new Uint8Array(firstBytes), {
+          status: 200,
+          headers: { 'content-length': String(firstBytes.length) }
+        })
+      )
+      firstResult = await firstDownload
+      installedByTest.add(firstModel.id)
+    } finally {
+      // Release both remote-boundary promises even if a future regression fails above.
+      pending[0]?.resolve(
+        new Response(new Uint8Array(firstBytes), {
+          status: 200,
+          headers: { 'content-length': String(firstBytes.length) }
+        })
+      )
+      pending[1]?.resolve(
+        new Response(new Uint8Array(secondBytes), {
+          status: 200,
+          headers: { 'content-length': String(secondBytes.length) }
+        })
+      )
+      await Promise.allSettled([firstDownload, secondDownload])
+    }
+
+    expect(initialOrder).toEqual([firstModel.id, secondModel.id])
+    expect(firstWhileBothRun).toMatchObject({
+      modelId: firstModel.id,
+      status: 'downloading',
+      percent: 0
+    })
+    expect(secondWhileBothRun).toMatchObject({
+      modelId: secondModel.id,
+      status: 'downloading',
+      percent: 0
+    })
+    expect(secondResult).toEqual({ success: true })
+    expect(firstWhileSecondDone).toMatchObject({
+      modelId: firstModel.id,
+      status: 'downloading',
+      percent: 0
+    })
+    expect(installedAfterSecond).toEqual([secondModel.id])
+    expect(firstResult).toEqual({ success: true })
+
+    expect(manager.listDownloads()).toEqual([
+      expect.objectContaining({
+        modelId: firstModel.id,
+        status: 'completed',
+        percent: 100
+      }),
+      expect.objectContaining({
+        modelId: secondModel.id,
+        status: 'completed',
+        percent: 100
+      })
+    ])
+    expect(firstProgress.every((event) => event.modelId === firstModel.id)).toBe(true)
+    expect(secondProgress.every((event) => event.modelId === secondModel.id)).toBe(true)
+    expect(firstProgress).toContainEqual(
+      expect.objectContaining({ currentFile: firstFile.name, status: 'downloading' })
+    )
+    expect(secondProgress).toContainEqual(
+      expect.objectContaining({ currentFile: secondFile.name, status: 'downloading' })
+    )
+    expect(firstProgress.at(-1)).toMatchObject({ status: 'completed', percent: 100 })
+    expect(secondProgress.at(-1)).toMatchObject({ status: 'completed', percent: 100 })
+    expect((await manager.listInstalled()).sort()).toEqual([firstModel.id, secondModel.id].sort())
+    expect(fs.readFileSync(path.join(dataDir, 'models', firstFile.name))).toEqual(firstBytes)
+    expect(fs.readFileSync(path.join(dataDir, 'models', secondFile.name))).toEqual(secondBytes)
+    expect(fs.existsSync(path.join(dataDir, 'models', `${firstFile.name}.part`))).toBe(false)
+    expect(fs.existsSync(path.join(dataDir, 'models', `${secondFile.name}.part`))).toBe(false)
+  })
+
   it('deletes only the selected installed model while another download continues (#23)', async () => {
     const existing = textModel
     const downloading = CATALOG.find(
