@@ -58,6 +58,10 @@ function installApi(): void {
       permissions.openScreenRecordingSettings()
       return true
     },
+    openMicrophoneSettings: async () => {
+      permissions.openMicrophoneSettings()
+      return true
+    },
     checkModelStatus: async () => ({ downloaded: true, modelsDir: '/synthetic/models' }),
     getLlmSettings: async () => ({ performanceMode: 'balanced' }),
     setupPlan: async () => ({
@@ -102,6 +106,14 @@ afterAll(() => {
 })
 
 describe('capture permission recovery', () => {
+  it('routes a denied microphone feature to the exact macOS Settings pane (#16)', async () => {
+    await window.api.openMicrophoneSettings()
+
+    expect(boundary.openedSettings).toEqual([
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
+    ])
+  })
+
   it('requests TCC explicitly once while repeated health checks stay non-prompting (#15)', async () => {
     expect(permissions.requestAccessibilityPermission()).toBe(false)
     await expect(permissions.requestScreenRecordingPermission()).resolves.toBe(false)

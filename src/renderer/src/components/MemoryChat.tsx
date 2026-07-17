@@ -473,6 +473,7 @@ export function MemoryChat({
   }, [projCreating])
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
+  const [microphoneDenied, setMicrophoneDenied] = useState(false)
   const [toolsOn, setToolsOn] = useState(false)
   const [connectorsOn, setConnectorsOn] = useState(false)
   const [thinkingEnabled, setThinkingEnabled] = useState(false)
@@ -1682,6 +1683,7 @@ export function MemoryChat({
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      setMicrophoneDenied(false)
       if (!voiceMountedRef.current) {
         stream.getTracks().forEach((track) => track.stop())
         return
@@ -1725,6 +1727,9 @@ export function MemoryChat({
       setRecording(true)
     } catch (err) {
       console.error('Mic access failed', err)
+      const name =
+        typeof err === 'object' && err !== null && 'name' in err ? String(err.name) : undefined
+      setMicrophoneDenied(name === 'NotAllowedError' || name === 'SecurityError')
       setRecording(false)
     }
   }
@@ -3878,6 +3883,24 @@ export function MemoryChat({
                     ))}
                   </div>
                 )}
+                {microphoneDenied && (
+                  <div
+                    role="alert"
+                    className="mx-2 mb-2 flex items-center justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100"
+                  >
+                    <span>
+                      Microphone access is off. Allow Off Grid AI Desktop in System Settings, then
+                      try again.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void window.api.openMicrophoneSettings()}
+                      className="shrink-0 text-amber-300 underline underline-offset-2 transition-colors hover:text-amber-100"
+                    >
+                      Open System Settings
+                    </button>
+                  </div>
+                )}
                 {voiceMode ? (
                   // Voice mode: the input surface is a single mic — record a note,
                   // it transcribes and sends. The toolbar below stays identical.
@@ -4216,6 +4239,7 @@ export function MemoryChat({
                             type="button"
                             variant="outline"
                             size="icon"
+                            aria-label={recording ? 'Stop recording' : 'Record voice'}
                             onClick={toggleRecording}
                             disabled={transcribing}
                             className={`size-8 ${recording ? 'border-red-500/50 text-red-400' : ''}`}

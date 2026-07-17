@@ -303,6 +303,7 @@ interface RendererAPIOverrides {
   requestScreenRecordingPermission: () => Promise<boolean>
   openAccessibilitySettings: () => Promise<boolean>
   openScreenRecordingSettings: () => Promise<boolean>
+  openMicrophoneSettings: () => Promise<boolean>
 }
 
 type IElectronAPI = Omit<import('../../preload').OffGridAPI, keyof RendererAPIOverrides> &

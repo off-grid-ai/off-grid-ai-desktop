@@ -81,6 +81,12 @@ export function openScreenRecordingSettings(): void {
   }
 }
 
+export function openMicrophoneSettings(): void {
+  if (process.platform === 'darwin') {
+    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone')
+  }
+}
+
 /**
  * Trigger the screen recording permission prompt by attempting to use desktopCapturer.
  * This will cause macOS to add the app to the Screen Recording list.

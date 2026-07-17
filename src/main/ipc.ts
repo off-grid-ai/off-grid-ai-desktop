@@ -47,7 +47,8 @@ import {
   requestAccessibilityPermission,
   requestScreenRecordingPermission,
   openAccessibilitySettings,
-  openScreenRecordingSettings
+  openScreenRecordingSettings,
+  openMicrophoneSettings
 } from './permissions'
 import { CACHE_CLEANUP_CHANNEL } from '../shared/ipc-contracts'
 import { getAllPromptDefs } from './prompts'
@@ -1156,6 +1157,11 @@ export function setupIPC() {
 
   ipcMain.handle('permissions:open-screen-recording-settings', () => {
     openScreenRecordingSettings()
+    return true
+  })
+
+  ipcMain.handle('permissions:open-microphone-settings', () => {
+    openMicrophoneSettings()
     return true
   })
 
