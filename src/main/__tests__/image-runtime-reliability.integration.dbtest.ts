@@ -261,7 +261,7 @@ describe('image runtime reliability', () => {
     expect(lineCount(fixture.llamaLog)).toBe(2)
   })
 
-  it('refuses an over-budget image model before the native runtime executes', async () => {
+  it('refuses an over-budget image before native execution and accepts a safe retry', async () => {
     const imageRunsBefore = lineCount(fixture.imageLog)
     const imagePath = path.join(fixture.dataDir, 'models', IMAGE_MODEL)
     fs.truncateSync(imagePath, 5_000_000_000)
@@ -278,7 +278,24 @@ describe('image runtime reliability', () => {
     }
 
     expect(lineCount(fixture.imageLog)).toBe(imageRunsBefore)
-    expect(await llm.chat('after guarded refusal')).toBe('chat recovered')
+    fs.writeFileSync(imagePath, 'safe image checkpoint')
+
+    const recovered = await generateImage({
+      prompt: 'A safe green cabin after the memory guard',
+      model: IMAGE_MODEL,
+      seed: 66,
+      width: 512,
+      height: 512,
+      steps: 4
+    })
+
+    expect(recovered).toMatchObject({
+      dataUrl: `data:image/png;base64,${PNG_BASE64}`,
+      seed: 66,
+      model: IMAGE_MODEL
+    })
+    expect(lineCount(fixture.imageLog)).toBe(imageRunsBefore + 1)
+    expect(await llm.chat('after guarded refusal and safe retry')).toBe('chat recovered')
   })
 
   it('keeps local chat usable when external network reachability is unavailable', async () => {
