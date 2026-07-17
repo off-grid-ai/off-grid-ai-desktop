@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 34 covered, 40 left.
-  - P1: 71 total, 16 covered, 55 left.
+  - P0: 74 total, 42 covered, 32 left.
+  - P1: 71 total, 23 covered, 48 left.
   - P2: 10 total, 1 covered, 9 left.
-  - Overall: 155 total, 51 covered, 104 left.
+  - Overall: 155 total, 66 covered, 89 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -40,6 +40,21 @@ manual claim does not count as complete integration coverage.
 - #27 - Disk write failure does not crash. The same real model-manager integration injects
   `ENOSPC` only at the OS write boundary and proves the error is contained, no partial model is
   installed, failed status is recorded, and an existing installed model remains readable.
+- #28 - Active text model survives relaunch. `model-integrity.integration.test.ts` installs and
+  activates a real catalog text fixture through the production model manager, reloads every module,
+  and proves the same installed model remains the active chat selection.
+- #38 - Stop before first token. `MemoryChat.chat-lifecycle.test.tsx` holds the real rendered turn
+  at the preload persistence boundary, clicks Stop during the pre-stream window, proves the model
+  transport never starts, and immediately completes a second turn normally.
+- #39 - Stop during streaming. The same integration routes a live token through production stream
+  ownership, clicks Stop, verifies cancellation uses that stream ID, and proves the partial answer
+  remains visible and persisted while the busy state clears.
+- #41 - Conversation switch isolation. The same integration starts and streams conversation A,
+  switches the rendered screen to B, proves B receives none of A's partial or completed state, then
+  reopens A and retrieves its correctly persisted result.
+- #42 - Project switch isolation. The same integration sends from Project Alpha, changes the real
+  project selector to Project Beta while the model boundary is pending, and proves the result and
+  parsed HTML artifact retain the Alpha project and conversation captured at send time.
 - #43 - Chat survives relaunch. `e2e/chat-memory.spec.ts` creates multiple scoped and unscoped
   conversations with messages and context through production IPC, fully closes Electron, reopens
   the same profile, and verifies every association and payload through the reloaded preload path.
@@ -72,9 +87,17 @@ manual claim does not count as complete integration coverage.
 - #79 - Gateway models endpoint. `e2e/smoke.spec.ts` starts the real Electron gateway, seeds an
   active model only inside the disposable profile, calls `/v1/models` over HTTP, and verifies
   modality metadata in both supported response shapes.
+- #80 - Gateway chat streaming. `model-server-chat.integration.test.ts` sends an
+  OpenAI-compatible streaming request through the real HTTP gateway to a loopback llama-server
+  boundary and proves the first SSE token arrives before upstream completion, later chunks retain
+  their content, and the stream terminates with `[DONE]`.
 - #84 - Capture disabled means no capture. `capture-disabled.integration.test.ts` backs the real
   capture state machine with the production settings store and proves the persisted privacy pause
   survives hydration, prevents OS capture work across ticks, and resumes only after user action.
+- #85 - OCR creates searchable memory. `capture-exclusion.dbtest.ts` drives a normal surface through
+  screenshot, OCR, the real extractor, model transport, and SQLite persistence, then queries the
+  production observation search and retrieves the derived memory; only OS capture/OCR and the
+  native model socket are controlled boundaries.
 - #86 - Sensitive or excluded apps are omitted. `capture-exclusion.dbtest.ts` drives the production
   extractor and real SQLite persistence, with only screenshot/OCR and the model socket at their
   external boundaries, and proves configured apps, authentication surfaces, private browser
@@ -103,6 +126,11 @@ manual claim does not count as complete integration coverage.
   attachment persistence across lock and unlock.
 - #128 - Vault recovery and backup. `vault-service.test.ts` and `vault-recovery.test.ts` exercise
   real KDBX export bytes, recovery setup, wrong phrases, and recovery to a new password.
+- #132 - Settings survive relaunch. Existing journeys 129 and 131 cover model residency and
+  resource settings across relaunch. Core and Pro `settings-persistence.dbtest.ts` tests add the
+  other owning stores: they change software-update, capture-privacy, identity, and proactive
+  delivery settings over real encrypted SQLite, close the database, reload every Off Grid module,
+  rehydrate each owner, and verify every value restores.
 - #135 - Delete category is scoped. The real SQLite/filesystem integration deletes the Chats
   category through `clearCategory` and proves memory, projects, connectors, encrypted tokens,
   models, and unrelated personal files remain.
@@ -123,8 +151,24 @@ manual claim does not count as complete integration coverage.
   manager through an offline fetch failure, verifies a clear network-unavailable error and clean
   filesystem state, preserves an existing installed model, then retries successfully with the same
   manager and exact GGUF bytes.
+- #29 - Active modal models survive relaunch. `model-integrity.integration.test.ts` installs and
+  activates real image, STT, and TTS catalog fixtures, reloads every manager module, and proves each
+  persisted modality restores its own selection without crossing into another modality.
+- #30 - Deleting an active model clears selection. `model-integrity.integration.test.ts` activates
+  installed text, vision, image, speech, and transcription fixtures through the production model
+  manager, deletes each one, and proves all runtime and persisted selections remain cleared after a
+  fresh module load.
+- #35 - Empty memory degrades safely. `rag-empty-memory.dbtest.ts` invokes the real `rag:chat` IPC
+  handler on an empty SQLite/RAG corpus, verifies a normal answer, empty context and zero retrieval
+  counts, then completes an immediate second turn to prove the queue and controller were released.
+- #40 - Queued message order. `MemoryChat.chat-lifecycle.test.tsx` sends a second message through
+  the real composer while the first model-boundary promise is pending, then proves production queue
+  draining preserves user/assistant order without collision, duplication, or loss.
 - #45 - Delete conversation cascades. `conversation-delete-cascade.dbtest.ts` proves real messages
   and artifacts do not survive conversation deletion.
+- #54 - New chat inherits its project. `MemoryChat.project-inheritance.test.tsx` drives the real
+  composer from a project target across the preload boundary and proves both conversation creation
+  and RAG retrieval receive the same project ID; reopening a saved conversation restores that scope.
 - #60 - Unsupported document fails clearly. The production picker excludes unsupported types;
   `rag-store-integration.dbtest.ts` drives a corrupt PDF through the real parser, RAG service, and
   SQLite store and proves extraction fails clearly before documents, chunks, or embeddings exist.
@@ -137,6 +181,9 @@ manual claim does not count as complete integration coverage.
 - #78 - Connector delete removes secrets. `connector-delete-secrets.dbtest.ts` deletes through the
   production connector repository, reopens the encrypted database, and proves all owned OAuth,
   PKCE, client-registration, and env secrets are gone while unrelated secrets remain readable.
+- #82 - Gateway failure envelope. `model-server-chat.integration.test.ts` sends malformed input
+  through the real HTTP gateway, proves it receives the stable OpenAI-style JSON error contract
+  without reaching the native model boundary, then calls the gateway again to verify it stays healthy.
 - #110 - Entity merge preserves evidence. `resolve.integration.test.ts` exercises real entity,
   aliases, observations, relationships, action reassignment, split, and merge persistence.
 - #113 - Action status survives persistence. `actions-status.integration.test.ts` exercises real
@@ -163,6 +210,9 @@ manual claim does not count as complete integration coverage.
   the real LLM settings owner, disk persistence, fresh-service launch arguments, recommendation,
   and setup planner with only host RAM controlled; the Electron tour proves selection stays
   responsive and the sizing guards enforce memory clamps.
+- #143 - Update channel persists. `src/main/__tests__/settings-persistence.dbtest.ts` changes the
+  channel through the production update IPC handler, closes the encrypted database, reloads every
+  Off Grid module, and verifies the fresh update-preferences handler restores the beta channel.
 
 ## Covered P2 journeys
 
@@ -197,9 +247,6 @@ manual claim does not count as complete integration coverage.
 - #21 - Image model downloads.
 - #22 - Multiple downloads queue.
 - #23 - Delete does not cancel another download.
-- #28 - Active text model survives relaunch.
-- #29 - Active modal models survive relaunch.
-- #30 - Deleting active model clears selection.
 - #31 - Models use desktop density.
 
 ## Left - chat and conversations
@@ -207,14 +254,8 @@ manual claim does not count as complete integration coverage.
 - #32 - First local message replies.
 - #33 - No memory scope works.
 - #34 - All memory scope works.
-- #35 - Empty memory degrades safely.
 - #36 - Thinking streams separately.
 - #37 - Plain reply hides think markers.
-- #38 - Stop before first token.
-- #39 - Stop during streaming.
-- #40 - Queued message order.
-- #41 - Conversation switch isolation.
-- #42 - Project switch isolation.
 - #44 - Rename conversation.
 - #46 - Copy assistant reply.
 - #47 - Regenerate reply.
@@ -224,7 +265,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - projects and artifacts
 
-- #54 - New chat inherits project.
 - #55 - Edit project.
 - #57 - Text artifact saves and reopens.
 - #58 - Image artifact saves and reopens.
@@ -245,14 +285,11 @@ manual claim does not count as complete integration coverage.
 ## Left - integrations and gateway
 
 - #71 - Connector can be added.
-- #80 - Gateway chat streaming.
 - #81 - Gateway image route.
-- #82 - Gateway failure envelope.
 
 ## Left - capture, memory, and replay
 
 - #83 - Screen capture permission path.
-- #85 - OCR creates searchable memory.
 - #88 - Replay playback uses media server.
 - #89 - Replay navigation preserves target.
 - #90 - Unified search finds each source.
@@ -288,7 +325,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - settings, privacy, licensing, and updates
 
-- #132 - Settings survive relaunch.
 - #133 - Storage usage is truthful.
 - #134 - Clear cache preserves user data.
 - #138 - Pro license activates.
@@ -296,7 +332,6 @@ manual claim does not count as complete integration coverage.
 - #140 - Offline entitlement behavior.
 - #141 - Core and Pro override behavior.
 - #142 - Manual update check.
-- #143 - Update channel persists.
 
 ## Left - resilience and desktop polish
 
