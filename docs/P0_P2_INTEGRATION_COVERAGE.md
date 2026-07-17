@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 60 covered, 14 left.
-  - P1: 71 total, 58 covered, 13 left.
+  - P1: 71 total, 59 covered, 12 left.
   - P2: 10 total, 9 covered, 1 left.
-  - Overall: 155 total, 127 covered, 28 left.
+  - Overall: 155 total, 128 covered, 27 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -217,6 +217,10 @@ manual claim does not count as complete integration coverage.
   Core/Pro build, renderer document, and runtime bootstrap names to `Off Grid AI Desktop`;
   `e2e/tour.spec.ts` launches the built Electron app and verifies both its visible window title and
   Electron runtime name match that canonical product identity.
+- #11 - Manual setup path works. `manual-model-setup.test.ts` drives PermissionGate into manual
+  model selection, downloads through the production manager and real catalog, verifies only the
+  chosen GGUF is fetched and promoted, activates it through the real selection owner, and proves
+  the rendered Models card reaches Active while every unchosen model remains absent.
 - #14 - Chat engine stderr is surfaced. The same integration starts a native child that reports an
   incompatible `gemma4` architecture and exits, then proves System Health returns the classified
   engine-too-old reason rather than a generic down message.
@@ -435,7 +439,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - onboarding and health
 
-- #11 - Manual setup path works.
 - #12 - Onboarding resumes after relaunch.
 - #15 - Required permissions granted.
 - #16 - Denied permission is recoverable.
