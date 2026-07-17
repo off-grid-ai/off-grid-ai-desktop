@@ -14,44 +14,28 @@ process.env.OFFGRID_DATA_DIR = dataDir
 const manager = await import('../../models-manager')
 const { CATALOG } = await import('@offgrid/models')
 
-const model = CATALOG.find(
-  (entry) =>
-    entry.kind === 'text' &&
-    entry.files.length === 1 &&
-    entry.files.some((file) => file.name.endsWith('.gguf'))
-)
+const fixtures = CATALOG.flatMap((entry) => {
+  const file = entry.files.at(0)
+  if (entry.kind !== 'text' || entry.files.length !== 1 || !file?.name.endsWith('.gguf')) return []
+  return [{ entry, fileName: file.name, filePath: path.join(dataDir, 'models', file.name) }]
+})
 
-if (!model) throw new Error('Model catalog has no single-file text GGUF fixture')
-
-const modelFile = model.files.at(0)?.name
-if (!modelFile) throw new Error(`${model.id} has no downloadable file`)
-const modelPath = path.join(dataDir, 'models', modelFile)
-
-const secondModel = CATALOG.find(
-  (entry) =>
-    entry.id !== model.id &&
-    entry.kind === 'text' &&
-    entry.files.length === 1 &&
-    entry.files.some((file) => file.name.endsWith('.gguf'))
-)
-
-if (!secondModel) throw new Error('Model catalog has no second single-file text GGUF fixture')
-
-const secondModelFile = secondModel.files.at(0)?.name
-if (!secondModelFile) throw new Error(`${secondModel.id} has no downloadable file`)
-const secondModelPath = path.join(dataDir, 'models', secondModelFile)
+const [primary, diskFailure, interrupted] = fixtures
+if (!primary || !diskFailure || !interrupted) {
+  throw new Error('Model catalog needs three single-file text GGUF fixtures')
+}
 
 beforeAll(() => {
-  fs.mkdirSync(path.dirname(modelPath), { recursive: true })
+  fs.mkdirSync(path.dirname(primary.filePath), { recursive: true })
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
-  fs.rmSync(modelPath, { force: true })
-  fs.rmSync(`${modelPath}.part`, { force: true })
-  fs.rmSync(secondModelPath, { force: true })
-  fs.rmSync(`${secondModelPath}.part`, { force: true })
+  for (const fixture of fixtures) {
+    fs.rmSync(fixture.filePath, { force: true })
+    fs.rmSync(`${fixture.filePath}.part`, { force: true })
+  }
 })
 
 afterAll(() => {
@@ -75,16 +59,16 @@ describe('model-manager GGUF integrity', () => {
       )
     )
 
-    const result = await manager.downloadModel(model.id)
+    const result = await manager.downloadModel(primary.entry.id)
 
     expect(result).toEqual({
       success: false,
-      error: `${modelFile}: downloaded file is not a valid GGUF (corrupt or truncated)`
+      error: `${primary.fileName}: downloaded file is not a valid GGUF (corrupt or truncated)`
     })
-    expect(fs.existsSync(modelPath)).toBe(false)
-    expect(await manager.listInstalled()).not.toContain(model.id)
-    expect(manager.downloadStatus(model.id)).toMatchObject({
-      modelId: model.id,
+    expect(fs.existsSync(primary.filePath)).toBe(false)
+    expect(await manager.listInstalled()).not.toContain(primary.entry.id)
+    expect(manager.downloadStatus(primary.entry.id)).toMatchObject({
+      modelId: primary.entry.id,
       status: 'failed',
       error: result.error
     })
@@ -105,8 +89,11 @@ describe('model-manager GGUF integrity', () => {
   })
 
   it('contains and reports a disk-full write failure without disturbing installed state', async () => {
-    fs.writeFileSync(modelPath, Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(2_000)]))
-    expect(await manager.listInstalled()).toContain(model.id)
+    fs.writeFileSync(
+      primary.filePath,
+      Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(2_000)])
+    )
+    expect(await manager.listInstalled()).toContain(primary.entry.id)
 
     const body = Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(2_000)])
     vi.stubGlobal(
@@ -123,7 +110,7 @@ describe('model-manager GGUF integrity', () => {
 
     const createWriteStream = fs.createWriteStream.bind(fs)
     vi.spyOn(fs, 'createWriteStream').mockImplementation((target, options) => {
-      if (target === `${secondModelPath}.part`) {
+      if (target === `${diskFailure.filePath}.part`) {
         return new Writable({
           write(_chunk, _encoding, callback) {
             const error = Object.assign(new Error('ENOSPC: no space left on device, write'), {
@@ -136,20 +123,88 @@ describe('model-manager GGUF integrity', () => {
       return createWriteStream(target, options)
     })
 
-    const result = await manager.downloadModel(secondModel.id)
+    const result = await manager.downloadModel(diskFailure.entry.id)
 
     expect(result).toEqual({
       success: false,
       error: 'ENOSPC: no space left on device, write'
     })
-    expect(fs.existsSync(secondModelPath)).toBe(false)
-    expect(fs.existsSync(`${secondModelPath}.part`)).toBe(false)
-    expect(await manager.listInstalled()).toContain(model.id)
-    expect(await manager.listInstalled()).not.toContain(secondModel.id)
-    expect(manager.downloadStatus(secondModel.id)).toMatchObject({
-      modelId: secondModel.id,
+    expect(fs.existsSync(diskFailure.filePath)).toBe(false)
+    expect(fs.existsSync(`${diskFailure.filePath}.part`)).toBe(false)
+    expect(await manager.listInstalled()).toContain(primary.entry.id)
+    expect(await manager.listInstalled()).not.toContain(diskFailure.entry.id)
+    expect(manager.downloadStatus(diskFailure.entry.id)).toMatchObject({
+      modelId: diskFailure.entry.id,
       status: 'failed',
       error: result.error
     })
+  })
+
+  it('restores an interrupted download after restart and resumes it without corruption', async () => {
+    const complete = Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(2_000, 7)])
+    const splitAt = 700
+    const prefix = complete.subarray(0, splitAt)
+    const suffix = complete.subarray(splitAt)
+    let delivery = 0
+    let retryRange: string | undefined
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input, init?: RequestInit) => {
+        delivery++
+        if (delivery === 1) {
+          let pull = 0
+          const interruptedBody = new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (pull++ === 0) {
+                controller.enqueue(prefix)
+                return
+              }
+              controller.error(new Error('network connection interrupted'))
+            }
+          })
+          return new Response(interruptedBody, {
+            status: 200,
+            headers: { 'content-length': String(complete.length) }
+          })
+        }
+
+        retryRange = new Headers(init?.headers).get('range') ?? undefined
+        return new Response(suffix, {
+          status: 206,
+          headers: { 'content-length': String(suffix.length) }
+        })
+      })
+    )
+
+    const firstAttempt = await manager.downloadModel(interrupted.entry.id)
+
+    expect(firstAttempt).toEqual({ success: false, error: 'network connection interrupted' })
+    expect(fs.readFileSync(`${interrupted.filePath}.part`)).toEqual(prefix)
+    expect(fs.existsSync(interrupted.filePath)).toBe(false)
+
+    vi.resetModules()
+    const restartedManager = await import('../../models-manager')
+    expect(restartedManager.listDownloads()).toContainEqual(
+      expect.objectContaining({
+        modelId: interrupted.entry.id,
+        status: 'failed',
+        error: 'network connection interrupted'
+      })
+    )
+
+    const retry = await restartedManager.retryDownload(interrupted.entry.id)
+
+    expect(retry).toEqual({ success: true })
+    expect(retryRange).toBe(`bytes=${prefix.length}-`)
+    expect(fs.readFileSync(interrupted.filePath)).toEqual(complete)
+    expect(fs.existsSync(`${interrupted.filePath}.part`)).toBe(false)
+    expect(await restartedManager.listInstalled()).toContain(interrupted.entry.id)
+
+    vi.resetModules()
+    const finalRestart = await import('../../models-manager')
+    expect(finalRestart.listDownloads().map((download) => download.modelId)).not.toContain(
+      interrupted.entry.id
+    )
   })
 })
