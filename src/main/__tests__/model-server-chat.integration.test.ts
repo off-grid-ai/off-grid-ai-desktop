@@ -14,6 +14,7 @@ import type { AddressInfo } from 'net'
 import { LLAMA_SERVER_PORT } from '../../shared/ports'
 
 const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-gateway-chat-'))
+const hostFetch = globalThis.fetch.bind(globalThis)
 
 vi.mock('electron', () => ({
   app: {
@@ -29,12 +30,33 @@ vi.mock('electron', () => ({
   }
 }))
 
-import { startModelServer, stopModelServer } from '../model-server'
-
 let upstream: http.Server
 let gatewayPort: number
 let releaseUpstream: (() => void) | undefined
 let upstreamRequest: Record<string, unknown> | undefined
+let upstreamHealthOk = true
+let directChatReply: string | null = null
+let startModelServer: typeof import('../model-server').startModelServer
+let stopModelServer: typeof import('../model-server').stopModelServer
+const previousDataDir = process.env.OFFGRID_DATA_DIR
+
+function installLlamaBoundary(source: string): string {
+  const binRoot = path.join(TMP_DIR, 'test-bin')
+  const executable = path.join(binRoot, 'llama', 'llama-server')
+  fs.mkdirSync(path.dirname(executable), { recursive: true })
+  fs.writeFileSync(executable, `#!/usr/bin/env node\n${source}\n`)
+  fs.chmodSync(executable, 0o755)
+  return binRoot
+}
+
+function fixtureDownload(url: string): Response {
+  const bytes = Buffer.alloc(2048, 7)
+  if (/\.gguf(?:\?|$)/i.test(url)) bytes.write('GGUF')
+  return new Response(bytes, {
+    status: 200,
+    headers: { 'content-length': String(bytes.length) }
+  })
+}
 
 async function unusedPort(): Promise<number> {
   const probe = http.createServer()
@@ -59,7 +81,19 @@ async function waitForGateway(): Promise<void> {
 }
 
 beforeAll(async () => {
+  process.env.OFFGRID_DATA_DIR = TMP_DIR
+  ;({ startModelServer, stopModelServer } = await import('../model-server'))
   upstream = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/health') {
+      res.writeHead(upstreamHealthOk ? 200 : 503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ status: upstreamHealthOk ? 'ok' : 'down' }))
+      return
+    }
+    if (req.method === 'GET' && req.url === '/v1/models') {
+      res.writeHead(upstreamHealthOk ? 200 : 503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: upstreamHealthOk ? [{ id: 'fixture-chat' }] : [] }))
+      return
+    }
     if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
       res.writeHead(404)
       res.end()
@@ -80,6 +114,16 @@ beforeAll(async () => {
           'X-Upstream-Internal': 'private'
         })
         res.end()
+        return
+      }
+      if (directChatReply !== null) {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            choices: [{ message: { content: directChatReply } }],
+            usage: { total_tokens: 3 }
+          })
+        )
         return
       }
       res.writeHead(200, { 'Content-Type': 'text/event-stream' })
@@ -106,6 +150,8 @@ afterAll(async () => {
   stopModelServer()
   await new Promise<void>((resolve) => upstream.close(() => resolve()))
   fs.rmSync(TMP_DIR, { recursive: true, force: true })
+  if (previousDataDir === undefined) delete process.env.OFFGRID_DATA_DIR
+  else process.env.OFFGRID_DATA_DIR = previousDataDir
 })
 
 describe('model gateway chat streaming', () => {
@@ -175,5 +221,124 @@ describe('model gateway chat streaming', () => {
     expect(response.headers.get('location')).toBeNull()
     expect(response.headers.get('set-cookie')).toBeNull()
     expect(response.headers.get('x-upstream-internal')).toBeNull()
+  })
+
+  it('downloads only the manually chosen model, activates it, and answers (#11)', async () => {
+    const previousBinDir = process.env.OFFGRID_BIN_DIR
+    process.env.OFFGRID_BIN_DIR = installLlamaBoundary(
+      "setInterval(() => {}, 1000); process.on('SIGTERM', () => process.exit(0))"
+    )
+    vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      return url.startsWith('http://127.0.0.1:')
+        ? hostFetch(input, init)
+        : Promise.resolve(fixtureDownload(url))
+    })
+    directChatReply = 'manual model ready'
+
+    const [{ llm }, setup, manager] = await Promise.all([
+      import('../llm'),
+      import('../setup'),
+      import('../models-manager')
+    ])
+    try {
+      const chosen = await setup.getRecommendation('conservative')
+      expect(chosen).not.toBeNull()
+
+      expect(await manager.downloadModel(chosen!.id)).toEqual({ success: true })
+      expect(await manager.listInstalled()).toEqual([chosen!.id])
+      expect(await manager.activateModel(chosen!.id)).toEqual({ success: true })
+      await llm.restart()
+
+      expect(await llm.chat('Confirm this manually selected model is usable')).toBe(
+        'manual model ready'
+      )
+      expect(manager.getActiveModel()).toBe(chosen!.id)
+    } finally {
+      llm.stop()
+      llm.reloadModel()
+      directChatReply = null
+      vi.unstubAllGlobals()
+      fs.rmSync(path.join(TMP_DIR, 'models'), { recursive: true, force: true })
+      if (previousBinDir === undefined) delete process.env.OFFGRID_BIN_DIR
+      else process.env.OFFGRID_BIN_DIR = previousBinDir
+    }
+  })
+
+  it('configures the recommended local baseline and activates every chosen model (#10)', async () => {
+    const previousBinDir = process.env.OFFGRID_BIN_DIR
+    process.env.OFFGRID_BIN_DIR = installLlamaBoundary(
+      "setInterval(() => {}, 1000); process.on('SIGTERM', () => process.exit(0))"
+    )
+    vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      return url.startsWith('http://127.0.0.1:')
+        ? hostFetch(input, init)
+        : Promise.resolve(fixtureDownload(url))
+    })
+
+    const [{ llm }, setup, manager] = await Promise.all([
+      import('../llm'),
+      import('../setup'),
+      import('../models-manager')
+    ])
+    try {
+      // Conservative still installs the complete lightweight local baseline while
+      // avoiding the heavyweight image-runtime download in this deterministic rig.
+      await expect(llm.setSettings({ performanceMode: 'conservative' })).rejects.toThrow(
+        'Models not downloaded'
+      )
+      const plan = await setup.getSetupPlan()
+      expect(plan.mode).toBe('conservative')
+      expect(plan.items.map((item) => item.kind)).toEqual(['chat', 'transcription', 'voice'])
+
+      const progress: import('../setup').SetupProgress[] = []
+      const result = await setup.autoConfigure((event) => progress.push(event))
+
+      expect(result).toMatchObject({ success: true, modelId: plan.items[0]?.id })
+      expect(progress.at(-1)).toMatchObject({ phase: 'done', modelId: plan.items[0]?.id })
+      expect(await manager.listInstalled()).toEqual(
+        expect.arrayContaining(plan.items.map((item) => item.id))
+      )
+      expect(manager.getActiveModel()).toBe(plan.items[0]?.id)
+      expect(manager.getActiveModalities()).toMatchObject({
+        text: plan.items[0]?.id,
+        transcription: plan.items.find((item) => item.kind === 'transcription')?.id,
+        speech: plan.items.find((item) => item.kind === 'voice')?.id
+      })
+    } finally {
+      llm.stop()
+      vi.unstubAllGlobals()
+      if (previousBinDir === undefined) delete process.env.OFFGRID_BIN_DIR
+      else process.env.OFFGRID_BIN_DIR = previousBinDir
+    }
+  })
+
+  it('carries native engine stderr into the actionable System Health result (#14)', async () => {
+    const previousBinDir = process.env.OFFGRID_BIN_DIR
+    process.env.OFFGRID_BIN_DIR = installLlamaBoundary(
+      'process.stderr.write("unknown model architecture: \'gemma4\'\\n"); setTimeout(() => process.exit(23), 20)'
+    )
+    upstreamHealthOk = false
+
+    const [{ llm }, setup] = await Promise.all([import('../llm'), import('../setup')])
+    try {
+      await expect(llm.restart()).rejects.toThrow(/did not come back up/i)
+      // The crash handler has a delayed retry. Pausing is the real lifecycle intent
+      // that prevents that recovery timer from leaking work beyond this journey.
+      llm.pause()
+
+      const health = await setup.getSystemHealth()
+      const chat = health.components.find((component) => component.id === 'chat')
+      expect(chat).toMatchObject({ status: 'down' })
+      expect(chat?.detail).toMatch(/engine.*too old/i)
+      expect(chat?.detail).toContain('gemma4')
+      expect(chat?.detail).not.toBe('Model installed but server is not running')
+    } finally {
+      llm.pause()
+      upstreamHealthOk = true
+      if (previousBinDir === undefined) delete process.env.OFFGRID_BIN_DIR
+      else process.env.OFFGRID_BIN_DIR = previousBinDir
+    }
   })
 })
