@@ -614,6 +614,9 @@ export function MemoryChat({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const micStreamRef = useRef<MediaStream | null>(null)
+  const voiceMountedRef = useRef(true)
+  const speechRequestRef = useRef(0)
   const pendingVariantsRef = useRef<string[] | null>(null) // prior answers to keep when regenerating
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -647,6 +650,29 @@ export function MemoryChat({
   // its awaits and bails (no error bubble, no persisted junk) instead of finalizing a
   // turn the user abandoned. Cleared when the conversation's send settles.
   const cancelledRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    voiceMountedRef.current = true
+    return () => {
+      voiceMountedRef.current = false
+      speechRequestRef.current++
+      audioRef.current?.pause()
+      audioRef.current = null
+      const recorder = recorderRef.current
+      recorderRef.current = null
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.onstop = null
+        try {
+          recorder.stop()
+        } catch {
+          /* already stopped */
+        }
+      }
+      micStreamRef.current?.getTracks().forEach((track) => track.stop())
+      micStreamRef.current = null
+      chunksRef.current = []
+    }
+  }, [])
 
   const markdownComponents: Components = {
     p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>,
@@ -1647,6 +1673,11 @@ export function MemoryChat({
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (!voiceMountedRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
+      micStreamRef.current = stream
       const recorder = new MediaRecorder(stream)
       chunksRef.current = []
       recorder.ondataavailable = (e) => {
@@ -1655,6 +1686,7 @@ export function MemoryChat({
       const startedAt = Date.now()
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop())
+        if (micStreamRef.current === stream) micStreamRef.current = null
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
         if (blob.size === 0) return
         setTranscribing(true)
@@ -1702,6 +1734,7 @@ export function MemoryChat({
   // the same message stops playback.
   const speakMessage = useCallback(
     async (id: string, text: string) => {
+      const request = ++speechRequestRef.current
       if (audioRef.current) {
         audioRef.current.pause()
         audioRef.current = null
@@ -1715,12 +1748,13 @@ export function MemoryChat({
       setSpeakLoadingId(id) // generating on-device — show a loading state
       try {
         const { dataUrl } = await window.api.speak(text)
+        if (!voiceMountedRef.current || speechRequestRef.current !== request) return
         if (!dataUrl) throw new Error('empty dataUrl')
         const audio = new Audio(dataUrl)
         audioRef.current = audio
         audio.onended = () => {
           setSpeakingId((cur) => (cur === id ? null : cur))
-          audioRef.current = null
+          if (audioRef.current === audio) audioRef.current = null
         }
         audio.onerror = () => {
           console.error('[tts] audio element error', audio.error)

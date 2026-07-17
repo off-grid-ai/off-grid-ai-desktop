@@ -72,6 +72,8 @@ class ChatBoundary {
     turn: ReturnType<typeof deferred<RagResult>>
   }[] = []
 
+  readonly speechTurns: ReturnType<typeof deferred<{ dataUrl: string }>>[] = []
+
   private streamCallback: ((event: StreamEvent) => void) | null = null
   private nextMessageId = 10
   private pendingUserWrite: ReturnType<typeof deferred<void>> | null = null
@@ -143,6 +145,11 @@ class ChatBoundary {
     addRagMessage: this.addRagMessage,
     truncateRagMessages: this.truncateRagMessages,
     saveArtifact: this.saveArtifact,
+    speak: vi.fn(() => {
+      const turn = deferred<{ dataUrl: string }>()
+      this.speechTurns.push(turn)
+      return turn.promise
+    }),
     getSettings: vi.fn(async () => ({})),
     saveSetting: vi.fn(async () => {}),
     listProjects: vi.fn(async () => this.projects.map((item) => ({ ...item }))),
@@ -237,7 +244,49 @@ describe('<MemoryChat/> - chat lifecycle integration (#38-#42, #47-#48)', () => 
     }
   })
 
-  afterEach(() => cleanup())
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('does not play a canceled synthesis and stops active speech on navigation (#106)', async () => {
+    const boundary = new ChatBoundary()
+    installBoundary(boundary)
+    const audios: Array<{ play: ReturnType<typeof vi.fn>; pause: ReturnType<typeof vi.fn> }> = []
+    vi.stubGlobal(
+      'Audio',
+      class {
+        error = null
+        onended: (() => void) | null = null
+        onerror: (() => void) | null = null
+        play = vi.fn(async () => undefined)
+        pause = vi.fn()
+
+        constructor(_url: string) {
+          audios.push(this)
+        }
+      }
+    )
+    const user = userEvent.setup()
+    const view = renderChat({ conversationId: 'conversation-b' })
+
+    await user.click(await screen.findByRole('button', { name: 'Speak' }))
+    await waitFor(() => expect(boundary.speechTurns).toHaveLength(1))
+    await user.click(screen.getByRole('button', { name: /Generating/ }))
+    boundary.speechTurns[0]!.resolve({ dataUrl: 'data:audio/wav;base64,UklGRg==' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Speak' })).toBeTruthy())
+    expect(audios).toHaveLength(0)
+
+    await user.click(screen.getByRole('button', { name: 'Speak' }))
+    await waitFor(() => expect(boundary.speechTurns).toHaveLength(2))
+    boundary.speechTurns[1]!.resolve({ dataUrl: 'data:audio/wav;base64,UklGRg==' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy())
+    expect(audios).toHaveLength(1)
+    expect(audios[0]!.play).toHaveBeenCalledOnce()
+
+    view.unmount()
+    expect(audios[0]!.pause).toHaveBeenCalledOnce()
+  })
 
   it('streams and persists the first local reply in one assistant bubble (#32)', async () => {
     const boundary = new ChatBoundary()
