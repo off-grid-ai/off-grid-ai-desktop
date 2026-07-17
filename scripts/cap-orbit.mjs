@@ -1,7 +1,7 @@
 import { _electron as electron } from '@playwright/test'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { join, resolve } from 'path'
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const profile = mkdtempSync(join(tmpdir(), 'oborbit-'))
 const app = await electron.launch({
@@ -25,7 +25,7 @@ await win
   .click()
   .catch(() => {})
 await wait(2500)
-await win.screenshot({ path: '/tmp/orbit-step2.png' })
+await win.screenshot({ path: resolve('e2e/screenshots/orbit-step2.png') })
 // measure orbit card spread
 const labels = ['Image', 'Vision', 'Chat', 'Projects', 'Speech', 'Voice']
 const boxes = []

@@ -15,18 +15,18 @@ if (!fs.existsSync(RESOURCES_DIR)) {
 }
 
 if (fs.existsSync(DEST_PATH)) {
-  console.log(`Model already exists at ${DEST_PATH}`)
+  console.log('Pinned vision projector is already installed.')
   process.exit(0)
 }
 
-console.log(`Downloading mmproj from ${MODEL_URL} to ${DEST_PATH}...`)
+console.log('Downloading pinned vision projector...')
 
 const file = fs.createWriteStream(DEST_PATH)
 
 https
   .get(MODEL_URL, (response) => {
     if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-      console.log(`Redirecting to ${response.headers.location}...`)
+      console.log('Following the verified model host redirect...')
       https.get(response.headers.location, (redirectResponse) => {
         downloadStream(redirectResponse, file)
       })

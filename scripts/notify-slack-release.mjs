@@ -78,9 +78,9 @@ try {
       body: JSON.stringify({ text: fallbackText, blocks, unfurl_links: false }),
       signal: AbortSignal.timeout(10000)
     })
-    const t = await res.text().catch(() => '')
+    await res.text().catch(() => '')
     if (!res.ok) {
-      warn(`webhook not ok: HTTP ${res.status} ${t}`)
+      warn(`webhook not ok: HTTP ${res.status}`)
       process.exit(0)
     }
     console.log(`[slack-release] announced ${product} ${version} via webhook`)
@@ -96,12 +96,12 @@ try {
     })
     const j = await res.json().catch(() => ({}))
     if (!res.ok || !j.ok) {
-      warn(`chat.postMessage not ok: HTTP ${res.status} ${j.error || ''}`)
+      warn(`chat.postMessage not ok: HTTP ${res.status}`)
       process.exit(0)
     }
-    console.log(`[slack-release] announced ${product} ${version} to ${channel} (ts=${j.ts})`)
+    console.log(`[slack-release] announced ${product} ${version} via Slack API`)
   }
-} catch (e) {
-  warn(`post failed: ${e?.message || e}`)
+} catch {
+  warn('post failed')
 }
 process.exit(0)
