@@ -102,14 +102,14 @@ describe('macOS artifact integrity', () => {
     expect(builderConfig).toMatch(/^\s+shrink:\s+true$/m)
   })
 
-  it('allows unsigned verification only from the explicit local build path', () => {
+  it('ad-hoc signs local bundles after fuses while keeping artifact verification strict', () => {
     const localBuild = fs.readFileSync(path.join(REPO_ROOT, 'scripts/build-mac-local.sh'), 'utf8')
     const artifactHook = fs.readFileSync(
-      path.join(REPO_ROOT, 'scripts/verify-electron-builder-artifact.js'),
+      path.join(REPO_ROOT, 'scripts/verify-electron-builder-artifact.mjs'),
       'utf8'
     )
 
-    expect(localBuild).toContain('export OFFGRID_ALLOW_UNSIGNED_ARTIFACT=1')
-    expect(artifactHook).toContain("process.env.OFFGRID_ALLOW_UNSIGNED_ARTIFACT !== '1'")
+    expect(localBuild.match(/-c\.mac\.identity=-/g)).toHaveLength(2)
+    expect(artifactHook).not.toContain('OFFGRID_ALLOW_UNSIGNED_ARTIFACT')
   })
 })

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 #
 # Local macOS test builds — produces BOTH the core (free) and pro DMGs from a
-# single checkout, UNSIGNED and WITHOUT notarization or GitHub publishing, so you
+# single checkout, AD-HOC SIGNED and WITHOUT notarization or GitHub publishing, so you
 # can smoke-test the packaged app before any real release.
 #
-#   - Signing/notarization are skipped (CSC_IDENTITY_AUTO_DISCOVERY=false +
-#     -c.mac.notarize=false) so there are no cert/Apple-ID prompts. The DMGs are
-#     unsigned: on first launch, right-click the app → Open to bypass Gatekeeper.
+#   - Developer ID discovery/notarization are skipped so there are no cert/Apple-ID
+#     prompts. `mac.identity=-` makes electron-builder ad-hoc sign AFTER it mutates
+#     Electron fuses; skipping that final sign produces a CODESIGNING Invalid Page
+#     crash in Electron Framework. Gatekeeper still treats ad-hoc builds as unsigned.
 #   - --publish never: nothing touches GitHub.
 #   - Core uses OFFGRID_FORCE_CORE=1 so the pro/ submodule (present in this
 #     checkout) is aliased to the stub, exactly like a real free build.
@@ -23,8 +24,7 @@ cd "$(dirname "$0")/.."
 VERSION=$(node -p "require('./package.json').version")
 TARGET="${1:-both}"
 
-export CSC_IDENTITY_AUTO_DISCOVERY=false # unsigned local builds
-export OFFGRID_ALLOW_UNSIGNED_ARTIFACT=1 # integrity is enforced; codesign is release-only
+export CSC_IDENTITY_AUTO_DISCOVERY=false # do not search for a Developer ID locally
 
 # Guard against the bug that broke the last release: the runtime binaries in
 # resources/bin/ are stored in Git LFS. If they're still 131-byte pointer stubs,
@@ -49,6 +49,7 @@ build_core() {
   OFFGRID_FORCE_CORE=1 npx electron-vite build
   npx electron-builder --mac \
     -c.mac.notarize=false \
+    -c.mac.identity=- \
     -c.productName="Off Grid AI Desktop" \
     -c.appId="co.getoffgridai.desktop" \
     -c.dmg.artifactName="OffGrid-core-\${version}.dmg" \
@@ -60,6 +61,7 @@ build_pro() {
   npx electron-vite build
   npx electron-builder --mac \
     -c.mac.notarize=false \
+    -c.mac.identity=- \
     -c.productName="Off Grid AI Desktop" \
     -c.appId="co.getoffgridai.desktop.pro" \
     -c.dmg.artifactName="OffGrid-pro-\${version}.dmg" \

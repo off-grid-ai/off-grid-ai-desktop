@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type -- This module executes directly in Node; public return types live in the companion .d.mts. */
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
@@ -174,11 +175,7 @@ function findSingleApp(mountPoint) {
   return apps[0]
 }
 
-export async function verifyDmgArtifact(
-  dmgPath,
-  referenceBundle,
-  { requireCodeSignature = true } = {}
-) {
+export async function verifyDmgArtifact(dmgPath, referenceBundle) {
   if (process.platform !== 'darwin') {
     throw new Error('DMG integrity verification requires macOS')
   }
@@ -203,10 +200,8 @@ export async function verifyDmgArtifact(
     attached = true
     const candidateBundle = findSingleApp(mountPoint)
     verifyBundlePair(referenceBundle, candidateBundle)
-    if (requireCodeSignature) {
-      await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', referenceBundle])
-      await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', candidateBundle])
-    }
+    await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', referenceBundle])
+    await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', candidateBundle])
   } finally {
     if (attached) {
       await execFileAsync('/usr/bin/hdiutil', ['detach', mountPoint, '-force']).catch(

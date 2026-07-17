@@ -5,7 +5,7 @@ productName: Off Grid AI Desktop
 copyright: © Off Grid AI
 # This hook runs before electron-builder emits artifactCreated, which is the event
 # that schedules publishing. A truncated DMG therefore cannot reach GitHub.
-artifactBuildCompleted: scripts/verify-electron-builder-artifact.js
+artifactBuildCompleted: scripts/verify-electron-builder-artifact.mjs
 directories:
   buildResources: build
 files:
