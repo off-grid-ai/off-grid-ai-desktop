@@ -71,9 +71,23 @@ test.afterEach(async () => {
   fs.rmSync(userDataDir, { recursive: true, force: true })
 })
 
-test('relaunch preserves completed onboarding and one resumable transfer (#12 partial)', async () => {
+test('relaunch resumes onboarding progress and one interrupted transfer (#12)', async () => {
+  await expect(page.getByRole('heading', { name: 'Off Grid AI' })).toBeVisible()
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('onboarding_step'))).toBe('1')
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await expect(page.getByText('Replay', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('onboarding_step'))).toBe('2')
+
+  await closeApp()
+  await launchApp()
+
+  await expect(page.getByText('Replay', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Off Grid AI' })).toHaveCount(0)
+
   await finishOnboarding()
   await expect(page.getByRole('heading', { name: 'Models' })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('onboarding_step'))).toBeNull()
   const modelsDir = await page.evaluate(async () => (await window.api.checkModelStatus()).modelsDir)
   expect(path.resolve(modelsDir).startsWith(path.resolve(userDataDir))).toBe(true)
 

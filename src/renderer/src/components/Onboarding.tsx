@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type JSX } from 'react'
 import { motion, AnimatePresence, stagger, useAnimate } from 'motion/react'
 import { LampContainer } from './ui/lamp'
 import { OrbitingCircles } from './ui/orbiting-circles'
@@ -33,7 +33,7 @@ function TextGenerate({
   words: string
   className?: string
   delay?: number
-}) {
+}): JSX.Element {
   const [scope, animate] = useAnimate()
   const wordsArray = words.split(' ')
   useEffect(() => {
@@ -58,7 +58,7 @@ function TextGenerate({
   )
 }
 
-function AnimatedNumber({ value, delay = 0 }: { value: number; delay?: number }) {
+function AnimatedNumber({ value, delay = 0 }: { value: number; delay?: number }): JSX.Element {
   const [displayValue, setDisplayValue] = useState(0)
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -84,6 +84,12 @@ interface OnboardingProps {
 }
 
 const steps = [{ id: 'welcome' }, { id: 'capabilities' }, { id: 'pro' }, { id: 'private' }]
+const ONBOARDING_STEP_KEY = 'onboarding_step'
+
+function restoredStep(): number {
+  const value = Number(localStorage.getItem(ONBOARDING_STEP_KEY))
+  return Number.isInteger(value) && value >= 0 && value < steps.length ? value : 0
+}
 
 const ORBIT = [
   { icon: ChatCircle, label: 'Chat' },
@@ -138,13 +144,16 @@ const PRO_GRID = [
   }
 ]
 
-export function Onboarding({ onComplete }: OnboardingProps) {
-  const [currentStep, setCurrentStep] = useState(0)
+export function Onboarding({ onComplete }: OnboardingProps): JSX.Element {
+  const [currentStep, setCurrentStep] = useState(restoredStep)
 
   const handleNext = (): void => {
     if (currentStep < steps.length - 1) {
-      setCurrentStep(currentStep + 1)
+      const nextStep = currentStep + 1
+      localStorage.setItem(ONBOARDING_STEP_KEY, String(nextStep))
+      setCurrentStep(nextStep)
     } else {
+      localStorage.removeItem(ONBOARDING_STEP_KEY)
       localStorage.setItem('onboarding_completed', 'true')
       onComplete()
     }
