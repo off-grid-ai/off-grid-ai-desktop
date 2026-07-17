@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 42 covered, 32 left.
-  - P1: 71 total, 26 covered, 45 left.
-  - P2: 10 total, 2 covered, 8 left.
-  - Overall: 155 total, 70 covered, 85 left.
+  - P0: 74 total, 43 covered, 31 left.
+  - P1: 71 total, 27 covered, 44 left.
+  - P2: 10 total, 3 covered, 7 left.
+  - Overall: 155 total, 73 covered, 82 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -58,6 +58,9 @@ manual claim does not count as complete integration coverage.
 - #43 - Chat survives relaunch. `e2e/chat-memory.spec.ts` creates multiple scoped and unscoped
   conversations with messages and context through production IPC, fully closes Electron, reopens
   the same profile, and verifies every association and payload through the reloaded preload path.
+- #48 - Error clears busy state. `MemoryChat.chat-lifecycle.test.tsx` rejects a live turn at the
+  native-model boundary, proves the rendered error is useful and Stop clears, then sends and renders
+  a successful second turn through the same production composer.
 - #52 - Attach a knowledge document. `rag-store-integration.dbtest.ts` drives a real Markdown file
   through production extraction/chunking, real SQLite persistence and retrieval, and prompt
   formatting, with only the local embedding-model boundary deterministic.
@@ -166,6 +169,9 @@ manual claim does not count as complete integration coverage.
   draining preserves user/assistant order without collision, duplication, or loss.
 - #45 - Delete conversation cascades. `conversation-delete-cascade.dbtest.ts` proves real messages
   and artifacts do not survive conversation deletion.
+- #47 - Regenerate reply. `MemoryChat.chat-lifecycle.test.tsx` invokes the rendered Regenerate
+  action, replaces the old assistant answer from the same user context, and proves both the visible
+  and persisted transcripts contain one user turn and the new answer without duplication.
 - #54 - New chat inherits its project. `MemoryChat.project-inheritance.test.tsx` drives the real
   composer from a project target across the preload boundary and proves both conversation creation
   and RAG retrieval receive the same project ID; reopening a saved conversation restores that scope.
@@ -227,6 +233,9 @@ manual claim does not count as complete integration coverage.
 
 ## Covered P2 journeys
 
+- #46 - Copy assistant reply. `MemoryChat.clipboard-overlay.test.tsx` invokes Copy on an assistant
+  message, proves its exact text reaches the native/browser clipboard boundary, and verifies visible
+  success feedback only after the copy completes.
 - #55 - Edit project. `rag-ipc-project-create.dbtest.ts` changes every editable field through the
   production project IPC handlers and real SQLite store, reloads the modules, and proves the updated
   project is returned with its exact name, description, prompt, icon, and memory setting.
@@ -271,9 +280,6 @@ manual claim does not count as complete integration coverage.
 - #36 - Thinking streams separately.
 - #37 - Plain reply hides think markers.
 - #44 - Rename conversation.
-- #46 - Copy assistant reply.
-- #47 - Regenerate reply.
-- #48 - Error clears busy state.
 - #49 - Long answer respects configured cap.
 - #50 - Keyboard and navigation shortcuts.
 
