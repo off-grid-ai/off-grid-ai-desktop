@@ -24,6 +24,8 @@ vi.mock('electron', () => ({
 
 import * as store from '../rag/store'
 import { getDB } from '../database'
+import { desktopExtraction } from '../rag/extractors'
+import { RagService, type EmbeddingProvider } from '@offgrid/rag'
 
 afterAll(() => {
   try {
@@ -101,6 +103,52 @@ describe('rag/store.ts - projects CRUD', () => {
 })
 
 describe('rag/store.ts - VectorStore documents + chunks', () => {
+  it('rejects a damaged PDF during extraction without leaving a half-indexed document', async () => {
+    const projectId = 'p-damaged-pdf'
+    const filePath = path.join(TMP_DIR, 'damaged.pdf')
+    fs.writeFileSync(filePath, 'this is not a PDF')
+    store.createProject({ id: projectId, name: 'Damaged PDF' })
+
+    // Embeddings are an uncontrollable model-runtime boundary and must never be
+    // reached for an extraction failure. Throwing here makes that invariant visible.
+    const embeddings: EmbeddingProvider = {
+      dimension: 1,
+      async embed() {
+        throw new Error('embedding runtime must not run for a damaged document')
+      }
+    }
+    const service = new RagService({
+      store: store.desktopVectorStore,
+      embeddings,
+      extraction: desktopExtraction
+    })
+    const stages: string[] = []
+
+    await expect(
+      service.indexDocument(
+        {
+          projectId,
+          path: filePath,
+          fileName: 'damaged.pdf',
+          size: fs.statSync(filePath).size
+        },
+        (stage) => stages.push(stage)
+      )
+    ).rejects.toThrow('Invalid PDF structure')
+
+    expect(stages).toEqual(['extracting'])
+    expect(await store.desktopVectorStore.listDocuments(projectId)).toHaveLength(0)
+    const chunks = getDB()
+      .prepare(
+        `SELECT COUNT(*) AS c
+         FROM rag_chunks c
+         JOIN rag_documents d ON d.id = c.doc_id
+         WHERE d.project_id = ?`
+      )
+      .get(projectId) as { c: number }
+    expect(chunks.c).toBe(0)
+  })
+
   it('addDocument returns a rowid and listDocuments maps rows back to RagDocument', async () => {
     store.createProject({ id: 'p-docs', name: 'Docs' })
     const id = await store.desktopVectorStore.addDocument({
