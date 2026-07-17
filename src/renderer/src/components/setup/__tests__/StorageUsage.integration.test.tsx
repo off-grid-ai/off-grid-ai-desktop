@@ -3,7 +3,6 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { downloadFailureMessage } from '@offgrid/core/main/models/download-error'
 import { DataPrivacyPanel } from '../DataPrivacyPanel'
 import { StoragePanel } from '../StoragePanel'
 
@@ -89,9 +88,9 @@ describe('rendered storage usage', () => {
   })
 
   it('explains a disk-full download and keeps its retry action reachable', async () => {
-    const diskFullMessage = downloadFailureMessage(
-      Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' })
-    )
+    // This is the public IPC payload. The producer's ENOSPC normalization and
+    // persistence are exercised separately by model-integrity.integration.test.ts.
+    const diskFullMessage = 'ENOSPC: no space left on device, write'
     api.listDownloads.mockResolvedValue([
       {
         modelId: 'synthetic/text-model',
