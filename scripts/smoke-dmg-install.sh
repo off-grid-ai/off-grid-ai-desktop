@@ -6,7 +6,7 @@
 # temporary profile.
 #
 # Usage:
-#   npm run smoke:dmg -- dist/OffGrid-0.0.38.dmg
+#   npm run smoke:dmg -- dist/OffGrid-core-<version>.dmg
 #
 # Env:
 #   DMG_REFERENCE_APP=<path>        Compare the DMG and installed copy against the
