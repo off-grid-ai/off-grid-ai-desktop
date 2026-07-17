@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 34 covered, 40 left.
-  - P1: 71 total, 10 covered, 61 left.
+  - P0: 74 total, 32 covered, 42 left.
+  - P1: 71 total, 15 covered, 56 left.
   - P2: 10 total, 1 covered, 9 left.
-  - Overall: 155 total, 45 covered, 110 left.
+  - Overall: 155 total, 48 covered, 107 left.
 - Green gates today:
   - `npm test`: 206 files passed, 1 skipped; 2,197 tests passed, 1 skipped.
   - `npm run test:coverage`: 96.75% statements, 91.55% branches, 96.15% functions,
@@ -32,6 +32,9 @@ manual claim does not count as complete integration coverage.
 - #13 - System Health is truthful. `e2e/smoke.spec.ts` launches a fresh profile, compares the real
   gateway `/health` payload with the System Health IPC components, verifies absent runtimes are
   reported as `not_installed`, and confirms the unavailable chat engine port is actually down.
+- #25 - Interrupted download recovers. `model-integrity.integration.test.ts` interrupts a real
+  streamed partial, reloads the manager, resumes with the correct HTTP range, verifies exact final
+  bytes and installation, then reloads again to prove completed state stays cleared.
 - #26 - Truncated GGUF is rejected. `model-integrity.integration.test.ts` drives the real model
   manager against a temp filesystem, with only HTTP delivery faked, and proves truncated downloads
   and local imports are rejected before promotion, installation, copying, or registration.
@@ -41,13 +44,13 @@ manual claim does not count as complete integration coverage.
 - #43 - Chat survives relaunch. `e2e/chat-memory.spec.ts` creates multiple scoped and unscoped
   conversations with messages and context through production IPC, fully closes Electron, reopens
   the same profile, and verifies every association and payload through the reloaded preload path.
+- #52 - Attach a knowledge document. `rag-store-integration.dbtest.ts` drives a real Markdown file
+  through production extraction/chunking, real SQLite persistence and retrieval, and prompt
+  formatting, with only the local embedding-model boundary deterministic.
 - #51 - Create a project. `src/main/__tests__/rag-store-integration.dbtest.ts` exercises the real
   project store against temp SQLite and verifies the round trip.
 - #56 - Delete project cascades. `src/main/__tests__/project-delete-cascade.dbtest.ts` uses the real
   project, conversation, message, artifact, document, and chunk paths and proves no orphans remain.
-- #60 - Unsupported document fails clearly. The production picker excludes unsupported types;
-  `rag-store-integration.dbtest.ts` drives a corrupt PDF through the real parser, RAG service, and
-  SQLite store and proves extraction fails clearly before documents, chunks, or embeddings exist.
 - #63 - Image cancellation keeps text. `MemoryChat.tool-image-cancel.test.tsx` drives the real
   rendered MemoryChat path with the image engine as the external boundary and verifies the text
   turn persists.
@@ -83,8 +86,6 @@ manual claim does not count as complete integration coverage.
   row preservation, then reopens the database and proves processing remains idempotent.
 - #117 - Clipboard records text. `e2e/pro.spec.ts` writes unique text to the real OS clipboard and
   waits for the production poller and encrypted history store to expose that exact item over IPC.
-- #119 - Clipboard records images and files. `e2e/pro.spec.ts` captures real file URLs and a new
-  pixel bitmap, then restores the bitmap bytes and verifies their exact dimensions.
 - #121 - Clipboard restore text. The same E2E journey overwrites the OS clipboard after capture,
   restores the stored item through production IPC, and verifies the original text returns.
 - #122 - Clipboard restore file. `e2e/pro.spec.ts` drives the real capture-to-restore path and
@@ -93,13 +94,8 @@ manual claim does not count as complete integration coverage.
   and a real temp directory; correct and incorrect passwords are covered.
 - #126 - Vault item types round-trip. `vault-service.test.ts` covers real encrypted CRUD and binary
   attachment persistence across lock and unlock.
-- #127 - Vault copy actions. `e2e/pro.spec.ts` creates a real encrypted KDBX entry through
-  production IPC and verifies username, revealed password, and URL copy into the OS clipboard.
 - #128 - Vault recovery and backup. `vault-service.test.ts` and `vault-recovery.test.ts` exercise
   real KDBX export bytes, recovery setup, wrong phrases, and recovery to a new password.
-- #130 - Chat residency stays required. `e2e/settings-residency.spec.ts` verifies the production
-  switch stays checked and disabled before and after relaunch, while the real SQLite integration
-  proves an on-demand write is normalized back to `resident`.
 - #135 - Delete category is scoped. The real SQLite/filesystem integration deletes the Chats
   category through `clearCategory` and proves memory, projects, connectors, encrypted tokens,
   models, and unrelated personal files remain.
@@ -118,12 +114,18 @@ manual claim does not count as complete integration coverage.
 
 - #45 - Delete conversation cascades. `conversation-delete-cascade.dbtest.ts` proves real messages
   and artifacts do not survive conversation deletion.
+- #60 - Unsupported document fails clearly. The production picker excludes unsupported types;
+  `rag-store-integration.dbtest.ts` drives a corrupt PDF through the real parser, RAG service, and
+  SQLite store and proves extraction fails clearly before documents, chunks, or embeddings exist.
 - #72 - Connector tools load. `mcp-connector-tool-extension.dbtest.ts` discovers schemas through
   the production extension and real connector database, preserving enabled/disabled state while
   controlling only the remote MCP transport.
 - #77 - Dead connector does not hang all tools. `mcp-timeout.dbtest.ts` runs the default production
   extension over real SQLite connectors and the real eight-second timeout; a non-responsive MCP
   process becomes an error while the healthy connector schema still returns.
+- #78 - Connector delete removes secrets. `connector-delete-secrets.dbtest.ts` deletes through the
+  production connector repository, reopens the encrypted database, and proves all owned OAuth,
+  PKCE, client-registration, and env secrets are gone while unrelated secrets remain readable.
 - #110 - Entity merge preserves evidence. `resolve.integration.test.ts` exercises real entity,
   aliases, observations, relationships, action reassignment, split, and merge persistence.
 - #113 - Action status survives persistence. `actions-status.integration.test.ts` exercises real
@@ -132,6 +134,8 @@ manual claim does not count as complete integration coverage.
   windows, dwell caps, category rollups, context switches, and seven-day aggregation.
 - #118 - Clipboard deduplicates repeated copy. `clipboard-store.integration.test.ts` exercises the
   real store and proves timestamp bump-to-top without duplicate rows or lost tags.
+- #119 - Clipboard records images and files. `e2e/pro.spec.ts` captures real file URLs and a new
+  pixel bitmap, then restores the bitmap bytes and verifies their exact dimensions.
 - #120 - Clipboard live refresh keeps valid selection.
   `ClipboardScreen.integration.test.tsx` renders the real screen and proves selection is retained
   while the item exists, then moves to a valid remaining item after deletion.
@@ -139,6 +143,11 @@ manual claim does not count as complete integration coverage.
   and TTS through the real Settings controls, verifies production IPC, fully relaunches Electron,
   and verifies all values reload. The SQLite and runtime-manager integrations prove that same map
   controls persistence and re-warm behavior.
+- #127 - Vault copy actions. `e2e/pro.spec.ts` creates a real encrypted KDBX entry through
+  production IPC and verifies username, revealed password, and URL copy into the OS clipboard.
+- #130 - Chat residency stays required. `e2e/settings-residency.spec.ts` verifies the production
+  switch stays checked and disabled before and after relaunch, while the real SQLite integration
+  proves an on-demand write is normalized back to `resident`.
 - #131 - Resource mode applies. `resource-mode.integration.test.ts` drives all three presets through
   the real LLM settings owner, disk persistence, fresh-service launch arguments, recommendation,
   and setup planner with only host RAM controlled; the Electron tour proves selection stays
@@ -178,7 +187,6 @@ manual claim does not count as complete integration coverage.
 - #22 - Multiple downloads queue.
 - #23 - Delete does not cancel another download.
 - #24 - Offline download fails clearly.
-- #25 - Interrupted download recovers.
 - #28 - Active text model survives relaunch.
 - #29 - Active modal models survive relaunch.
 - #30 - Deleting active model clears selection.
@@ -206,7 +214,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - projects and artifacts
 
-- #52 - Attach a knowledge document.
 - #53 - Project retrieval is grounded.
 - #54 - New chat inherits project.
 - #55 - Edit project.
@@ -229,7 +236,6 @@ manual claim does not count as complete integration coverage.
 ## Left - integrations and gateway
 
 - #71 - Connector can be added.
-- #78 - Connector delete removes secrets.
 - #80 - Gateway chat streaming.
 - #81 - Gateway image route.
 - #82 - Gateway failure envelope.
