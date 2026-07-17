@@ -70,16 +70,6 @@ export function OrbitingCircles({
           </div>
         )
       })}
-      <style>{`
-        @keyframes orbit {
-          0% {
-            transform: rotate(var(--angle, 0deg)) translateY(calc(-1 * var(--radius, 160px))) rotate(calc(-1 * var(--angle, 0deg)));
-          }
-          100% {
-            transform: rotate(calc(var(--angle, 0deg) + 360deg)) translateY(calc(-1 * var(--radius, 160px))) rotate(calc(-1 * var(--angle, 0deg) - 360deg));
-          }
-        }
-      `}</style>
     </>
   )
 }

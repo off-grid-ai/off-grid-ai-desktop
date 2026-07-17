@@ -1,8 +1,10 @@
-import { resolve } from 'path'
-import { existsSync } from 'fs'
+import { resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { createRendererContentSecurityPolicy } from './src/shared/renderer-csp'
 
 // Open-core seam: the private `pro/` git submodule is present only in paid
 // builds. When it's missing (free / contributor build) we alias the pro entry
@@ -20,6 +22,8 @@ const proRenderer = proExists ? resolve('pro/renderer/index.tsx') : stub
 // Baked into every bundle so runtime code can tell a pro build from a free build
 // without relying on an env var default (which can't distinguish "unset" from "pro").
 const proDefine = { __OFFGRID_PRO__: JSON.stringify(proExists) }
+const rendererStyleNonce = randomBytes(18).toString('base64url')
+const rendererContentSecurityPolicy = createRendererContentSecurityPolicy(rendererStyleNonce)
 
 export default defineConfig({
   main: {
@@ -43,6 +47,7 @@ export default defineConfig({
   },
   renderer: {
     define: proDefine,
+    html: { cspNonce: rendererStyleNonce },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),
@@ -51,6 +56,25 @@ export default defineConfig({
         '@offgrid/pro/renderer': proRenderer
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [
+      {
+        name: 'offgrid-renderer-csp',
+        transformIndexHtml: {
+          order: 'pre',
+          handler: () => [
+            {
+              tag: 'meta',
+              attrs: {
+                'http-equiv': 'Content-Security-Policy',
+                content: rendererContentSecurityPolicy
+              },
+              injectTo: 'head-prepend'
+            }
+          ]
+        }
+      },
+      react(),
+      tailwindcss()
+    ]
   }
 })

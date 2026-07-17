@@ -8,6 +8,10 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'ogcapture',
     privileges: { secure: true, supportFetchAPI: true, bypassCSP: true, stream: true }
+  },
+  {
+    scheme: 'ogartifact',
+    privileges: { standard: true, secure: true, stream: true }
   }
 ])
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -18,6 +22,7 @@ import { setupMcpIpc } from './mcp-ipc'
 import { startModelServer } from './model-server'
 import { startMediaServer, mediaUrlFor } from './media-server'
 import { serveCaptureFile } from './ogcapture-serve'
+import { serveArtifactPreview } from './artifact-preview'
 import { ipcMain } from 'electron'
 import { loadProFeaturesMain } from './bootstrap/loadProFeaturesMain'
 import { initLicensing } from './licensing/license-service'
@@ -218,6 +223,10 @@ app.whenReady().then(() => {
       return new Response(null, { status: 400 })
     }
   })
+
+  // Model-generated executable documents use a separate opaque origin and their
+  // own response CSP. The trusted renderer never receives their inline/eval grants.
+  protocol.handle('ogartifact', (request) => serveArtifactPreview(request.url))
 
   // Meeting recorder: grant SYSTEM AUDIO (loopback) for getDisplayMedia so the
   // recorder can capture remote participants on macOS 13+ via ScreenCaptureKit.

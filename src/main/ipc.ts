@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, app, clipboard } from 'electron'
+import { setupArtifactPreviewIpc } from './artifact-preview-ipc'
 import {
   getDB,
   getChatSessions,
@@ -1857,6 +1858,7 @@ export function setupIPC() {
     const { artifactRuntime } = await import('./artifacts')
     return artifactRuntime(kind)
   })
+  setupArtifactPreviewIpc()
   ipcMain.handle(
     'artifacts:save',
     async (

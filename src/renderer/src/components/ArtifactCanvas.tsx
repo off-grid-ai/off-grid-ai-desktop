@@ -3,9 +3,10 @@ import ReactMarkdown from 'react-markdown'
 import { ARTIFACT_KIND_LABELS, type ArtifactKind } from '@renderer/lib/artifact-labels'
 
 // Renders a model-generated artifact (HTML / SVG / Mermaid / React) in a SANDBOXED
-// iframe — sandbox="allow-scripts" only, no same-origin, no network — so generated
-// code can't touch the app, filesystem, or network. Runtime libs (React/Babel/
-// Mermaid) are inlined from the bundled offline copies, so it runs fully on-device.
+// iframe with sandbox="allow-scripts" only and no same-origin access, so generated
+// code cannot touch the app or filesystem. Its response CSP blocks every external
+// origin except the exact esm.sh host used when a React artifact imports a package.
+// Bundled React/Babel/Mermaid keep artifacts without extra packages fully offline.
 
 // 'text'/'image' are catalogued inputs (uploaded file / pasted block / image) —
 // shown as plain text or a thumbnail, never executed in the sandbox.
@@ -15,6 +16,10 @@ const KIND_LABEL = ARTIFACT_KIND_LABELS
 
 function escapeForHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function revokePreview(url: string): void {
+  void window.api.revokeArtifactPreview(url).catch(() => {})
 }
 
 // npm packages a React artifact imports beyond react/react-dom (loaded from esm.sh).
@@ -46,6 +51,7 @@ export function ArtifactCanvas({
   const [runtime, setRuntime] = useState<Record<string, string> | null>(null)
   const [view, setView] = useState<'preview' | 'code'>('preview')
   const [resizing, setResizing] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState('')
   // Holds the active drag's teardown so we can force it on unmount — otherwise
   // closing the canvas mid-drag (e.g. switching chats) leaks the window listeners
   // and keeps firing onResize on a stale setter.
@@ -103,9 +109,10 @@ export function ArtifactCanvas({
     }
   }, [artifact.kind])
 
-  const srcdoc = useMemo(() => {
+  const documentHtml = useMemo(() => {
     if (!runtime) return ''
     const { code, kind } = artifact
+    if (kind === 'text' || kind === 'image') return ''
     const base =
       '<meta charset="utf-8"><style>html,body{margin:0;background:#fff;color:#111;font-family:system-ui,sans-serif}</style>'
     if (kind === 'html') {
@@ -177,6 +184,35 @@ else { __ogShow('No React component found — define a component named App or a 
 </script></body></html>`
   }, [artifact, runtime])
 
+  useEffect(() => {
+    let active = true
+    let registeredUrl: string | undefined
+    setPreviewUrl('')
+
+    if (documentHtml) {
+      window.api
+        .createArtifactPreview(documentHtml)
+        .then((url) => {
+          registeredUrl = url
+          if (active) {
+            setPreviewUrl(url)
+          } else {
+            revokePreview(url)
+          }
+        })
+        .catch(() => {
+          if (active) setPreviewUrl('')
+        })
+    }
+
+    return () => {
+      active = false
+      if (registeredUrl) {
+        revokePreview(registeredUrl)
+      }
+    }
+  }, [documentHtml])
+
   const saveBlob = (blob: Blob, filename: string): void => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -236,7 +272,7 @@ else { __ogShow('No React component found — define a component named App or a 
       return
     }
     // html/svg/mermaid → single runnable file.
-    saveBlob(new Blob([srcdoc], { type: 'text/html' }), `${slug}.html`)
+    saveBlob(new Blob([documentHtml], { type: 'text/html' }), `${slug}.html`)
   }
 
   return (
@@ -298,12 +334,12 @@ else { __ogShow('No React component found — define a component named App or a 
           <div className="prose prose-invert prose-sm absolute inset-0 max-w-none overflow-auto bg-neutral-950 px-6 py-5 text-sm leading-relaxed text-neutral-200 [&_a]:text-green-400 [&_code]:rounded [&_code]:bg-neutral-800 [&_code]:px-1 [&_h1]:mb-3 [&_h1]:mt-1 [&_h1]:text-xl [&_h1]:font-semibold [&_h1]:text-white [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-white [&_li]:my-1 [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-5">
             <ReactMarkdown>{artifact.code}</ReactMarkdown>
           </div>
-        ) : srcdoc ? (
+        ) : previewUrl ? (
           <iframe
             key={artifact.code.length}
             title="artifact"
             sandbox="allow-scripts"
-            srcDoc={srcdoc}
+            src={previewUrl}
             className="absolute inset-0 h-full w-full border-0"
             style={{ background: '#fff' }}
           />

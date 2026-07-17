@@ -402,6 +402,9 @@ const offGridApi = {
 
   // --- Canvas / artifacts sandbox runtime + library ---
   artifactRuntime: (kind: ArtifactKindContract) => ipcRenderer.invoke('artifacts:runtime', kind),
+  createArtifactPreview: (documentHtml: string) =>
+    ipcRenderer.invoke('artifacts:preview:create', documentHtml),
+  revokeArtifactPreview: (url: string) => ipcRenderer.invoke('artifacts:preview:revoke', url),
   // Kind union MUST match the renderer's `saveArtifact` contract in
   // src/renderer/src/env.d.ts (text/image are real artifact kinds). Guarded by
   // src/main/__tests__/ipc-type-parity.test.ts.

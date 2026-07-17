@@ -94,12 +94,12 @@
 
   @keyframes orbit {
     0% {
-      transform: rotate(calc(var(--angle) * 1deg)) translateY(calc(var(--radius) * 1px))
-        rotate(calc(var(--angle) * -1deg));
+      transform: rotate(var(--angle, 0deg)) translateY(calc(-1 * var(--radius, 160px)))
+        rotate(calc(-1 * var(--angle, 0deg)));
     }
     100% {
-      transform: rotate(calc(var(--angle) * 1deg + 360deg)) translateY(calc(var(--radius) * 1px))
-        rotate(calc((var(--angle) + 360) * -1deg));
+      transform: rotate(calc(var(--angle, 0deg) + 360deg))
+        translateY(calc(-1 * var(--radius, 160px))) rotate(calc(-1 * var(--angle, 0deg) - 360deg));
     }
   }
 }
