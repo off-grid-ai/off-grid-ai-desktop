@@ -105,6 +105,7 @@ test.beforeAll(async () => {
       ...process.env,
       OFFGRID_USER_DATA: userDataDir,
       OFFGRID_PRO: '1', // force pro on without a license (pro code is bundled in this checkout)
+      OFFGRID_SEED: 'force', // core chats, knowledge, and RAG schema used by cross-surface Search
       OFFGRID_SEED_PRO: 'force', // deterministic observations + entities + replay frames (TEMP profile only)
       NODE_ENV: 'production'
     }
@@ -252,6 +253,97 @@ test('Replay renders every synthetic capture in chronological order with usable 
     await page.keyboard.press('ArrowRight')
     await assertCurrentFrame(index)
   }
+})
+
+test('Search opens Replay at the selected captured moment instead of a timeline boundary', async () => {
+  const expected = await page.evaluate(async () => {
+    const api = (
+      window as unknown as { api: Record<string, (...args: unknown[]) => Promise<unknown>> }
+    ).api
+    const defaultDaySec = (await api.crmReplayDefaultDay()) as number
+    const day = new Date(defaultDaySec * 1000)
+    const startSec = Math.floor(
+      new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime() / 1000
+    )
+    const frames = (await api.crmReplayFrames(startSec, startSec + 86400)) as {
+      ts: number
+      path: string
+      app: string | null
+      caption: string | null
+    }[]
+    const middle = (frames.length - 1) / 2
+    const interiorIndices = frames
+      .map((_, index) => index)
+      .filter((index) => index > 0 && index < frames.length - 1)
+      .sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle))
+
+    for (const selectedIndex of interiorIndices) {
+      const selected = frames[selectedIndex]!
+      const terms = (selected.caption?.match(/[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*/g) ?? [])
+        .filter((term) => term.length >= 7)
+        .sort((a, b) => b.length - a.length)
+      for (const query of terms) {
+        const hits = (await api.universalSearch(query, {
+          limit: 8,
+          semantic: false
+        })) as {
+          kind: string
+          title: string
+          snippet: string
+          ts: number
+          imagePath: string | null
+        }[]
+        const hit = hits.find(
+          (candidate) => candidate.kind === 'screen' && candidate.imagePath === selected.path
+        )
+        if (hit) {
+          return {
+            query,
+            hit,
+            selected,
+            selectedIndex,
+            frameCount: frames.length,
+            fullTime: new Date(selected.ts * 1000).toLocaleTimeString([], {
+              hour: 'numeric',
+              minute: '2-digit',
+              second: '2-digit'
+            })
+          }
+        }
+      }
+    }
+    return null
+  })
+
+  expect(expected).not.toBeNull()
+  if (!expected) throw new Error('Expected the synthetic search hit to have a Replay frame')
+  expect(expected.selectedIndex).toBeGreaterThan(0)
+  expect(expected.selectedIndex).toBeLessThan(expected.frameCount - 1)
+  expect(expected.hit.imagePath).toBe(expected.selected.path)
+
+  await page.keyboard.press('Meta+K')
+  const search = page.getByRole('dialog', { name: 'Search Off Grid' })
+  await expect(search).toBeVisible()
+  await search.getByPlaceholder('Search everything…').fill(expected.query)
+  const result = search.getByText(expected.hit.snippet, { exact: true })
+  await expect(result).toBeVisible()
+  await result.click()
+
+  await expect(search).toBeHidden()
+  await expect(page.getByRole('heading', { name: 'Replay', exact: true })).toBeVisible()
+  await expect(page.locator('img[src^="ogcapture://"]')).toHaveAttribute(
+    'src',
+    `ogcapture://${expected.selected.path}`
+  )
+  const commentary = page.locator('aside')
+  await expect(
+    commentary.getByText(expected.selected.app ?? 'Screen', { exact: true })
+  ).toBeVisible()
+  await expect(commentary.getByText(expected.fullTime, { exact: true })).toBeVisible()
+  await expect(commentary.getByText(expected.hit.snippet, { exact: true })).toBeVisible()
+  await expect(
+    page.getByText(`${expected.selectedIndex + 1}/${expected.frameCount}`, { exact: true })
+  ).toBeVisible()
 })
 
 test('Clipboard is unlocked in the pro build', async () => {
