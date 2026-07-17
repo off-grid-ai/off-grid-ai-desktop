@@ -185,6 +185,75 @@ test('Replay moments are backed by a captured screen — connector-only moments 
   }
 })
 
+test('Replay renders every synthetic capture in chronological order with usable timestamps', async () => {
+  await nav('Replay')
+
+  const capturePaths = fs
+    .readdirSync(path.join(userDataDir, 'captures'))
+    .filter((name) => /^capture-\d+\.png$/.test(name))
+    .sort((a, b) => {
+      const timestamp = (name: string): number => Number(/^capture-(\d+)\.png$/.exec(name)![1])
+      return timestamp(a) - timestamp(b)
+    })
+    .map((name) => path.join(userDataDir, 'captures', name))
+
+  const frames = await page.evaluate(async () => {
+    const api = (
+      window as unknown as { api: Record<string, (...args: unknown[]) => Promise<unknown>> }
+    ).api
+    const dayStartSec = (await api.crmReplayDefaultDay()) as number
+    const day = new Date(dayStartSec * 1000)
+    const startSec = Math.floor(
+      new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime() / 1000
+    )
+    const replayFrames = (await api.crmReplayFrames(startSec, startSec + 86400)) as {
+      ts: number
+      path: string
+      app: string | null
+      caption: string | null
+    }[]
+    return replayFrames.map((frame) => ({
+      ...frame,
+      fullTime: new Date(frame.ts * 1000).toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit'
+      }),
+      shortTime: new Date(frame.ts * 1000).toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit'
+      })
+    }))
+  })
+
+  expect(frames.length).toBeGreaterThan(2)
+  expect(frames.map((frame) => frame.path)).toEqual(capturePaths)
+
+  const currentImage = page.locator('img[src^="ogcapture://"]')
+  const commentary = page.locator('aside')
+  const assertCurrentFrame = async (index: number): Promise<void> => {
+    const frame = frames[index]!
+    await expect(currentImage).toHaveAttribute('src', `ogcapture://${frame.path}`)
+    await expect(commentary.getByText(frame.app ?? 'Screen', { exact: true })).toBeVisible()
+    await expect(commentary.getByText(frame.fullTime, { exact: true })).toBeVisible()
+    if (frame.caption) {
+      await expect(commentary.getByText(frame.caption, { exact: true })).toBeVisible()
+    }
+    await expect(page.getByText(frame.shortTime, { exact: true }).first()).toBeVisible()
+    await expect(page.getByText(`${index + 1}/${frames.length}`, { exact: true })).toBeVisible()
+  }
+
+  await assertCurrentFrame(frames.length - 1)
+  for (let index = frames.length - 2; index >= 0; index--) {
+    await page.keyboard.press('ArrowLeft')
+    await assertCurrentFrame(index)
+  }
+  for (let index = 1; index < frames.length; index++) {
+    await page.keyboard.press('ArrowRight')
+    await assertCurrentFrame(index)
+  }
+})
+
 test('Clipboard is unlocked in the pro build', async () => {
   await nav('Clipboard')
   await expect(page.getByText('Off Grid Pro · Available now')).toHaveCount(0)
