@@ -6,7 +6,7 @@
 // closed — we don't hold long-lived child processes.
 
 import { getDB } from './database'
-import { getSecret } from './secrets'
+import { deleteSecretsByPrefix, getSecret } from './secrets'
 import { makeOAuthProvider, ensureLoopback, hasOAuthTokens } from './mcp-oauth'
 import { callHook } from './bootstrap/hookRegistry'
 
@@ -113,7 +113,11 @@ export function setConnectorStatus(
 
 export function removeConnector(id: number): void {
   ensure()
-  getDB().prepare('DELETE FROM connectors WHERE id = ?').run(id)
+  const database = getDB()
+  database.transaction(() => {
+    deleteSecretsByPrefix(`connector:${id}:`)
+    database.prepare('DELETE FROM connectors WHERE id = ?').run(id)
+  })()
 }
 
 function getConnector(id: number): Connector | undefined {

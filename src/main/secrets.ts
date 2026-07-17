@@ -64,6 +64,12 @@ export function deleteSecret(key: string): void {
   getDB().prepare('DELETE FROM secrets WHERE key = ?').run(key)
 }
 
+/** Delete every secret owned by one namespace without exposing or decrypting values. */
+export function deleteSecretsByPrefix(prefix: string): void {
+  ensure()
+  getDB().prepare('DELETE FROM secrets WHERE substr(key, 1, ?) = ?').run(prefix.length, prefix)
+}
+
 /** Key names only (never values) — for showing what's stored without exposing it. */
 export function listSecretKeys(): string[] {
   ensure()
