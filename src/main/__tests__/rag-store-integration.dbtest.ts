@@ -103,6 +103,82 @@ describe('rag/store.ts - projects CRUD', () => {
 })
 
 describe('rag/store.ts - VectorStore documents + chunks', () => {
+  it('extracts, chunks, persists, and retrieves an attached knowledge document', async () => {
+    const projectId = 'p-attach-document'
+    const filePath = path.join(TMP_DIR, 'field-notes.md')
+    const quartzFact = 'Project Quartz launches in October after the final accessibility review.'
+    const harborFact = 'Project Harbor remains in research while the battery study is repeated.'
+    fs.writeFileSync(filePath, `${quartzFact}\n\n${harborFact}`)
+    store.createProject({ id: projectId, name: 'Attach document' })
+    store.updateProject(projectId, { includeMemory: false })
+
+    // MiniLM is an uncontrollable local-model boundary in this suite. This faithful
+    // deterministic provider preserves semantic separation while all Off Grid
+    // extraction, chunking, storage, and retrieval code stays real.
+    const embed = async (text: string): Promise<number[]> => {
+      const normalized = text.toLowerCase()
+      return [Number(normalized.includes('quartz')), Number(normalized.includes('harbor'))]
+    }
+    const embeddings: EmbeddingProvider = { dimension: 2, embed }
+    const service = new RagService({
+      store: store.desktopVectorStore,
+      embeddings,
+      extraction: desktopExtraction,
+      chunkOptions: { chunkSize: 80, overlap: 0, minChunkLength: 20 }
+    })
+    const stages: string[] = []
+
+    const indexed = await service.indexDocument(
+      {
+        projectId,
+        path: filePath,
+        fileName: 'field-notes.md',
+        size: fs.statSync(filePath).size
+      },
+      (stage) => stages.push(stage)
+    )
+
+    expect(indexed).toMatchObject({ kind: 'text', chunkCount: 2 })
+    expect(stages).toEqual(['extracting', 'chunking', 'embedding', 'indexing', 'done'])
+
+    const documents = await service.listDocuments(projectId)
+    expect(documents).toHaveLength(1)
+    expect(documents[0]).toMatchObject({
+      id: indexed.docId,
+      name: 'field-notes.md',
+      path: filePath,
+      size: fs.statSync(filePath).size,
+      kind: 'text',
+      enabled: true
+    })
+
+    const candidates = await store.desktopVectorStore.getChunkCandidates(projectId)
+    expect(candidates).toHaveLength(2)
+    expect(candidates.map((candidate) => candidate.content)).toEqual([quartzFact, harborFact])
+
+    const search = await service.searchProject(projectId, 'When does Quartz launch?', { topK: 1 })
+    expect(search.chunks).toHaveLength(1)
+    expect(search.chunks[0]).toMatchObject({
+      docId: indexed.docId,
+      name: 'field-notes.md',
+      content: quartzFact,
+      position: 0
+    })
+    expect(service.formatForPrompt(search)).toContain(
+      `[Source: field-notes.md (part 1)]\n${quartzFact}`
+    )
+
+    const rows = getDB()
+      .prepare(
+        `SELECT COUNT(DISTINCT d.id) AS documents, COUNT(c.id) AS chunks
+         FROM rag_documents d
+         JOIN rag_chunks c ON c.doc_id = d.id
+         WHERE d.project_id = ?`
+      )
+      .get(projectId) as { documents: number; chunks: number }
+    expect(rows).toEqual({ documents: 1, chunks: 2 })
+  })
+
   it('rejects a damaged PDF during extraction without leaving a half-indexed document', async () => {
     const projectId = 'p-damaged-pdf'
     const filePath = path.join(TMP_DIR, 'damaged.pdf')
