@@ -1,0 +1,58 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
+function simpleEntryName(name: string): string | null {
+  const safeName = path.basename(name)
+  const valid =
+    name.length > 0 &&
+    name !== '.' &&
+    name !== '..' &&
+    !name.includes('\0') &&
+    !name.includes('/') &&
+    !name.includes('\\') &&
+    !path.isAbsolute(name) &&
+    !path.win32.isAbsolute(name) &&
+    name === safeName
+  return valid ? safeName : null
+}
+
+function canonicalRoot(root: string): string | null {
+  try {
+    return fs.realpathSync.native(root)
+  } catch {
+    return null
+  }
+}
+
+/** Resolve one existing direct child of an app-owned directory.
+ *
+ * Both the entry name and its canonical destination are checked. The canonical
+ * check rejects a symlink in the owned directory that points outside it.
+ */
+export function resolveExistingOwnedEntry(root: string, name: string): string | null {
+  const safeName = simpleEntryName(name)
+  if (!safeName) return null
+  const realRoot = canonicalRoot(root)
+  if (!realRoot) return null
+  try {
+    const realEntry = fs.realpathSync.native(path.join(realRoot, safeName))
+    return path.dirname(realEntry) === realRoot ? realEntry : null
+  } catch {
+    return null
+  }
+}
+
+/** Build a destination for one direct child of an existing app-owned directory. */
+export function resolveOwnedDestination(root: string, name: string): string | null {
+  const safeName = simpleEntryName(name)
+  if (!safeName) return null
+  const realRoot = canonicalRoot(root)
+  return realRoot ? path.join(realRoot, safeName) : null
+}
+
+/** Validate a caller-supplied absolute path as one existing direct child of `root`. */
+export function resolveExistingOwnedPath(root: string, candidate: string): string | null {
+  const name = path.basename(candidate)
+  if (path.resolve(candidate) !== path.resolve(root, name)) return null
+  return resolveExistingOwnedEntry(root, name)
+}

@@ -1,7 +1,7 @@
-// Range-aware file serving for the ogcapture:// scheme, split out of index.ts so the fs
-// reads sit behind a clear boundary: the protocol handler canonicalizes + allowlists the
-// path, then hands the VALIDATED path here. Mirrors the loopback media-server's serveFile.
-import fs from 'fs'
+// Range-aware file serving for the ogcapture:// scheme. Canonicalization, root admission,
+// and fs reads live together here so callers cannot bypass the path boundary.
+import fs from 'node:fs'
+import path from 'node:path'
 import { mimeForExt } from './mime'
 
 /** ReadStream -> web ReadableStream that tears down SILENTLY on cancel (a seek/teardown):
@@ -51,26 +51,45 @@ function fileStreamToWeb(rs: fs.ReadStream): ReadableStream<Uint8Array> {
   })
 }
 
-/** Serve `filePath` over ogcapture://, honouring an HTTP Range header. `filePath` MUST
- *  already be canonicalized + allowlisted by the caller (the protocol handler) — this does
- *  the fs reads on that validated path. Returns 416 for an unsatisfiable range, 404 on any
- *  fs error, 206 for a partial body, else 200. */
+/** Serve `filePath` over ogcapture://, honouring an HTTP Range header.
+ *
+ * This function owns the canonicalization and root allowlist. Keeping admission beside the
+ * filesystem reads means another caller cannot accidentally turn this into an arbitrary-file
+ * server. Returns 403 outside the roots, 416 for an unsatisfiable range, 404 on any fs error,
+ * 206 for a partial body, else 200.
+ */
 export async function serveCaptureFile(
   filePath: string,
+  allowedRoots: string[],
   rangeHeader: string | null
 ): Promise<Response> {
   try {
-    const stat = await fs.promises.stat(filePath)
+    const validatedPath = fs.realpathSync.native(filePath)
+    const allowed = allowedRoots.some((root) => {
+      try {
+        const validatedRoot = fs.realpathSync.native(root)
+        const relative = path.relative(validatedRoot, validatedPath)
+        return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..')
+      } catch {
+        return false
+      }
+    })
+    if (!allowed) return new Response(null, { status: 403 })
+
+    const stat = await fs.promises.stat(validatedPath)
+    if (!stat.isFile()) return new Response(null, { status: 404 })
     const size = stat.size
-    const type = mimeForExt(filePath.split('.').pop()?.toLowerCase() ?? '')
+    const type = mimeForExt(path.extname(validatedPath).slice(1).toLowerCase())
     const m = rangeHeader && /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim())
     if (m && (m[1] || m[2])) {
-      const start = m[1] ? parseInt(m[1], 10) : Math.max(0, size - parseInt(m[2]!, 10))
-      const end = m[1] && m[2] ? Math.min(parseInt(m[2], 10), size - 1) : size - 1
+      const start = m[1]
+        ? Number.parseInt(m[1], 10)
+        : Math.max(0, size - Number.parseInt(m[2]!, 10))
+      const end = m[1] && m[2] ? Math.min(Number.parseInt(m[2], 10), size - 1) : size - 1
       if (start >= size || start > end) {
         return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } })
       }
-      const rs = fs.createReadStream(filePath, { start, end })
+      const rs = fs.createReadStream(validatedPath, { start, end })
       return new Response(fileStreamToWeb(rs), {
         status: 206,
         headers: {
@@ -81,7 +100,7 @@ export async function serveCaptureFile(
         }
       })
     }
-    const rs = fs.createReadStream(filePath)
+    const rs = fs.createReadStream(validatedPath)
     return new Response(fileStreamToWeb(rs), {
       status: 200,
       headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' }

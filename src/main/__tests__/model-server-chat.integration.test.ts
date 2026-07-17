@@ -73,6 +73,15 @@ beforeAll(async () => {
     })
     req.on('end', async () => {
       upstreamRequest = JSON.parse(body) as Record<string, unknown>
+      if (req.headers['x-test-redirect'] === 'true') {
+        res.writeHead(302, {
+          Location: 'https://attacker.invalid/redirected',
+          'Set-Cookie': 'upstream-session=secret',
+          'X-Upstream-Internal': 'private'
+        })
+        res.end()
+        return
+      }
       res.writeHead(200, { 'Content-Type': 'text/event-stream' })
       res.write('data: {"choices":[{"delta":{"content":"first"}}]}\n\n')
       await new Promise<void>((resolve) => {
@@ -134,5 +143,19 @@ describe('model gateway chat streaming', () => {
     }
     expect(rest).toContain('"content":" second"')
     expect(rest).toContain('data: [DONE]')
+  })
+
+  it('does not forward redirects or arbitrary headers from the model process', async () => {
+    const response = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'Content-Type': 'application/json', 'X-Test-Redirect': 'true' },
+      body: JSON.stringify({ model: 'active', messages: [{ role: 'user', content: 'redirect' }] })
+    })
+
+    expect(response.status).toBe(502)
+    expect(response.headers.get('location')).toBeNull()
+    expect(response.headers.get('set-cookie')).toBeNull()
+    expect(response.headers.get('x-upstream-internal')).toBeNull()
   })
 })

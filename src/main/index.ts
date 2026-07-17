@@ -17,7 +17,6 @@ import { setupRagIPC } from './rag-ipc'
 import { setupMcpIpc } from './mcp-ipc'
 import { startModelServer } from './model-server'
 import { startMediaServer, mediaUrlFor } from './media-server'
-import { isPathAllowed, canonical } from './media-range'
 import { serveCaptureFile } from './ogcapture-serve'
 import { ipcMain } from 'electron'
 import { loadProFeaturesMain } from './bootstrap/loadProFeaturesMain'
@@ -212,14 +211,12 @@ app.whenReady().then(() => {
     'style-thumbs'
   ].map((d) => join(app.getPath('userData'), d))
   protocol.handle('ogcapture', async (request) => {
-    // Canonicalize the request path BEFORE any fs use (resolve symlinks + `..`), validate it
-    // against the allowlist, then hand the VALIDATED path to serveCaptureFile — the fs reads
-    // happen there, behind this guard, never on the raw request input. Mirrors media-server.
-    const p = canonical(decodeURIComponent(request.url.slice('ogcapture://'.length)))
-    if (!isPathAllowed(p, ogCaptureRoots)) {
-      return new Response(null, { status: 403 })
+    try {
+      const requestedPath = decodeURIComponent(request.url.slice('ogcapture://'.length))
+      return serveCaptureFile(requestedPath, ogCaptureRoots, request.headers.get('Range'))
+    } catch {
+      return new Response(null, { status: 400 })
     }
-    return serveCaptureFile(p, request.headers.get('Range'))
   })
 
   // Meeting recorder: grant SYSTEM AUDIO (loopback) for getDisplayMedia so the

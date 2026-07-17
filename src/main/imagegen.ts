@@ -38,6 +38,11 @@ import {
   DEFAULT_NEGATIVE
 } from './imagegen/args'
 import { initialProgressState, reduceProgress } from './imagegen/progress'
+import {
+  resolveExistingOwnedEntry,
+  resolveExistingOwnedPath,
+  resolveOwnedDestination
+} from './imagegen/owned-path'
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {
@@ -78,8 +83,13 @@ export function listImageModels(): string[] {
   } catch {
     return []
   }
-  const coreml = files.filter((f) => isCoreMLModelDir(path.join(dir, f)))
-  const checkpoints = files.filter(isImageModelFile)
+  const ownedEntries = files
+    .map((name) => ({ name, filePath: resolveExistingOwnedEntry(dir, name) }))
+    .filter((entry): entry is { name: string; filePath: string } => entry.filePath !== null)
+  const coreml = ownedEntries.filter((entry) => isCoreMLModelDir(entry.filePath)).map((e) => e.name)
+  const checkpoints = ownedEntries
+    .filter((entry) => isImageModelFile(entry.name))
+    .map((e) => e.name)
   // MLX (mflux) models are virtual ids (mlx/…), not files in the models dir.
   // Appended last so the sd-cli default (Z-Image) stays the preferred pick.
   // mflux fetches its own weights from HF on first use (cached in userData).
@@ -132,10 +142,10 @@ export function listGeneratedImages(scope?: {
 /** Delete a generated image from disk. */
 export function deleteGeneratedImage(p: string): boolean {
   try {
-    // Only allow deleting inside the generated-images dir (safety).
     const dir = path.join(dataDir(), 'generated-images')
-    if (!path.resolve(p).startsWith(path.resolve(dir))) return false
-    fs.unlinkSync(p)
+    const ownedImage = resolveExistingOwnedPath(dir, p)
+    if (!ownedImage || !/\.png$/i.test(ownedImage)) return false
+    fs.unlinkSync(ownedImage)
     return true
   } catch {
     return false
@@ -196,14 +206,16 @@ export function listLoras(): LoraInfo[] {
   try {
     for (const f of fs.readdirSync(dir)) {
       if (!hasCheckpointExt(f)) continue
+      const ownedFile = resolveExistingOwnedEntry(dir, f)
+      if (!ownedFile) continue
       const name = stripCheckpointExt(f)
       let sizeBytes = 0
       try {
-        sizeBytes = fs.statSync(path.join(dir, f)).size
+        sizeBytes = fs.statSync(ownedFile).size
       } catch {
         /* ignore */
       }
-      out.push({ name, label: name.replace(/[_-]+/g, ' '), file: path.join(dir, f), sizeBytes })
+      out.push({ name, label: name.replace(/[_-]+/g, ' '), file: ownedFile, sizeBytes })
     }
   } catch {
     /* dir doesn't exist yet */
@@ -225,7 +237,8 @@ export async function downloadLora(
   onProgress?: (pct: number) => void
 ): Promise<string> {
   const dir = ensureLoraDir()
-  const dest = path.join(dir, filename)
+  const dest = resolveOwnedDestination(dir, filename)
+  if (!dest || !hasCheckpointExt(filename)) throw new Error('Invalid LoRA filename.')
   if (fs.existsSync(dest) && fs.statSync(dest).size > 0) return dest
   const res = await fetch(url) // Electron main = Node 18+, follows redirects (HF → CDN)
   if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
@@ -253,15 +266,14 @@ export async function downloadLora(
  *  Returns null (so callers just skip taesd) when it isn't — the feature is a
  *  no-op until the tiny decoder is downloaded into the models dir. */
 export function resolveTaesd(base: string): string | null {
-  const p = path.join(modelsDir(), taesdFilename(base))
-  return fs.existsSync(p) ? p : null
+  return resolveExistingOwnedEntry(modelsDir(), taesdFilename(base))
 }
 
 /** Find a companion file (text encoder / vae) in the models dir by pattern. */
 function findInModels(re: RegExp): string | null {
   try {
     const f = fs.readdirSync(modelsDir()).find((x) => re.test(x))
-    return f ? path.join(modelsDir(), f) : null
+    return f ? resolveExistingOwnedEntry(modelsDir(), f) : null
   } catch {
     return null
   }
@@ -323,15 +335,16 @@ export function activeImageModel(): string | null {
 function resolveModel(preferred?: string): string | null {
   const dir = modelsDir()
   if (preferred) {
-    const pp = path.join(dir, preferred)
-    if (fs.existsSync(pp)) return pp
+    const preferredPath = resolveExistingOwnedEntry(dir, preferred)
+    if (preferredPath) return preferredPath
   }
   const sd = listImageModels()
   if (!sd.length) return null
   // User-chosen image model is the default when the caller didn't request one.
   const chosen = getActiveModal('image')
   if (chosen) {
-    if (fs.existsSync(path.join(dir, chosen))) return path.join(dir, chosen)
+    const chosenPath = resolveExistingOwnedEntry(dir, chosen)
+    if (chosenPath) return chosenPath
     if (sd.includes(chosen)) return path.join(dir, chosen) // mlx/virtual id
   }
   // Smart default: DreamShaper XL v2 Turbo (the versatile default), RAM-aware —
@@ -475,8 +488,8 @@ async function runImageGen(
           // pass absolute paths and HF repo ids (contain '/') through unchanged.
           loras: (params.loras ?? []).map((l) => {
             if (path.isAbsolute(l.name) || l.name.includes('/')) return l
-            const local = path.join(loraDir(), ensureCheckpointExt(l.name))
-            return fs.existsSync(local) ? { ...l, name: local } : l
+            const local = resolveExistingOwnedEntry(loraDir(), ensureCheckpointExt(l.name))
+            return local ? { ...l, name: local } : l
           })
         },
         outPath,

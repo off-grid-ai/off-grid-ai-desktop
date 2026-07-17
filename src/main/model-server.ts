@@ -52,6 +52,7 @@ import { sanitizeChatMessages } from './model-server/chat-messages'
 import { parseMultipart } from './model-server/multipart'
 import { tagLlmEntries, modelEntry, ollamaMirror } from './model-server/models-list'
 import { buildGatewayModalities, type GatewayModalities } from './model-server/health'
+import { safeProxyResponse } from './model-server/proxy-response'
 
 const UPSTREAM_HOST = '127.0.0.1'
 const UPSTREAM_PORT = LLAMA_SERVER_PORT // bundled llama-server (see llm.ts)
@@ -213,7 +214,8 @@ function proxyToLlama(
           headers
         },
         (proxyRes) => {
-          res.writeHead(proxyRes.statusCode || 502, proxyRes.headers)
+          const safeResponse = safeProxyResponse(proxyRes.statusCode, proxyRes.headers)
+          res.writeHead(safeResponse.statusCode, safeResponse.headers)
           // Guard both ends BEFORE piping: a mid-stream reset from llama-server (or a client
           // disconnect) emits 'error' on these streams, and with no listener that becomes an
           // uncaught exception that crashes the main process. Does not re-settle this promise —
