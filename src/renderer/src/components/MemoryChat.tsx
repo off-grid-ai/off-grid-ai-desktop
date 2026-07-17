@@ -161,14 +161,18 @@ type Conversation = {
 
 type ProjectLite = { id: string; name: string }
 
+export type ChatOpenTarget =
+  | { kind: 'conversation'; conversationId: string }
+  | { kind: 'new'; projectId?: string }
+
 interface MemoryChatProps {
   onNavigateToMemory?: (memoryId: number) => void
   onNavigateToChat?: (sessionId: string) => void
   onNavigateToEntity?: (entityId: number) => void
   /** Open the Replay screen seeked to a capture's moment (epoch ms). */
   onSeekReplay?: (ts: number) => void
-  /** Open a specific conversation, or start a new one scoped to a project. */
-  openTarget?: { conversationId?: string; projectId?: string } | null
+  /** Open a specific conversation, or start a new chat with optional project scope. */
+  openTarget?: ChatOpenTarget | null
   onTargetConsumed?: () => void
 }
 
@@ -1001,17 +1005,17 @@ export function MemoryChat({
     if (!openTarget) return
     ;(async () => {
       try {
-        if (openTarget.conversationId) {
+        if (openTarget.kind === 'conversation') {
           const convId = openTarget.conversationId
           setActiveConversationId(convId)
           setOpenTabs((t) => (t.includes(convId) ? t : [...t, convId]))
           const conv = await window.api.getRagConversation(convId)
           setActiveProjectId((conv as { project_id?: string | null }).project_id ?? null)
           setConvMessages(convId, mapRagMessages(await window.api.getRagMessages(convId)))
-        } else if (openTarget.projectId) {
+        } else {
           setActiveConversationId(null)
           setConvMessages(null, [])
-          setActiveProjectId(openTarget.projectId)
+          setActiveProjectId(openTarget.projectId ?? null)
         }
         await loadConversations()
       } catch (e) {

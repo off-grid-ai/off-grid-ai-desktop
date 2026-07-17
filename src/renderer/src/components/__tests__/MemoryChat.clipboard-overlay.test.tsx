@@ -62,7 +62,7 @@ function installApi(): {
 function renderConversation(): void {
   render(
     <TooltipProvider>
-      <MemoryChat openTarget={{ conversationId: conversation.id }} />
+      <MemoryChat openTarget={{ kind: 'conversation', conversationId: conversation.id }} />
     </TooltipProvider>
   )
 }

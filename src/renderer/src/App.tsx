@@ -3,7 +3,7 @@ import { ChatDetail } from './components/ChatDetail'
 import { CommandPalette } from './components/CommandPalette'
 import logo from './assets/logo.png'
 import { useMeetingRecorder } from './useMeetingRecorder'
-import { MemoryChat } from './components/MemoryChat'
+import { MemoryChat, type ChatOpenTarget } from './components/MemoryChat'
 import { Settings } from './components/Settings'
 import { ModelsScreen } from './components/ModelsScreen'
 import { ProjectsScreen } from './components/ProjectsScreen'
@@ -243,10 +243,7 @@ function AppContent() {
   const [actionsEntity, setActionsEntity] = useState<{ id: number; name: string } | null>(null)
   // Target chat to open in the main Chat screen (from the Projects tab): an
   // existing conversation, or a request to start a new chat scoped to a project.
-  const [chatTarget, setChatTarget] = useState<{
-    conversationId?: string
-    projectId?: string
-  } | null>(null)
+  const [chatTarget, setChatTarget] = useState<ChatOpenTarget | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const rec = useMeetingRecorder()
 
@@ -527,13 +524,13 @@ function AppContent() {
       }
       // Chat conversation → open that exact chat (its id is carried in `url`).
       if (hit.kind === 'chat') {
-        setChatTarget(hit.url ? { conversationId: hit.url } : null)
+        setChatTarget(hit.url ? { kind: 'conversation', conversationId: hit.url } : null)
         setViewMode('memory-chat')
         return
       }
       // Knowledge-base doc → open its project (project_id carried in `url`).
       if (hit.kind === 'doc') {
-        setChatTarget(hit.url ? { projectId: hit.url } : null)
+        setChatTarget(hit.url ? { kind: 'new', projectId: hit.url } : null)
         setViewMode('memory-chat')
         return
       }
@@ -569,21 +566,24 @@ function AppContent() {
   }, [viewMode])
 
   // Open a project chat in the main Chat screen (existing convo or new-in-project).
-  const handleOpenProjectChat = useCallback(
-    (target: { conversationId?: string; projectId?: string }) => {
-      setChatTarget(target)
-      setViewMode('memory-chat')
-    },
-    []
-  )
+  const handleOpenProjectChat = useCallback((target: ChatOpenTarget) => {
+    setChatTarget(target)
+    setViewMode('memory-chat')
+  }, [])
 
-  // Global keyboard shortcuts for back/forward navigation (Cmd+[ and Cmd+])
+  // Global keyboard shortcuts own shell-level navigation. MemoryChat owns the
+  // resulting conversation reset through the same typed target seam used by Projects.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === '[') {
+      if (!e.metaKey && !e.ctrlKey) return
+      if (e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        setChatTarget({ kind: 'new' })
+        setViewMode('memory-chat')
+      } else if (e.key === '[') {
         e.preventDefault()
         navigateBack()
-      } else if ((e.metaKey || e.ctrlKey) && e.key === ']') {
+      } else if (e.key === ']') {
         e.preventDefault()
         navigateForward()
       }

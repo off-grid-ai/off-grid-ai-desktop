@@ -15,6 +15,7 @@ import {
   IconLayoutGrid
 } from '@tabler/icons-react'
 import { ArtifactCanvas, type Artifact } from './ArtifactCanvas'
+import type { ChatOpenTarget } from './MemoryChat'
 import { artifactKindLabel } from '@renderer/lib/artifact-labels'
 import { timeAgo } from '@renderer/lib/time'
 
@@ -98,7 +99,7 @@ interface RagConvo {
 }
 
 interface ProjectsScreenProps {
-  onOpenChat: (target: { conversationId?: string; projectId?: string }) => void
+  onOpenChat: (target: ChatOpenTarget) => void
   selectedProjectId?: string | null
   onSelectProject?: (projectId: string | null) => void
 }
@@ -299,7 +300,7 @@ function ProjectChats({
   onOpenChat
 }: {
   project: Project
-  onOpenChat: (target: { conversationId?: string; projectId?: string }) => void
+  onOpenChat: (target: ChatOpenTarget) => void
 }) {
   const [chats, setChats] = useState<RagConvo[]>([])
 
@@ -323,7 +324,7 @@ function ProjectChats({
           {chats.length} {chats.length === 1 ? 'chat' : 'chats'}
         </span>
         <button
-          onClick={() => onOpenChat({ projectId: project.id })}
+          onClick={() => onOpenChat({ kind: 'new', projectId: project.id })}
           className="flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-sm text-neutral-300 transition-colors hover:border-green-500 hover:text-green-500"
         >
           <IconPlus className="h-4 w-4" /> New chat
@@ -339,7 +340,7 @@ function ProjectChats({
           {chats.map((c) => (
             <button
               key={c.id}
-              onClick={() => onOpenChat({ conversationId: c.id })}
+              onClick={() => onOpenChat({ kind: 'conversation', conversationId: c.id })}
               className="group flex items-start gap-3 rounded-lg border border-neutral-800/80 bg-neutral-900/30 px-4 py-3.5 text-left transition-colors hover:border-green-500/50 hover:bg-neutral-900/60"
             >
               <IconMessage className="mt-0.5 h-4 w-4 shrink-0 text-neutral-600 group-hover:text-green-500" />

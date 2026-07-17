@@ -92,7 +92,7 @@ describe('<MemoryChat/> - new chat inherits its project (#54)', () => {
 
     render(
       <TooltipProvider>
-        <MemoryChat openTarget={{ projectId: project.id }} />
+        <MemoryChat openTarget={{ kind: 'new', projectId: project.id }} />
       </TooltipProvider>
     )
 
@@ -133,7 +133,7 @@ describe('<MemoryChat/> - new chat inherits its project (#54)', () => {
 
     render(
       <TooltipProvider>
-        <MemoryChat openTarget={{ conversationId: conversation.id }} />
+        <MemoryChat openTarget={{ kind: 'conversation', conversationId: conversation.id }} />
       </TooltipProvider>
     )
 

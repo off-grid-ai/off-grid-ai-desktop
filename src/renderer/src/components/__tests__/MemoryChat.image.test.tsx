@@ -32,7 +32,13 @@ import { TooltipProvider } from '../ui/tooltip'
 function renderChat(openTarget?: { conversationId?: string }): ReturnType<typeof render> {
   return render(
     <TooltipProvider>
-      <MemoryChat openTarget={openTarget} />
+      <MemoryChat
+        openTarget={
+          openTarget?.conversationId
+            ? { kind: 'conversation', conversationId: openTarget.conversationId }
+            : undefined
+        }
+      />
     </TooltipProvider>
   )
 }

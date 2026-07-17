@@ -253,9 +253,12 @@ function renderChat(target: {
   conversationId?: string
   projectId?: string
 }): ReturnType<typeof render> {
+  const openTarget = target.conversationId
+    ? { kind: 'conversation' as const, conversationId: target.conversationId }
+    : { kind: 'new' as const, projectId: target.projectId }
   return render(
     <TooltipProvider>
-      <MemoryChat openTarget={target} />
+      <MemoryChat openTarget={openTarget} />
     </TooltipProvider>
   )
 }
@@ -519,7 +522,7 @@ describe('<MemoryChat/> - chat lifecycle integration (#36-#42, #47-#48)', () => 
 
     view.rerender(
       <TooltipProvider>
-        <MemoryChat openTarget={{ conversationId: 'conversation-b' }} />
+        <MemoryChat openTarget={{ kind: 'conversation', conversationId: 'conversation-b' }} />
       </TooltipProvider>
     )
     expect(await screen.findByText('Conversation B baseline')).toBeTruthy()
@@ -541,7 +544,7 @@ describe('<MemoryChat/> - chat lifecycle integration (#36-#42, #47-#48)', () => 
 
     view.rerender(
       <TooltipProvider>
-        <MemoryChat openTarget={{ conversationId: 'conversation-a' }} />
+        <MemoryChat openTarget={{ kind: 'conversation', conversationId: 'conversation-a' }} />
       </TooltipProvider>
     )
     expect(await screen.findByText('A completed against A history')).toBeTruthy()
