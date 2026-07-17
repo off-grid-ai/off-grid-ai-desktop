@@ -22,6 +22,10 @@ import {
   readResponseCutoff
 } from '@renderer/lib/message-persistence'
 import type { RagConversationContract, ResponseCutoffContract } from '../../../shared/ipc-contracts'
+import {
+  parseImageMemoryGuardError,
+  type ImageGenerationRequestContract
+} from '../../../shared/image-generation-contract'
 import { Button } from '@renderer/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import {
@@ -101,6 +105,12 @@ type ChatMessage = {
   toolCalls?: { name: string; result: string }[]
   reasoning?: string
   cutoff?: ResponseCutoffContract
+  imageMemoryRetry?: {
+    request: ImageGenerationRequestContract
+    prompt: string
+    conversationId: string
+    projectId: string | null
+  }
   streaming?: boolean
   activity?: { kind: string; counts?: Record<string, number>; name?: string }
   attachments?: { name: string; kind: string; text?: string; path?: string }[]
@@ -1102,6 +1112,8 @@ export function MemoryChat({
       voiceClip?: { url: string; duration: number }
       atts?: Attachment[]
       conversationId?: string
+      imageRequest?: ImageGenerationRequestContract
+      projectIdOverride?: string | null
     }
   ) => {
     const isInput = override === undefined
@@ -1112,7 +1124,8 @@ export function MemoryChat({
     // below (RAG scope, saved artifacts, generated images) uses it. Reading the live
     // `activeProjectId` at each await instead let a mid-stream project switch land
     // this turn's output in the WRONG project (D21).
-    const projectId = activeProjectId
+    const projectId =
+      opts?.projectIdOverride !== undefined ? opts.projectIdOverride : activeProjectId
     // Attachments (pasted blocks + processed files) ride along on a normal send
     // from the composer, or on a drained queue item (opts.atts) — not on
     // resend/regenerate/example.
@@ -1263,37 +1276,43 @@ export function MemoryChat({
     // pre-decide (that double decision hijacked "draw ..." away from the tool loop).
     const agenticActive = (toolsOn || connectorsOn) && !projectId
     const autoImage = shouldAutoRouteImage({ mode, imageAvailable, agenticActive, text: trimmed })
-    if (mode === 'image' || autoImage) {
+    if (opts?.imageRequest || mode === 'image' || autoImage) {
       setImgProgress(null)
       setImageGenConv(convId)
+      const seedNum = imgSeed.trim() === '' ? -1 : parseInt(imgSeed, 10)
+      const styleObj = STYLE_PRESETS.find((s) => s.name === activeStyle)
+      // In explicit image mode keep the exact prompt (+ any chosen style); on
+      // auto-route strip the "draw/generate an image of" phrasing to the subject.
+      const basePrompt = mode === 'image' ? trimmed : cleanImagePrompt(trimmed)
+      const fullPrompt = styleObj ? `${basePrompt}, ${styleObj.prompt}` : basePrompt
+      const imageRequest: ImageGenerationRequestContract = opts?.imageRequest ?? {
+        prompt: fullPrompt,
+        negativePrompt: imgNegative.trim() || undefined,
+        width: imgSize,
+        height: imgSize,
+        steps: imgSteps,
+        cfgScale: imgCfgScale,
+        seed: Number.isNaN(seedNum) ? -1 : seedNum,
+        model: imgModel || undefined,
+        initImage: imgInit || undefined,
+        strength: imgInit ? imgStrength : undefined
+      }
       try {
-        const seedNum = imgSeed.trim() === '' ? -1 : parseInt(imgSeed, 10)
-        const styleObj = STYLE_PRESETS.find((s) => s.name === activeStyle)
-        // In explicit image mode keep the exact prompt (+ any chosen style); on
-        // auto-route strip the "draw/generate an image of" phrasing to the subject.
-        const basePrompt = mode === 'image' ? trimmed : cleanImagePrompt(trimmed)
-        const fullPrompt = styleObj ? `${basePrompt}, ${styleObj.prompt}` : basePrompt
         const img = await window.api.generateImage({
-          prompt: fullPrompt,
-          negativePrompt: imgNegative.trim() || undefined,
-          width: imgSize,
-          height: imgSize,
-          steps: imgSteps,
-          cfgScale: imgCfgScale,
-          seed: Number.isNaN(seedNum) ? -1 : seedNum,
-          model: imgModel || undefined,
-          initImage: imgInit || undefined,
-          strength: imgInit ? imgStrength : undefined,
+          ...imageRequest,
           conversationId: convId, // the turn's own conversation (activeConversationId can lag for a fresh/queued chat)
           projectId: projectId
         })
         const imageMetadata: ImageGenerationMetadata = {
-          width: imgSize,
-          height: imgSize,
-          steps: imgSteps,
-          cfgScale: imgCfgScale,
-          seed: typeof img.seed === 'number' ? img.seed : Number.isNaN(seedNum) ? -1 : seedNum,
-          model: typeof img.model === 'string' ? img.model : imgModel || undefined
+          width: imageRequest.width ?? imgSize,
+          height: imageRequest.height ?? imgSize,
+          steps: imageRequest.steps ?? imgSteps,
+          cfgScale: imageRequest.cfgScale ?? imgCfgScale,
+          seed:
+            typeof img.seed === 'number'
+              ? img.seed
+              : (imageRequest.seed ?? (Number.isNaN(seedNum) ? -1 : seedNum)),
+          model: typeof img.model === 'string' ? img.model : imageRequest.model
         }
         const assistantMessage: ChatMessage = {
           id: `a-${Date.now()}`,
@@ -1313,13 +1332,22 @@ export function MemoryChat({
           /* ignore */
         }
       } catch (e) {
-        const errorContent = (e as Error).message || 'Image generation failed.'
+        const memoryGuard = parseImageMemoryGuardError(e)
+        const errorContent =
+          memoryGuard?.message || (e as Error).message || 'Image generation failed.'
         // User-cancelled: just drop the loading state, no error bubble.
         if (!/cancel/i.test(errorContent)) {
           console.error('Image generation failed', e)
           setConvMessages(convId, (prev) => [
             ...prev,
-            { id: `a-${Date.now()}`, role: 'assistant', content: errorContent }
+            {
+              id: `a-${Date.now()}`,
+              role: 'assistant',
+              content: errorContent,
+              imageMemoryRetry: memoryGuard
+                ? { request: imageRequest, prompt: trimmed, conversationId: convId, projectId }
+                : undefined
+            }
           ])
           try {
             await window.api.addRagMessage(convId, 'assistant', errorContent)
@@ -2874,6 +2902,35 @@ export function MemoryChat({
                             Response stopped at the configured{' '}
                             {message.cutoff.maxTokens.toLocaleString()}-token limit.
                           </p>
+                        ) : null}
+                        {message.imageMemoryRetry ? (
+                          <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
+                            <p className="min-w-0 flex-1 text-[10px] text-muted-foreground">
+                              Running this model may make your Mac unresponsive.
+                            </p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="xs"
+                              disabled={loading}
+                              onClick={() => {
+                                const retry = message.imageMemoryRetry
+                                if (!retry) return
+                                void sendMessage(retry.prompt, {
+                                  regen: true,
+                                  conversationId: retry.conversationId,
+                                  projectIdOverride: retry.projectId,
+                                  imageRequest: {
+                                    ...retry.request,
+                                    allowUnsafeMemoryOverride: true
+                                  }
+                                })
+                              }}
+                              className="shrink-0 active:scale-95"
+                            >
+                              Run anyway
+                            </Button>
+                          </div>
                         ) : null}
                         {(() => {
                           if (message.role !== 'assistant') return null

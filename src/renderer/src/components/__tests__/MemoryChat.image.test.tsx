@@ -25,6 +25,7 @@ import { render, screen, waitFor, cleanup, fireEvent, act } from '@testing-libra
 import userEvent from '@testing-library/user-event'
 import { MemoryChat } from '../MemoryChat'
 import { TooltipProvider } from '../ui/tooltip'
+import { imageMemoryGuardErrorMessage } from '../../../../shared/image-generation-contract'
 
 // The real app mounts MemoryChat inside a global TooltipProvider (App shell). Mirror
 // that here so the composer's tooltip-wrapped controls render — this wraps the REAL
@@ -59,6 +60,7 @@ type GenPayload = {
   negativePrompt?: string
   seed?: number
   cfgScale?: number
+  allowUnsafeMemoryOverride?: boolean
   conversationId?: string
 }
 
@@ -547,15 +549,18 @@ describe('<MemoryChat/> image and vision release journeys', () => {
     expect(screen.queryByRole('dialog', { name: 'Generated image preview' })).toBeNull()
   })
 
-  it('shows the RAM guard recovery and accepts a safe follow-up without remounting (#66 partial)', async () => {
+  it('runs the same refused request only after explicit RAM override without remounting (#66)', async () => {
     const guardMessage =
       'Not enough memory to run oversized-image.safetensors (~14.0GB resident) on this 16GB machine. Pick a lighter image model (e.g. SDXL-Lightning or SD 1.5) in the image options.'
-    let attempt = 0
     const boundary = installApi({
       active: FULL,
       models: [FULL],
-      generate: async () => {
-        if (attempt++ === 0) throw new Error(guardMessage)
+      generate: async (payload) => {
+        if (!payload.allowUnsafeMemoryOverride) {
+          throw new Error(
+            `Error invoking remote method: Error: ${imageMemoryGuardErrorMessage(guardMessage)}`
+          )
+        }
         return {
           dataUrl: 'data:image/png;base64,AAAA',
           path: '/generated/safe-follow-up.png'
@@ -570,11 +575,21 @@ describe('<MemoryChat/> image and vision release journeys', () => {
 
     expect(await screen.findByText(guardMessage)).toBeTruthy()
     expect(screen.queryByAltText('Generated')).toBeNull()
+    const firstPayload = boundary.generateImage.mock.calls[0]![0]
+    expect(firstPayload.allowUnsafeMemoryOverride).toBeUndefined()
+    const promptOccurrencesBeforeRetry = screen.getAllByText('an oversized image request').length
 
-    await sendPrompt(user, 'a safe follow-up image')
+    await user.click(screen.getByRole('button', { name: 'Run anyway' }))
 
     expect(await screen.findByAltText('Generated')).toBeTruthy()
     expect(boundary.generateImage).toHaveBeenCalledTimes(2)
+    expect(boundary.generateImage.mock.calls[1]![0]).toEqual({
+      ...firstPayload,
+      allowUnsafeMemoryOverride: true
+    })
+    expect(screen.getAllByText('an oversized image request')).toHaveLength(
+      promptOccurrencesBeforeRetry
+    )
     expect(screen.getByText(guardMessage)).toBeTruthy()
   })
 
