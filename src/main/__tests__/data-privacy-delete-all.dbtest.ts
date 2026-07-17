@@ -45,7 +45,18 @@ import * as dbmod from '../database'
 import { deleteAllData } from '../data-privacy'
 import { addConnector } from '../mcp'
 import { setSecret } from '../secrets'
-import { desktopVectorStore } from '../rag/store'
+import { createProject, desktopVectorStore } from '../rag/store'
+
+const PERSONAL_DIRS = [
+  'uploads',
+  'entity-photos',
+  'captures',
+  'meetings',
+  'generated-images',
+  'artifacts-library',
+  'style-thumbs',
+  'lancedb'
+] as const
 
 const count = (t: string): number =>
   (dbmod.getDB().prepare(`SELECT COUNT(*) AS c FROM ${t}`).get() as { c: number }).c
@@ -59,10 +70,11 @@ afterAll(() => {
 })
 
 describe('deleteAllData — erases EVERY core personal store (D29/D30)', () => {
-  it('leaves no connectors, secrets, or RAG knowledge base behind', async () => {
+  it('erases projects, chats, memory, integrations, knowledge, and personal files only', async () => {
     // Seed via the REAL insert paths (each ensures its own schema).
     addConnector({ name: 'Notion', transport: 'http', url: 'https://mcp.notion.com' })
     setSecret('connector:1:oauth:tokens', JSON.stringify({ access_token: 'live-token-abc' }))
+    createProject({ id: 'p1', name: 'Private roadmap' })
     const docId = await desktopVectorStore.addDocument({
       projectId: 'p1',
       name: 'roadmap.md',
@@ -79,6 +91,23 @@ describe('deleteAllData — erases EVERY core personal store (D29/D30)', () => {
     // Control: a chat conversation, which delete-all ALREADY clears today — proves
     // the harness is sound and deleteAllData actually ran end-to-end.
     dbmod.createRagConversation('c1', 'A chat', null)
+    dbmod.saveUserProfile({ role: 'Founder', primaryTools: ['Private tool'] })
+    dbmod
+      .getDB()
+      .prepare('INSERT INTO memories (content, source_app) VALUES (?, ?)')
+      .run('private memory', 'Notes')
+
+    for (const dir of PERSONAL_DIRS) {
+      const target = path.join(TMP_DIR, dir, 'nested')
+      fs.mkdirSync(target, { recursive: true })
+      fs.writeFileSync(path.join(target, 'private.txt'), `private ${dir}`)
+    }
+
+    // Models and ordinary app preferences are deliberately outside the personal-data wipe.
+    const modelPath = path.join(TMP_DIR, 'models', 'keep.gguf')
+    fs.mkdirSync(path.dirname(modelPath), { recursive: true })
+    fs.writeFileSync(modelPath, 'model')
+    dbmod.saveSetting('theme', 'dark')
 
     // Precondition: everything is really there.
     expect(count('connectors')).toBeGreaterThan(0)
@@ -86,6 +115,9 @@ describe('deleteAllData — erases EVERY core personal store (D29/D30)', () => {
     expect(count('rag_documents')).toBeGreaterThan(0)
     expect(count('rag_chunks')).toBeGreaterThan(0)
     expect(count('rag_conversations')).toBeGreaterThan(0)
+    expect(count('projects')).toBeGreaterThan(0)
+    expect(count('memories')).toBeGreaterThan(0)
+    expect(count('user_profile')).toBeGreaterThan(0)
 
     deleteAllData()
 
@@ -95,5 +127,14 @@ describe('deleteAllData — erases EVERY core personal store (D29/D30)', () => {
     expect(count('secrets')).toBe(0) // D30 — OAuth tokens were surviving
     expect(count('rag_documents')).toBe(0) // D29 — knowledge base was surviving
     expect(count('rag_chunks')).toBe(0) // D29 — knowledge base was surviving
+    expect(count('projects')).toBe(0)
+    expect(count('memories')).toBe(0)
+    expect(count('user_profile')).toBe(0)
+    for (const dir of PERSONAL_DIRS) {
+      expect(fs.readdirSync(path.join(TMP_DIR, dir))).toEqual([])
+    }
+
+    expect(fs.readFileSync(modelPath, 'utf8')).toBe('model')
+    expect(dbmod.getSetting('theme', '')).toBe('dark')
   })
 })

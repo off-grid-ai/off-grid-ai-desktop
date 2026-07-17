@@ -147,7 +147,9 @@ interface PersonalStore {
 const CORE_PERSONAL: PersonalStore[] = [
   { tables: CHAT_TABLES, dirs: ['uploads'] },
   { tables: MEMORY_TABLES, dirs: ['entity-photos'] },
-  { tables: ['rag_documents', 'rag_chunks'], dirs: [] }, // project knowledge base (uploaded docs + embeddings)
+  // Project metadata + knowledge base. Children precede parents so deletion also
+  // works when SQLite foreign-key enforcement is enabled.
+  { tables: ['rag_chunks', 'rag_documents', 'projects'], dirs: [] },
   { tables: ['connectors', 'secrets'], dirs: [] }, // MCP integrations + their OAuth tokens (must not survive a wipe)
   { tables: ['user_profile'], dirs: [] },
   { tables: [], dirs: ['captures'] },
