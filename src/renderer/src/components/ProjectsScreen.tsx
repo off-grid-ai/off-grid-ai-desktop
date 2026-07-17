@@ -99,6 +99,8 @@ interface RagConvo {
 
 interface ProjectsScreenProps {
   onOpenChat: (target: { conversationId?: string; projectId?: string }) => void
+  selectedProjectId?: string | null
+  onSelectProject?: (projectId: string | null) => void
 }
 
 const KIND_ICON: Record<string, typeof IconFile> = {
@@ -117,9 +119,13 @@ function fmtSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
-export function ProjectsScreen({ onOpenChat }: ProjectsScreenProps) {
+export function ProjectsScreen({
+  onOpenChat,
+  selectedProjectId,
+  onSelectProject
+}: ProjectsScreenProps) {
   const [projects, setProjects] = useState<Project[]>([])
-  const [activeId, setActiveId] = useState<string | null>(null)
+  const [localActiveId, setLocalActiveId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [view, setView] = useState<'chat' | 'artifacts' | 'config'>('chat')
@@ -127,7 +133,7 @@ export function ProjectsScreen({ onOpenChat }: ProjectsScreenProps) {
   const refreshProjects = useCallback(async () => {
     const list = (await api.listProjects?.()) ?? []
     setProjects(list)
-    setActiveId((cur) => cur ?? list[0]?.id ?? null)
+    setLocalActiveId((cur) => cur ?? list[0]?.id ?? null)
     return list as Project[]
   }, [])
 
@@ -135,6 +141,11 @@ export function ProjectsScreen({ onOpenChat }: ProjectsScreenProps) {
     refreshProjects()
   }, [refreshProjects])
 
+  const activeId = selectedProjectId ?? localActiveId
+  const selectProject = (projectId: string | null): void => {
+    setLocalActiveId(projectId)
+    onSelectProject?.(projectId)
+  }
   const active = projects.find((p) => p.id === activeId) ?? null
 
   const submitNewProject = async (): Promise<void> => {
@@ -148,7 +159,7 @@ export function ProjectsScreen({ onOpenChat }: ProjectsScreenProps) {
     setCreating(false)
     await refreshProjects()
     if (id) {
-      setActiveId(id)
+      selectProject(id)
       setView('config')
     }
   }
@@ -156,7 +167,7 @@ export function ProjectsScreen({ onOpenChat }: ProjectsScreenProps) {
   const removeProject = async (id: string): Promise<void> => {
     if (!window.confirm('Delete this project, its knowledge base and chats?')) return
     await api.deleteProject?.(id)
-    setActiveId(null)
+    selectProject(null)
     await refreshProjects()
   }
 
@@ -200,7 +211,7 @@ export function ProjectsScreen({ onOpenChat }: ProjectsScreenProps) {
           {projects.map((p) => (
             <button
               key={p.id}
-              onClick={() => setActiveId(p.id)}
+              onClick={() => selectProject(p.id)}
               className={`group flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors ${
                 p.id === activeId
                   ? 'bg-neutral-900 text-white'

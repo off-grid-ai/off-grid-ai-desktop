@@ -77,6 +77,7 @@ interface NavigationState {
   selectedSessionId: string | null
   selectedMemoryId: number | null
   selectedEntityId: number | null
+  selectedProjectId: string | null
 }
 
 function ReprocessingBanner() {
@@ -226,6 +227,7 @@ function AppContent() {
   const [updateReady, setUpdateReady] = useState<string | null>(null)
   const [installing, setInstalling] = useState(false)
   const [selectedEntityId, setSelectedEntityId] = useState<number | null>(null)
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   // Search filter + sort live here (not in the screen) so they survive navigating
   // to a result and back.
@@ -362,7 +364,8 @@ function AppContent() {
       viewMode,
       selectedSessionId,
       selectedMemoryId,
-      selectedEntityId
+      selectedEntityId,
+      selectedProjectId
     }
 
     const lastState = navigationHistory.current[navigationHistory.current.length - 1]
@@ -371,7 +374,8 @@ function AppContent() {
       lastState.viewMode === currentState.viewMode &&
       lastState.selectedSessionId === currentState.selectedSessionId &&
       lastState.selectedMemoryId === currentState.selectedMemoryId &&
-      lastState.selectedEntityId === currentState.selectedEntityId
+      lastState.selectedEntityId === currentState.selectedEntityId &&
+      lastState.selectedProjectId === currentState.selectedProjectId
 
     if (!isSameState) {
       navigationHistory.current.push(currentState)
@@ -383,7 +387,14 @@ function AppContent() {
       }
     }
     syncNavFlags()
-  }, [viewMode, selectedSessionId, selectedMemoryId, selectedEntityId, syncNavFlags])
+  }, [
+    viewMode,
+    selectedSessionId,
+    selectedMemoryId,
+    selectedEntityId,
+    selectedProjectId,
+    syncNavFlags
+  ])
 
   // Subscribe to notification events from the main process
   useEffect(() => {
@@ -451,6 +462,7 @@ function AppContent() {
         setSelectedSessionId(previousState.selectedSessionId)
         setSelectedMemoryId(previousState.selectedMemoryId)
         setSelectedEntityId(previousState.selectedEntityId)
+        setSelectedProjectId(previousState.selectedProjectId)
       }
       syncNavFlags()
     }
@@ -470,6 +482,7 @@ function AppContent() {
         setSelectedSessionId(nextState.selectedSessionId)
         setSelectedMemoryId(nextState.selectedMemoryId)
         setSelectedEntityId(nextState.selectedEntityId)
+        setSelectedProjectId(nextState.selectedProjectId)
       }
       syncNavFlags()
     }
@@ -923,7 +936,11 @@ function AppContent() {
                   ) : viewMode === 'models' ? (
                     <ModelsScreen />
                   ) : viewMode === 'projects' ? (
-                    <ProjectsScreen onOpenChat={handleOpenProjectChat} />
+                    <ProjectsScreen
+                      onOpenChat={handleOpenProjectChat}
+                      selectedProjectId={selectedProjectId}
+                      onSelectProject={setSelectedProjectId}
+                    />
                   ) : viewMode === 'connectors' ? (
                     <ConnectorsScreen />
                   ) : viewMode === 'gateway' ? (
