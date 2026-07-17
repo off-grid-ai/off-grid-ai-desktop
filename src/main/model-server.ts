@@ -51,12 +51,34 @@ import { isAsync, matchPollRoute } from './model-server/async-request'
 import { sanitizeChatMessages } from './model-server/chat-messages'
 import { parseMultipart } from './model-server/multipart'
 import { tagLlmEntries, modelEntry, ollamaMirror } from './model-server/models-list'
+import { buildGatewayModalities, type GatewayModalities } from './model-server/health'
 
 const UPSTREAM_HOST = '127.0.0.1'
 const UPSTREAM_PORT = LLAMA_SERVER_PORT // bundled llama-server (see llm.ts)
 const MAX_UPLOAD = 200 * 1024 * 1024 // 200MB upload cap (audio / init image)
 
 let server: http.Server | null = null
+
+async function liveGatewayModalities(imageAvailable: boolean): Promise<GatewayModalities> {
+  let installed: string[] = []
+  try {
+    const models = await import('./models-manager')
+    installed = await models.listInstalled()
+  } catch {
+    /* unavailable model registry means optional modalities are not ready */
+  }
+  const transcription = getActiveModal('transcription')
+  const speech = getActiveModal('speech')
+  const chat = llm.modelsExist()
+  return buildGatewayModalities({
+    chat,
+    vision: chat && llm.hasVision(),
+    embeddings: true,
+    transcription: !!whisperModel() || (!!transcription && installed.includes(transcription)),
+    speech: !!speech && installed.includes(speech),
+    image: imageAvailable
+  })
+}
 
 function json(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -893,7 +915,7 @@ async function handleImageEdit(
 export function startModelServer(port = GATEWAY_PORT): void {
   if (server) return
 
-  server = http.createServer((req, res) => {
+  server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Headers', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -921,21 +943,14 @@ export function startModelServer(port = GATEWAY_PORT): void {
 
     if (url === '/' || url === '/health') {
       const img = imageGenStatus()
+      const modalities = await liveGatewayModalities(img.available)
       json(res, 200, {
         name: 'Off Grid AI — local model gateway',
         openai_compatible: true,
         base_url: `http://127.0.0.1:${port}/v1`,
         docs: `http://127.0.0.1:${port}/docs`,
         mcp: `http://127.0.0.1:${port}/mcp`,
-        modalities: {
-          text: 'ready',
-          vision_understanding: 'ready',
-          embeddings: 'ready',
-          transcription: 'ready',
-          speech: 'ready',
-          image_generation: img.available ? 'ready' : 'not_installed',
-          image_edit: img.available ? 'ready' : 'not_installed'
-        },
+        modalities,
         image_models: img.models,
         image_reason: img.available ? undefined : img.reason
       })
@@ -944,15 +959,8 @@ export function startModelServer(port = GATEWAY_PORT): void {
 
     if (url === '/openapi.json') {
       const img = imageGenStatus()
-      const mods = {
-        text: 'ready',
-        vision_understanding: 'ready',
-        embeddings: 'ready',
-        transcription: 'ready',
-        speech: 'ready',
-        image_generation: img.available ? 'ready' : 'not_installed'
-      }
-      json(res, 200, openApiSpec(port, mods, img.models))
+      const modalities = await liveGatewayModalities(img.available)
+      json(res, 200, openApiSpec(port, modalities, img.models))
       return
     }
 

@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 23 covered, 51 left.
+  - P0: 74 total, 24 covered, 50 left.
   - P1: 71 total, 6 covered, 65 left.
   - P2: 10 total, 1 covered, 9 left.
-  - Overall: 155 total, 30 covered, 125 left.
+  - Overall: 155 total, 31 covered, 124 left.
 - Green gates today:
   - `npm test`: 202 files passed, 1 skipped; 2,190 tests passed, 1 skipped.
   - `npm run test:coverage`: 96.75% statements, 91.54% branches, 96.14% functions,
@@ -29,6 +29,9 @@ manual claim does not count as complete integration coverage.
   new temp `OFFGRID_USER_DATA` directory and verifies first-run onboarding and the preload bridge.
 - #9 - Fresh onboarding completes. `e2e/smoke.spec.ts` drives the real onboarding flow and lands on
   Models.
+- #13 - System Health is truthful. `e2e/smoke.spec.ts` launches a fresh profile, compares the real
+  gateway `/health` payload with the System Health IPC components, verifies absent runtimes are
+  reported as `not_installed`, and confirms the unavailable chat engine port is actually down.
 - #43 - Chat survives relaunch. `e2e/chat-memory.spec.ts` creates multiple scoped and unscoped
   conversations with messages and context through production IPC, fully closes Electron, reopens
   the same profile, and verifies every association and payload through the reloaded preload path.
@@ -117,7 +120,6 @@ manual claim does not count as complete integration coverage.
 - #10 - Configure for me completes.
 - #11 - Manual setup path works.
 - #12 - Onboarding resumes after relaunch.
-- #13 - System Health is truthful.
 - #14 - Chat engine stderr is surfaced.
 - #15 - Required permissions granted.
 - #16 - Denied permission is recoverable.

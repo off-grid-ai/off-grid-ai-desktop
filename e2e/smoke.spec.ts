@@ -108,6 +108,45 @@ test('system:health IPC returns the component list', async () => {
   const ids = health.components.map((c: { id: string }) => c.id)
   expect(ids).toContain('chat')
   expect(ids).toContain('gateway')
+
+  let gateway: { modalities?: Record<string, string> } = {}
+  await expect
+    .poll(
+      async () => {
+        try {
+          const response = await fetch('http://127.0.0.1:7878/health')
+          if (!response.ok) return false
+          gateway = await response.json()
+          return true
+        } catch {
+          return false
+        }
+      },
+      { timeout: 10000 }
+    )
+    .toBe(true)
+
+  const byId = new Map(
+    health.components.map((component: { id: string; status: string }) => [component.id, component])
+  )
+  expect(health.activeModel).toBeNull()
+  expect(byId.get('gateway')?.status).toBe('ready')
+  expect(byId.get('chat')?.status).toBe('not_installed')
+  const llamaReachable = await fetch('http://127.0.0.1:8439/health')
+    .then((response) => response.ok)
+    .catch(() => false)
+  expect(llamaReachable).toBe(false)
+
+  const gatewayBackedComponents = {
+    vision: 'vision_understanding',
+    embeddings: 'embeddings',
+    transcription: 'transcription',
+    speech: 'speech'
+  }
+  for (const [componentId, modalityId] of Object.entries(gatewayBackedComponents)) {
+    expect(byId.get(componentId)?.status).toBe(gateway.modalities?.[modalityId])
+  }
+  expect(byId.get('image')?.status).toBe(gateway.modalities?.image_generation)
 })
 
 test('gateway /v1/models serves active local models with modality metadata', async () => {
