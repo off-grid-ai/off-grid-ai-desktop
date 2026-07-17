@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { SearchHit } from '../types'
+import type { ProNavigationIntent } from '../lib/pro-navigation'
 
 // Pro view-router seam. Pro registers ONE function that renders the right pro
 // screen for a given view mode, given a context bag of the shell's state +
@@ -9,14 +10,13 @@ import type { SearchHit } from '../types'
 
 export interface ProViewContext {
   setView: (view: string) => void
+  onNavigate: (intent: ProNavigationIntent) => void
   replayTarget: number | null
-  setReplayTarget: (ms: number | null) => void
   meetingTarget: number | null
+  actionTarget: number | null
   actionsMode: 'todo' | 'approvals' | null
-  setActionsMode: (m: 'todo' | 'approvals' | null) => void
   // When set, the Actions to-do list opens filtered to this entity ("all to-dos for Ali").
   actionsEntity: { id: number; name: string } | null
-  setActionsEntity: (e: { id: number; name: string } | null) => void
   searchQuery: string
   onSearchQueryChange: (q: string) => void
   searchSources: string[]

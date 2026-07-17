@@ -47,6 +47,7 @@ import {
 } from '@tabler/icons-react'
 import { OFF_GRID_MOBILE_URL, openExternal } from './constants/links'
 import { cn } from './lib/utils'
+import { normalizeProNavigationIntent, type ProNavigationIntent } from './lib/pro-navigation'
 
 type ViewMode =
   | 'dashboard'
@@ -238,6 +239,7 @@ function AppContent() {
   const [meetingTarget, setMeetingTarget] = useState<number | null>(null)
   // Which tab the Actions screen opens on when reached via a Day "View all" link.
   const [actionsMode, setActionsMode] = useState<'todo' | 'approvals' | null>(null)
+  const [actionTarget, setActionTarget] = useState<number | null>(null)
   // When set, the Actions to-do list opens filtered to this entity (from clicking
   // a person chip on a to-do — "all to-dos for Ali").
   const [actionsEntity, setActionsEntity] = useState<{ id: number; name: string } | null>(null)
@@ -550,6 +552,22 @@ function AppContent() {
     setViewMode('search')
   }, [])
 
+  const handleProNavigate = useCallback((rawIntent: ProNavigationIntent): void => {
+    const intent = normalizeProNavigationIntent(rawIntent)
+    if (!intent) return
+
+    if (intent.view === 'actions') {
+      setActionTarget(intent.actionId ?? null)
+      setActionsMode(intent.mode ?? 'todo')
+      setActionsEntity(intent.entity ?? null)
+    } else if (intent.view === 'replay') {
+      setReplayTarget(intent.seekMs ?? null)
+    } else {
+      setMeetingTarget(intent.meetingId ?? null)
+    }
+    setViewMode(intent.view)
+  }, [])
+
   // Deep-link targets (Replay moment, specific meeting) are one-shot: clear them
   // only when we ACTUALLY LEAVE the screen that consumes them — tracked against the
   // previous view. Clearing via a viewMode+target dependency raced the navigation
@@ -563,6 +581,7 @@ function AppContent() {
     if (prev === 'replay' && viewMode !== 'replay') setReplayTarget(null)
     if (prev === 'meetings' && viewMode !== 'meetings') setMeetingTarget(null)
     if (prev === 'actions' && viewMode !== 'actions') {
+      setActionTarget(null)
       setActionsMode(null)
       setActionsEntity(null)
     }
@@ -954,13 +973,12 @@ function AppContent() {
                     // otherwise show the upgrade writeup for that feature.
                     (renderProView(viewMode, {
                       setView: (v) => setViewMode(v as ViewMode),
+                      onNavigate: handleProNavigate,
                       replayTarget,
-                      setReplayTarget,
                       meetingTarget,
+                      actionTarget,
                       actionsMode,
-                      setActionsMode,
                       actionsEntity,
-                      setActionsEntity,
                       searchQuery,
                       onSearchQueryChange: setSearchQuery,
                       searchSources,
