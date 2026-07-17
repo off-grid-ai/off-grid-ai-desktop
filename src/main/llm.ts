@@ -573,6 +573,10 @@ export class LLMService {
       console.error(`[LLMService] failed to spawn ${serverPath}:`, e)
       return false
     }
+    // Stop intent belongs to the process generation that was killed. A replacement
+    // child must start clean, otherwise its later genuine crash is misclassified as
+    // deliberate and auto-recovery is skipped.
+    this.intentionalStop = false
     this.server = proc
     this.stderrTail = []
     let abandoned = false // set when we give up on this proc so its close handler is inert
