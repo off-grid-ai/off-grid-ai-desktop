@@ -10,6 +10,7 @@ interface ModalContextType {
 }
 
 const ModalContext = createContext<ModalContextType | undefined>(undefined)
+const openModalStack: symbol[] = []
 
 export const ModalProvider = ({ children }: { children: ReactNode }) => {
   const [open, setOpen] = useState(false)
@@ -51,18 +52,39 @@ export const ModalTrigger = ({
 }
 
 export const ModalBody = ({ children, className }: { children: ReactNode; className?: string }) => {
-  const { open } = useModal()
+  const { open, setOpen } = useModal()
+  const modalRef = useRef<HTMLDivElement>(null)
+  const modalId = useRef(Symbol('animated-modal'))
+  const previousFocus = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = 'auto'
-    }
-  }, [open])
+    if (!open) return undefined
 
-  const modalRef = useRef<HTMLDivElement>(null)
-  const { setOpen } = useModal()
+    const id = modalId.current
+    const previousOverflow = document.body.style.overflow
+    previousFocus.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    document.body.style.overflow = 'hidden'
+    openModalStack.push(id)
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || openModalStack.at(-1) !== id) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    modalRef.current?.focus()
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      const index = openModalStack.lastIndexOf(id)
+      if (index >= 0) openModalStack.splice(index, 1)
+      document.body.style.overflow = previousOverflow
+      previousFocus.current?.focus()
+    }
+  }, [open, setOpen])
+
   useOutsideClick(modalRef, () => setOpen(false))
 
   return createPortal(
@@ -86,6 +108,9 @@ export const ModalBody = ({ children, className }: { children: ReactNode; classN
 
           <motion.div
             ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            tabIndex={-1}
             className={cn(
               'min-h-[50%] max-h-[90%] md:max-w-[40%] bg-white dark:bg-neutral-950 border border-transparent dark:border-neutral-800 md:rounded-2xl relative z-50 flex flex-col flex-1 overflow-hidden',
               className

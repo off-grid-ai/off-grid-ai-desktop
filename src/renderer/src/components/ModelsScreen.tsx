@@ -250,6 +250,15 @@ export function ModelsScreen(): React.JSX.Element {
     setTimeout(() => setDetail(null), 220)
   }, [])
 
+  useEffect(() => {
+    if (!detail) return undefined
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') closeDetail()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [closeDetail, detail])
+
   const importModel = async (): Promise<void> => {
     if (importing) return
     setImporting(true)
@@ -445,6 +454,7 @@ export function ModelsScreen(): React.JSX.Element {
     return (
       <div
         key={m.id}
+        role="listitem"
         className={`group flex flex-col gap-2 rounded-md border p-3 transition-all duration-150 hover:border-neutral-700 ${active ? 'border-green-500/50 bg-green-500/5' : 'border-neutral-800 bg-neutral-900/40'}`}
       >
         {/* Title row */}
@@ -760,7 +770,7 @@ export function ModelsScreen(): React.JSX.Element {
                     No results for &quot;{query}&quot;.
                   </p>
                 )}
-                <div className={GRID}>
+                <div role="list" aria-label="Model search results" className={GRID}>
                   {displayed.map((r) =>
                     renderCard(
                       {
@@ -795,7 +805,9 @@ export function ModelsScreen(): React.JSX.Element {
                         <div className="px-6 pt-3 text-[9px] uppercase tracking-widest text-neutral-600">
                           On this device
                         </div>
-                        <div className={GRID}>{installedModels.map((m) => renderCard(m))}</div>
+                        <div role="list" aria-label="Models on this device" className={GRID}>
+                          {installedModels.map((m) => renderCard(m))}
+                        </div>
                       </>
                     )}
                     {availableModels.length > 0 && (
@@ -803,7 +815,9 @@ export function ModelsScreen(): React.JSX.Element {
                         <div className="px-6 pt-2 text-[9px] uppercase tracking-widest text-neutral-600">
                           Available to download
                         </div>
-                        <div className={GRID}>{availableModels.map((m) => renderCard(m))}</div>
+                        <div role="list" aria-label="Models available to download" className={GRID}>
+                          {availableModels.map((m) => renderCard(m))}
+                        </div>
                       </>
                     )}
                   </>

@@ -152,6 +152,23 @@ button:disabled,
   cursor: not-allowed;
 }
 
+/* Keyboard navigation must remain visible even on controls that use outline-none
+   for pointer styling. Keep one theme-aware focus policy for every interactive
+   surface instead of duplicating ring utilities across screens. */
+:where(
+  button,
+  [role='button'],
+  a[href],
+  input,
+  textarea,
+  select,
+  summary,
+  [tabindex]:not([tabindex='-1'])
+):focus-visible {
+  outline: 2px solid var(--og-primary);
+  outline-offset: 2px;
+}
+
 code {
   font-weight: 600;
   padding: 3px 5px;
@@ -377,6 +394,15 @@ code {
   animation: og-shooting-star 12s ease-in 4s infinite;
 }
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
   .og-shooting-star {
     animation: none;
     display: none;
