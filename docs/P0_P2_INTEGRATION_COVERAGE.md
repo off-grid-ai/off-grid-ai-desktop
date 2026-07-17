@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 43 covered, 31 left.
-  - P1: 71 total, 28 covered, 43 left.
+  - P0: 74 total, 44 covered, 30 left.
+  - P1: 71 total, 29 covered, 42 left.
   - P2: 10 total, 3 covered, 7 left.
-  - Overall: 155 total, 74 covered, 81 left.
+  - Overall: 155 total, 76 covered, 79 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -107,6 +107,10 @@ manual claim does not count as complete integration coverage.
   windows, and password-manager URLs stop before capture while a normal app still persists.
 - #87 - Replay timeline renders. `e2e/pro.spec.ts` launches the real Pro build path with synthetic
   data and verifies Replay renders instead of the upgrade screen.
+- #90 - Unified search finds each source. `pro/main/__tests__/universal-search.dbtest.ts` writes
+  captured and connector-derived observations plus meeting, entity, fact, memory, chat, and
+  knowledge records through their production SQLite owners, then proves one production search
+  returns every source with its real facet and deep-link identifier.
 - #94 - Delete all removes capture corpus. `pro/main/__tests__/personal-data.integration.test.ts`
   registers the real Pro personal-data owner, runs the real delete-all path, and verifies the
   observations corpus is gone.
@@ -205,6 +209,9 @@ manual claim does not count as complete integration coverage.
 - #82 - Gateway failure envelope. `model-server-chat.integration.test.ts` sends malformed input
   through the real HTTP gateway, proves it receives the stable OpenAI-style JSON error contract
   without reaching the native model boundary, then calls the gateway again to verify it stays healthy.
+- #91 - Search filters and sort apply. The universal-search DB integration proves production source,
+  recency, and match filtering over fresh results; `SearchScreen.integration.test.tsx` drives the
+  rendered filter and sort controls and verifies visible ordering changes without stale rows.
 - #110 - Entity merge preserves evidence. `resolve.integration.test.ts` exercises real entity,
   aliases, observations, relationships, action reassignment, split, and merge persistence.
 - #113 - Action status survives persistence. `actions-status.integration.test.ts` exercises real
@@ -311,8 +318,6 @@ manual claim does not count as complete integration coverage.
 - #83 - Screen capture permission path.
 - #88 - Replay playback uses media server.
 - #89 - Replay navigation preserves target.
-- #90 - Unified search finds each source.
-- #91 - Search filters and sort apply.
 - #92 - Day briefing renders.
 - #93 - Day links open correct records.
 
