@@ -85,6 +85,20 @@ describe('<MemoryChat/> clipboard and preview accessibility', () => {
     expect(screen.getByText('Copied')).toBeTruthy()
   })
 
+  it('does not report Copied when both clipboard boundaries fail', async () => {
+    const user = userEvent.setup()
+    const { bridgeWrite, browserWrite } = installApi()
+    bridgeWrite.mockRejectedValueOnce(new Error('IPC unavailable'))
+    browserWrite.mockRejectedValueOnce(new Error('clipboard permission denied'))
+    renderConversation()
+
+    await user.click(await screen.findByTitle('Copy'))
+
+    await waitFor(() => expect(browserWrite).toHaveBeenCalledWith('copy this exact text'))
+    expect(bridgeWrite).toHaveBeenCalledWith('copy this exact text')
+    expect(screen.queryByText('Copied')).toBeNull()
+  })
+
   it('exposes the image preview as a dialog and dismisses it from the keyboard or backdrop', async () => {
     installApi()
     const user = userEvent.setup()

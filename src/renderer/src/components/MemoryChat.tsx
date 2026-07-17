@@ -1876,13 +1876,14 @@ export function MemoryChat({
   }, [setConvMessages])
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
-  const copyText = useCallback((t: string, key?: string) => {
+  const copyText = useCallback(async (t: string, key?: string) => {
     // Electron's renderer navigator.clipboard is flaky (silent reject), so copy via
     // the main-process clipboard; fall back to navigator if the bridge is missing.
     const api = window.api as { writeClipboardText?: (s: string) => Promise<boolean> }
-    writeClipboardWithFallback(t, api.writeClipboardText, (text) =>
+    const copied = await writeClipboardWithFallback(t, api.writeClipboardText, (text) =>
       navigator.clipboard.writeText(text)
-    ).catch(() => false)
+    )
+    if (!copied) return
     // Brief "Copied" confirmation on the button that was pressed.
     const k = key ?? 'copy'
     setCopiedKey(k)
