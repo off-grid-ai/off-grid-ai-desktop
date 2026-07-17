@@ -4,6 +4,18 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { mimeForExt } from './mime'
 
+/** Is a canonical target-to-root relative path still inside that root?
+ *
+ * Check both path dialects regardless of the test host. On Windows, `path.relative`
+ * returns an absolute path when target and root are on different drives; accepting
+ * that result would bypass the capture root allowlist.
+ */
+export function isCapturePathInsideRoot(relative: string): boolean {
+  if (relative === '') return true
+  if (path.posix.isAbsolute(relative) || path.win32.isAbsolute(relative)) return false
+  return relative !== '..' && !relative.startsWith('../') && !relative.startsWith('..\\')
+}
+
 /** ReadStream -> web ReadableStream that tears down SILENTLY on cancel (a seek/teardown):
  *  never call controller.error/close after a cancel, or Chromium treats the seek as a
  *  failed load and resets the player to 0:00. (net.fetch(file://) sidesteps this but
@@ -69,7 +81,7 @@ export async function serveCaptureFile(
       try {
         const validatedRoot = fs.realpathSync.native(root)
         const relative = path.relative(validatedRoot, validatedPath)
-        return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..')
+        return isCapturePathInsideRoot(relative)
       } catch {
         return false
       }

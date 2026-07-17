@@ -1,9 +1,9 @@
 // @vitest-environment node
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { mkdtempSync, writeFileSync, rmSync, symlinkSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import path, { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { serveCaptureFile } from '../ogcapture-serve'
+import { isCapturePathInsideRoot, serveCaptureFile } from '../ogcapture-serve'
 
 // Real integration over a temp file (no mocks): the ogcapture:// serving logic was inline
 // in the protocol handler and untested; extracting it (so the fs reads sit behind the
@@ -18,6 +18,13 @@ beforeAll(() => writeFileSync(file, BODY))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 describe('serveCaptureFile', () => {
+  it('rejects the absolute relative path returned across Windows drives', () => {
+    const relative = path.win32.relative('C:\\captures', 'D:\\private\\secret.txt')
+
+    expect(relative).toBe('D:\\private\\secret.txt')
+    expect(isCapturePathInsideRoot(relative)).toBe(false)
+  })
+
   it('serves the whole file as 200 with the right length', async () => {
     const res = await serveCaptureFile(file, [dir], null)
     expect(res.status).toBe(200)
