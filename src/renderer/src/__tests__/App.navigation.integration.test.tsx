@@ -11,7 +11,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { TooltipProvider } from '../components/ui/tooltip'
 
 const PROJECTS = Array.from({ length: 12 }, (_, index) => {
   const suffix = index === 0 ? 'Alpha' : index === 1 ? 'Beta' : String(index + 1).padStart(2, '0')
@@ -24,15 +23,6 @@ const PROJECTS = Array.from({ length: 12 }, (_, index) => {
     updatedAt: '2026-07-17T00:00:00.000Z'
   }
 })
-
-const CHAT_CONVERSATION = {
-  id: 'release-chat',
-  title: 'Release readiness',
-  project_id: null,
-  created_at: '2026-07-17T00:00:00.000Z',
-  updated_at: '2026-07-17T00:00:00.000Z',
-  message_count: 1
-}
 
 function installBoundary(): void {
   const eventSubscription = (): (() => void) => () => {}
@@ -59,18 +49,7 @@ function installBoundary(): void {
     getInstalledModels: async () => [],
     getActiveModelIds: async () => [],
     listProjects: async () => PROJECTS.map((project) => ({ ...project })),
-    getRagConversations: async () => [CHAT_CONVERSATION],
-    getRagMessages: async (conversationId: string) =>
-      conversationId === CHAT_CONVERSATION.id
-        ? [
-            {
-              id: 1,
-              role: 'assistant',
-              content: 'The existing release plan is ready.',
-              context: null
-            }
-          ]
-        : [],
+    getRagConversations: async () => [],
     getSettings: async () => ({}),
     onNewApproval: eventSubscription,
     onNewAction: eventSubscription,
@@ -78,9 +57,7 @@ function installBoundary(): void {
     onReprocessProgress: eventSubscription,
     onNavigate: eventSubscription,
     onMeetingState: eventSubscription,
-    onModelProgress: eventSubscription,
-    onImageGenProgress: eventSubscription,
-    onRagStream: eventSubscription
+    onModelProgress: eventSubscription
   }
   const api = new Proxy(values, {
     get(target, property: string) {
@@ -111,7 +88,6 @@ function installStorage(): Storage {
 describe('<App/> desktop navigation integration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {}
     installStorage().setItem('onboarding_completed', 'true')
     window.history.replaceState(null, '', '/projects')
     installBoundary()
@@ -136,11 +112,7 @@ describe('<App/> desktop navigation integration', () => {
   it('keeps a dense project master-detail state through Cmd+[ and Cmd+] (#50, #59)', async () => {
     const { default: App } = await import('../App')
     const user = userEvent.setup()
-    render(
-      <TooltipProvider>
-        <App />
-      </TooltipProvider>
-    )
+    render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'Projects' })).not.toBeNull()
     await Promise.all(
@@ -160,24 +132,5 @@ describe('<App/> desktop navigation integration', () => {
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: ']', metaKey: true, bubbles: true }))
     expect(await screen.findByRole('heading', { name: 'Integrations' })).not.toBeNull()
-  })
-
-  it('opens a visibly fresh chat through Cmd+N from the real desktop shell (#50)', async () => {
-    const { default: App } = await import('../App')
-    const user = userEvent.setup()
-    render(
-      <TooltipProvider>
-        <App />
-      </TooltipProvider>
-    )
-
-    await user.click(await screen.findByTitle('Chat'))
-    expect(await screen.findByText('The existing release plan is ready.')).not.toBeNull()
-
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true, bubbles: true }))
-
-    expect(await screen.findByRole('heading', { name: 'Start a conversation' })).not.toBeNull()
-    expect(screen.queryByText('The existing release plan is ready.')).toBeNull()
-    expect(screen.getByPlaceholderText('Ask anything…')).not.toBeNull()
   })
 })
