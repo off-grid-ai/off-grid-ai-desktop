@@ -147,6 +147,7 @@ type Attachment = {
   path?: string // images: persisted path passed to the vision model
   preview?: string // images: a local object URL shown immediately while processing
   status: 'loading' | 'ready' | 'error'
+  error?: string
 }
 
 type Conversation = {
@@ -1608,7 +1609,7 @@ export function MemoryChat({
       // one conversation never kills another's in-flight image (D9). imgProgress is a
       // shared stream buffer — clear it too when the owner stops.
       if (imageGenConv === convId) {
-        window.api.cancelImageGen?.()
+        window.api.cancelImageGen()
         setImageGenConv(null)
         setImgProgress(null)
       }
@@ -1992,7 +1993,10 @@ export function MemoryChat({
           )
         } catch (e) {
           console.error('process file failed', e)
-          setAttachments((prev) => prev.map((a) => (a.id === id ? { ...a, status: 'error' } : a)))
+          const error = e instanceof Error && e.message ? e.message : 'Could not read this file.'
+          setAttachments((prev) =>
+            prev.map((a) => (a.id === id ? { ...a, status: 'error', error } : a))
+          )
         }
       }
     },
@@ -3788,6 +3792,10 @@ export function MemoryChat({
                               <span className="absolute inset-0 flex items-center justify-center bg-neutral-950/50 text-[9px] text-neutral-300">
                                 Reading…
                               </span>
+                            ) : a.status === 'error' ? (
+                              <span className="absolute inset-0 flex items-center justify-center bg-neutral-950/85 px-2 text-center text-[9px] text-red-300">
+                                {a.error || 'Could not read this image.'}
+                              </span>
                             ) : null}
                           </button>
                         ) : (
@@ -3811,7 +3819,7 @@ export function MemoryChat({
                             {a.status === 'loading'
                               ? 'Processing…'
                               : a.status === 'error'
-                                ? 'Could not read this file.'
+                                ? a.error || 'Could not read this file.'
                                 : a.text.slice(0, 140) || a.name}
                           </button>
                         )}
@@ -4217,7 +4225,7 @@ export function MemoryChat({
                         labeled Stop just below, so skip this icon in that mode. */}
                     {!!activeConversationId &&
                       generatingConvs.has(activeConversationId) &&
-                      !(loading && (mode === 'image' || generatingImage)) && (
+                      !(loading && generatingImage) && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -4236,13 +4244,12 @@ export function MemoryChat({
                           <TooltipContent>Stop generating</TooltipContent>
                         </Tooltip>
                       )}
-                    {loading && (mode === 'image' || generatingImage) ? (
+                    {loading && generatingImage ? (
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => {
                           stopGeneration(activeConversationId)
-                          window.api.cancelImageGen?.()
                         }}
                         className="h-8 gap-1.5 border-red-500/50 text-red-400 hover:bg-red-500/10"
                       >

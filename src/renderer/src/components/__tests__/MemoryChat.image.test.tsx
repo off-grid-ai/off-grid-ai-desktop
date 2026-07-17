@@ -20,8 +20,8 @@
 //   (b) divergence — the composer's model dropdown didn't write through the same owner
 //       as the Active-models panel, so the two disagreed on which model ran.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
+import { afterEach, describe, it, expect, beforeEach, vi, type Mock } from 'vitest'
+import { render, screen, waitFor, cleanup, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryChat } from '../MemoryChat'
 import { TooltipProvider } from '../ui/tooltip'
@@ -29,10 +29,10 @@ import { TooltipProvider } from '../ui/tooltip'
 // The real app mounts MemoryChat inside a global TooltipProvider (App shell). Mirror
 // that here so the composer's tooltip-wrapped controls render — this wraps the REAL
 // component, it does not stub any of its behavior.
-function renderChat() {
+function renderChat(openTarget?: { conversationId?: string }): ReturnType<typeof render> {
   return render(
     <TooltipProvider>
-      <MemoryChat />
+      <MemoryChat openTarget={openTarget} />
     </TooltipProvider>
   )
 }
@@ -40,10 +40,12 @@ function renderChat() {
 // jsdom lacks ResizeObserver; Radix (tooltip/dropdown) references it at module load.
 // Install it once at top-level so an import-time capture sees a real constructor.
 ;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver ??= class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
 }
+
+afterEach(() => cleanup())
 
 const FEW_STEP = 'sdxl-lightning.gguf' // shared image-defaults: defaultSteps 10
 const FULL = 'dreamlike-photoreal-v2.gguf' // shared image-defaults: defaultSteps 28
@@ -54,27 +56,112 @@ type GenPayload = {
   width?: number
   height?: number
   prompt?: string
+  conversationId?: string
+}
+
+type ImageResult = { dataUrl: string; path: string }
+type ImageProgress = {
+  phase: string
+  step: number
+  total: number
+  secPerStep: number
+  preview?: string
+}
+type TestConversation = {
+  id: string
+  title: string
+  project_id: null
+  created_at: string
+  updated_at: string
+  message_count: number
+}
+
+type Deferred<T> = {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (error: unknown) => void
+}
+
+type ProcessImage = (
+  bytes: ArrayBuffer,
+  name: string
+) => Promise<{ name: string; kind: 'image'; text: string; path?: string }>
+
+type InstallApiOptions = {
+  active: string
+  models: string[]
+  settings?: Record<string, unknown>
+  conversations?: TestConversation[]
+  generate?: (payload: GenPayload) => Promise<ImageResult>
+  chatVision?: boolean
+  processFile?: Mock<ProcessImage>
+  ragAnswer?: string
+}
+
+type InstalledApi = {
+  generateImage: Mock<(payload: GenPayload) => Promise<ImageResult>>
+  setActiveModalModel: Mock<(kind: string, model: string) => Promise<void>>
+  toolChat: Mock<
+    (...args: unknown[]) => Promise<{ answer: string; toolCalls: never[]; unified: never[] }>
+  >
+  exportGeneratedImage: Mock<(...args: unknown[]) => Promise<void>>
+  getRagMessages: Mock<(id: string) => Promise<unknown[]>>
+  cancelImageGen: Mock<() => void>
+  chatVisionAvailable: Mock<() => Promise<boolean>>
+  processFile: Mock<ProcessImage>
+  ragChat: Mock<(...args: unknown[]) => Promise<{ answer: string; context: { unified: never[] } }>>
+  emitProgress: (value: ImageProgress) => void
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
 
 /** Build a full in-process fake of the preload `window.api` bridge. Every method the
  *  component touches on mount / send is stubbed at the TRUE boundary (the IPC bridge),
  *  so the component code under test is 100% real. `generateImage` + `setActiveModalModel`
  *  are the assertion subjects; the rest resolve to inert defaults. */
-function installApi(opts: {
-  active: string
-  models: string[]
-  settings?: Record<string, unknown>
-}) {
+function installApi(opts: InstallApiOptions): InstalledApi {
   const settings: Record<string, unknown> = { ...(opts.settings ?? {}) }
-  const generateImage = vi.fn(async (_p: GenPayload) => ({
-    dataUrl: 'data:image/png;base64,AAAA',
-    path: '/tmp/out.png'
-  }))
-  const setActiveModalModel = vi.fn(async (_kind: string, _model: string) => {})
+  const conversations = [...(opts.conversations ?? [])]
+  const messages = new Map<string, unknown[]>()
+  let progress: ((value: ImageProgress) => void) | null = null
+  const generateImage = vi.fn<(payload: GenPayload) => Promise<ImageResult>>(
+    opts.generate ??
+      (async (_p: GenPayload) => ({
+        dataUrl: 'data:image/png;base64,AAAA',
+        path: '/tmp/out.png'
+      }))
+  )
+  const setActiveModalModel = vi.fn<(kind: string, model: string) => Promise<void>>(async () => {})
   // The agentic path's single entry point. Returns a benign text answer with no
   // imageRequest, so if the turn reaches the agent no generateImage call follows —
   // making "generateImage was/ wasn't called" an unambiguous terminal artifact.
-  const toolChat = vi.fn(async () => ({ answer: 'done', toolCalls: [], unified: [] }))
+  const toolChat = vi.fn<
+    (...args: unknown[]) => Promise<{ answer: string; toolCalls: never[]; unified: never[] }>
+  >(async () => ({ answer: 'done', toolCalls: [], unified: [] }))
+  const cancelImageGen = vi.fn<() => void>()
+  const exportGeneratedImage = vi.fn<(...args: unknown[]) => Promise<void>>(async () => {})
+  const getRagMessages = vi.fn(async (id: string) => messages.get(id) ?? [])
+  const chatVisionAvailable = vi.fn(async () => opts.chatVision ?? true)
+  const processFile =
+    opts.processFile ??
+    vi.fn<ProcessImage>(async (_bytes: ArrayBuffer, name: string) => ({
+      name,
+      kind: 'image' as const,
+      text: '',
+      path: `/uploads/${name}`
+    }))
+  const ragChat = vi.fn(async (..._args: unknown[]) => ({
+    answer: opts.ragAnswer ?? 'A red fox is standing in snow.',
+    context: { unified: [] as never[] }
+  }))
   const api = {
     isPro: false,
     // --- assertion subjects ---
@@ -86,14 +173,31 @@ function installApi(opts: {
       models: opts.models,
       active: opts.active
     })),
-    cancelImageGen: vi.fn(),
-    onImageGenProgress: vi.fn(() => () => {}),
+    cancelImageGen,
+    onImageGenProgress: vi.fn((callback: (value: ImageProgress) => void) => {
+      progress = callback
+      return () => {
+        progress = null
+      }
+    }),
     // --- conversation + persistence seams touched by the send path ---
-    getRagConversations: vi.fn(async () => []),
-    getRagMessages: vi.fn(async () => []),
-    createRagConversation: vi.fn(async () => {}),
+    getRagConversations: vi.fn(async () => conversations.map((item) => ({ ...item }))),
+    getRagConversation: vi.fn(async (id: string) => conversations.find((item) => item.id === id)),
+    getRagMessages,
+    createRagConversation: vi.fn(async (id: string, title: string) => {
+      conversations.unshift({
+        id,
+        title,
+        project_id: null,
+        created_at: '2026-07-17T00:00:00.000Z',
+        updated_at: '2026-07-17T00:00:00.000Z',
+        message_count: 0
+      })
+      messages.set(id, [])
+    }),
     addRagMessage: vi.fn(async () => {}),
     saveArtifact: vi.fn(async () => {}),
+    exportGeneratedImage,
     // --- settings round-trip (per-model override persistence) ---
     getSettings: vi.fn(async () => settings),
     saveSetting: vi.fn(async (k: string, v: unknown) => {
@@ -104,14 +208,30 @@ function installApi(opts: {
     styleThumbs: vi.fn(async () => ({})),
     listSkills: vi.fn(async () => []),
     onRagStream: vi.fn(() => () => {}),
+    chatVisionAvailable,
+    processFile,
+    ragChat,
     toolChat
   }
   ;(globalThis as unknown as { window: { api: unknown } }).window.api = api
-  return { generateImage, setActiveModalModel, toolChat }
+  return {
+    generateImage,
+    setActiveModalModel,
+    toolChat,
+    exportGeneratedImage,
+    getRagMessages,
+    cancelImageGen,
+    chatVisionAvailable,
+    processFile,
+    ragChat,
+    emitProgress(value: ImageProgress): void {
+      progress?.(value)
+    }
+  }
 }
 
 /** Drive the composer into image mode with the options panel open. */
-async function openImageComposer(user: ReturnType<typeof userEvent.setup>) {
+async function openImageComposer(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.click(await screen.findByRole('button', { name: /^image$/i }))
   // Turning on image mode reveals the "Image options" toggle (a re-render). Wait for
   // it to mount before clicking, so a cold first-test mount doesn't race the click.
@@ -128,14 +248,14 @@ function stepsInput(): HTMLInputElement {
   return steps
 }
 
-function typeSteps(value: number) {
+function typeSteps(value: number): void {
   // The steps <input type=number> is controlled and clamps on every keystroke
   // (onChange -> Math.max(4, Math.min(50, …))). A real edit commits one final value;
   // fire a single change event with that value, which is the faithful DOM signal.
   fireEvent.change(stepsInput(), { target: { value: String(value) } })
 }
 
-async function sendPrompt(user: ReturnType<typeof userEvent.setup>, prompt: string) {
+async function sendPrompt(user: ReturnType<typeof userEvent.setup>, prompt: string): Promise<void> {
   const textarea = screen.getByPlaceholderText(/describe an image to generate/i)
   await user.type(textarea, prompt)
   await user.click(screen.getByRole('button', { name: /^send$/i }))
@@ -149,10 +269,18 @@ describe('<MemoryChat/> image mode — the generateImage payload is the terminal
     // an effect doesn't throw an async ResizeObserver/scroll error that taints the run.
     ;(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {}
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
     }
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:attachment-preview')
+    })
+    Object.defineProperty(File.prototype, 'arrayBuffer', {
+      configurable: true,
+      value: async () => new ArrayBuffer(8)
+    })
   })
 
   it('carries the USER-typed steps (10), not the model default (28), and the picked model', async () => {
@@ -221,7 +349,7 @@ describe('<MemoryChat/> image mode — the generateImage payload is the terminal
 })
 
 // Send a message in the DEFAULT chat composer (not image mode).
-async function sendChat(user: ReturnType<typeof userEvent.setup>, text: string) {
+async function sendChat(user: ReturnType<typeof userEvent.setup>, text: string): Promise<void> {
   const textarea = await screen.findByPlaceholderText(/ask anything/i, {}, { timeout: 3000 })
   await user.type(textarea, text)
   await user.click(screen.getByRole('button', { name: /^send$/i }))
@@ -238,9 +366,9 @@ describe('<MemoryChat/> chat mode — image intent is decided in ONE place', () 
     vi.clearAllMocks()
     ;(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {}
     ;(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
     }
   })
 
@@ -274,5 +402,176 @@ describe('<MemoryChat/> chat mode — image intent is decided in ONE place', () 
     expect(toolChat).not.toHaveBeenCalled()
     const payload = generateImage.mock.calls[0]![0] as GenPayload
     expect(payload.prompt).toBe('a dog') // cleanImagePrompt stripped the verb
+  })
+})
+
+function conversation(id: string, title: string): TestConversation {
+  return {
+    id,
+    title,
+    project_id: null,
+    created_at: '2026-07-17T00:00:00.000Z',
+    updated_at: '2026-07-17T00:00:00.000Z',
+    message_count: 0
+  }
+}
+
+function imageInput(): HTMLInputElement {
+  const input = document.querySelector('input[type="file"][accept="image/*"]')
+  if (!(input instanceof HTMLInputElement)) throw new Error('image attachment input not found')
+  return input
+}
+
+describe('<MemoryChat/> image and vision release journeys', () => {
+  beforeEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+    ;(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {}
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:attachment-preview')
+    })
+    Object.defineProperty(File.prototype, 'arrayBuffer', {
+      configurable: true,
+      value: async () => new ArrayBuffer(8)
+    })
+  })
+
+  it('shows live progress, renders one generated image, and opens and saves it (#61, #67)', async () => {
+    const turn = deferred<ImageResult>()
+    const boundary = installApi({
+      active: FULL,
+      models: [FULL],
+      generate: () => turn.promise
+    })
+    const user = userEvent.setup()
+    renderChat()
+
+    await openImageComposer(user)
+    await sendPrompt(user, 'a lighthouse during a winter storm')
+    await waitFor(() => expect(boundary.generateImage).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      boundary.emitProgress({ phase: 'diffusion', step: 4, total: 10, secPerStep: 0.5 })
+    })
+    expect(await screen.findByText('Step 4/10')).toBeTruthy()
+
+    turn.resolve({ dataUrl: 'data:image/png;base64,AAAA', path: '/generated/lighthouse.png' })
+    const generated = await screen.findByAltText('Generated')
+    expect(screen.getAllByAltText('Generated')).toHaveLength(1)
+
+    await user.click(generated)
+    expect(screen.getByRole('dialog', { name: 'Generated image preview' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+    await waitFor(() =>
+      expect(boundary.exportGeneratedImage).toHaveBeenCalledWith(
+        '/generated/lighthouse.png',
+        'lighthouse.png'
+      )
+    )
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog', { name: 'Generated image preview' })).toBeNull()
+  })
+
+  it('keeps image progress and cancellation scoped to the conversation that owns the job (#62)', async () => {
+    const turn = deferred<ImageResult>()
+    const boundary = installApi({
+      active: FULL,
+      models: [FULL],
+      conversations: [
+        conversation('conversation-a', 'Conversation A'),
+        conversation('conversation-b', 'Conversation B')
+      ],
+      generate: () => turn.promise
+    })
+    const user = userEvent.setup()
+    renderChat({ conversationId: 'conversation-a' })
+    await waitFor(() => expect(boundary.getRagMessages).toHaveBeenCalledWith('conversation-a'))
+
+    await openImageComposer(user)
+    await sendPrompt(user, 'a quiet forest')
+    await waitFor(() => expect(boundary.generateImage).toHaveBeenCalledTimes(1))
+    expect(boundary.generateImage.mock.calls[0]![0].conversationId).toBe('conversation-a')
+    act(() => {
+      boundary.emitProgress({ phase: 'diffusion', step: 2, total: 8, secPerStep: 1 })
+    })
+    expect(await screen.findByText('Step 2/8')).toBeTruthy()
+
+    await user.click(screen.getByText('Conversation B'))
+    await waitFor(() => expect(screen.queryByText('Step 2/8')).toBeNull())
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+    expect(boundary.cancelImageGen).not.toHaveBeenCalled()
+
+    const aTab = screen.getByRole('button', { name: 'Conversation A' })
+    await user.click(aTab)
+    await waitFor(() => expect(aTab.parentElement?.className).toContain('bg-neutral-800'))
+    expect(
+      screen.queryAllByRole('button', { name: /stop/i }).map((button) => button.textContent)
+    ).toEqual(['Stop'])
+    await user.click(screen.getByRole('button', { name: 'Stop' }))
+    expect(boundary.cancelImageGen).toHaveBeenCalledTimes(1)
+    turn.reject(new Error('cancelled'))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull())
+  })
+
+  it('sends a ready image through the vision path and preserves the typed question (#68)', async () => {
+    const boundary = installApi({
+      active: FULL,
+      models: [FULL],
+      chatVision: true,
+      ragAnswer: 'The image contains a red bicycle beside a stone wall.'
+    })
+    const user = userEvent.setup()
+    renderChat()
+
+    await user.upload(imageInput(), new File(['png'], 'bicycle.png', { type: 'image/png' }))
+    expect(await screen.findByText('bicycle.png')).toBeTruthy()
+    await sendChat(user, 'What is in this image?')
+
+    expect(
+      await screen.findByText('The image contains a red bicycle beside a stone wall.')
+    ).toBeTruthy()
+    expect(screen.getAllByText('What is in this image?').length).toBeGreaterThan(0)
+    const ragArgs = boundary.ragChat.mock.calls[0]!
+    expect(ragArgs[0]).toBe('What is in this image?')
+    expect(ragArgs[8]).toEqual(['/uploads/bicycle.png'])
+  })
+
+  it('explains why a text-only model rejects an image and sends no unsupported content (#69)', async () => {
+    const boundary = installApi({ active: FULL, models: [FULL], chatVision: false })
+    const user = userEvent.setup()
+    renderChat()
+    await waitFor(() => expect(boundary.chatVisionAvailable).toHaveBeenCalled())
+
+    await user.upload(imageInput(), new File(['png'], 'unsupported.png', { type: 'image/png' }))
+    expect(
+      await screen.findByText(/This model can't read images\. Switch to a vision model/i)
+    ).toBeTruthy()
+    expect(boundary.processFile).not.toHaveBeenCalled()
+    expect(screen.queryByText('unsupported.png')).toBeNull()
+
+    await sendChat(user, 'Continue with text only')
+    expect(await screen.findByText('A red fox is standing in snow.')).toBeTruthy()
+    expect(boundary.ragChat.mock.calls[0]![8]).toEqual([])
+  })
+
+  it('shows a damaged-image error and keeps the conversation usable (#70)', async () => {
+    const boundary = installApi({
+      active: FULL,
+      models: [FULL],
+      processFile: vi.fn(async () => {
+        throw new Error('Unsupported or damaged image data.')
+      })
+    })
+    const user = userEvent.setup()
+    renderChat()
+
+    await user.upload(imageInput(), new File(['broken'], 'damaged.png', { type: 'image/png' }))
+    expect(await screen.findByText('Unsupported or damaged image data.')).toBeTruthy()
+
+    await sendChat(user, 'The conversation should still work')
+    expect(await screen.findByText('A red fox is standing in snow.')).toBeTruthy()
+    expect(boundary.ragChat).toHaveBeenCalledTimes(1)
+    expect(boundary.ragChat.mock.calls[0]![8]).toEqual([])
   })
 })

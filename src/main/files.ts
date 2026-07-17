@@ -8,6 +8,7 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 import { app } from 'electron'
+import sharp from 'sharp'
 import { desktopExtraction as ex } from './rag/extractors'
 import { IMAGE_EXT, AUDIO_EXT, VIDEO_EXT, sanitizeUploadName } from './files-classify'
 
@@ -28,6 +29,15 @@ export async function processUpload(
   await fs.promises.writeFile(tmp, Buffer.from(bytes as ArrayBuffer))
   try {
     if (IMAGE_EXT.includes(ext)) {
+      // An image extension is not evidence that the bytes are decodable. Validate at
+      // the upload owner before persisting or marking the attachment ready, so a
+      // damaged image produces a specific recoverable error in the composer instead
+      // of reaching the vision runtime as engine garbage.
+      try {
+        await sharp(tmp, { failOn: 'error' }).metadata()
+      } catch {
+        throw new Error('Unsupported or damaged image data.')
+      }
       // Persist the image so the chat can pass the ACTUAL image to the multimodal
       // model. Return as soon as it's saved — do NOT block the attachment on a
       // vision-model caption (that ran the model synchronously and left the chip
