@@ -90,6 +90,23 @@ describe.each(tagParsers)('shared tag skeleton: %s', (_name, parse) => {
   })
 })
 
+describe('Claude capture parity', () => {
+  it('keeps desktop and web parsing identical across metadata, roles, and continuations', () => {
+    const input = [
+      '[WINDOW_TITLE] Claude',
+      '[BROWSER_URL] claude.ai/chat/example',
+      '[CHAT_TITLE] Parser contract',
+      '[METADATA] 12:34',
+      '[USER] first line',
+      'continued question',
+      '[ASSISTANT] answer',
+      '[NOTE] continued answer'
+    ].join('\n')
+
+    expect(parseClaudeWebOutput(input)).toEqual(parseClaudeDesktopOutput(input))
+  })
+})
+
 describe('ChatGPT inline role-label detection + noise', () => {
   it('detects a bare "ChatGPT said:" label (exact match, no remainder)', () => {
     const r = parseChatGPTOutput(`You said: question\nChatGPT said:\nthe answer body`)
