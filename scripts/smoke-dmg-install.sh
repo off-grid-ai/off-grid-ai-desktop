@@ -9,6 +9,8 @@
 #   npm run smoke:dmg -- dist/OffGrid-0.0.38.dmg
 #
 # Env:
+#   DMG_REFERENCE_APP=<path>        Compare the DMG and installed copy against the
+#                                   signed app bundle electron-builder packaged.
 #   DMG_SMOKE_RUNNER=<shell script>  Override only the final launch/smoke boundary.
 #                                    The runner receives APP=<copied .app path>.
 #                                    Set scripts/smoke-packaged.sh for the deeper
@@ -20,6 +22,7 @@ REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DMG_PATH="${1:-${DMG:-}}"
 EXPECTED_APP_NAME="${EXPECTED_APP_NAME:-Off Grid AI Desktop.app}"
 SMOKE_RUNNER="${DMG_SMOKE_RUNNER:-}"
+REFERENCE_APP="${DMG_REFERENCE_APP:-}"
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "[dmg-smoke] macOS is required because DMG mounting uses hdiutil" >&2
@@ -31,6 +34,10 @@ if [ -z "$DMG_PATH" ] || [ ! -f "$DMG_PATH" ]; then
 fi
 if [ -n "$SMOKE_RUNNER" ] && [ ! -f "$SMOKE_RUNNER" ]; then
   echo "[dmg-smoke] smoke runner not found: $SMOKE_RUNNER" >&2
+  exit 2
+fi
+if [ -n "$REFERENCE_APP" ] && [ ! -d "$REFERENCE_APP" ]; then
+  echo "[dmg-smoke] reference app bundle not found: $REFERENCE_APP" >&2
   exit 2
 fi
 
@@ -68,9 +75,19 @@ if [ "$(basename "$SOURCE_APP")" != "$EXPECTED_APP_NAME" ]; then
   exit 1
 fi
 
+if [ -n "$REFERENCE_APP" ]; then
+  echo "[dmg-smoke] comparing mounted bundle with packaged reference"
+  node "$REPO_ROOT/scripts/verify-macos-bundle.mjs" "$REFERENCE_APP" "$SOURCE_APP"
+fi
+
 INSTALLED_APP="$INSTALL_ROOT/$EXPECTED_APP_NAME"
 echo "[dmg-smoke] copying with ditto to temporary install root"
 /usr/bin/ditto "$SOURCE_APP" "$INSTALLED_APP"
+
+if [ -n "$REFERENCE_APP" ]; then
+  echo "[dmg-smoke] comparing installed bundle with packaged reference"
+  node "$REPO_ROOT/scripts/verify-macos-bundle.mjs" "$REFERENCE_APP" "$INSTALLED_APP"
+fi
 
 INFO_PLIST="$INSTALLED_APP/Contents/Info.plist"
 if [ ! -f "$INFO_PLIST" ]; then
