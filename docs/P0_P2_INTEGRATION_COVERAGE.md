@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 58 covered, 16 left.
-  - P1: 71 total, 55 covered, 16 left.
+  - P0: 74 total, 60 covered, 14 left.
+  - P1: 71 total, 56 covered, 15 left.
   - P2: 10 total, 9 covered, 1 left.
-  - Overall: 155 total, 122 covered, 33 left.
+  - Overall: 155 total, 125 covered, 30 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -105,6 +105,10 @@ manual claim does not count as complete integration coverage.
 - #69 - Text-only model guards image input. The same integration proves an unavailable vision
   capability produces a visible explanation before image processing or model delivery, then
   completes a text-only turn normally.
+- #71 - Connector can be added. `integration-tests/mcp-connector-setup.dbtest.ts` drives the real
+  Integrations screen through a native IPC boundary adapter into production connector persistence,
+  encrypted SQLite, MCP discovery, and a real stdio child, proving connected appears only after
+  discovery and exactly one row with `read_status` survives database reopen.
 - #73 - Connector tool executes. The real connector extension executes a read-only tool through
   its remote boundary and returns the result; `tools-loop.dbtest.ts` proves extension output flows
   through the production tool loop into the final answer.
@@ -139,6 +143,10 @@ manual claim does not count as complete integration coverage.
   extractor and real SQLite persistence, with only screenshot/OCR and the model socket at their
   external boundaries, and proves configured apps, authentication surfaces, private browser
   windows, and password-manager URLs stop before capture while a normal app still persists.
+- #87 - Replay timeline renders. `e2e/pro.spec.ts` uses production Pro seeding to write real PNG and
+  SQLite capture data, independently verifies filesystem chronology matches IPC order, then drives
+  the real Replay UI through every frame and proves image, app, caption, full timestamp, scrubber
+  time, and position remain usable and ordered.
 - #90 - Unified search finds each source. `pro/main/__tests__/universal-search.dbtest.ts` writes
   captured and connector-derived observations plus meeting, entity, fact, memory, chat, and
   knowledge records through their production SQLite owners, then proves one production search
@@ -312,6 +320,10 @@ manual claim does not count as complete integration coverage.
 - #103 - Import media for transcription. The same real IPC/filesystem/SQLite integration imports
   synthetic media into a completed recording, while `VoiceScreen.integration.test.tsx` proves the
   rendered drop gesture refreshes into a searchable transcript card.
+- #105 - Speak assistant reply. `e2e/tts-speak.spec.ts` clicks the real rendered Speak action and
+  runs production preload, IPC, TTS normalization, worker spawn, WAV data URL, and Chromium audio;
+  only the heavyweight ONNX worker is replaced, and it proves markdown becomes `A local reply with
+  code` before the UI enters and exits the real Stop state.
 - #107 - Entities are synthesized. `entity-action-journeys.dbtest.ts` records person, project, and
   company mentions through production observation and entity owners, proving one correctly typed
   record per entity with automatic identifiers and two supporting observations.
@@ -434,14 +446,9 @@ manual claim does not count as complete integration coverage.
 - #64 - Image settings apply.
 - #66 - Image RAM guard is safe.
 
-## Left - integrations and gateway
-
-- #71 - Connector can be added.
-
 ## Left - capture, memory, and replay
 
 - #88 - Replay playback uses media server.
-- #87 - Replay timeline renders.
 - #89 - Replay navigation preserves target.
 - #93 - Day links open correct records.
 
@@ -450,7 +457,6 @@ manual claim does not count as complete integration coverage.
 - #97 - Meeting transcript and summary.
 - #99 - Global dictation hotkey.
 - #100 - Dictation pastes at cursor.
-- #105 - Speak assistant reply.
 
 ## Left - entities, actions, and reflection
 
