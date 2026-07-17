@@ -7,6 +7,7 @@ import {
   verifyBundlePair
 } from '../../../scripts/lib/macos-artifact-integrity.mjs'
 
+const REPO_ROOT = path.resolve(import.meta.dirname, '../../..')
 const tempRoots: string[] = []
 const FRAMEWORK_EXECUTABLE =
   'Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework'
@@ -80,5 +81,24 @@ describe('macOS artifact integrity', () => {
     expect(() => verifyBundlePair(packagedBundle, candidateBundle)).toThrow(
       'packaged bundle contains forbidden private state: Contents/Resources/.offgrid'
     )
+  })
+
+  it('pins a fixed builder with explicit image headroom for the large macOS bundle', () => {
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')
+    ) as {
+      devDependencies: { 'electron-builder': string }
+    }
+    const builderVersion = packageJson.devDependencies['electron-builder']
+    const [major = 0, minor = 0, patch = 0] = builderVersion.split('.').map(Number)
+    const numericVersion = major * 1_000_000 + minor * 1_000 + patch
+    const minimumFixedVersion = 26 * 1_000_000 + 15 * 1_000 + 3
+    const builderConfig = fs.readFileSync(path.join(REPO_ROOT, 'electron-builder.yml'), 'utf8')
+    const imageSizeGiB = Number(builderConfig.match(/^\s+size:\s+(\d+)g$/m)?.[1])
+
+    expect(builderVersion).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(numericVersion).toBeGreaterThanOrEqual(minimumFixedVersion)
+    expect(imageSizeGiB).toBeGreaterThanOrEqual(5)
+    expect(builderConfig).toMatch(/^\s+shrink:\s+true$/m)
   })
 })
