@@ -8,15 +8,15 @@
 // whisper-cli is bundled in resources/bin/whisper; ffmpeg is resolved from a
 // bundled path first, then the system. Vision captioning reuses llm.chat.
 
-import { execFile } from 'child_process'
-import { promisify } from 'util'
-import { createRequire } from 'module'
-import fs from 'fs'
-import os from 'os'
-import path from 'path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { createRequire } from 'node:module'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import type { ExtractionBridges } from '@offgrid/rag'
 import { llm } from '../llm'
-import { whisperModel, ffmpegBin } from '../transcription/whisper-cli'
+import { ffmpegBin } from '../transcription/whisper-cli'
 import { getActiveTranscription } from '../transcription/select'
 
 const execFileAsync = promisify(execFile)
@@ -25,7 +25,7 @@ const loadCjsDependency = createRequire(import.meta.url)
 // Binary/model resolvers now live in ../transcription/whisper-cli (single source
 // of truth). Re-exported here so existing importers of '@offgrid/core/main/rag/
 // extractors' keep working.
-export { whisperModel }
+export { whisperModel } from '../transcription/whisper-cli'
 
 const IMAGE_PROMPT =
   'Describe this image in detail and transcribe any visible text verbatim. Be thorough; this will be indexed for search.'

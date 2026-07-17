@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config'
-import { resolve } from 'path'
+import { resolve } from 'node:path'
 
 // Dedicated config for core + Pro DB integration tests (*.dbtest.ts). Kept separate from the
 // default vitest run because they load the better-sqlite3 native module (see
