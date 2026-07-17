@@ -9,11 +9,16 @@ export default defineConfig({
     alias: {
       '@offgrid/core': resolve(__dirname, 'src'),
       '@offgrid/pro': resolve(__dirname, 'pro'),
-      '@renderer': resolve(__dirname, 'src/renderer/src')
+      '@renderer': resolve(__dirname, 'src/renderer/src'),
+      '@': resolve(__dirname, 'src/renderer/src')
     }
   },
   test: {
-    include: ['src/main/__tests__/*.dbtest.ts', 'pro/main/__tests__/*.dbtest.ts'],
+    include: [
+      'integration-tests/*.dbtest.ts',
+      'src/main/__tests__/*.dbtest.ts',
+      'pro/main/__tests__/*.dbtest.ts'
+    ],
     exclude: ['node_modules/**', 'out/**', 'e2e/**']
   }
 })
