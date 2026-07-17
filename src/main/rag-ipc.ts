@@ -3,11 +3,12 @@
 
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import fs from 'fs'
+import { randomUUID } from 'node:crypto'
 import { ragService, listProjects, createProject, updateProject, deleteProject } from './rag'
 import { uploadPickerExtensions } from './files-classify'
 
 function genId(prefix: string): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  return `${prefix}_${randomUUID()}`
 }
 
 // Built from the router's classify sets (files-classify) so the picker allowlist
