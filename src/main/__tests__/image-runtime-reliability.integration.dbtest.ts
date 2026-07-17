@@ -261,7 +261,7 @@ describe('image runtime reliability', () => {
     expect(lineCount(fixture.llamaLog)).toBe(2)
   })
 
-  it('refuses an over-budget image before native execution and accepts a safe retry', async () => {
+  it('refuses an over-budget image before native execution and runs only after explicit override', async () => {
     const imageRunsBefore = lineCount(fixture.imageLog)
     const imagePath = path.join(fixture.dataDir, 'models', IMAGE_MODEL)
     fs.truncateSync(imagePath, 5_000_000_000)
@@ -273,30 +273,31 @@ describe('image runtime reliability', () => {
       ).rejects.toThrow(
         `Not enough memory to run ${IMAGE_MODEL} (~7.0GB resident) on this 8GB machine. Pick a lighter image model`
       )
+
+      expect(lineCount(fixture.imageLog)).toBe(imageRunsBefore)
+
+      const overridden = await generateImage({
+        prompt: 'The user explicitly accepted the memory risk',
+        model: IMAGE_MODEL,
+        allowUnsafeMemoryOverride: true,
+        seed: 66,
+        width: 512,
+        height: 512,
+        steps: 4
+      })
+      expect(overridden).toMatchObject({
+        dataUrl: `data:image/png;base64,${PNG_BASE64}`,
+        seed: 66,
+        model: IMAGE_MODEL
+      })
+      expect(lineCount(fixture.imageLog)).toBe(imageRunsBefore + 1)
     } finally {
       totalMemory.mockRestore()
+      fs.writeFileSync(imagePath, 'safe image checkpoint')
     }
 
-    expect(lineCount(fixture.imageLog)).toBe(imageRunsBefore)
-    fs.writeFileSync(imagePath, 'safe image checkpoint')
-
-    const recovered = await generateImage({
-      prompt: 'A safe green cabin after the memory guard',
-      model: IMAGE_MODEL,
-      seed: 66,
-      width: 512,
-      height: 512,
-      steps: 4
-    })
-
-    expect(recovered).toMatchObject({
-      dataUrl: `data:image/png;base64,${PNG_BASE64}`,
-      seed: 66,
-      model: IMAGE_MODEL
-    })
-    expect(lineCount(fixture.imageLog)).toBe(imageRunsBefore + 1)
-    expect(await llm.chat('after guarded refusal and safe retry')).toBe('chat recovered')
-  })
+    expect(await llm.chat('after guarded refusal and explicit override')).toBe('chat recovered')
+  }, 20_000)
 
   it('keeps local chat usable when external network reachability is unavailable', async () => {
     startModelServer(gatewayPort)

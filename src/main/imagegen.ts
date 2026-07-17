@@ -44,6 +44,10 @@ import {
   resolveOwnedDestination
 } from './imagegen/owned-path'
 import { IMAGE_CANCELLED_MESSAGE, ImageGenerationLifecycle } from './imagegen/generation-lifecycle'
+import {
+  imageMemoryGuardErrorMessage,
+  type ImageGenerationRequestContract
+} from '../shared/image-generation-contract'
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {
@@ -385,26 +389,7 @@ export function imageGenStatus(): {
   return { available: true, models, active }
 }
 
-export interface ImageGenParams {
-  prompt: string
-  negativePrompt?: string
-  width?: number
-  height?: number
-  steps?: number
-  seed?: number
-  cfgScale?: number
-  /** Model filename in the models dir; defaults to the preferred installed model. */
-  model?: string
-  /** Local path to an init image for img2img. */
-  initImage?: string
-  strength?: number
-  /** LoRA adapters to apply: name (filename w/o ext) + weight (e.g. 0.8). */
-  loras?: { name: string; weight: number }[]
-  /** Use the TAESD tiny decoder instead of the full VAE — a large speed win on
-   *  the VAE decode (multi-second -> sub-second on Metal at ≥768px), at a small
-   *  cost in decode fidelity. No-op if the matching taesd file isn't installed. */
-  fastVae?: boolean
-}
+export type ImageGenParams = ImageGenerationRequestContract
 
 export interface ImageGenOutput {
   dataUrl: string
@@ -571,10 +556,12 @@ async function runImageGen(
     zEncoderGb: zImageStack ? safeSizeGb(findInModels(/qwen3-4b-instruct.*\.gguf$/i)) : 0,
     zVaeGb: zImageStack ? safeSizeGb(findInModels(/^ae\.(safetensors|sft)$|^ae.*\.gguf$/i)) : 0
   })
-  if (guard.overBudget) {
+  if (guard.overBudget && !params.allowUnsafeMemoryOverride) {
     throw new Error(
-      `Not enough memory to run ${path.basename(model)} (~${guard.modelGb.toFixed(1)}GB resident) on this ${totalGb.toFixed(0)}GB machine. ` +
-        `Pick a lighter image model (e.g. SDXL-Lightning or SD 1.5) in the image options.`
+      imageMemoryGuardErrorMessage(
+        `Not enough memory to run ${path.basename(model)} (~${guard.modelGb.toFixed(1)}GB resident) on this ${totalGb.toFixed(0)}GB machine. ` +
+          `Pick a lighter image model (e.g. SDXL-Lightning or SD 1.5) in the image options.`
+      )
     )
   }
 

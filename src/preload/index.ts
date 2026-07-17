@@ -5,6 +5,7 @@ import {
   type CacheCleanupResultContract,
   type RagChatResultContract
 } from '../shared/ipc-contracts'
+import type { ImageGenerationRequestContract } from '../shared/image-generation-contract'
 
 console.log('PRELOAD SCRIPT LOADED')
 
@@ -513,21 +514,12 @@ const offGridApi = {
     return unsubscribe('imagegen:progress', sub)
   },
   pickImageForGen: () => ipcRenderer.invoke('imagegen:pick-image'),
-  generateImage: (params: {
-    prompt: string
-    negativePrompt?: string
-    width?: number
-    height?: number
-    steps?: number
-    seed?: number
-    cfgScale?: number
-    model?: string
-    initImage?: string
-    strength?: number
-    loras?: { name: string; weight: number }[]
-    conversationId?: string
-    projectId?: string | null
-  }) => ipcRenderer.invoke('imagegen:generate', params),
+  generateImage: (
+    params: ImageGenerationRequestContract & {
+      conversationId?: string
+      projectId?: string | null
+    }
+  ) => ipcRenderer.invoke('imagegen:generate', params),
 
   // --- Projects + RAG (knowledge bases) + project chat ---
   listProjects: () => ipcRenderer.invoke('projects:list'),
