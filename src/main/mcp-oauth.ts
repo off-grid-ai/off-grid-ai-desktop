@@ -63,7 +63,7 @@ export function makeOAuthProvider(
 
   return {
     getCodePromise(): Promise<string> {
-      if (!pendingCode) throw new Error('no pending authorization')
+      if (pendingCode === null) throw new Error('no pending authorization')
       return pendingCode
     },
     get redirectUrl(): string {

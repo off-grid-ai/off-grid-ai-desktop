@@ -27,3 +27,10 @@ describe('tts.ts worker spawn never passes a cwd (ENOTDIR guard)', () => {
     expect(src).toMatch(/ELECTRON_RUN_AS_NODE:\s*'1'/)
   })
 })
+
+describe('tts.ts diagnostics do not log user-controlled voice data', () => {
+  it('keeps the synthesis-start log free of the requested voice', () => {
+    expect(src).toMatch(/\[tts\] synth start: chars=/)
+    expect(src).not.toMatch(/\[tts\] synth start:[^`]*voice=/)
+  })
+})

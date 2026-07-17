@@ -439,7 +439,7 @@ export class LLMService {
     }
     if (this.initialized) return
     // Coalesce concurrent inits into one spawn.
-    if (this.initPromise) return this.initPromise
+    if (this.initPromise !== null) return this.initPromise
     this.initPromise = this._doInit().finally(() => {
       this.initPromise = null
     })

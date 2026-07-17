@@ -85,7 +85,7 @@ function clearIdleEvict(): void {
 }
 
 function startServe(): Promise<void> {
-  if (serveReady) return serveReady
+  if (serveReady !== null) return serveReady
   serveReady = new Promise<void>((resolve, reject) => {
     // No `cwd` - see runWorker: an asar-file cwd throws ENOTDIR in the packaged build.
     const child = spawn(process.execPath, [workerPath(), 'serve'], {
@@ -197,7 +197,7 @@ export async function synthesize(text: string, voice?: string): Promise<{ dataUr
   busy = true
   const out = path.join(os.tmpdir(), `offgrid-tts-${process.pid}-${Date.now()}.wav`)
   console.log(
-    `[tts] synth start: voice=${voice || DEFAULT_VOICE} chars=${t.length} worker=${(() => {
+    `[tts] synth start: chars=${t.length} worker=${(() => {
       try {
         return workerPath()
       } catch {

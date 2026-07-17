@@ -223,7 +223,7 @@ class SdServerService {
     const key = contextKey({ ...ctx, port: this.port })
     if (this.server && this.activeKey === key) return // already the right model
     if (this.server && this.activeKey !== key) this.stopProcess() // swap → restart
-    if (this.startPromise) return this.startPromise
+    if (this.startPromise !== null) return this.startPromise
     this.startPromise = this.spawn(ctx, key).finally(() => {
       this.startPromise = null
     })
