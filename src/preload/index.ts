@@ -128,7 +128,7 @@ try {
       conversationId: string,
       role: 'user' | 'assistant',
       content: string,
-      context?: any
+      context?: unknown
     ) => ipcRenderer.invoke('rag:add-message', conversationId, role, content, context),
     truncateRagMessages: (conversationId: string, keepCount: number) =>
       ipcRenderer.invoke('rag:truncate-messages', conversationId, keepCount),
@@ -148,11 +148,12 @@ try {
 
     // User Profile
     getUserProfile: () => ipcRenderer.invoke('db:get-user-profile'),
-    saveUserProfile: (profile: any) => ipcRenderer.invoke('db:save-user-profile', profile),
+    saveUserProfile: (profile: Record<string, unknown>) =>
+      ipcRenderer.invoke('db:save-user-profile', profile),
 
     // App Settings
     getSettings: () => ipcRenderer.invoke('settings:get'),
-    saveSetting: (key: string, value: any) => ipcRenderer.invoke('settings:save', key, value),
+    saveSetting: (key: string, value: unknown) => ipcRenderer.invoke('settings:save', key, value),
     consoleEnroll: (url: string, token: string) => ipcRenderer.invoke('console:enroll', url, token),
     consoleStatus: () => ipcRenderer.invoke('console:status'),
     consoleSyncNow: () => ipcRenderer.invoke('console:sync-now'),
@@ -162,7 +163,8 @@ try {
 
     // Master Memory Progress
     onMasterMemoryProgress: (callback: (data: { current: number; total: number }) => void) => {
-      const subscription = (_: any, data: any) => callback(data)
+      const subscription = (_event: unknown, data: { current: number; total: number }): void =>
+        callback(data)
       ipcRenderer.on('master-memory:progress', subscription)
       return () => ipcRenderer.removeListener('master-memory:progress', subscription)
     },
@@ -174,7 +176,10 @@ try {
     onReprocessProgress: (
       callback: (data: { phase: string; processed: number; total: number }) => void
     ) => {
-      const subscription = (_: any, data: any) => callback(data)
+      const subscription = (
+        _event: unknown,
+        data: { phase: string; processed: number; total: number }
+      ): void => callback(data)
       ipcRenderer.on('reprocess:progress', subscription)
       return () => ipcRenderer.removeListener('reprocess:progress', subscription)
     },
@@ -202,8 +207,8 @@ try {
     checkForUpdates: () => ipcRenderer.invoke('update:check'),
 
     // Watcher Events
-    onWatcherData: (callback: (data: any) => void) => {
-      const subscription = (_: any, data: any) => callback(data)
+    onWatcherData: (callback: (data: unknown) => void) => {
+      const subscription = (_event: unknown, data: unknown): void => callback(data)
       ipcRenderer.on('watcher:data', subscription)
       return () => ipcRenderer.removeListener('watcher:data', subscription)
     },
@@ -223,7 +228,15 @@ try {
         entityName: string | null
       }) => void
     ) => {
-      const subscription = (_: any, data: any) => callback(data)
+      const subscription = (
+        _event: unknown,
+        data: {
+          approvalId: number
+          title: string
+          detail: string
+          entityName: string | null
+        }
+      ): void => callback(data)
       ipcRenderer.on('notification:new-approval', subscription)
       return () => ipcRenderer.removeListener('notification:new-approval', subscription)
     },
@@ -236,7 +249,16 @@ try {
         sourceApp: string
       }) => void
     ) => {
-      const subscription = (_: any, data: any) => callback(data)
+      const subscription = (
+        _event: unknown,
+        data: {
+          actionId: number
+          text: string
+          due: string | null
+          entityName: string | null
+          sourceApp: string
+        }
+      ): void => callback(data)
       ipcRenderer.on('notification:new-action', subscription)
       return () => ipcRenderer.removeListener('notification:new-action', subscription)
     },
@@ -263,7 +285,10 @@ try {
         totalMB: string
       }) => void
     ) => {
-      const subscription = (_: any, data: any) => callback(data)
+      const subscription = (
+        _event: unknown,
+        data: { modelName: string; percent: number; downloadedMB: string; totalMB: string }
+      ): void => callback(data)
       ipcRenderer.on('model:download-progress', subscription)
       return () => ipcRenderer.removeListener('model:download-progress', subscription)
     },
@@ -288,8 +313,18 @@ try {
     getServerStatus: () => ipcRenderer.invoke('llm:status'),
     stopServer: () => ipcRenderer.invoke('llm:stop'),
     restartServer: () => ipcRenderer.invoke('llm:restart'),
-    onModelProgress: (callback: (data: any) => void) => {
-      const subscription = (_: any, data: any) => callback(data)
+    onModelProgress: (
+      callback: (data: {
+        modelName: string
+        percent: number
+        downloadedMB: string
+        totalMB: string
+      }) => void
+    ) => {
+      const subscription = (
+        _event: unknown,
+        data: { modelName: string; percent: number; downloadedMB: string; totalMB: string }
+      ): void => callback(data)
       ipcRenderer.on('model:download-progress', subscription)
       return () => ipcRenderer.removeListener('model:download-progress', subscription)
     },
@@ -318,8 +353,8 @@ try {
     clearDataCategory: (id: string, olderThanDays?: number) =>
       ipcRenderer.invoke('data:clear', id, olderThanDays),
     deleteAllData: () => ipcRenderer.invoke('data:delete-all'),
-    onSetupProgress: (callback: (data: any) => void) => {
-      const subscription = (_: any, data: any) => callback(data)
+    onSetupProgress: (callback: (data: unknown) => void) => {
+      const subscription = (_event: unknown, data: unknown): void => callback(data)
       ipcRenderer.on('setup:progress', subscription)
       return () => ipcRenderer.removeListener('setup:progress', subscription)
     },
@@ -422,7 +457,7 @@ try {
     downloadLora: (url: string, filename: string) =>
       ipcRenderer.invoke('imagegen:download-lora', url, filename),
     onLoraProgress: (cb: (p: { filename: string; pct: number }) => void) => {
-      const sub = (_: any, p: any) => cb(p)
+      const sub = (_event: unknown, p: { filename: string; pct: number }): void => cb(p)
       ipcRenderer.on('imagegen:lora-progress', sub)
       return () => ipcRenderer.removeListener('imagegen:lora-progress', sub)
     },
@@ -438,7 +473,16 @@ try {
         phase?: 'sampling' | 'decoding'
       }) => void
     ) => {
-      const sub = (_: any, p: any) => cb(p)
+      const sub = (
+        _event: unknown,
+        p: {
+          step: number
+          total: number
+          secPerStep: number
+          preview?: string
+          phase?: 'sampling' | 'decoding'
+        }
+      ): void => cb(p)
       ipcRenderer.on('imagegen:progress', sub)
       return () => ipcRenderer.removeListener('imagegen:progress', sub)
     },
@@ -467,7 +511,8 @@ try {
       systemPrompt?: string
       icon?: string
     }) => ipcRenderer.invoke('projects:create', p),
-    updateProject: (id: string, patch: any) => ipcRenderer.invoke('projects:update', id, patch),
+    updateProject: (id: string, patch: Record<string, unknown>) =>
+      ipcRenderer.invoke('projects:update', id, patch),
     deleteProject: (id: string) => ipcRenderer.invoke('projects:delete', id),
     listProjectDocuments: (projectId: string) =>
       ipcRenderer.invoke('projects:list-documents', projectId),
@@ -476,8 +521,8 @@ try {
     toggleProjectDocument: (docId: number, enabled: boolean) =>
       ipcRenderer.invoke('projects:toggle-document', docId, enabled),
     deleteProjectDocument: (docId: number) => ipcRenderer.invoke('projects:delete-document', docId),
-    onProjectIndexProgress: (callback: (data: any) => void) => {
-      const subscription = (_: any, data: any) => callback(data)
+    onProjectIndexProgress: (callback: (data: unknown) => void) => {
+      const subscription = (_event: unknown, data: unknown): void => callback(data)
       ipcRenderer.on('projects:index-progress', subscription)
       return () => ipcRenderer.removeListener('projects:index-progress', subscription)
     },
