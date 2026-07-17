@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 72 covered, 2 left.
-  - P1: 71 total, 70 covered, 1 left.
+  - P1: 71 total, 71 covered, 0 left.
   - P2: 10 total, 10 covered, 0 left.
-  - Overall: 155 total, 152 covered, 3 left.
+  - Overall: 155 total, 153 covered, 2 left.
 - P0 handoff status:
   - Every P0 journey with an automatable application seam is integration-covered.
   - #1 Core DMG install and #2 Pro DMG install remain release-device checks against the signed,
@@ -276,6 +276,10 @@ manual claim does not count as complete integration coverage.
   model selection, downloads through the production manager and real catalog, verifies only the
   chosen GGUF is fetched and promoted, activates it through the real selection owner, and proves
   the rendered Models card reaches Active while every unchosen model remains absent.
+- #12 - Onboarding resumes after relaunch. The production Electron journey uses a fresh Core
+  profile across three full process launches, proves the saved step and all six capability labels
+  restore, completion clears progress, and an interrupted registry plus `.part` file returns as a
+  failed transfer with the exact Retry UI without losing partial bytes.
 - #14 - Chat engine stderr is surfaced. The same integration starts a native child that reports an
   incompatible `gemma4` architecture and exits, then proves System Health returns the classified
   engine-too-old reason rather than a generic down message.
@@ -532,10 +536,6 @@ manual claim does not count as complete integration coverage.
 
 - #1 - Core DMG installs cleanly.
 - #2 - Pro DMG installs cleanly.
-
-## Left - onboarding and health
-
-- #12 - Onboarding resumes after relaunch.
 
 ## Next implementation order
 
