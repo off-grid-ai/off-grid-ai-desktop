@@ -3,6 +3,7 @@
  *   - No-memory toggle actually sticking (fix: assignProject no longer overrides noMemory)
  *   - Streaming placeholder appearing immediately (fix: streamConvRef routes tokens to correct conv)
  *   - Conversation, message, scope, and project persistence across a full process relaunch
+ *   - Cold recovery and committed-data durability after a forced main-process kill
  *
  * Runs against the built app with OFFGRID_PRO=1 so the memory dropdown is visible.
  * No LLM model is expected — we only assert UI state and IPC plumbing, not model output.
@@ -17,6 +18,7 @@ import {
 import os from 'os'
 import path from 'path'
 import fs from 'fs'
+import type { ChildProcess } from 'child_process'
 
 let app: ElectronApplication
 let page: Page
@@ -36,13 +38,23 @@ const launchApp = async (): Promise<void> => {
   await page.waitForLoadState('domcontentloaded')
 }
 
-const closeApp = async (): Promise<void> => {
-  const child = app.process()
-  await app.close()
+const waitForExit = async (child: ChildProcess): Promise<void> => {
   if (child.exitCode !== null) return
   await new Promise<void>((resolve) => {
     child.once('exit', () => resolve())
   })
+}
+
+const closeApp = async (): Promise<void> => {
+  const child = app.process()
+  await app.close()
+  await waitForExit(child)
+}
+
+const forceCloseApp = async (): Promise<void> => {
+  const child = app.process()
+  child.kill('SIGKILL')
+  await waitForExit(child)
 }
 
 const enterChat = async (): Promise<void> => {
@@ -294,4 +306,30 @@ test('conversations, messages, scopes, and project associations survive relaunch
       context: JSON.stringify({ projectId: seeded.projectId })
     }
   ])
+})
+
+test('cold relaunch after a forced quit boots cleanly and keeps committed chat data', async () => {
+  await page.evaluate(async () => {
+    await window.api.createRagConversation('forced-quit-chat', 'Forced Quit Chat', null)
+    await window.api.addRagMessage('forced-quit-chat', 'user', 'committed before forced quit')
+  })
+  await page.getByPlaceholder(/ask anything/i).fill('uncommitted draft during forced quit')
+
+  await forceCloseApp()
+  await launchApp()
+
+  await expect(page.locator('#root')).not.toBeEmpty()
+  expect(await page.evaluate(() => typeof window.api === 'object')).toBe(true)
+  const persisted = await page.evaluate(async () => ({
+    conversation: await window.api.getRagConversation('forced-quit-chat'),
+    messages: await window.api.getRagMessages('forced-quit-chat')
+  }))
+  expect(persisted.conversation?.title).toBe('Forced Quit Chat')
+  expect(persisted.messages.map((message) => message.content)).toEqual([
+    'committed before forced quit'
+  ])
+
+  await enterChat()
+  await expect(page.getByPlaceholder(/ask anything/i)).toBeEnabled()
+  await expect(page.getByText('committed before forced quit', { exact: true })).toBeVisible()
 })

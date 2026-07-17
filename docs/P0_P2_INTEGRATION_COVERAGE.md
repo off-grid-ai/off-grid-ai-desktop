@@ -8,17 +8,17 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Scope: 155 journeys - 74 P0, 71 P1, and 10 P2.
-- Covered by direct integration or E2E evidence: 28 - 21 P0, 6 P1, and 1 P2.
-- Left: 127 - including partially covered journeys whose exact release behavior is not yet proven.
+- Covered by direct integration or E2E evidence: 29 - 22 P0, 6 P1, and 1 P2.
+- Left: 126 - including partially covered journeys whose exact release behavior is not yet proven.
 - Green gates today:
   - `npm test`: 202 files passed, 1 skipped; 2,190 tests passed, 1 skipped.
   - `npm run test:coverage`: 96.75% statements, 91.54% branches, 96.14% functions,
     97.52% lines.
   - `npm run test:db`: 13 files and 105 real SQLite integration tests passed; Electron ABI
     restored afterward.
-  - `npm run test:e2e`: 25 Playwright Electron tests passed against fresh synthetic temp profiles.
+  - `npm run test:e2e`: 26 Playwright Electron tests passed against fresh synthetic temp profiles.
   - Both TypeScript projects pass.
-- Not yet a clean handoff: the exact P0-P2 journey count is 28/155, and strict ESLint currently
+- Not yet a clean handoff: the exact P0-P2 journey count is 29/155, and strict ESLint currently
   exposes a legacy backlog. Neither is hidden by the coverage percentage.
 
 ## Covered P0 journeys
@@ -72,6 +72,9 @@ manual claim does not count as complete integration coverage.
 - #137 - Core locked Pro tabs. The free-tier Electron tour discovers every lock-bearing nav item
   rendered from the production catalog, opens each one, verifies its matching upgrade heading, and
   confirms the Pro entitlement remains false.
+- #145 - Cold relaunch after forced quit. `e2e/chat-memory.spec.ts` kills the real Electron main
+  process during non-destructive chat activity, waits for process exit, reopens the same profile,
+  and verifies clean boot, preload availability, usable input, and durable committed chat data.
 
 ## Covered P1 journeys
 
@@ -248,7 +251,6 @@ manual claim does not count as complete integration coverage.
 ## Left - resilience and desktop polish
 
 - #144 - Local use works offline.
-- #145 - Cold relaunch after forced quit.
 - #146 - Model ports are single-owner.
 - #147 - Engine restart recovers.
 - #148 - Low disk space is handled.

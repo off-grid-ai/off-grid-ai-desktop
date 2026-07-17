@@ -46,7 +46,7 @@ really a test of a third-party framework or engine we merely depend on:
   dependency (binary/model) is absent, so it runs on a dev Mac + release builds and SKIPS in a
   plain `npm ci` CI rather than failing. This is where "the feature works" is proven.
 - **swift unit (XCTest / swift-testing via SwiftPM)** - pure logic inside a Swift package.
-- **e2e (Playwright Electron)** - the rendered app tour (e2e/, 25 tests today).
+- **e2e (Playwright Electron)** - the rendered app tour (e2e/, 26 tests today).
 - **gateway smoke (`npm run smoke`)** - the OpenAI `/v1` surface against a running app.
 
 ## Surface matrix (status - keep current)
@@ -65,7 +65,7 @@ really a test of a third-party framework or engine we merely depend on:
 | Capture -> OCR -> memory ingest seam                       | integration     | vitest: feed a fixture frame through the ingest path into a temp DB                                                                                                                                                             | TODO                                           |
 | RAG end-to-end (retrieve -> prompt -> answer)              | integration     | vitest: seed a temp SQLite, run retrieval, assert grounded context                                                                                                                                                              | TODO                                           |
 | Vault (kdbx + Argon2)                                      | integration     | vitest vs temp dir                                                                                                                                                                                                              | DONE (`vault-service.test.ts`)                 |
-| Renderer surfaces render                                   | e2e             | Playwright tour                                                                                                                                                                                                                 | DONE (25)                                      |
+| Renderer surfaces render                                   | e2e             | Playwright tour                                                                                                                                                                                                                 | DONE (26)                                      |
 | Pro dictation / clipboard / replay                         | e2e + unit      | Playwright (`pro.spec.ts`) + pro unit                                                                                                                                                                                           | PARTIAL                                        |
 
 ## Rules
