@@ -8,10 +8,16 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 61 covered, 13 left.
+  - P0: 74 total, 72 integration-covered, 2 signed-DMG checks left.
   - P1: 71 total, 61 covered, 10 left.
   - P2: 10 total, 9 covered, 1 left.
-  - Overall: 155 total, 131 covered, 24 left.
+  - Overall: 155 total, 142 covered, 13 left.
+- P0 handoff status:
+  - Every P0 journey with an automatable application seam is integration-covered.
+  - #1 Core DMG install and #2 Pro DMG install remain release-device checks against the signed,
+    notarized artifacts.
+  - Signed macOS permission, global-hotkey, cross-app paste, and full-volume behavior still require
+    manual confirmation even where the application seam is integration-covered below.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -26,6 +32,22 @@ manual claim does not count as complete integration coverage.
 
 - #3 - Fresh profile is truly fresh. `e2e/smoke.spec.ts` launches the built Electron app with a
   new temp `OFFGRID_USER_DATA` directory and verifies first-run onboarding and the preload bridge.
+- #4 - Core and Pro artifact separation. `release-packaging.integration.test.ts` builds both
+  resolved source graphs with sourcemaps and proves Core contains no `pro/` implementation while
+  retaining the locked shell and entitlement gates; Pro excludes the stub and includes both real
+  activation entry points.
+- #5 - Packaged helper binaries exist. `packaged-helpers.integration.test.ts` runs real
+  `electron-vite` and `electron-builder` with the production packaging config, then proves the
+  artifact contains hydrated executable llama, ffmpeg, and Whisper helpers at the runtime-resolved
+  paths plus every staged dylib as an exact-name regular file.
+- #6 - Packaged llama dependency closure. `release-packaging.integration.test.ts` invokes the exact
+  repository `scripts/build-llama.sh` against a disposable CI-shaped output and proves transitive
+  `@rpath` closure, non-symlink staging, exact deployment-target comparison, and rejection of both
+  `/opt/homebrew` and `/usr/local` dependencies.
+- #7 - Upgrade preserves user data. Pro `upgrade-profile.dbtest.ts` loads a fixture pinned to the
+  previous release's Core and Pro schemas, runs current migrations and owners, then relaunches and
+  proves chats, memory, projects, knowledge, settings, Pro data, entitlement, and model selections
+  remain intact. Signed installer replacement remains a separate device check.
 - #9 - Fresh onboarding completes. `e2e/smoke.spec.ts` drives the real onboarding flow and lands on
   Models.
 - #10 - Configure for me completes. `model-server-chat.integration.test.ts` runs production
@@ -35,6 +57,11 @@ manual claim does not count as complete integration coverage.
 - #13 - System Health is truthful. `e2e/smoke.spec.ts` launches a fresh profile, compares the real
   gateway `/health` payload with the System Health IPC components, verifies absent runtimes are
   reported as `not_installed`, and confirms the unavailable chat engine port is actually down.
+- #15 - Required macOS permissions granted. `permission-recovery.test.ts`,
+  `media-permission.test.ts`, Pro notification tests, the live capture scheduler journey, and the
+  connected dictation overlay prove explicit Screen Recording and Accessibility requests,
+  non-prompting health polls, media admission, live recovery, and native notification `.show()`.
+  Granting all four TCC permissions in the signed app and checking relaunch prompts remains manual.
 - #17 - Text model downloads. `model-download-matrix.integration.test.ts` streams deterministic
   GGUF bytes through the production manager's HTTP boundary, verifies observable progress and
   atomic promotion, then activates the installed catalog model through the real selection owner.
@@ -164,6 +191,16 @@ manual claim does not count as complete integration coverage.
 - #96 - Manual meeting recording. `MeetingsScreen.integration.test.tsx` renders the real screen and
   recorder hook, clicks Record then Stop, and proves exactly one sane-duration completed meeting is
   visible with capture inactive.
+- #97 - Meeting transcript and summary. Pro `meeting-persistence.dbtest.ts` sends synthetic WAV
+  bytes through production ffmpeg and Whisper selection, persists the exact transcript, sends it to
+  the local summary boundary, verifies the returned recap retains the named owner, deadline, and
+  next step, folds both into memory, and restores the completed meeting after relaunch.
+- #99 - Global dictation hotkey. Pro `dictation-paste-failure.ui.integration.dbtest.ts` connects the
+  production shortcut controller, overlay, recorder, STT, IPC, and database; it proves one
+  Option+Space toggle lifecycle, correct rebind/unregister behavior, and complete resource teardown.
+- #100 - Dictation pastes at cursor. The same connected journey captures the target app, sends the
+  exact transcript once through the native paste boundary, preserves it in the saved recording,
+  and restores the prior clipboard. Real TextEdit caret placement remains a signed-device check.
 - #112 - Approval queue gates actions. `approvals.integration.test.ts` exercises real proposal,
   decision, execution, failure, and audit persistence against SQLite.
 - #116 - CRM processing tolerates schema upgrades. `crm-schema-upgrade.dbtest.ts` creates a real
@@ -186,6 +223,10 @@ manual claim does not count as complete integration coverage.
   other owning stores: they change software-update, capture-privacy, identity, and proactive
   delivery settings over real encrypted SQLite, close the database, reload every Off Grid module,
   rehydrate each owner, and verify every value restores.
+- #134 - Clear cache preserves user data. `cache-cleanup.integration.test.ts` and the rendered
+  Storage journey exercise the production control through IPC and prove its allowlist can reach
+  only Electron's `cache` data type. Chats, projects, models, vault, settings, entitlement, and
+  unknown app files are unreachable by construction; success and failure states are both visible.
 - #135 - Delete category is scoped. The real SQLite/filesystem integration deletes the Chats
   category through `clearCategory` and proves memory, projects, connectors, encrypted tokens,
   models, and unrelated personal files remain.
@@ -215,6 +256,15 @@ manual claim does not count as complete integration coverage.
   native llama executable boundary while a real gateway request waits, proves the production service
   marks it down, starts exactly one replacement, and returns the recovered chat response. Teardown
   verifies the gateway/model ports rebind and every owned child process exits.
+- #148 - Low disk space is handled. Model and artifact integrations constrain only disposable OS
+  write boundaries, force mid-stream `ENOSPC`, and prove the active partial is removed, resumable
+  network partials are retained, artifact JSON uses atomic promotion, and existing model and
+  artifact bytes remain readable.
+- #155 - No private data in release evidence. Both Core and Pro screenshot harnesses now consume
+  `release-evidence-profile.mjs`, which rejects non-temporary profiles, strips hostile inherited
+  profile/seed variables, and enables only the synthetic seeders. The integration probe proves a
+  real user-data path cannot be selected; the defect where Core's tour opened the default profile
+  is fixed.
 
 ## Covered P1 journeys
 
@@ -446,15 +496,10 @@ manual claim does not count as complete integration coverage.
 
 - #1 - Core DMG installs cleanly.
 - #2 - Pro DMG installs cleanly.
-- #4 - Core and Pro artifact separation.
-- #5 - Packaged helper binaries exist.
-- #6 - Packaged llama dependency closure.
-- #7 - Upgrade preserves user data.
 
 ## Left - onboarding and health
 
 - #12 - Onboarding resumes after relaunch.
-- #15 - Required permissions granted.
 - #16 - Denied permission is recoverable.
 
 ## Left - models and downloads
@@ -476,12 +521,6 @@ manual claim does not count as complete integration coverage.
 - #88 - Replay playback uses media server.
 - #93 - Day links open correct records.
 
-## Left - meetings, voice, and dictation
-
-- #97 - Meeting transcript and summary.
-- #99 - Global dictation hotkey.
-- #100 - Dictation pastes at cursor.
-
 ## Left - entities, actions, and reflection
 
 - #114 - Notifications open their target.
@@ -490,24 +529,10 @@ manual claim does not count as complete integration coverage.
 
 - #123 - Clipboard popup hotkey.
 
-## Left - settings, privacy, licensing, and updates
-
-- #134 - Clear cache preserves user data.
-
-## Left - resilience and desktop polish
-
-- #148 - Low disk space is handled.
-- #155 - No private data in release evidence.
-
 ## Next implementation order
 
-- P0 deterministic integration gaps first: chat streaming/cancellation/isolation, project document
-  grounding, connector approval and cancellation, capture-to-OCR-to-memory, meeting recording and
-  transcription, clipboard text restore, privacy deletion completeness, and settings persistence.
-- P0 boundary rigs next: model download interruption/disk failure, offline local use, engine restart,
-  low disk, packaged artifact closure, upgrade preservation, and licensing cache behavior.
-- P1 and P2 after their owning P0 seams are green, reusing the same real harnesses rather than
-  adding parallel mocks.
-- Manual-only packaged, TCC, global-hotkey, cross-app paste, resize, accessibility, and release
-  evidence checks remain explicit release blockers until their automation or signed manual evidence
-  exists.
+- Run #1 and #2 against the signed, notarized Core and Pro DMGs on the release Mac.
+- Complete the signed-device permission, global-hotkey, TextEdit paste, full-volume, and installer
+  replacement confirmations recorded beside their integration-covered journeys.
+- Resume the remaining P1 and P2 seams only after the P0 release-device pass, reusing the same real
+  harnesses rather than adding parallel mocks.
