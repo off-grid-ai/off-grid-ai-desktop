@@ -103,6 +103,49 @@ printf '%s\n' "$APP" > "$DMG_SMOKE_CAPTURE"
     expect(fs.existsSync(installedApp)).toBe(false)
   }, 30_000)
 
+  it('uses the isolated packaged UI smoke by default with the copied executable', () => {
+    const source = path.join(root, 'source')
+    fs.mkdirSync(source)
+    createAppBundle(source)
+    const dmg = path.join(root, 'OffGrid-default-smoke.dmg')
+    createDmg(source, dmg)
+
+    const capture = path.join(root, 'default-smoke-capture.txt')
+    const binDir = path.join(root, 'bin')
+    fs.mkdirSync(binDir)
+    fs.writeFileSync(
+      path.join(binDir, 'node'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+test "$1" = "$EXPECTED_SMOKE_TEST"
+: "\${APP_BIN:?missing copied executable path}"
+: "\${OFFGRID_DMG_MOUNT_POINT:?missing mount point}"
+case "$APP_BIN" in /Applications/*) exit 21 ;; esac
+test -x "$APP_BIN"
+test ! -e "$OFFGRID_DMG_MOUNT_POINT/Off Grid AI Desktop.app"
+printf '%s\n' "$APP_BIN" > "$DMG_SMOKE_CAPTURE"
+`
+    )
+    fs.chmodSync(path.join(binDir, 'node'), 0o755)
+
+    const result = spawnSync('bash', [VERIFIER, dmg], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+        EXPECTED_SMOKE_TEST: path.join(REPO_ROOT, 'scripts', 'smoke-test.mjs'),
+        DMG_SMOKE_CAPTURE: capture
+      }
+    })
+
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
+    const installedExecutable = fs.readFileSync(capture, 'utf8').trim()
+    expect(installedExecutable).toMatch(
+      /\/install\/Off Grid AI Desktop\.app\/Contents\/MacOS\/Off Grid AI Desktop$/
+    )
+    expect(fs.existsSync(installedExecutable)).toBe(false)
+  }, 30_000)
+
   it('rejects an ambiguous image instead of silently choosing one app', () => {
     const source = path.join(root, 'source')
     fs.mkdirSync(source)

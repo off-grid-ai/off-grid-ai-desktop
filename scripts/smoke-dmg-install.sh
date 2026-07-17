@@ -2,7 +2,8 @@
 # Verify the install path users actually receive from a macOS DMG without writing to
 # /Applications. The image is mounted read-only, its single canonical app bundle is
 # copied with ditto into a throwaway install directory, the source image is detached,
-# and the existing packaged-app smoke runs against the copied bundle.
+# and the existing packaged UI smoke runs against the copied bundle on a fresh
+# temporary profile.
 #
 # Usage:
 #   npm run smoke:dmg -- dist/OffGrid-0.0.38.dmg
@@ -10,13 +11,15 @@
 # Env:
 #   DMG_SMOKE_RUNNER=<shell script>  Override only the final launch/smoke boundary.
 #                                    The runner receives APP=<copied .app path>.
+#                                    Set scripts/smoke-packaged.sh for the deeper
+#                                    model/runtime smoke when its prerequisites exist.
 
 set -euo pipefail
 
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DMG_PATH="${1:-${DMG:-}}"
 EXPECTED_APP_NAME="${EXPECTED_APP_NAME:-Off Grid AI Desktop.app}"
-SMOKE_RUNNER="${DMG_SMOKE_RUNNER:-$REPO_ROOT/scripts/smoke-packaged.sh}"
+SMOKE_RUNNER="${DMG_SMOKE_RUNNER:-}"
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "[dmg-smoke] macOS is required because DMG mounting uses hdiutil" >&2
@@ -26,7 +29,7 @@ if [ -z "$DMG_PATH" ] || [ ! -f "$DMG_PATH" ]; then
   echo "[dmg-smoke] pass an existing DMG path as the first argument or DMG=<path>" >&2
   exit 2
 fi
-if [ ! -f "$SMOKE_RUNNER" ]; then
+if [ -n "$SMOKE_RUNNER" ] && [ ! -f "$SMOKE_RUNNER" ]; then
   echo "[dmg-smoke] smoke runner not found: $SMOKE_RUNNER" >&2
   exit 2
 fi
@@ -85,6 +88,12 @@ fi
 hdiutil detach "$MOUNT_POINT" >/dev/null
 ATTACHED=0
 
-echo "[dmg-smoke] detached source; running packaged smoke against copied app"
-APP="$INSTALLED_APP" OFFGRID_DMG_MOUNT_POINT="$MOUNT_POINT" bash "$SMOKE_RUNNER"
+echo "[dmg-smoke] detached source; running packaged UI smoke against copied app"
+if [ -n "$SMOKE_RUNNER" ]; then
+  APP="$INSTALLED_APP" OFFGRID_DMG_MOUNT_POINT="$MOUNT_POINT" bash "$SMOKE_RUNNER"
+else
+  APP_BIN="$INSTALLED_APP/Contents/MacOS/$BUNDLE_EXECUTABLE" \
+    OFFGRID_DMG_MOUNT_POINT="$MOUNT_POINT" \
+    node "$REPO_ROOT/scripts/smoke-test.mjs"
+fi
 echo "[dmg-smoke] installed-copy smoke passed"
