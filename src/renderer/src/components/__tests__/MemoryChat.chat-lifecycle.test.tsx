@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// RELEASE_TEST_CHECKLIST #38-#42, #47-#48 - chat lifecycle integration coverage.
+// RELEASE_TEST_CHECKLIST #36-#42, #47-#48 - chat lifecycle integration coverage.
 //
 // These tests mount the real MemoryChat and drive its real composer, queue, stop,
 // conversation switching, project selection, stream routing, and persistence paths.
@@ -20,6 +20,10 @@ import { TooltipProvider } from '../ui/tooltip'
 }
 
 type StreamEvent = { streamId: string; type: 'content' | 'reasoning' | 'step'; text?: string }
+type ThinkSplitter = { push: (text: string) => void; answer: () => string }
+type ThinkSplitterFactory = (
+  emit: (event: { text: string; kind: 'content' | 'reasoning' }) => void
+) => ThinkSplitter
 type RagResult = { answer: string; context: { unified: unknown[] } }
 type StoredMessage = { id: number; role: 'user' | 'assistant'; content: string; context?: unknown }
 type Conversation = {
@@ -46,6 +50,8 @@ function deferred<T>(): {
 }
 
 class ChatBoundary {
+  constructor(private readonly createSplitter?: ThinkSplitterFactory) {}
+
   readonly projects = [
     { id: 'project-alpha', name: 'Project Alpha' },
     { id: 'project-beta', name: 'Project Beta' }
@@ -69,12 +75,14 @@ class ChatBoundary {
     conversationId: string
     noMemory: boolean
     streamId: string
+    thinking: boolean
     turn: ReturnType<typeof deferred<RagResult>>
   }[] = []
 
   readonly speechTurns: ReturnType<typeof deferred<{ dataUrl: string }>>[] = []
 
   private streamCallback: ((event: StreamEvent) => void) | null = null
+  private readonly rawSplitters = new Map<number, ThinkSplitter>()
   private nextMessageId = 10
   private pendingUserWrite: ReturnType<typeof deferred<void>> | null = null
 
@@ -163,7 +171,8 @@ class ChatBoundary {
         projectId?: string | null,
         conversationId?: string,
         noMemory?: boolean,
-        streamId?: string
+        streamId?: string,
+        thinking?: boolean
       ) => {
         const turn = deferred<RagResult>()
         this.calls.push({
@@ -172,6 +181,7 @@ class ChatBoundary {
           conversationId: conversationId!,
           noMemory: noMemory ?? false,
           streamId: streamId!,
+          thinking: thinking ?? false,
           turn
         })
         return turn.promise
@@ -190,6 +200,29 @@ class ChatBoundary {
   emit(callIndex: number, text: string): void {
     const call = this.calls[callIndex]!
     this.streamCallback?.({ streamId: call.streamId, type: 'content', text })
+  }
+
+  emitReasoning(callIndex: number, text: string): void {
+    const call = this.calls[callIndex]!
+    this.streamCallback?.({ streamId: call.streamId, type: 'reasoning', text })
+  }
+
+  emitRaw(callIndex: number, text: string): void {
+    const call = this.calls[callIndex]!
+    let splitter = this.rawSplitters.get(callIndex)
+    if (!splitter) {
+      if (!this.createSplitter) throw new Error('Raw stream parser is not installed')
+      splitter = this.createSplitter((event) => {
+        this.streamCallback?.({ streamId: call.streamId, type: event.kind, text: event.text })
+      })
+      this.rawSplitters.set(callIndex, splitter)
+    }
+    splitter.push(text)
+  }
+
+  resolveRaw(callIndex: number): void {
+    const answer = this.rawSplitters.get(callIndex)?.answer() ?? ''
+    this.resolve(callIndex, answer)
   }
 
   resolve(callIndex: number, answer: string): void {
@@ -234,7 +267,7 @@ async function send(text: string, user: ReturnType<typeof userEvent.setup>): Pro
   await user.click(screen.getByRole('button', { name: /^send$/i }))
 }
 
-describe('<MemoryChat/> - chat lifecycle integration (#38-#42, #47-#48)', () => {
+describe('<MemoryChat/> - chat lifecycle integration (#36-#42, #47-#48)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     ;(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {}
@@ -247,6 +280,60 @@ describe('<MemoryChat/> - chat lifecycle integration (#38-#42, #47-#48)', () => 
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
+  })
+
+  it('renders streamed reasoning separately from the final answer when Thinking is enabled (#36)', async () => {
+    const boundary = new ChatBoundary()
+    installBoundary(boundary)
+    const user = userEvent.setup()
+    renderChat({ conversationId: 'conversation-a' })
+
+    await user.click(await screen.findByRole('button', { name: 'Thinking' }))
+    await send('Compare the two release plans', user)
+    await waitFor(() => expect(boundary.calls).toHaveLength(1))
+    expect(boundary.calls[0]!.thinking).toBe(true)
+
+    boundary.emitReasoning(0, 'First compare risk, then reversibility.')
+    boundary.emit(0, 'Choose plan B because it is reversible.')
+
+    expect(await screen.findByText('Thinking…')).toBeTruthy()
+    expect(screen.getByText('First compare risk, then reversibility.')).toBeTruthy()
+    expect(screen.getByText('Choose plan B because it is reversible.')).toBeTruthy()
+
+    boundary.resolve(0, 'Choose plan B because it is reversible.')
+
+    expect(await screen.findByRole('button', { name: /thought process/i })).toBeTruthy()
+    expect(screen.getByText('Choose plan B because it is reversible.')).toBeTruthy()
+    expect(screen.queryByText(/<\/?think>/i)).toBeNull()
+  })
+
+  it('strips inline think markers from a plain reply through the real stream parser (#37)', async () => {
+    const parserPath = ['../../../../main/llm', 'sse-stream'].join('/')
+    const parser = await vi.importActual<{ createThinkSplitter: ThinkSplitterFactory }>(parserPath)
+    const boundary = new ChatBoundary(parser.createThinkSplitter)
+    installBoundary(boundary)
+    const user = userEvent.setup()
+    renderChat({ conversationId: 'conversation-a' })
+
+    await send('Give me the direct release status', user)
+    await waitFor(() => expect(boundary.calls).toHaveLength(1))
+    expect(boundary.calls[0]!.thinking).toBe(false)
+
+    boundary.emitRaw(0, '<think>internal parser state')
+    boundary.emitRaw(0, '</think>The release checks are green.')
+    boundary.resolveRaw(0)
+
+    expect(await screen.findByText('The release checks are green.')).toBeTruthy()
+    expect(screen.queryByText(/<think>|<\/think>/i)).toBeNull()
+    expect(screen.queryByText(/internal parser state<\/think>/i)).toBeNull()
+    await waitFor(() =>
+      expect(
+        boundary.messages['conversation-a']!.some(
+          (message) =>
+            message.role === 'assistant' && message.content === 'The release checks are green.'
+        )
+      ).toBe(true)
+    )
   })
 
   it('does not play a canceled synthesis and stops active speech on navigation (#106)', async () => {
