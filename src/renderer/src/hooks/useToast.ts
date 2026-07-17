@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 
-export interface ToastRequest {
+interface ToastRequest {
   message: string
   actionLabel?: string
   onAction?: () => void
