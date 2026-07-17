@@ -43,6 +43,7 @@ import {
   resolveExistingOwnedPath,
   resolveOwnedDestination
 } from './imagegen/owned-path'
+import { IMAGE_CANCELLED_MESSAGE, ImageGenerationLifecycle } from './imagegen/generation-lifecycle'
 
 function findSdCli(): string | null {
   for (const r of binRoots()) {
@@ -422,20 +423,22 @@ export interface ImageGenProgress {
   phase?: 'sampling' | 'decoding'
 }
 
-let running = false
 let currentChild: ChildProcess | null = null
-let cancelled = false
+const generationLifecycle = new ImageGenerationLifecycle()
 
 /** Kill an in-progress generation. Returns true if one was running. */
 export function cancelImageGen(): boolean {
   cancelMflux() // no-op if mflux isn't the active runtime
   void sdServer.cancelCurrent() // cancels the in-flight job on the resident server (no-op if idle)
+  if (!generationLifecycle.cancel()) return false
+  // Cancellation owns the whole generation lifecycle, including the memory-reclaim
+  // delay and native-server startup windows before a child/request exists. Recording
+  // intent only when currentChild was set let Stop return true, then launch sd-cli
+  // after the user had already cancelled.
   if (currentChild) {
-    cancelled = true
     currentChild.kill('SIGKILL')
-    return true
   }
-  return running // mflux/persistent-server gen has no currentChild but sets running
+  return true // mflux/persistent-server gen has no currentChild but still owns the lifecycle
 }
 
 /**
@@ -458,7 +461,9 @@ async function runImageGen(
   params: ImageGenParams,
   onProgress?: (p: ImageGenProgress & { preview?: string }) => void
 ): Promise<ImageGenOutput> {
-  if (running) throw new Error('An image is already generating — please wait for it to finish.')
+  if (generationLifecycle.isRunning()) {
+    throw new Error('An image is already generating — please wait for it to finish.')
+  }
   if (!params.prompt.trim()) throw new Error('A prompt is required.')
 
   // --- MLX / mflux runtime branch (FLUX / Z-Image with native LoRA) ----------
@@ -470,11 +475,10 @@ async function runImageGen(
     const outDir = path.join(dataDir(), 'generated-images')
     fs.mkdirSync(outDir, { recursive: true })
     const outPath = path.join(outDir, `img-${String(Date.now())}.png`)
-    running = true
-    cancelled = false
+    generationLifecycle.start()
     // Give the OS a moment to reclaim the freed LLM pages before the image load spike.
-    await new Promise((r) => setTimeout(r, 2500))
     try {
+      await generationLifecycle.waitForMemoryReclaim()
       await runMflux(
         {
           prompt: params.prompt,
@@ -504,7 +508,7 @@ async function runImageGen(
         model: def.label
       }
     } finally {
-      running = false
+      generationLifecycle.finish()
       currentChild = null
       // LLM warm-back-up happens once in the generateImage() wrapper's finally.
     }
@@ -624,14 +628,14 @@ async function runImageGen(
     const { defaultSize, defaultSteps, defaultCfg, sampler, scheduler } =
       standardModelDefaults(base)
     const taesd = params.fastVae ? resolveTaesd(base) : undefined
-    running = true
-    cancelled = false
+    generationLifecycle.start()
     try {
       await sdServer.ensureUp({
         modelPath: model,
         diffusionFa: true,
         taesdPath: taesd ?? undefined
       })
+      generationLifecycle.throwIfCancelled()
       const { png, seed: usedSeed } = await sdServer.generate(
         {
           prompt: params.prompt,
@@ -654,7 +658,7 @@ async function runImageGen(
         model: base
       }
     } finally {
-      running = false
+      generationLifecycle.finish()
       currentChild = null
     }
   }
@@ -791,8 +795,7 @@ async function runImageGen(
     args.push('--lora-model-dir', loraDir())
   }
 
-  running = true
-  cancelled = false
+  generationLifecycle.start()
   // CRITICAL on Apple Silicon (unified memory): the LLM (gemma) and the image
   // model can't both be resident — together they overflow RAM and the whole
   // system swaps/hangs. The ModalityQueue has already evicted the LLM (evicts:
@@ -800,8 +803,8 @@ async function runImageGen(
   // tier-2 job holds the slot.
   // Give the OS time to actually reclaim the freed LLM pages before the image
   // model's load spike — otherwise the brief overlap causes a short stutter.
-  await new Promise((r) => setTimeout(r, 2500))
   try {
+    await generationLifecycle.waitForMemoryReclaim()
     await new Promise<void>((resolve, reject) => {
       // cwd at the binary dir so @executable_path rpath resolves libstable-diffusion.dylib.
       const child = spawn(cli, args, { cwd: path.dirname(cli) })
@@ -830,8 +833,8 @@ async function runImageGen(
       child.stderr.on('data', capture)
       child.on('error', reject)
       child.on('close', (code) => {
-        if (cancelled) {
-          reject(new Error('Image generation cancelled.'))
+        if (generationLifecycle.isCancelled()) {
+          reject(new Error(IMAGE_CANCELLED_MESSAGE))
         } else if (code === 0) {
           // stash the resolved seed for the caller via closure
           ;(params as ImageGenParams & { _seed?: number })._seed = progress.resolvedSeed
@@ -852,7 +855,7 @@ async function runImageGen(
       model: path.basename(model)
     }
   } finally {
-    running = false
+    generationLifecycle.finish()
     currentChild = null
     fs.promises.unlink(previewPath).catch(() => {})
     // LLM warm-back-up happens once in the generateImage() wrapper's finally

@@ -1372,6 +1372,12 @@ export function MemoryChat({
           window.api.generateImage &&
           !cancelledRef.current.has(convId)
         ) {
+          // The tool loop has finished its text answer and handed ownership to the
+          // deferred image job. Mark that ownership exactly like explicit image mode
+          // so the rendered Stop control cancels imagegen (not the already-finished
+          // RAG stream) and remains scoped to this conversation.
+          setImgProgress(null)
+          setImageGenConv(convId)
           try {
             const img = await window.api.generateImage({
               prompt: tr.imageRequest.prompt,
@@ -1402,6 +1408,9 @@ export function MemoryChat({
             } catch {
               /* ignore */
             }
+          } finally {
+            setImgProgress(null)
+            setImageGenConv((owner) => (owner === convId ? null : owner))
           }
           return
         }

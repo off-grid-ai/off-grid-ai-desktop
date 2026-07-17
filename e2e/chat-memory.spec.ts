@@ -23,6 +23,7 @@ import type { ChildProcess } from 'child_process'
 let app: ElectronApplication
 let page: Page
 let userDataDir: string
+let modelBoundaryBinDir: string | undefined
 
 const launchApp = async (): Promise<void> => {
   app = await electron.launch({
@@ -31,7 +32,8 @@ const launchApp = async (): Promise<void> => {
       ...process.env,
       OFFGRID_USER_DATA: userDataDir,
       OFFGRID_PRO: '1',
-      NODE_ENV: 'production'
+      NODE_ENV: 'production',
+      ...(modelBoundaryBinDir ? { OFFGRID_BIN_DIR: modelBoundaryBinDir } : {})
     }
   })
   page = await app.firstWindow()
@@ -81,8 +83,16 @@ const enterChat = async (): Promise<void> => {
   await page.keyboard.press('Escape')
 }
 
+const dismissCapturePrompt = async (): Promise<void> => {
+  const dismiss = page.getByRole('button', { name: 'Dismiss', exact: true })
+  await expect(dismiss).toBeVisible()
+  await dismiss.click()
+  await expect(dismiss).toBeHidden()
+}
+
 test.beforeEach(async () => {
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-chat-e2e-'))
+  modelBoundaryBinDir = undefined
   await launchApp()
   await enterChat()
 })
@@ -306,6 +316,91 @@ test('conversations, messages, scopes, and project associations survive relaunch
       context: JSON.stringify({ projectId: seeded.projectId })
     }
   ])
+})
+
+test('cancelling a tool-owned image keeps its text answer after a full relaunch', async () => {
+  // Re-launch against faithful native-process boundaries. The production LLMService
+  // spawns the fake llama executable and speaks real HTTP/SSE; imagegen spawns the
+  // fake sd-cli and must kill it through the rendered Stop control. SQLite, IPC,
+  // toolChat, MemoryChat, and the process relaunch are all real Off Grid code.
+  await closeApp()
+
+  const modelsDir = path.join(userDataDir, 'models')
+  modelBoundaryBinDir = path.join(userDataDir, 'e2e-model-bin')
+  const llamaDir = path.join(modelBoundaryBinDir, 'llama')
+  const sdDir = path.join(modelBoundaryBinDir, 'sd')
+  fs.mkdirSync(modelsDir, { recursive: true })
+  fs.mkdirSync(llamaDir, { recursive: true })
+  fs.mkdirSync(sdDir, { recursive: true })
+
+  const writeGguf = (filename: string, marker = ''): void => {
+    const bytes = Buffer.alloc(2048)
+    bytes.write('GGUF')
+    bytes.write(marker, 16)
+    fs.writeFileSync(path.join(modelsDir, filename), bytes)
+  }
+  writeGguf('fake-chat.gguf')
+  writeGguf('sdxl-lightning-e2e.gguf', 'first_stage_model text_encoder')
+  fs.writeFileSync(
+    path.join(modelsDir, 'active-model.json'),
+    JSON.stringify({ id: 'e2e-chat', primary: 'fake-chat.gguf' })
+  )
+
+  const installExecutable = (fixture: string, destination: string): void => {
+    fs.copyFileSync(path.join(process.cwd(), 'e2e', 'fixtures', fixture), destination)
+    fs.chmodSync(destination, 0o755)
+  }
+  installExecutable('fake-llama-server.mjs', path.join(llamaDir, 'llama-server'))
+  installExecutable('fake-sd-cli.mjs', path.join(sdDir, 'sd-cli'))
+
+  await launchApp()
+  await page.evaluate(async () => {
+    await window.api.saveSetting('composerToolsOn', true)
+    await window.api.setActiveModalModel('image', 'sdxl-lightning-e2e.gguf')
+  })
+  await enterChat()
+  await dismissCapturePrompt()
+
+  const composer = page.getByPlaceholder(/ask anything/i)
+  await composer.fill('Summarize my week and draw a chart')
+  await page.keyboard.press('Enter')
+
+  const answer = page.getByText('Here is your weekly summary.', { exact: true })
+  await expect(answer).toBeVisible()
+  const stopImage = page.getByRole('button', { name: 'Stop', exact: true })
+  await expect(stopImage).toBeVisible()
+  await stopImage.click()
+  await expect(stopImage).toBeHidden()
+
+  const readPersistedTurn = async (): Promise<string[][]> =>
+    page.evaluate(async () => {
+      const conversations = await window.api.getRagConversations()
+      for (const conversation of conversations) {
+        const messages = await window.api.getRagMessages(conversation.id)
+        if (messages.some((message) => message.content === 'Summarize my week and draw a chart')) {
+          return messages.map((message) => [message.role, message.content])
+        }
+      }
+      return []
+    })
+  await expect.poll(readPersistedTurn).toEqual([
+    ['user', 'Summarize my week and draw a chart'],
+    ['assistant', 'Here is your weekly summary.']
+  ])
+
+  await closeApp()
+  await launchApp()
+  await enterChat()
+
+  // Terminal artifact: a newly created renderer, backed by the re-opened SQLite
+  // database in a new Electron main process, paints the exact completed text turn.
+  await expect(page.getByText('Here is your weekly summary.', { exact: true })).toBeVisible()
+  await expect(
+    page
+      .locator('p')
+      .filter({ hasText: /^Summarize my week and draw a chart$/ })
+      .last()
+  ).toBeVisible()
 })
 
 test('cold relaunch after a forced quit boots cleanly and keeps committed chat data', async () => {
