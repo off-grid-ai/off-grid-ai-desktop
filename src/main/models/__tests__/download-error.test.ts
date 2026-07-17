@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { downloadFailureMessage, NETWORK_UNAVAILABLE_MESSAGE } from '../download-error'
+import {
+  downloadFailureMessage,
+  isStorageCapacityError,
+  NETWORK_UNAVAILABLE_MESSAGE
+} from '../download-error'
 
 describe('downloadFailureMessage', () => {
   it.each(['ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH'])(
@@ -22,6 +26,19 @@ describe('downloadFailureMessage', () => {
     expect(downloadFailureMessage(new Error('ENOSPC: no space left on device'))).toBe(
       'ENOSPC: no space left on device'
     )
+  })
+
+  it.each(['ENOSPC', 'EDQUOT'])('recognizes an outer %s storage-capacity error', (code) => {
+    expect(isStorageCapacityError(Object.assign(new Error('write failed'), { code }))).toBe(true)
+  })
+
+  it('recognizes a nested storage-capacity cause without misclassifying other errors', () => {
+    const cause = Object.assign(new Error('quota exhausted'), { code: 'EDQUOT' })
+
+    expect(isStorageCapacityError(Object.assign(new Error('write failed'), { cause }))).toBe(true)
+    expect(
+      isStorageCapacityError(Object.assign(new Error('permission denied'), { code: 'EACCES' }))
+    ).toBe(false)
   })
 
   it('preserves a non-Error thrown value as text', () => {

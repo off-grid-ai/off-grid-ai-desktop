@@ -31,17 +31,37 @@ function bundleText(dir: string): string {
     .join('\n')
 }
 
+/** Repository-owned source modules Rollup resolved into an artifact. Sourcemaps are
+ * build metadata emitted only for this test; unlike sentinel bundle strings, their
+ * complete source lists fail when any new private module leaks into the core graph. */
+function repositorySources(dir: string): Set<string> {
+  const sources = filesBelow(dir)
+    .filter((file) => file.endsWith('.map'))
+    .flatMap((mapFile) => {
+      const map = JSON.parse(fs.readFileSync(mapFile, 'utf8')) as { sources?: string[] }
+      return (map.sources ?? []).map((source) => path.resolve(path.dirname(mapFile), source))
+    })
+    .filter((source) => source.startsWith(`${root}${path.sep}`))
+    .map((source) => path.relative(root, source).split(path.sep).join('/'))
+
+  return new Set(sources)
+}
+
 function writeExecutable(file: string, source: string): void {
   fs.writeFileSync(file, source, { mode: 0o755 })
 }
 
 async function buildArtifact(outDir: string, forceCore: '0' | '1'): Promise<void> {
-  await execFileAsync(electronVite, ['build', '--outDir', outDir, '--logLevel', 'error'], {
-    cwd: root,
-    env: { ...process.env, OFFGRID_FORCE_CORE: forceCore },
-    maxBuffer: 10 * 1024 * 1024,
-    timeout: BUILD_TIMEOUT_MS
-  })
+  await execFileAsync(
+    electronVite,
+    ['build', '--outDir', outDir, '--sourcemap', '--logLevel', 'error'],
+    {
+      cwd: root,
+      env: { ...process.env, OFFGRID_FORCE_CORE: forceCore },
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: BUILD_TIMEOUT_MS
+    }
+  )
 }
 
 type LlamaFixtureMode = 'healthy' | 'missing-rpath' | 'foreign-dependency'
@@ -138,8 +158,22 @@ describe.sequential('release packaging integration', () => {
   it('builds a core artifact with the locked shell but without private implementation', () => {
     const coreFiles = filesBelow(coreOut).map((file) => path.basename(file))
     const core = bundleText(coreOut)
+    const coreSources = repositorySources(coreOut)
+    const privateSources = [...coreSources].filter((source) => source.startsWith('pro/'))
 
     expect(coreFiles.some((file) => file.startsWith('proStub-'))).toBe(true)
+    expect(privateSources).toEqual([])
+    expect([...coreSources]).toEqual(
+      expect.arrayContaining([
+        'src/bootstrap/proStub.ts',
+        'src/main/bootstrap/loadProFeaturesMain.ts',
+        'src/main/bootstrap/pro-activation.ts',
+        'src/renderer/src/bootstrap/loadProFeaturesRenderer.ts',
+        'src/renderer/src/components/pro/UpgradeScreen.tsx',
+        'src/renderer/src/components/pro/proCatalog.ts',
+        'src/renderer/src/components/pro/proSettingsCatalog.ts'
+      ])
+    )
     expect(core).toContain('Unlock Pro')
     expect(core).not.toContain('[pro] main activated')
     expect(core).not.toContain('vault:status')
@@ -147,7 +181,19 @@ describe.sequential('release packaging integration', () => {
 
   it('builds the Pro artifact with its production activation and entitled implementation', () => {
     const pro = bundleText(proOut)
+    const proSources = repositorySources(proOut)
 
+    expect(proSources.has('src/bootstrap/proStub.ts')).toBe(false)
+    expect([...proSources]).toEqual(
+      expect.arrayContaining([
+        'src/main/bootstrap/loadProFeaturesMain.ts',
+        'src/main/bootstrap/pro-activation.ts',
+        'src/renderer/src/bootstrap/loadProFeaturesRenderer.ts',
+        'src/renderer/src/components/pro/UpgradeScreen.tsx',
+        'pro/main/index.ts',
+        'pro/renderer/index.tsx'
+      ])
+    )
     expect(pro).toContain('[pro] main activated')
     expect(pro).toContain('vault:status')
   })

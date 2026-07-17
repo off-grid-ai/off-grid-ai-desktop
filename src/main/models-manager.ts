@@ -8,7 +8,7 @@ import { llm } from './llm'
 import { isValidGgufFile } from './models/gguf'
 import { pumpToFile } from './models/download-pump'
 import { downloadIntegrityError } from './models/download-verify'
-import { downloadFailureMessage } from './models/download-error'
+import { downloadFailureMessage, isStorageCapacityError } from './models/download-error'
 import { getAllActiveModals, setActiveModal as setModal, type Modality } from './active-models'
 import {
   recordDownloaded,
@@ -164,11 +164,13 @@ export async function downloadModel(
     }
   }
 
+  let activePartPath: string | null = null
   try {
     for (const file of entry.files) {
       const dest = path.join(dir, file.name)
       if (fs.existsSync(dest) && fs.statSync(dest).size > 0) continue
       const partPath = `${dest}.part`
+      activePartPath = partPath
       // Resume from a partial .part if one exists (e.g. download interrupted by a
       // quit/crash) via an HTTP Range request, so we don't re-fetch GBs.
       let resumeFrom = 0
@@ -211,6 +213,7 @@ export async function downloadModel(
       const integrityErr = downloadIntegrityError(file.name, written, total, partPath)
       if (integrityErr) throw new Error(integrityErr)
       fs.renameSync(partPath, dest)
+      activePartPath = null
     }
     if (controller.signal.aborted) {
       send({ status: 'cancelled' })
@@ -230,6 +233,16 @@ export async function downloadModel(
     send({ percent: 100, status: 'completed' })
     return { success: true }
   } catch (err) {
+    // A capacity failure cannot resume until space is reclaimed, and retaining the
+    // bytes makes the full-volume condition worse. Other failures keep their
+    // partial file so retry can resume instead of downloading it again.
+    if (activePartPath && isStorageCapacityError(err)) {
+      try {
+        fs.rmSync(activePartPath, { force: true })
+      } catch {
+        /* retain the original write failure */
+      }
+    }
     if (controller.signal.aborted || (err as Error).name === 'AbortError') {
       send({ status: 'cancelled' })
       return { success: false, error: 'cancelled' }

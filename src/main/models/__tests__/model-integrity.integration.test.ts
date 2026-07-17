@@ -34,6 +34,35 @@ if (!primary || !diskFailure || !interrupted || !offline) {
   throw new Error('Model catalog needs four single-file text GGUF fixtures')
 }
 
+interface CapacityProbe {
+  acceptedBytes: number
+  partialExistedAtFailure: boolean
+}
+
+function capacityLimitedFileStream(
+  filePath: string,
+  capacity: number,
+  probe: CapacityProbe
+): fs.WriteStream {
+  let remaining = capacity
+  return new Writable({
+    write(chunk: Buffer, _encoding, callback) {
+      const accepted = chunk.subarray(0, remaining)
+      if (accepted.length > 0) fs.appendFileSync(filePath, accepted)
+      probe.acceptedBytes += accepted.length
+      remaining -= accepted.length
+      if (accepted.length === chunk.length) {
+        callback()
+        return
+      }
+      probe.partialExistedAtFailure = fs.statSync(filePath).size === probe.acceptedBytes
+      callback(
+        Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' })
+      )
+    }
+  }) as unknown as fs.WriteStream
+}
+
 beforeAll(() => {
   fs.mkdirSync(path.dirname(primary.filePath), { recursive: true })
 })
@@ -105,10 +134,8 @@ describe('model-manager GGUF integrity', () => {
   })
 
   it('contains and reports a disk-full write failure without disturbing installed state', async () => {
-    fs.writeFileSync(
-      primary.filePath,
-      Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(2_000)])
-    )
+    const installedBytes = Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(2_000, 3)])
+    fs.writeFileSync(primary.filePath, installedBytes)
     expect(await manager.listInstalled()).toContain(primary.entry.id)
 
     const body = Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(2_000)])
@@ -125,16 +152,10 @@ describe('model-manager GGUF integrity', () => {
     )
 
     const createWriteStream = fs.createWriteStream.bind(fs)
+    const capacityProbe: CapacityProbe = { acceptedBytes: 0, partialExistedAtFailure: false }
     vi.spyOn(fs, 'createWriteStream').mockImplementation((target, options) => {
       if (target === `${diskFailure.filePath}.part`) {
-        return new Writable({
-          write(_chunk, _encoding, callback) {
-            const error = Object.assign(new Error('ENOSPC: no space left on device, write'), {
-              code: 'ENOSPC'
-            })
-            callback(error)
-          }
-        }) as unknown as fs.WriteStream
+        return capacityLimitedFileStream(String(target), 512, capacityProbe)
       }
       return createWriteStream(target, options)
     })
@@ -147,6 +168,8 @@ describe('model-manager GGUF integrity', () => {
     })
     expect(fs.existsSync(diskFailure.filePath)).toBe(false)
     expect(fs.existsSync(`${diskFailure.filePath}.part`)).toBe(false)
+    expect(capacityProbe).toEqual({ acceptedBytes: 512, partialExistedAtFailure: true })
+    expect(fs.readFileSync(primary.filePath)).toEqual(installedBytes)
     expect(await manager.listInstalled()).toContain(primary.entry.id)
     expect(await manager.listInstalled()).not.toContain(diskFailure.entry.id)
     expect(manager.downloadStatus(diskFailure.entry.id)).toMatchObject({
