@@ -17,7 +17,7 @@ const conversation = {
   project_id: null,
   created_at: '2026-07-17T00:00:00.000Z',
   updated_at: '2026-07-17T00:00:00.000Z',
-  message_count: 2
+  message_count: 3
 }
 
 function installApi(): {
@@ -40,8 +40,9 @@ function installApi(): {
     getRagConversation: vi.fn(async () => conversation),
     getRagMessages: vi.fn(async () => [
       { id: 1, role: 'user', content: 'copy this exact text' },
+      { id: 2, role: 'assistant', content: 'assistant reply copied exactly' },
       {
-        id: 2,
+        id: 3,
         role: 'assistant',
         content: 'generated image',
         context: JSON.stringify({ image: '/tmp/generated.png' })
@@ -73,15 +74,16 @@ describe('<MemoryChat/> clipboard and preview accessibility', () => {
     ;(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {}
   })
 
-  it('falls back to the browser clipboard when the native bridge reports failure', async () => {
+  it('copies the exact assistant reply through the available clipboard boundary (#46)', async () => {
     const user = userEvent.setup()
     const { bridgeWrite, browserWrite } = installApi()
     renderConversation()
 
-    await user.click(await screen.findByTitle('Copy'))
+    const copyActions = await screen.findAllByTitle('Copy')
+    await user.click(copyActions[1]!)
 
-    await waitFor(() => expect(browserWrite).toHaveBeenCalledWith('copy this exact text'))
-    expect(bridgeWrite).toHaveBeenCalledWith('copy this exact text')
+    await waitFor(() => expect(browserWrite).toHaveBeenCalledWith('assistant reply copied exactly'))
+    expect(bridgeWrite).toHaveBeenCalledWith('assistant reply copied exactly')
     expect(screen.getByText('Copied')).toBeTruthy()
   })
 
@@ -92,7 +94,8 @@ describe('<MemoryChat/> clipboard and preview accessibility', () => {
     browserWrite.mockRejectedValueOnce(new Error('clipboard permission denied'))
     renderConversation()
 
-    await user.click(await screen.findByTitle('Copy'))
+    const copyActions = await screen.findAllByTitle('Copy')
+    await user.click(copyActions[0]!)
 
     await waitFor(() => expect(browserWrite).toHaveBeenCalledWith('copy this exact text'))
     expect(bridgeWrite).toHaveBeenCalledWith('copy this exact text')

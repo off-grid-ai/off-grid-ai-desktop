@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// RELEASE_TEST_CHECKLIST #38-#42 - chat lifecycle integration coverage.
+// RELEASE_TEST_CHECKLIST #38-#42, #47-#48 - chat lifecycle integration coverage.
 //
 // These tests mount the real MemoryChat and drive its real composer, queue, stop,
 // conversation switching, project selection, stream routing, and persistence paths.
@@ -102,6 +102,12 @@ class ChatBoundary {
     }
   )
 
+  readonly truncateRagMessages = vi.fn(async (conversationId: string, keepCount: number) => {
+    this.messages[conversationId] = (this.messages[conversationId] ?? []).slice(0, keepCount)
+    const conversation = this.conversations.find((item) => item.id === conversationId)
+    if (conversation) conversation.message_count = this.messages[conversationId]!.length
+  })
+
   readonly api = {
     isPro: false,
     imageGenStatus: vi.fn(async () => ({ available: false, models: [], active: '' })),
@@ -134,6 +140,7 @@ class ChatBoundary {
       if (conversation) conversation.project_id = projectId
     }),
     addRagMessage: this.addRagMessage,
+    truncateRagMessages: this.truncateRagMessages,
     saveArtifact: this.saveArtifact,
     getSettings: vi.fn(async () => ({})),
     saveSetting: vi.fn(async () => {}),
@@ -180,6 +187,10 @@ class ChatBoundary {
     this.calls[callIndex]!.turn.resolve({ answer, context: { unified: [] } })
   }
 
+  reject(callIndex: number, error: unknown): void {
+    this.calls[callIndex]!.turn.reject(error)
+  }
+
   private conversation(id: string, title: string, projectId: string | null): Conversation {
     return {
       id,
@@ -214,7 +225,7 @@ async function send(text: string, user: ReturnType<typeof userEvent.setup>): Pro
   await user.click(screen.getByRole('button', { name: /^send$/i }))
 }
 
-describe('<MemoryChat/> - chat lifecycle integration (#38-#42)', () => {
+describe('<MemoryChat/> - chat lifecycle integration (#38-#42, #47-#48)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     ;(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {}
@@ -378,5 +389,70 @@ describe('<MemoryChat/> - chat lifecycle integration (#38-#42)', () => {
       })
     )
     expect(await screen.findByText('Alpha result')).toBeTruthy()
+  })
+
+  it('regenerates from the same user turn without duplicating it (#47)', async () => {
+    const boundary = new ChatBoundary()
+    boundary.messages['conversation-a'] = [
+      { id: 20, role: 'user', content: 'Explain the release gate' },
+      { id: 21, role: 'assistant', content: 'Original explanation', context: { unified: [] } }
+    ]
+    boundary.conversations[0]!.message_count = 2
+    installBoundary(boundary)
+    const user = userEvent.setup()
+    renderChat({ conversationId: 'conversation-a' })
+
+    await user.click(await screen.findByRole('button', { name: /^regenerate$/i }))
+    await waitFor(() => expect(boundary.calls).toHaveLength(1))
+
+    expect(boundary.calls[0]).toMatchObject({
+      query: 'Explain the release gate',
+      projectId: 'project-alpha',
+      conversationId: 'conversation-a'
+    })
+    expect(boundary.truncateRagMessages).toHaveBeenCalledWith('conversation-a', 1)
+    expect(screen.getAllByText('Explain the release gate')).toHaveLength(1)
+
+    boundary.resolve(0, 'Updated explanation')
+
+    expect(await screen.findByText('Updated explanation')).toBeTruthy()
+    expect(screen.queryByText('Original explanation')).toBeNull()
+    expect(screen.getAllByText('Explain the release gate')).toHaveLength(1)
+    await waitFor(() =>
+      expect(
+        boundary.messages['conversation-a']!.map(({ role, content }) => [role, content])
+      ).toEqual([
+        ['user', 'Explain the release gate'],
+        ['assistant', 'Updated explanation']
+      ])
+    )
+  })
+
+  it('shows a failed turn, clears busy state, and permits the next send (#48)', async () => {
+    const boundary = new ChatBoundary()
+    installBoundary(boundary)
+    const user = userEvent.setup()
+    renderChat({ conversationId: 'conversation-a' })
+
+    await send('first turn fails', user)
+    await waitFor(() => expect(boundary.calls).toHaveLength(1))
+    boundary.reject(0, new Error('local model unavailable'))
+
+    expect(
+      await screen.findByText('Sorry, something went wrong while generating a response.')
+    ).toBeTruthy()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull()
+    )
+
+    await send('second turn succeeds', user)
+    await waitFor(() => expect(boundary.calls).toHaveLength(2))
+    boundary.resolve(1, 'Recovery answer')
+
+    expect(await screen.findByText('Recovery answer')).toBeTruthy()
+    expect(boundary.calls.map(({ query }) => query)).toEqual([
+      'first turn fails',
+      'second turn succeeds'
+    ])
   })
 })
