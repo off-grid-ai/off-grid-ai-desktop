@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 72 covered, 2 left.
-  - P1: 71 total, 69 covered, 2 left.
+  - P1: 71 total, 70 covered, 1 left.
   - P2: 10 total, 10 covered, 0 left.
-  - Overall: 155 total, 151 covered, 4 left.
+  - Overall: 155 total, 152 covered, 3 left.
 - P0 handoff status:
   - Every P0 journey with an automatable application seam is integration-covered.
   - #1 Core DMG install and #2 Pro DMG install remain release-device checks against the signed,
@@ -430,6 +430,10 @@ manual claim does not count as complete integration coverage.
   dismisses separate synthetic items through production encrypted SQLite and a real stdio MCP
   child, closes and reopens the profile, proves every status remains, and verifies stale or
   concurrent decisions cannot duplicate external execution or learning feedback.
+- #114 - Notifications open their target. Production notifications preserve typed approval,
+  action, and calendar targets across native and rendered delivery, wait for Pro routing readiness,
+  dedupe live and persisted copies, focus the primary window, and fail closed when a target is stale
+  instead of selecting an unrelated record.
 - #115 - Reflect uses real time ranges. `reflect.integration.test.ts` verifies real observation
   windows, dwell caps, category rollups, context switches, and seven-day aggregation.
 - #118 - Clipboard deduplicates repeated copy. `clipboard-store.integration.test.ts` exercises the
@@ -532,10 +536,6 @@ manual claim does not count as complete integration coverage.
 ## Left - onboarding and health
 
 - #12 - Onboarding resumes after relaunch.
-
-## Left - entities, actions, and reflection
-
-- #114 - Notifications open their target.
 
 ## Next implementation order
 
