@@ -11,7 +11,7 @@ manual claim does not count as complete integration coverage.
 - Covered by direct integration or E2E evidence: 23 - 16 P0, 6 P1, and 1 P2.
 - Left: 132 - including partially covered journeys whose exact release behavior is not yet proven.
 - Green gates today:
-  - `npm test`: 203 files passed, 1 skipped; 2,190 tests passed, 1 skipped.
+  - `npm test`: 202 files passed, 1 skipped; 2,190 tests passed, 1 skipped.
   - `npm run test:coverage`: 96.77% statements, 91.54% branches, 96.25% functions,
     97.55% lines.
   - `npm run test:db`: 13 files and 105 real SQLite integration tests passed; Electron ABI
