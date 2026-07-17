@@ -6,6 +6,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { Writable } from 'stream'
+import { NETWORK_UNAVAILABLE_MESSAGE } from '../download-error'
 
 const originalDataDir = process.env.OFFGRID_DATA_DIR
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-model-integrity-'))
@@ -20,9 +21,9 @@ const fixtures = CATALOG.flatMap((entry) => {
   return [{ entry, fileName: file.name, filePath: path.join(dataDir, 'models', file.name) }]
 })
 
-const [primary, diskFailure, interrupted] = fixtures
-if (!primary || !diskFailure || !interrupted) {
-  throw new Error('Model catalog needs three single-file text GGUF fixtures')
+const [primary, diskFailure, interrupted, offline] = fixtures
+if (!primary || !diskFailure || !interrupted || !offline) {
+  throw new Error('Model catalog needs four single-file text GGUF fixtures')
 }
 
 beforeAll(() => {
@@ -205,6 +206,53 @@ describe('model-manager GGUF integrity', () => {
     const finalRestart = await import('../../models-manager')
     expect(finalRestart.listDownloads().map((download) => download.modelId)).not.toContain(
       interrupted.entry.id
+    )
+  })
+
+  it('reports an offline download clearly and keeps retry plus installed state usable', async () => {
+    const validGguf = Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(2_000, 9)])
+    fs.writeFileSync(primary.filePath, validGguf)
+    expect(await manager.listInstalled()).toContain(primary.entry.id)
+
+    const offlineCause = Object.assign(new Error('getaddrinfo ENOTFOUND huggingface.co'), {
+      code: 'ENOTFOUND'
+    })
+    const offlineError = Object.assign(new TypeError('fetch failed'), { cause: offlineCause })
+    let attempts = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        if (attempts++ === 0) throw offlineError
+        return new Response(validGguf, {
+          status: 200,
+          headers: { 'content-length': String(validGguf.length) }
+        })
+      })
+    )
+
+    const firstAttempt = await manager.downloadModel(offline.entry.id)
+
+    expect(firstAttempt).toEqual({
+      success: false,
+      error: NETWORK_UNAVAILABLE_MESSAGE
+    })
+    expect(fs.existsSync(offline.filePath)).toBe(false)
+    expect(fs.existsSync(`${offline.filePath}.part`)).toBe(false)
+    expect(await manager.listInstalled()).not.toContain(offline.entry.id)
+    expect(await manager.listInstalled()).toContain(primary.entry.id)
+    expect(manager.downloadStatus(offline.entry.id)).toMatchObject({
+      modelId: offline.entry.id,
+      status: 'failed',
+      error: firstAttempt.error
+    })
+
+    const retry = await manager.retryDownload(offline.entry.id)
+
+    expect(retry).toEqual({ success: true })
+    expect(fs.readFileSync(offline.filePath)).toEqual(validGguf)
+    expect(fs.existsSync(`${offline.filePath}.part`)).toBe(false)
+    expect(await manager.listInstalled()).toEqual(
+      expect.arrayContaining([primary.entry.id, offline.entry.id])
     )
   })
 })

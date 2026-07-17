@@ -8,6 +8,7 @@ import { llm } from './llm'
 import { isValidGgufFile } from './models/gguf'
 import { pumpToFile } from './models/download-pump'
 import { downloadIntegrityError } from './models/download-verify'
+import { downloadFailureMessage } from './models/download-error'
 import { getAllActiveModals, setActiveModal as setModal, type Modality } from './active-models'
 import {
   recordDownloaded,
@@ -155,8 +156,9 @@ export async function downloadModel(
       send({ percent: 100, status: 'completed' })
       return { success: true }
     } catch (err) {
-      send({ status: 'failed', error: (err as Error).message })
-      return { success: false, error: (err as Error).message }
+      const error = downloadFailureMessage(err)
+      send({ status: 'failed', error })
+      return { success: false, error }
     } finally {
       controllers.delete(modelId)
     }
@@ -232,8 +234,9 @@ export async function downloadModel(
       send({ status: 'cancelled' })
       return { success: false, error: 'cancelled' }
     }
-    send({ status: 'failed', error: (err as Error).message })
-    return { success: false, error: (err as Error).message }
+    const error = downloadFailureMessage(err)
+    send({ status: 'failed', error })
+    return { success: false, error }
   } finally {
     controllers.delete(modelId)
   }
