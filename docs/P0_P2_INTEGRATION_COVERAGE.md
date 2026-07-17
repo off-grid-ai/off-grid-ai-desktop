@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 57 covered, 17 left.
-  - P1: 71 total, 48 covered, 23 left.
+  - P1: 71 total, 49 covered, 22 left.
   - P2: 10 total, 3 covered, 7 left.
-  - Overall: 155 total, 108 covered, 47 left.
+  - Overall: 155 total, 109 covered, 46 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -197,6 +197,10 @@ manual claim does not count as complete integration coverage.
 
 ## Covered P1 journeys
 
+- #8 - Window identity and product name. `product-identity.test.ts` locks package, builder, local
+  Core/Pro build, renderer document, and runtime bootstrap names to `Off Grid AI Desktop`;
+  `e2e/tour.spec.ts` launches the built Electron app and verifies both its visible window title and
+  Electron runtime name match that canonical product identity.
 - #18 - Vision model downloads. `model-download-matrix.integration.test.ts` proves a real catalog
   vision model remains unavailable until both weights and projector finish, then activates the exact
   primary/projector pair persisted by the production manager.
@@ -361,7 +365,6 @@ manual claim does not count as complete integration coverage.
 - #5 - Packaged helper binaries exist.
 - #6 - Packaged llama dependency closure.
 - #7 - Upgrade preserves user data.
-- #8 - Window identity and product name.
 
 ## Left - onboarding and health
 
