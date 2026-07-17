@@ -3,7 +3,8 @@ import {
   expect,
   _electron as electron,
   type ElectronApplication,
-  type Page
+  type Page,
+  type Locator
 } from '@playwright/test'
 import fs from 'fs'
 import os from 'os'
@@ -19,6 +20,51 @@ async function finishOnboarding(): Promise<void> {
     if (!(await button.isVisible().catch(() => false))) return
     await button.click()
   }
+}
+
+async function expectVisibleKeyboardFocus(locator: Locator, label: string): Promise<void> {
+  await expect(locator, `${label} receives focus in the expected order`).toBeFocused()
+  const primaryColor = await page.evaluate(() => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--og-primary)'
+    document.body.append(probe)
+    const color = getComputedStyle(probe).color
+    probe.remove()
+    return color
+  })
+  await expect
+    .poll(
+      () =>
+        locator.evaluate((element) => {
+          const style = getComputedStyle(element)
+          return {
+            focusVisible: element.matches(':focus-visible'),
+            outlineStyle: style.outlineStyle,
+            outlineWidth: style.outlineWidth,
+            outlineColor: style.outlineColor,
+            outlineOffset: style.outlineOffset
+          }
+        }),
+      { message: `${label} settles to the exact token-based focus treatment` }
+    )
+    .toEqual({
+      focusVisible: true,
+      outlineStyle: 'solid',
+      outlineWidth: '2px',
+      outlineColor: primaryColor,
+      outlineOffset: '2px'
+    })
+}
+
+async function tabUntilFocused(locator: Locator, label: string, maxTabs: number): Promise<void> {
+  for (let index = 0; index < maxTabs; index += 1) {
+    await page.keyboard.press('Tab')
+    if (await locator.evaluate((element) => element === document.activeElement)) {
+      await expectVisibleKeyboardFocus(locator, label)
+      return
+    }
+  }
+  throw new Error(`${label} was not reached within ${maxTabs} Tab presses`)
 }
 
 test.beforeAll(async () => {
@@ -72,25 +118,75 @@ test('window resize adds collection columns while filter context remains reachab
     .toBe(4)
 })
 
-test('keyboard navigation has a visible theme focus treatment (#151)', async () => {
+test('keyboard focus follows navigation, form, dialog, and primary-action order (#151)', async () => {
   await page.locator('body').click({ position: { x: 2, y: 2 } })
   await page.keyboard.press('Tab')
 
-  const focus = await page.evaluate(() => {
-    const element = document.activeElement
-    if (!(element instanceof HTMLElement)) return null
-    const style = getComputedStyle(element)
-    return {
-      tag: element.tagName,
-      outlineStyle: style.outlineStyle,
-      outlineWidth: style.outlineWidth,
-      outlineColor: style.outlineColor
-    }
-  })
-  expect(focus?.tag).toMatch(/BUTTON|A|INPUT|SELECT|TEXTAREA/)
-  expect(focus?.outlineStyle).toBe('solid')
-  expect(focus?.outlineWidth).toBe('2px')
-  expect(focus?.outlineColor).not.toBe('rgba(0, 0, 0, 0)')
+  const expandSidebar = page.getByRole('button', { name: 'Expand sidebar' })
+  const searchNavigation = page.getByRole('button', { name: 'Search', exact: true })
+  const dayNavigation = page.getByRole('button', { name: 'Day', exact: true })
+  await expectVisibleKeyboardFocus(expandSidebar, 'sidebar toggle')
+  await page.keyboard.press('Tab')
+  await expectVisibleKeyboardFocus(searchNavigation, 'first navigation destination')
+  await page.keyboard.press('Tab')
+  await expectVisibleKeyboardFocus(dayNavigation, 'second navigation destination')
+
+  // Continue through the rest of the real navigation and Models header. This keeps
+  // Chromium in keyboard modality; a programmatic focus jump would not prove that
+  // :focus-visible survives the user's actual traversal.
+  await tabUntilFocused(page.getByRole('button', { name: /^Storage\b/ }), 'Storage tab', 24)
+  await page.keyboard.press('Tab')
+  const modelSearch = page.getByPlaceholder('Search HuggingFace…')
+  await expectVisibleKeyboardFocus(modelSearch, 'model search field')
+
+  for (const name of ['All sources', 'Any size', 'Sort: Recommended']) {
+    await page.keyboard.press('Tab')
+    await expectVisibleKeyboardFocus(
+      page.getByRole('button', { name, exact: true }),
+      `${name} filter`
+    )
+  }
+  for (const size of [2, 4, 6, 8, 16]) {
+    await page.keyboard.press('Tab')
+    await expectVisibleKeyboardFocus(
+      page.getByRole('button', { name: `≤${size}GB`, exact: true }),
+      `${size}GB quick filter`
+    )
+  }
+  for (const useCase of ['General', 'Coding', 'Writing', 'Legal', 'Vision', 'Lightweight']) {
+    await page.keyboard.press('Tab')
+    await expectVisibleKeyboardFocus(
+      page.getByRole('button', { name: useCase, exact: true }),
+      `${useCase} use-case filter`
+    )
+  }
+
+  const firstCard = page
+    .getByRole('list', { name: 'Models available to download' })
+    .getByRole('listitem')
+    .first()
+  const cardButtons = firstCard.getByRole('button')
+  await page.keyboard.press('Tab')
+  await expectVisibleKeyboardFocus(cardButtons.nth(0), 'model detail trigger')
+  await page.keyboard.press('Tab')
+  await expectVisibleKeyboardFocus(cardButtons.nth(1), 'model details action')
+  await page.keyboard.press('Tab')
+  await expectVisibleKeyboardFocus(
+    firstCard.getByRole('button', { name: 'Download', exact: true }),
+    'primary download action'
+  )
+
+  // The production command palette is the app's real modal dialog. It must move
+  // focus into its form, keep keyboard focus inside, and retain the visible ring.
+  await page.keyboard.press('Meta+K')
+  const dialog = page.getByRole('dialog', { name: 'Search Off Grid' })
+  await expect(dialog).toBeVisible()
+  const dialogSearch = dialog.getByPlaceholder('Search everything…')
+  await expectVisibleKeyboardFocus(dialogSearch, 'dialog search field')
+  await page.keyboard.press('Tab')
+  await expectVisibleKeyboardFocus(dialogSearch, 'dialog focus trap')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
 })
 
 test('reduced motion keeps the detail layer reachable and Escape preserves the collection (#152, #153)', async () => {
