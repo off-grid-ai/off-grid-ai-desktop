@@ -232,7 +232,7 @@ describe('model download release matrix', () => {
     expect(status.active).toBe(imageModel.files.find((file) => file.role === 'primary')!.name)
   })
 
-  it('keeps concurrent downloads ordered and isolated when the second completes first (#22)', async () => {
+  it('keeps concurrent downloads ordered and isolated when the second completes first', async () => {
     const concurrentModels = CATALOG.filter(
       (candidate) => candidate.kind === 'text' && candidate.files.length === 1
     ).slice(0, 2)
