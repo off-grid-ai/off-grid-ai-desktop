@@ -174,7 +174,11 @@ function findSingleApp(mountPoint) {
   return apps[0]
 }
 
-export async function verifyDmgArtifact(dmgPath, referenceBundle) {
+export async function verifyDmgArtifact(
+  dmgPath,
+  referenceBundle,
+  { requireCodeSignature = true } = {}
+) {
   if (process.platform !== 'darwin') {
     throw new Error('DMG integrity verification requires macOS')
   }
@@ -199,7 +203,10 @@ export async function verifyDmgArtifact(dmgPath, referenceBundle) {
     attached = true
     const candidateBundle = findSingleApp(mountPoint)
     verifyBundlePair(referenceBundle, candidateBundle)
-    await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', candidateBundle])
+    if (requireCodeSignature) {
+      await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', referenceBundle])
+      await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', candidateBundle])
+    }
   } finally {
     if (attached) {
       await execFileAsync('/usr/bin/hdiutil', ['detach', mountPoint, '-force']).catch(

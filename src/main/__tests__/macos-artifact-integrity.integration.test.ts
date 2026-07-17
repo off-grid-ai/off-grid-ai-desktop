@@ -101,4 +101,15 @@ describe('macOS artifact integrity', () => {
     expect(imageSizeGiB).toBeGreaterThanOrEqual(5)
     expect(builderConfig).toMatch(/^\s+shrink:\s+true$/m)
   })
+
+  it('allows unsigned verification only from the explicit local build path', () => {
+    const localBuild = fs.readFileSync(path.join(REPO_ROOT, 'scripts/build-mac-local.sh'), 'utf8')
+    const artifactHook = fs.readFileSync(
+      path.join(REPO_ROOT, 'scripts/verify-electron-builder-artifact.js'),
+      'utf8'
+    )
+
+    expect(localBuild).toContain('export OFFGRID_ALLOW_UNSIGNED_ARTIFACT=1')
+    expect(artifactHook).toContain("process.env.OFFGRID_ALLOW_UNSIGNED_ARTIFACT !== '1'")
+  })
 })

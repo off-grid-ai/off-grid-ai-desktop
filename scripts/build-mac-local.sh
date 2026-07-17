@@ -23,7 +23,8 @@ cd "$(dirname "$0")/.."
 VERSION=$(node -p "require('./package.json').version")
 TARGET="${1:-both}"
 
-export CSC_IDENTITY_AUTO_DISCOVERY=false   # unsigned local builds
+export CSC_IDENTITY_AUTO_DISCOVERY=false # unsigned local builds
+export OFFGRID_ALLOW_UNSIGNED_ARTIFACT=1 # integrity is enforced; codesign is release-only
 
 # Guard against the bug that broke the last release: the runtime binaries in
 # resources/bin/ are stored in Git LFS. If they're still 131-byte pointer stubs,
