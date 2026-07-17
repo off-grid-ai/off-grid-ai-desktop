@@ -17,6 +17,8 @@ import { createOfflineFetchBoundary } from './harness/offline-fetch'
 const OCR_BIN = path.resolve(__dirname, '../../../electron/accessibility/ocr')
 const HAVE_BIN = existsSync(OCR_BIN)
 const offlineNetwork = createOfflineFetchBoundary()
+const OCR_PROCESS_TIMEOUT_MS = 30_000
+const OCR_TEST_TIMEOUT_MS = 35_000
 
 describe.skipIf(!HAVE_BIN)('native OCR helper (Vision) extracts text from an image', () => {
   let imagePath: string
@@ -40,13 +42,20 @@ describe.skipIf(!HAVE_BIN)('native OCR helper (Vision) extracts text from an ima
     vi.unstubAllGlobals()
   })
 
-  it('prints the recognized text for a rendered image', () => {
-    const out = execFileSync(OCR_BIN, [imagePath], { encoding: 'utf8', timeout: 30_000 })
-    // Vision may split/space differently; assert the salient tokens survive round-trip.
-    const normalized = out.toUpperCase().replace(/\s+/g, ' ')
-    expect(normalized).toContain('OFF GRID')
-    expect(normalized).toContain('OCR')
-  })
+  it(
+    'prints the recognized text for a rendered image',
+    () => {
+      const out = execFileSync(OCR_BIN, [imagePath], {
+        encoding: 'utf8',
+        timeout: OCR_PROCESS_TIMEOUT_MS
+      })
+      // Vision may split/space differently; assert the salient tokens survive round-trip.
+      const normalized = out.toUpperCase().replace(/\s+/g, ' ')
+      expect(normalized).toContain('OFF GRID')
+      expect(normalized).toContain('OCR')
+    },
+    OCR_TEST_TIMEOUT_MS
+  )
 
   it('exits non-zero with a usage error when given no image path', () => {
     let failed = false
