@@ -73,8 +73,11 @@ describe('TTS model download integration', () => {
         "import fs from 'node:fs'",
         'const [, , command, output] = process.argv',
         "if (command === 'speak' && output) {",
-        '  process.stdin.resume()',
+        "  let input = ''",
+        "  process.stdin.setEncoding('utf8')",
+        "  process.stdin.on('data', chunk => { input += chunk })",
         "  process.stdin.on('end', () => {",
+        "    fs.writeFileSync(output + '.input', input)",
         "    fs.writeFileSync(output, Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(60, 1)]))",
         '  })',
         '}'
@@ -118,11 +121,24 @@ describe('TTS model download integration', () => {
     expect(manager.getActiveModalities().speech).toBe(ttsModel.id)
 
     const { synthesize } = await import('../tts')
-    const spoken = await synthesize('A local reply')
+    const spoken = await synthesize('## A **local** [reply](https://example.invalid) with `code`')
 
     expect(spoken.dataUrl).toMatch(/^data:audio\/wav;base64,/)
     expect(
       Buffer.from(spoken.dataUrl.split(',')[1]!, 'base64').subarray(0, 4).toString('ascii')
     ).toBe('RIFF')
+
+    const workerInput = fs
+      .readdirSync(os.tmpdir())
+      .filter(
+        (name) => name.startsWith(`offgrid-tts-${process.pid}-`) && name.endsWith('.wav.input')
+      )
+      .map((name) => ({ name, mtime: fs.statSync(path.join(os.tmpdir(), name)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime)[0]
+    expect(workerInput).toBeDefined()
+    expect(fs.readFileSync(path.join(os.tmpdir(), workerInput!.name), 'utf8')).toBe(
+      'A local reply with code'
+    )
+    fs.unlinkSync(path.join(os.tmpdir(), workerInput!.name))
   })
 })

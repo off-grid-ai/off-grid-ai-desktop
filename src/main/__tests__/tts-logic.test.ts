@@ -4,7 +4,51 @@
  * No child_process/electron — pure import-and-assert.
  */
 import { describe, it, expect } from 'vitest'
-import { chooseVoice, isTeardownNoise, parseServeLine, DEFAULT_VOICE } from '../tts-logic'
+import {
+  chooseVoice,
+  isTeardownNoise,
+  parseServeLine,
+  toSpeakableText,
+  DEFAULT_VOICE
+} from '../tts-logic'
+
+describe('toSpeakableText - rendered markdown to local speech', () => {
+  it('keeps human-readable content without pronouncing markdown syntax or link destinations', () => {
+    expect(
+      toSpeakableText(
+        [
+          '# **Release notes**',
+          '',
+          '- Open the [local guide](https://example.invalid/private?q=1).',
+          '- Run `npm test` and ~~skip~~ keep the result.',
+          '',
+          '```ts',
+          'const ready = true',
+          '```'
+        ].join('\n')
+      )
+    ).toBe(
+      [
+        'Release notes',
+        '',
+        'Open the local guide.',
+        'Run npm test and skip keep the result.',
+        '',
+        'const ready = true'
+      ].join('\n')
+    )
+  })
+
+  it('returns empty for formatting-only input', () => {
+    expect(toSpeakableText('***\n` `')).toBe('')
+  })
+
+  it('preserves literal multiplication and identifier underscores', () => {
+    expect(toSpeakableText('The result is 2 * 3 and the key is release_candidate.')).toBe(
+      'The result is 2 * 3 and the key is release_candidate.'
+    )
+  })
+})
 
 describe('chooseVoice — explicit > valid stored selection > default', () => {
   it("caller's explicit voice always wins", () => {

@@ -16,7 +16,13 @@ import { getActiveModal } from './active-models'
 import { resourceFile, onHostQuit } from './runtime-env'
 import { getResidencyMode } from './runtime-residency'
 import type { ManagedRuntime } from './runtime-manager'
-import { DEFAULT_VOICE, chooseVoice, isTeardownNoise, parseServeLine } from './tts-logic'
+import {
+  DEFAULT_VOICE,
+  chooseVoice,
+  isTeardownNoise,
+  parseServeLine,
+  toSpeakableText
+} from './tts-logic'
 
 function workerPath(): string {
   const found = resourceFile('tts-worker.mjs')
@@ -191,7 +197,7 @@ export async function synthesize(text: string, voice?: string): Promise<{ dataUr
   // model in the UI can never feed the engine an invalid voice.
   const sel = getActiveModal('speech')
   voice = chooseVoice(voice, sel)
-  const t = (text || '').trim()
+  const t = toSpeakableText(text)
   if (!t) throw new Error('Nothing to speak.')
   if (busy) throw new Error('Already generating speech — please wait.')
   busy = true
