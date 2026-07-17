@@ -15,7 +15,7 @@ set -euo pipefail
 
 LLAMA_REF="${LLAMA_REF:-b9838}"                       # gemma4/qwen35-capable build
 TARGET="${MACOS_DEPLOYMENT_TARGET:-13.0}"             # runs on macOS 13+
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="${OFFGRID_BUILD_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 DEST="$ROOT/resources/bin/llama"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -42,7 +42,24 @@ BIN="$(find build -name llama-server -type f -perm -111 | head -1)"
 # Gate: fail the build if the binary targets a newer macOS than we asked for.
 MINOS="$(otool -l "$BIN" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')"
 echo "[build-llama] built llama-server minos=$MINOS (want <= $TARGET)"
-if [ "${MINOS%%.*}" -gt "${TARGET%%.*}" ]; then
+version_exceeds() {
+  awk -v built="$1" -v target="$2" 'BEGIN {
+    built_n = split(built, built_parts, ".")
+    target_n = split(target, target_parts, ".")
+    n = built_n > target_n ? built_n : target_n
+    for (i = 1; i <= n; i++) {
+      built_part = (i <= built_n ? built_parts[i] : 0) + 0
+      target_part = (i <= target_n ? target_parts[i] : 0) + 0
+      if (built_part > target_part) exit 0
+      if (built_part < target_part) exit 1
+    }
+    exit 1
+  }'
+}
+if [ -z "$MINOS" ]; then
+  echo "[build-llama] FATAL: built llama-server has no LC_BUILD_VERSION minos"; exit 1
+fi
+if version_exceeds "$MINOS" "$TARGET"; then
   echo "[build-llama] FATAL: minos $MINOS exceeds target $TARGET — would break older macOS"; exit 1
 fi
 
@@ -79,12 +96,14 @@ MISSING=""
 for f in "$DEST"/llama-server "$DEST"/*.dylib; do
   while IFS= read -r dep; do
     name="${dep#@rpath/}"
-    [ -e "$DEST/$name" ] || MISSING="$MISSING $name"
+    if [ ! -f "$DEST/$name" ] || [ -L "$DEST/$name" ]; then
+      MISSING="$MISSING $name"
+    fi
   done < <(otool -L "$f" 2>/dev/null | awk '/@rpath\//{print $1}')
 done
 MISSING="$(echo "$MISSING" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/^ *//')"
 if [ -n "$MISSING" ]; then
-  echo "[build-llama] FATAL: engine references @rpath libs NOT bundled: $MISSING"; exit 1
+  echo "[build-llama] FATAL: engine references @rpath libs missing or not staged as real files: $MISSING"; exit 1
 fi
 
 echo "[build-llama] done — single engine, minos=$MINOS, no foreign deps, all @rpath libs present"

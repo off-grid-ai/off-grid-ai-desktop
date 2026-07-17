@@ -64,20 +64,22 @@ async function buildArtifact(outDir: string, forceCore: '0' | '1'): Promise<void
   )
 }
 
-type LlamaFixtureMode = 'healthy' | 'missing-rpath' | 'foreign-dependency'
+type LlamaFixtureMode =
+  | 'healthy'
+  | 'missing-rpath'
+  | 'foreign-homebrew'
+  | 'foreign-local'
+  | 'newer-minos'
+  | 'non-real-rpath'
 
 function runBuildLlama(mode: LlamaFixtureMode): ReturnType<typeof spawnSync> & {
   sandbox: string
+  queryLog: string
 } {
   const sandbox = tempDir('offgrid-llama-build-')
-  const scriptDir = path.join(sandbox, 'scripts')
   const fakeBin = path.join(sandbox, 'fake-bin')
-  fs.mkdirSync(scriptDir)
+  const queryLog = path.join(sandbox, 'otool-queries.log')
   fs.mkdirSync(fakeBin)
-  fs.copyFileSync(
-    path.join(root, 'scripts', 'build-llama.sh'),
-    path.join(scriptDir, 'build-llama.sh')
-  )
 
   writeExecutable(
     path.join(fakeBin, 'git'),
@@ -93,45 +95,82 @@ set -euo pipefail
 mkdir -p build/bin build/lib
 printf '#!/bin/sh\\nexit 0\\n' > build/bin/llama-server
 chmod +x build/bin/llama-server
-printf 'fixture dylib\\n' > build/lib/libggml.0.15.3.dylib
-ln -sfn libggml.0.15.3.dylib build/lib/libggml.0.dylib
+for stem in libggml-base libggml libllama libmtmd; do
+  printf 'fixture dylib for %s\\n' "${'$'}stem" > "build/lib/${'$'}stem.0.15.3.dylib"
+  ln -sfn "${'$'}stem.0.15.3.dylib" "build/lib/${'$'}stem.0.dylib"
+done
+`
+  )
+  writeExecutable(
+    path.join(fakeBin, 'cp'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+destination="${'$'}{!#}"
+source_path=""
+for argument in "${'$'}@"; do
+  if [ "${'$'}argument" != "${'$'}destination" ] && [ "${'$'}argument" != "-f" ]; then
+    source_path="${'$'}argument"
+  fi
+done
+if [ "${mode}" = "non-real-rpath" ] && [ -L "${'$'}source_path" ]; then
+  /bin/cp -Pf "${'$'}source_path" "${'$'}destination"
+else
+  /bin/cp "${'$'}@"
+fi
 `
   )
   writeExecutable(path.join(fakeBin, 'sysctl'), '#!/usr/bin/env bash\nprintf "4\\n"\n')
+  const minos = mode === 'newer-minos' ? '13.1' : '13.0'
+  const foreignDependency =
+    mode === 'foreign-homebrew'
+      ? '/opt/homebrew/opt/openssl/lib/libssl.dylib'
+      : mode === 'foreign-local'
+        ? '/usr/local/lib/libssl.dylib'
+        : ''
   writeExecutable(
     path.join(fakeBin, 'otool'),
     `#!/usr/bin/env bash
 set -euo pipefail
 if [ "${'$'}1" = "-l" ]; then
-  printf 'Load command 1\\n      cmd LC_BUILD_VERSION\\n    minos 13.0\\n'
+  printf 'Load command 1\\n      cmd LC_BUILD_VERSION\\n    minos ${minos}\\n'
   exit 0
 fi
 file="${'$'}2"
+printf '%s\\n' "${'$'}file" >> "${queryLog}"
 printf '%s:\\n' "${'$'}file"
 if [ "${'$'}{file##*/}" = "llama-server" ]; then
+  printf '    @rpath/libllama.0.dylib (compatibility version 0.0.0, current version 0.0.0)\\n'
   printf '    @rpath/libggml.0.dylib (compatibility version 0.0.0, current version 0.0.0)\\n'
+  if [ -n "${foreignDependency}" ]; then
+    printf '    ${foreignDependency} (compatibility version 0.0.0, current version 0.0.0)\\n'
+  fi
+elif [[ "${'$'}{file##*/}" == libllama.*.dylib ]]; then
+  printf '    @rpath/libggml.0.dylib (compatibility version 0.0.0, current version 0.0.0)\\n'
+  printf '    @rpath/libmtmd.0.dylib (compatibility version 0.0.0, current version 0.0.0)\\n'
   if [ "${mode}" = "missing-rpath" ]; then
     printf '    @rpath/libmissing.0.dylib (compatibility version 0.0.0, current version 0.0.0)\\n'
   fi
-  if [ "${mode}" = "foreign-dependency" ]; then
-    printf '    /opt/homebrew/opt/openssl/lib/libssl.dylib (compatibility version 0.0.0, current version 0.0.0)\\n'
-  fi
+elif [[ "${'$'}{file##*/}" == libggml.*.dylib ]]; then
+  printf '    @rpath/libggml-base.0.dylib (compatibility version 0.0.0, current version 0.0.0)\\n'
+elif [[ "${'$'}{file##*/}" == libmtmd.*.dylib ]]; then
+  printf '    @rpath/libggml.0.dylib (compatibility version 0.0.0, current version 0.0.0)\\n'
 fi
 printf '    /usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1.0.0)\\n'
 `
   )
 
-  const result = spawnSync('bash', [path.join(scriptDir, 'build-llama.sh')], {
-    cwd: sandbox,
+  const result = spawnSync('bash', [path.join(root, 'scripts', 'build-llama.sh')], {
+    cwd: root,
     env: {
       ...process.env,
       PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
       LLAMA_REF: 'fixture-ref',
-      MACOS_DEPLOYMENT_TARGET: '13.0'
+      MACOS_DEPLOYMENT_TARGET: '13.0',
+      OFFGRID_BUILD_ROOT: sandbox
     },
     encoding: 'utf8'
   })
-  return Object.assign(result, { sandbox })
+  return Object.assign(result, { sandbox, queryLog })
 }
 
 describe.sequential('release packaging integration', () => {
@@ -226,11 +265,30 @@ describe.sequential('release packaging integration', () => {
   it('stages exact dylib names as real files and accepts a closed llama dependency graph', () => {
     const result = runBuildLlama('healthy')
     const llamaDir = path.join(result.sandbox, 'resources', 'bin', 'llama')
+    const staged = fs.readdirSync(llamaDir)
+    const audited = new Set(
+      fs
+        .readFileSync(result.queryLog, 'utf8')
+        .trim()
+        .split('\n')
+        .map((file) => path.basename(file))
+    )
 
-    expect(result.status, String(result.stderr)).toBe(0)
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
+    expect(result.stdout).toContain('built llama-server minos=13.0 (want <= 13.0)')
     expect(result.stdout).toContain('no foreign deps, all @rpath libs present')
-    expect(fs.lstatSync(path.join(llamaDir, 'libggml.0.dylib')).isFile()).toBe(true)
-    expect(fs.lstatSync(path.join(llamaDir, 'libggml.0.dylib')).isSymbolicLink()).toBe(false)
+    expect(fs.statSync(path.join(llamaDir, 'llama-server')).mode & 0o111).not.toBe(0)
+    for (const name of [
+      'libggml-base.0.dylib',
+      'libggml.0.dylib',
+      'libllama.0.dylib',
+      'libmtmd.0.dylib'
+    ]) {
+      const stat = fs.lstatSync(path.join(llamaDir, name))
+      expect(stat.isFile(), name).toBe(true)
+      expect(stat.isSymbolicLink(), name).toBe(false)
+    }
+    expect([...audited]).toEqual(expect.arrayContaining(staged))
   })
 
   it('blocks a llama build when an exact @rpath dependency is absent', () => {
@@ -238,15 +296,34 @@ describe.sequential('release packaging integration', () => {
     const output = `${result.stdout}\n${result.stderr}`
 
     expect(result.status).not.toBe(0)
-    expect(output).toContain('engine references @rpath libs NOT bundled: libmissing.0.dylib')
+    expect(output).toContain('missing or not staged as real files: libmissing.0.dylib')
   })
 
-  it('blocks a llama build that leaks a Homebrew dependency', () => {
-    const result = runBuildLlama('foreign-dependency')
+  it('blocks an @rpath dependency staged as a symlink instead of a real file', () => {
+    const result = runBuildLlama('non-real-rpath')
+    const output = `${result.stdout}\n${result.stderr}`
+
+    expect(result.status).not.toBe(0)
+    expect(output).toContain('missing or not staged as real files')
+  })
+
+  it.each([
+    ['foreign-homebrew', '/opt/homebrew/opt/openssl/lib/libssl.dylib'],
+    ['foreign-local', '/usr/local/lib/libssl.dylib']
+  ] as const)('blocks the %s host dependency', (mode, dependency) => {
+    const result = runBuildLlama(mode)
     const output = `${result.stdout}\n${result.stderr}`
 
     expect(result.status).not.toBe(0)
     expect(output).toContain('engine links non-system libs')
-    expect(output).toContain('/opt/homebrew/opt/openssl/lib/libssl.dylib')
+    expect(output).toContain(dependency)
+  })
+
+  it('blocks a minor deployment target newer than the CI release target', () => {
+    const result = runBuildLlama('newer-minos')
+    const output = `${result.stdout}\n${result.stderr}`
+
+    expect(result.status).not.toBe(0)
+    expect(output).toContain('minos 13.1 exceeds target 13.0')
   })
 })
