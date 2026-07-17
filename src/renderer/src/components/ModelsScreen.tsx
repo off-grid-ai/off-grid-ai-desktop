@@ -13,7 +13,8 @@ import {
   IconExternalLink,
   IconEye,
   IconDatabase,
-  IconStarFilled
+  IconStarFilled,
+  IconClock
 } from '@tabler/icons-react'
 import { StoragePanel } from './setup/StoragePanel'
 import { deviceNoun } from '@renderer/lib/device'
@@ -417,10 +418,11 @@ export function ModelsScreen(): React.JSX.Element {
 
   const tabs = [...kinds.filter((k) => k !== 'vision'), 'storage']
 
-  // Live download summary for the Storage tab label: how many are downloading vs
-  // failed (across all kinds). Derived from the per-model progress map.
+  // Live download summary for the Storage tab label. The manager owns queued vs
+  // transferring; this surface only counts its emitted statuses.
   const storageCounts = {
     downloading: Object.values(progress).filter((p) => p.status === 'downloading').length,
+    queued: Object.values(progress).filter((p) => p.status === 'queued').length,
     failed: Object.values(progress).filter((p) => p.status === 'failed').length
   }
 
@@ -560,9 +562,15 @@ export function ModelsScreen(): React.JSX.Element {
               onClick={() => cancelDownload(m.id)}
               className="group/dl flex items-center gap-1 rounded border border-neutral-700 px-2.5 py-1 text-[10px] text-neutral-400 transition-all duration-150 hover:border-red-500/60 hover:text-red-400 active:scale-95"
             >
-              <IconLoader2 className="h-3 w-3 animate-spin group-hover/dl:hidden" />
+              {prog.status === 'queued' ? (
+                <IconClock className="h-3 w-3 group-hover/dl:hidden" />
+              ) : (
+                <IconLoader2 className="h-3 w-3 animate-spin group-hover/dl:hidden" />
+              )}
               <IconX className="hidden h-3 w-3 group-hover/dl:block" />
-              <span className="group-hover/dl:hidden">{prog.percent}%</span>
+              <span className="group-hover/dl:hidden">
+                {prog.status === 'queued' ? 'Queued' : `${prog.percent}%`}
+              </span>
               <span className="hidden group-hover/dl:inline">Cancel</span>
             </button>
           ) : (
@@ -636,15 +644,18 @@ export function ModelsScreen(): React.JSX.Element {
             {k === 'storage' ? (
               <>
                 <IconDatabase className="h-3 w-3" /> Storage
-                {/* Live counts: total installed, in-progress downloads, failures.
-                      (There is no separate "queued" state — downloads run
-                      concurrently, each starting on click.) */}
+                {/* Live counts: installed, transferring, queued, and failed. */}
                 <span className="ml-1 font-normal normal-case tracking-normal text-neutral-600">
                   {installed.length}
                 </span>
                 {storageCounts.downloading > 0 && (
                   <span className="rounded-sm bg-green-500/15 px-1 text-[8px] text-green-500">
                     {storageCounts.downloading}↓
+                  </span>
+                )}
+                {storageCounts.queued > 0 && (
+                  <span className="rounded-sm bg-neutral-800 px-1 text-[8px] text-neutral-400">
+                    {storageCounts.queued} queued
                   </span>
                 )}
                 {storageCounts.failed > 0 && (
@@ -955,7 +966,9 @@ export function ModelsScreen(): React.JSX.Element {
                       </button>
                     </>
                   ) : downloading ? (
-                    <span className="text-xs text-neutral-400">Downloading {prog.percent}%…</span>
+                    <span className="text-xs text-neutral-400">
+                      {prog.status === 'queued' ? 'Queued' : `Downloading ${prog.percent}%…`}
+                    </span>
                   ) : (
                     <button
                       onClick={() => {

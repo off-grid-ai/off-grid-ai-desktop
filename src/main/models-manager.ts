@@ -9,6 +9,7 @@ import { isValidGgufFile } from './models/gguf'
 import { pumpToFile } from './models/download-pump'
 import { downloadIntegrityError } from './models/download-verify'
 import { downloadFailureMessage, isStorageCapacityError } from './models/download-error'
+import { ModelDownloadQueue } from './models/download-queue'
 import { getAllActiveModals, setActiveModal as setModal, type Modality } from './active-models'
 import {
   recordDownloaded,
@@ -34,7 +35,7 @@ import {
 export interface DownloadProgress {
   modelId: string
   percent?: number
-  status?: 'downloading' | 'completed' | 'failed' | 'cancelled'
+  status?: 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled'
   currentFile?: string
   downloadedMB?: string
   totalMB?: string
@@ -42,7 +43,7 @@ export interface DownloadProgress {
 }
 export type ProgressCb = (p: DownloadProgress) => void
 
-const controllers = new Map<string, AbortController>()
+const downloadQueue = new ModelDownloadQueue()
 const lastProgress = new Map<string, DownloadProgress>()
 
 function activeModelFile(): string {
@@ -106,12 +107,7 @@ export function downloadStatus(modelId: string): DownloadProgress | null {
 }
 
 export function cancelDownload(modelId: string): boolean {
-  const c = controllers.get(modelId)
-  if (c) {
-    c.abort()
-    return true
-  }
-  return false
+  return downloadQueue.cancel(modelId)
 }
 
 /** Download a catalog entry or any Hugging Face repo id. Progress via callback
@@ -128,131 +124,130 @@ export async function downloadModel(
   const dir = llm.getModelsDir()
   fs.mkdirSync(dir, { recursive: true })
   ensureRegistryLoaded()
-  // Re-entrancy guard (before any status emit / controller registration): a second
+  // Re-entrancy guard (before any status emit / queue registration): a second
   // download of the same id would write into the SAME .part (interleaved writes →
-  // corrupt file) and overwrite the first's AbortController, so a later cancel/clear
-  // would control the wrong download. If one is already in flight, no-op (D3).
-  if (controllers.has(modelId)) return { success: false, error: 'already downloading' }
+  // corrupt file). The queue tracks both waiting and active ids, so double-clicking
+  // a queued card cannot enqueue it twice either.
+  if (downloadQueue.has(modelId)) return { success: false, error: 'already downloading' }
   const send = (data: Partial<DownloadProgress>): void => {
     const p: DownloadProgress = { modelId, ...data }
     lastProgress.set(modelId, p)
     onProgress?.(p)
-    // Persist on terminal transitions and at the start so an interrupted download
-    // is recoverable after a restart; skip the high-frequency progress ticks.
-    if (p.status && p.status !== 'downloading') persistRegistry()
+    // Queue/start persistence happens in the lifecycle callback below. Persist
+    // terminal transitions here, but skip high-frequency transfer ticks.
+    if (p.status && p.status !== 'queued' && p.status !== 'downloading') persistRegistry()
   }
-  send({ status: 'downloading', percent: 0 })
-  persistRegistry()
+  return downloadQueue.enqueue(
+    modelId,
+    async (signal) => {
+      if (entry.runtime === 'mflux') {
+        try {
+          const { downloadMfluxModel } = await import('./mflux')
+          await downloadMfluxModel(modelId, (pct: number) =>
+            send({ percent: pct, status: 'downloading' })
+          )
+          send({ percent: 100, status: 'completed' })
+          return { success: true }
+        } catch (err) {
+          const error = downloadFailureMessage(err)
+          send({ status: 'failed', error })
+          return { success: false, error }
+        }
+      }
 
-  const controller = new AbortController()
-  controllers.set(modelId, controller)
-
-  if (entry.runtime === 'mflux') {
-    try {
-      const { downloadMfluxModel } = await import('./mflux')
-      await downloadMfluxModel(modelId, (pct: number) =>
-        send({ percent: pct, status: 'downloading' })
-      )
-      send({ percent: 100, status: 'completed' })
-      return { success: true }
-    } catch (err) {
-      const error = downloadFailureMessage(err)
-      send({ status: 'failed', error })
-      return { success: false, error }
-    } finally {
-      controllers.delete(modelId)
-    }
-  }
-
-  let activePartPath: string | null = null
-  try {
-    for (const file of entry.files) {
-      const dest = path.join(dir, file.name)
-      if (fs.existsSync(dest) && fs.statSync(dest).size > 0) continue
-      const partPath = `${dest}.part`
-      activePartPath = partPath
-      // Resume from a partial .part if one exists (e.g. download interrupted by a
-      // quit/crash) via an HTTP Range request, so we don't re-fetch GBs.
-      let resumeFrom = 0
+      let activePartPath: string | null = null
       try {
-        if (fs.existsSync(partPath)) resumeFrom = fs.statSync(partPath).size
-      } catch {
-        /* fresh */
+        for (const file of entry.files) {
+          const dest = path.join(dir, file.name)
+          if (fs.existsSync(dest) && fs.statSync(dest).size > 0) continue
+          const partPath = `${dest}.part`
+          activePartPath = partPath
+          // Resume from a partial .part if one exists (e.g. download interrupted by a
+          // quit/crash) via an HTTP Range request, so we don't re-fetch GBs.
+          let resumeFrom = 0
+          try {
+            if (fs.existsSync(partPath)) resumeFrom = fs.statSync(partPath).size
+          } catch {
+            /* fresh */
+          }
+          const res = await fetch(file.url, {
+            signal,
+            headers: resumeFrom > 0 ? { Range: `bytes=${resumeFrom}-` } : undefined
+          })
+          if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${file.name}`)
+          // Server honored the range (206) → append; otherwise (200) start over.
+          const append = resumeFrom > 0 && res.status === 206
+          const remaining = Number(res.headers.get('content-length') ?? 0)
+          const total = (append ? resumeFrom : 0) + remaining
+          const out = fs.createWriteStream(partPath, append ? { flags: 'a' } : {})
+          let written = append ? resumeFrom : 0
+          const reader = res.body.getReader()
+          // pumpToFile owns the write-stream error path: a disk-full/EIO 'error' becomes
+          // a rejection (caught below → status 'failed') instead of crashing the main
+          // process, and never hangs on a 'finish' that won't come.
+          await pumpToFile(reader, out, (n) => {
+            written += n
+            send({
+              currentFile: file.name,
+              percent: total ? Math.round((written / total) * 100) : 0,
+              downloadedMB: (written / 1048576).toFixed(1),
+              totalMB: total ? (total / 1048576).toFixed(1) : '?',
+              status: 'downloading'
+            })
+          })
+          if (signal.aborted) {
+            fs.rmSync(partPath, { force: true })
+            break
+          }
+          // Verify the file is complete + valid BEFORE promoting it — never mark a
+          // truncated/corrupt download installed (it loads as a blank "Chat model Down").
+          const integrityErr = downloadIntegrityError(file.name, written, total, partPath)
+          if (integrityErr) throw new Error(integrityErr)
+          fs.renameSync(partPath, dest)
+          activePartPath = null
+        }
+        if (signal.aborted) {
+          send({ status: 'cancelled' })
+          return { success: false, error: 'cancelled' }
+        }
+        // Register a free-form Hugging Face download (not a catalog entry) so it counts
+        // as installed + activatable and its files aren't flagged as "unused". Catalog
+        // models are recognized by CATALOG membership already, so skip them.
+        if (!inCatalog) {
+          recordDownloaded(dir, {
+            id: modelId,
+            name: entry.name,
+            kind: entry.kind,
+            files: entry.files.map((f) => f.name)
+          })
+        }
+        send({ percent: 100, status: 'completed' })
+        return { success: true }
+      } catch (err) {
+        // A capacity failure cannot resume until space is reclaimed, and retaining the
+        // bytes makes the full-volume condition worse. Other failures keep their
+        // partial file so retry can resume instead of downloading it again.
+        if (activePartPath && isStorageCapacityError(err)) {
+          try {
+            fs.rmSync(activePartPath, { force: true })
+          } catch {
+            /* retain the original write failure */
+          }
+        }
+        if (signal.aborted || (err as Error).name === 'AbortError') {
+          send({ status: 'cancelled' })
+          return { success: false, error: 'cancelled' }
+        }
+        const error = downloadFailureMessage(err)
+        send({ status: 'failed', error })
+        return { success: false, error }
       }
-      const res = await fetch(file.url, {
-        signal: controller.signal,
-        headers: resumeFrom > 0 ? { Range: `bytes=${resumeFrom}-` } : undefined
-      })
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${file.name}`)
-      // Server honored the range (206) → append; otherwise (200) start over.
-      const append = resumeFrom > 0 && res.status === 206
-      const remaining = Number(res.headers.get('content-length') ?? 0)
-      const total = (append ? resumeFrom : 0) + remaining
-      const out = fs.createWriteStream(partPath, append ? { flags: 'a' } : {})
-      let written = append ? resumeFrom : 0
-      const reader = res.body.getReader()
-      // pumpToFile owns the write-stream error path: a disk-full/EIO 'error' becomes
-      // a rejection (caught below → status 'failed') instead of crashing the main
-      // process, and never hangs on a 'finish' that won't come.
-      await pumpToFile(reader, out, (n) => {
-        written += n
-        send({
-          currentFile: file.name,
-          percent: total ? Math.round((written / total) * 100) : 0,
-          downloadedMB: (written / 1048576).toFixed(1),
-          totalMB: total ? (total / 1048576).toFixed(1) : '?',
-          status: 'downloading'
-        })
-      })
-      if (controller.signal.aborted) {
-        fs.rmSync(partPath, { force: true })
-        break
-      }
-      // Verify the file is complete + valid BEFORE promoting it — never mark a
-      // truncated/corrupt download installed (it loads as a blank "Chat model Down").
-      const integrityErr = downloadIntegrityError(file.name, written, total, partPath)
-      if (integrityErr) throw new Error(integrityErr)
-      fs.renameSync(partPath, dest)
-      activePartPath = null
+    },
+    (state) => {
+      send({ status: state, percent: 0 })
+      if (state === 'queued' || state === 'downloading') persistRegistry()
     }
-    if (controller.signal.aborted) {
-      send({ status: 'cancelled' })
-      return { success: false, error: 'cancelled' }
-    }
-    // Register a free-form Hugging Face download (not a catalog entry) so it counts
-    // as installed + activatable and its files aren't flagged as "unused". Catalog
-    // models are recognized by CATALOG membership already, so skip them.
-    if (!inCatalog) {
-      recordDownloaded(dir, {
-        id: modelId,
-        name: entry.name,
-        kind: entry.kind,
-        files: entry.files.map((f) => f.name)
-      })
-    }
-    send({ percent: 100, status: 'completed' })
-    return { success: true }
-  } catch (err) {
-    // A capacity failure cannot resume until space is reclaimed, and retaining the
-    // bytes makes the full-volume condition worse. Other failures keep their
-    // partial file so retry can resume instead of downloading it again.
-    if (activePartPath && isStorageCapacityError(err)) {
-      try {
-        fs.rmSync(activePartPath, { force: true })
-      } catch {
-        /* retain the original write failure */
-      }
-    }
-    if (controller.signal.aborted || (err as Error).name === 'AbortError') {
-      send({ status: 'cancelled' })
-      return { success: false, error: 'cancelled' }
-    }
-    const error = downloadFailureMessage(err)
-    send({ status: 'failed', error })
-    return { success: false, error }
-  } finally {
-    controllers.delete(modelId)
-  }
+  )
 }
 
 /** Delete a model's files from disk. Clears it as active if it was selected. */
@@ -679,8 +674,10 @@ function ensureRegistryLoaded(): void {
   try {
     const arr = JSON.parse(fs.readFileSync(downloadsFile(), 'utf-8')) as DownloadProgress[]
     for (const p of arr) {
-      // Anything still "downloading" when we last wrote was cut off by a quit/crash.
-      if (p.status === 'downloading') {
+      // Anything still active/queued when we last wrote was cut off by a quit/crash.
+      // Surface it as explicitly retryable instead of leaving a queue row that can
+      // never drain in this fresh process.
+      if (p.status === 'downloading' || p.status === 'queued') {
         p.status = 'failed'
         p.error = 'interrupted — retry to resume'
       }

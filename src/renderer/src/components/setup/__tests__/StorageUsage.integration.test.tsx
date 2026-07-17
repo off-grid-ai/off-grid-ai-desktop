@@ -13,6 +13,7 @@ describe('rendered storage usage', () => {
     getDataSummary: ReturnType<typeof vi.fn>
     onModelProgress: ReturnType<typeof vi.fn>
     retryDownload: ReturnType<typeof vi.fn>
+    cancelModelDownload: ReturnType<typeof vi.fn>
     clearAppCache: ReturnType<typeof vi.fn>
   }
 
@@ -59,6 +60,7 @@ describe('rendered storage usage', () => {
       ]),
       onModelProgress: vi.fn(() => () => {}),
       retryDownload: vi.fn(async () => ({ success: false })),
+      cancelModelDownload: vi.fn(async () => true),
       clearAppCache: vi.fn(async () => ({ success: true, freedBytes: 3_000_000 }))
     }
     ;(globalThis as unknown as { window: Window }).window.api = api as never
@@ -109,6 +111,24 @@ describe('rendered storage usage', () => {
     expect(screen.getByText(diskFullMessage)).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(api.retryDownload).toHaveBeenCalledWith('synthetic/text-model')
+  })
+
+  it('shows manager-owned running and queued counts and can cancel a queued item (#22)', async () => {
+    api.listDownloads.mockResolvedValue([
+      { modelId: 'model-running-1', status: 'downloading', percent: 15 },
+      { modelId: 'model-running-2', status: 'downloading', percent: 30 },
+      { modelId: 'model-running-3', status: 'downloading', percent: 45 },
+      { modelId: 'model-queued-1', status: 'queued', percent: 0 },
+      { modelId: 'model-queued-2', status: 'queued', percent: 0 }
+    ])
+    const user = userEvent.setup()
+
+    render(<StoragePanel />)
+
+    expect(await screen.findByText('3 running · 2 queued')).toBeTruthy()
+    expect(screen.getAllByText('Queued')).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: 'Cancel model-queued-2' }))
+    expect(api.cancelModelDownload).toHaveBeenCalledWith('model-queued-2')
   })
 
   it('clears only temporary cache and explains which durable stores remain (#134)', async () => {

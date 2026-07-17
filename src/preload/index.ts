@@ -324,15 +324,26 @@ const offGridApi = {
   getActiveModalities: () => ipcRenderer.invoke('models:active-modalities'),
   onModelProgress: (
     callback: (data: {
-      modelName: string
-      percent: number
-      downloadedMB: string
-      totalMB: string
+      modelId: string
+      percent?: number
+      status?: 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled'
+      currentFile?: string
+      downloadedMB?: string
+      totalMB?: string
+      error?: string
     }) => void
   ) => {
     const subscription = (
       _event: unknown,
-      data: { modelName: string; percent: number; downloadedMB: string; totalMB: string }
+      data: {
+        modelId: string
+        percent?: number
+        status?: 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled'
+        currentFile?: string
+        downloadedMB?: string
+        totalMB?: string
+        error?: string
+      }
     ): void => callback(data)
     ipcRenderer.on('model:download-progress', subscription)
     return unsubscribe('model:download-progress', subscription)

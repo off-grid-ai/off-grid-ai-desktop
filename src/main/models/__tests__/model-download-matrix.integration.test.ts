@@ -350,6 +350,93 @@ describe('model download release matrix', () => {
     expect(fs.existsSync(path.join(dataDir, 'models', `${secondFile.name}.part`))).toBe(false)
   })
 
+  it('caps three active downloads, exposes the FIFO queue, and drains every item (#22)', async () => {
+    const queueModels = CATALOG.filter(
+      (candidate) =>
+        candidate.kind === 'text' && candidate.runtime !== 'mflux' && candidate.files.length === 1
+    ).slice(0, 4)
+    if (queueModels.length < 4)
+      throw new Error('Model catalog needs four single-file text fixtures')
+
+    const pending = controlledHttp()
+    const progress = new Map<string, ModelDownloadProgress[]>()
+    const downloads = queueModels.map((model) => {
+      const events: ModelDownloadProgress[] = []
+      progress.set(model.id, events)
+      return manager.downloadModel(model.id, (event) => events.push(event))
+    })
+
+    await waitFor(() => pending.length === 3)
+    const initial = manager
+      .listDownloads()
+      .filter((download) => queueModels.some((model) => model.id === download.modelId))
+    expect(initial.filter((download) => download.status === 'downloading')).toHaveLength(3)
+    expect(initial.filter((download) => download.status === 'queued')).toEqual([
+      expect.objectContaining({ modelId: queueModels[3]!.id, percent: 0 })
+    ])
+    await expect(manager.downloadModel(queueModels[3]!.id)).resolves.toEqual({
+      success: false,
+      error: 'already downloading'
+    })
+    expect(pending).toHaveLength(3)
+
+    try {
+      const firstFile = queueModels[0]!.files[0]!
+      const firstBytes = modelBytes(firstFile, 61)
+      pending[0]!.resolve(
+        new Response(new Uint8Array(firstBytes), {
+          status: 200,
+          headers: { 'content-length': String(firstBytes.length) }
+        })
+      )
+      await expect(downloads[0]).resolves.toEqual({ success: true })
+      installedByTest.add(queueModels[0]!.id)
+      await waitFor(() => pending.length === 4)
+
+      expect(manager.downloadStatus(queueModels[3]!.id)).toMatchObject({
+        status: 'downloading',
+        percent: 0
+      })
+      expect(progress.get(queueModels[3]!.id)).toEqual([
+        expect.objectContaining({ status: 'queued' }),
+        expect.objectContaining({ status: 'downloading' })
+      ])
+
+      for (let index = 1; index < queueModels.length; index++) {
+        const file = queueModels[index]!.files[0]!
+        const bytes = modelBytes(file, 61 + index)
+        pending[index]!.resolve(
+          new Response(new Uint8Array(bytes), {
+            status: 200,
+            headers: { 'content-length': String(bytes.length) }
+          })
+        )
+      }
+      const results = await Promise.all(downloads)
+      for (const model of queueModels) installedByTest.add(model.id)
+
+      expect(results).toEqual(queueModels.map(() => ({ success: true })))
+      const terminal = manager
+        .listDownloads()
+        .filter((download) => queueModels.some((model) => model.id === download.modelId))
+      expect(terminal).toHaveLength(4)
+      expect(terminal.every((download) => download.status === 'completed')).toBe(true)
+    } finally {
+      for (const [index, response] of pending.entries()) {
+        const file = queueModels[index]?.files[0]
+        if (!file) continue
+        const bytes = modelBytes(file, 80 + index)
+        response.resolve(
+          new Response(new Uint8Array(bytes), {
+            status: 200,
+            headers: { 'content-length': String(bytes.length) }
+          })
+        )
+      }
+      await Promise.allSettled(downloads)
+    }
+  })
+
   it('deletes only the selected installed model while another download continues (#23)', async () => {
     const existing = textModel
     const downloading = CATALOG.find(

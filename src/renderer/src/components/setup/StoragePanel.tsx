@@ -22,7 +22,7 @@ interface StorageInfo {
 interface DownloadEntry {
   modelId: string
   percent?: number
-  status?: 'downloading' | 'completed' | 'failed' | 'cancelled'
+  status?: 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled'
   downloadedMB?: string
   totalMB?: string
   error?: string
@@ -128,7 +128,9 @@ export function StoragePanel(): React.ReactElement {
       setBusy(null)
     }
   }
-  const active = downloads.filter((d) => d.status === 'downloading')
+  const active = downloads.filter((d) => d.status === 'downloading' || d.status === 'queued')
+  const runningCount = active.filter((d) => d.status === 'downloading').length
+  const queuedCount = active.filter((d) => d.status === 'queued').length
   const incomplete = downloads.filter((d) => d.status === 'failed' || d.status === 'cancelled')
   const orphanBytes = (info?.orphans ?? []).reduce((s, o) => s + o.bytes, 0)
   const usedFrac =
@@ -150,7 +152,6 @@ export function StoragePanel(): React.ReactElement {
         </button>
       </div>
 
-      {/* Usage summary */}
       <div className="px-4 py-2">
         <div className="mb-1 flex items-center justify-between">
           <span className="text-[11px] text-neutral-400">
@@ -177,6 +178,11 @@ export function StoragePanel(): React.ReactElement {
             <span className="text-[10px] uppercase tracking-widest text-neutral-600">
               Downloads
             </span>
+            {active.length > 0 && (
+              <span className="text-[10px] text-neutral-600">
+                {runningCount} running · {queuedCount} queued
+              </span>
+            )}
             {incomplete.length > 0 && (
               <button
                 onClick={clearAllIncomplete}
@@ -191,18 +197,24 @@ export function StoragePanel(): React.ReactElement {
             <div key={d.modelId} className="flex items-center gap-3 py-1.5">
               <div className="min-w-0 flex-1">
                 <div className="truncate font-mono text-[11px] text-neutral-300">{d.modelId}</div>
-                <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-neutral-800">
-                  <div
-                    className="h-full rounded-full bg-green-500 transition-all"
-                    style={{ width: `${d.percent ?? 0}%` }}
-                  />
-                </div>
+                {d.status === 'queued' ? (
+                  <div className="mt-0.5 text-[10px] text-neutral-500">Queued</div>
+                ) : (
+                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-neutral-800">
+                    <div
+                      className="h-full rounded-full bg-green-500 transition-all"
+                      style={{ width: `${d.percent ?? 0}%` }}
+                    />
+                  </div>
+                )}
               </div>
-              <span className="font-mono text-[10px] text-neutral-500">{d.percent ?? 0}%</span>
+              {d.status === 'downloading' && (
+                <span className="font-mono text-[10px] text-neutral-500">{d.percent ?? 0}%</span>
+              )}
               <button
                 onClick={() => cancel(d.modelId)}
                 className="rounded-md p-1 text-neutral-500 hover:text-white"
-                aria-label="Cancel"
+                aria-label={`Cancel ${d.modelId}`}
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -313,7 +325,6 @@ export function StoragePanel(): React.ReactElement {
         )}
       </div>
 
-      {/* Orphan cleanup */}
       {info && info.orphans.length > 0 && (
         <div className="flex items-center justify-between border-t border-neutral-800/60 px-4 py-2.5">
           <span className="text-[11px] text-neutral-500">
