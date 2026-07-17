@@ -67,6 +67,7 @@ class ChatBoundary {
     query: string
     projectId: string | null | undefined
     conversationId: string
+    noMemory: boolean
     streamId: string
     turn: ReturnType<typeof deferred<RagResult>>
   }[] = []
@@ -154,7 +155,7 @@ class ChatBoundary {
         _history?: unknown[],
         projectId?: string | null,
         conversationId?: string,
-        _noMemory?: boolean,
+        noMemory?: boolean,
         streamId?: string
       ) => {
         const turn = deferred<RagResult>()
@@ -162,6 +163,7 @@ class ChatBoundary {
           query,
           projectId,
           conversationId: conversationId!,
+          noMemory: noMemory ?? false,
           streamId: streamId!,
           turn
         })
@@ -236,6 +238,53 @@ describe('<MemoryChat/> - chat lifecycle integration (#38-#42, #47-#48)', () => 
   })
 
   afterEach(() => cleanup())
+
+  it('streams and persists the first local reply in one assistant bubble (#32)', async () => {
+    const boundary = new ChatBoundary()
+    installBoundary(boundary)
+    const user = userEvent.setup()
+    renderChat({ conversationId: 'conversation-b' })
+
+    await send('Give me a local reply', user)
+    await waitFor(() => expect(boundary.calls).toHaveLength(1))
+    boundary.emit(0, 'One local response')
+    expect(await screen.findByText('One local response')).toBeTruthy()
+
+    boundary.resolve(0, 'One local response')
+
+    await waitFor(() => {
+      expect(screen.getAllByText('One local response')).toHaveLength(1)
+      expect(
+        boundary.messages['conversation-b']!.map(({ role, content }) => [role, content])
+      ).toEqual([
+        ['assistant', 'Conversation B baseline'],
+        ['user', 'Give me a local reply'],
+        ['assistant', 'One local response']
+      ])
+    })
+  })
+
+  it('keeps No memory visible and sends the turn without retrieval (#33)', async () => {
+    const boundary = new ChatBoundary()
+    installBoundary(boundary)
+    const user = userEvent.setup()
+    renderChat({ conversationId: 'conversation-b' })
+
+    expect(await screen.findByRole('button', { name: /no memory/i })).toBeTruthy()
+
+    await send('Use only this conversation', user)
+    await waitFor(() => expect(boundary.calls).toHaveLength(1))
+    expect(boundary.calls[0]).toMatchObject({
+      query: 'Use only this conversation',
+      noMemory: true,
+      projectId: null,
+      conversationId: 'conversation-b'
+    })
+
+    boundary.resolve(0, 'Conversation-only answer')
+    expect(await screen.findByText('Conversation-only answer')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /no memory/i })).toBeTruthy()
+  })
 
   it('stops before the first token and immediately permits the next turn (#38)', async () => {
     const boundary = new ChatBoundary()
