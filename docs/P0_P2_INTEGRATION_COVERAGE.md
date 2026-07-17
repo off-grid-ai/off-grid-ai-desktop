@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 61 covered, 13 left.
-  - P1: 71 total, 59 covered, 12 left.
+  - P1: 71 total, 60 covered, 11 left.
   - P2: 10 total, 9 covered, 1 left.
-  - Overall: 155 total, 129 covered, 26 left.
+  - Overall: 155 total, 130 covered, 25 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -390,6 +390,11 @@ manual claim does not count as complete integration coverage.
 - #143 - Update channel persists. `src/main/__tests__/settings-persistence.dbtest.ts` changes the
   channel through the production update IPC handler, closes the encrypted database, reloads every
   Off Grid module, and verifies the fresh update-preferences handler restores the beta channel.
+- #146 - Model ports are single-owner. `model-port-ownership.integration.test.ts` starts a real
+  foreign parent with the only fake native llama process on production port 8439, then proves the
+  production contender preserves that live owner, starts no second engine, reports its own Chat
+  health as Down rather than borrowing the other process's readiness, and exposes the actionable
+  `port_in_use` reason while the first engine remains responsive.
 - #149 - Large seeded collections stay usable. Core Electron and Pro rendered integrations drive
   120 models, 120 persisted chats, 120 entities, 300 clipboard items, and 120 observations through
   their production owners, proving filters, scrolling, dense master-detail layouts, and bounded
@@ -488,7 +493,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - resilience and desktop polish
 
-- #146 - Model ports are single-owner.
 - #148 - Low disk space is handled.
 - #155 - No private data in release evidence.
 
