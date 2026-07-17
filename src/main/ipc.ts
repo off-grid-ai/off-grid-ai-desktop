@@ -1217,8 +1217,7 @@ export function setupIPC() {
   )
 
   ipcMain.handle('rag:update-conversation-title', (_, id: string, title: string) => {
-    updateRagConversationTitle(id, title)
-    return true
+    return updateRagConversationTitle(id, title)
   })
 
   ipcMain.handle('rag:delete-conversation', async (_, id: string) => {

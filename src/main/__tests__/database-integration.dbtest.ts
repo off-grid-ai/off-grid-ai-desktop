@@ -112,10 +112,24 @@ describe('database.ts - RAG conversations CRUD', () => {
     expect(db.getRagConversation('conv-move')?.project_id).toBeNull()
   })
 
-  it('updateRagConversationTitle updates the title', () => {
+  it('updateRagConversationTitle trims, persists, and returns the stored conversation', () => {
     db.createRagConversation('conv-title', 'old')
-    db.updateRagConversationTitle('conv-title', 'new title')
+    const stored = db.updateRagConversationTitle('conv-title', '  new title  ')
+    expect(stored).toMatchObject({ id: 'conv-title', title: 'new title' })
     expect(db.getRagConversation('conv-title')?.title).toBe('new title')
+  })
+
+  it('updateRagConversationTitle rejects an empty title without changing stored data', () => {
+    expect(() => db.updateRagConversationTitle('conv-title', '   ')).toThrow(
+      'Conversation title cannot be empty'
+    )
+    expect(db.getRagConversation('conv-title')?.title).toBe('new title')
+  })
+
+  it('updateRagConversationTitle rejects a missing conversation', () => {
+    expect(() => db.updateRagConversationTitle('missing-conversation', 'new title')).toThrow(
+      'Conversation not found: missing-conversation'
+    )
   })
 
   it('deleteRagConversation returns true when a row was deleted, false otherwise', () => {

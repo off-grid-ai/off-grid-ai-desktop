@@ -1342,15 +1342,25 @@ export function getProjectChatHistory(
   return rows.map(({ role, content, title }) => ({ role, content, title })).reverse()
 }
 
-export function updateRagConversationTitle(id: string, title: string): void {
+export function updateRagConversationTitle(id: string, title: string): RagConversation {
+  const normalizedTitle = title.trim()
+  if (!normalizedTitle) {
+    throw new Error('Conversation title cannot be empty')
+  }
   const db = getDB()
-  db.prepare(
-    `
+  const result = db
+    .prepare(
+      `
         UPDATE rag_conversations 
         SET title = ?, updated_at = CURRENT_TIMESTAMP 
         WHERE id = ?
     `
-  ).run(title, id)
+    )
+    .run(normalizedTitle, id)
+  if (result.changes !== 1) {
+    throw new Error(`Conversation not found: ${id}`)
+  }
+  return getRagConversation(id)!
 }
 
 export function deleteRagConversation(id: string): boolean {

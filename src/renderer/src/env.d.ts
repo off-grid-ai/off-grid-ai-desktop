@@ -166,7 +166,7 @@ interface RendererAPIOverrides {
     context?: any
   ) => Promise<number>
   truncateRagMessages: (conversationId: string, keepCount: number) => Promise<number>
-  updateRagConversationTitle: (id: string, title: string) => Promise<void>
+  updateRagConversationTitle: (id: string, title: string) => Promise<RagConversation>
   deleteRagConversation: (id: string) => Promise<void>
 
   // App Settings

@@ -13,6 +13,7 @@ import { VoiceBubble, stopAllVoicePlayback } from './VoiceBubble'
 import { SkillsPanel } from './SkillsPanel'
 import { SettingsPanel } from './SettingsPanel'
 import { ModelPicker } from './ModelPicker'
+import { ConversationTitleActions } from './ConversationTitleActions'
 import { resolveImageParams, setOverride, type ImageParamStore } from '@renderer/lib/image-params'
 import { shouldAutoRouteImage, cleanImagePrompt } from '@renderer/lib/image-intent'
 import {
@@ -20,7 +21,7 @@ import {
   readReasoning,
   readResponseCutoff
 } from '@renderer/lib/message-persistence'
-import type { ResponseCutoffContract } from '../../../shared/ipc-contracts'
+import type { RagConversationContract, ResponseCutoffContract } from '../../../shared/ipc-contracts'
 import { Button } from '@renderer/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import {
@@ -167,14 +168,7 @@ type Attachment = {
   error?: string
 }
 
-type Conversation = {
-  id: string
-  title: string | null
-  project_id?: string | null
-  created_at: string
-  updated_at: string
-  message_count?: number
-}
+type Conversation = RagConversationContract
 
 type ProjectLite = { id: string; name: string }
 
@@ -1075,8 +1069,7 @@ export function MemoryChat({
   }, [setConvMessages])
 
   const deleteConversation = useCallback(
-    async (convId: string, e: React.MouseEvent) => {
-      e.stopPropagation()
+    async (convId: string) => {
       try {
         await window.api.deleteRagConversation(convId)
         // Drop the deleted conversation's cached messages; reset to a fresh chat if active.
@@ -1095,6 +1088,12 @@ export function MemoryChat({
     },
     [activeConversationId]
   )
+
+  const conversationRenamed = useCallback((stored: RagConversationContract): void => {
+    setConversations((current) =>
+      current.map((conversation) => (conversation.id === stored.id ? stored : conversation))
+    )
+  }, [])
 
   const sendMessage = async (
     override?: string,
@@ -2404,9 +2403,11 @@ export function MemoryChat({
                           }`}
                         >
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs text-neutral-300">
-                              {conv.title || 'Untitled'}
-                            </p>
+                            <ConversationTitleActions
+                              conversation={conv}
+                              onRenamed={conversationRenamed}
+                              onDelete={() => deleteConversation(conv.id)}
+                            />
                             <div className="mt-0.5 flex items-center gap-2">
                               <span className="text-[10px] text-neutral-600">
                                 {timeAgo(conv.updated_at)}
@@ -2416,25 +2417,6 @@ export function MemoryChat({
                               )}
                             </div>
                           </div>
-                          <button
-                            onClick={(e) => deleteConversation(conv.id, e)}
-                            className="shrink-0 text-neutral-700 opacity-0 transition hover:text-red-400 group-hover:opacity-100"
-                            title="Delete conversation"
-                          >
-                            <svg
-                              className="h-3.5 w-3.5"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                              />
-                            </svg>
-                          </button>
                         </div>
                       ))}
                     </div>
