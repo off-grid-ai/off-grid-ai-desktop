@@ -38,14 +38,6 @@ function renderChat(openTarget?: { conversationId?: string }): ReturnType<typeof
   )
 }
 
-// jsdom lacks ResizeObserver; Radix (tooltip/dropdown) references it at module load.
-// Install it once at top-level so an import-time capture sees a real constructor.
-;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver ??= class {
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
-
 afterEach(() => cleanup())
 
 const FEW_STEP = 'sdxl-lightning.gguf' // shared image-defaults: defaultSteps 10

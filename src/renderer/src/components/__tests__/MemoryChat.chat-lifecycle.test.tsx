@@ -20,11 +20,6 @@ import {
   send,
   type ThinkSplitterFactory
 } from './harness/chat-boundary'
-;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver ??= class {
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
 
 describe('<MemoryChat/> - chat lifecycle integration (#36-#42, #47-#48)', () => {
   beforeEach(() => {

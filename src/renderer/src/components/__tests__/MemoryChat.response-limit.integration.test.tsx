@@ -22,11 +22,6 @@ describe('<MemoryChat/> - response limit through public renderer contracts', () 
       callback(0)
       return 1
     }
-    ;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver ??= class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    }
   })
 
   afterEach(() => {

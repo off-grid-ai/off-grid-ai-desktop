@@ -14,25 +14,21 @@
 // window.api.addRagMessage — asserted through the REAL readReasoning reader (the exact path a
 // reload uses to restore the block), not an intermediate field.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest'
 import { render, screen, waitFor, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryChat } from '../MemoryChat'
 import { TooltipProvider } from '../ui/tooltip'
 import { readReasoning } from '@renderer/lib/message-persistence'
-;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver ??= class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
 
 type StreamEvent = { streamId: string; type: 'content' | 'reasoning' | 'step'; text?: string }
 type AddRagArgs = [convId: string, role: string, content: string, context?: unknown]
+type AddRagMessageBoundary = Mock<(...args: AddRagArgs) => Promise<void>>
 
 /** window.api where ragChat streams a reasoning event through the REAL onRagStream
  *  callback (keyed by the streamId it is handed), then resolves. addRagMessage is the
  *  assertion subject — its context arg is what persists / reloads. */
-function installApi() {
+function installApi(): { addRagMessage: AddRagMessageBoundary } {
   let streamCb: ((e: StreamEvent) => void) | null = null
   const addRagMessage = vi.fn(async (..._a: AddRagArgs) => {})
   const api = {

@@ -5,11 +5,6 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryChat } from '../MemoryChat'
 import { TooltipProvider } from '../ui/tooltip'
-;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver ??= class {
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
 
 const conversation = {
   id: 'conversation-copy',
