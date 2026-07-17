@@ -14,7 +14,7 @@ files:
   # multi-GB models, nested builds, or symlinks outside the repository. They are
   # never application inputs. Keep this boundary here rather than relying on
   # .gitignore: electron-builder packages filesystem contents, not only git files.
-  - '!{.demo-profile,.offgrid,.claude,.Codex}/**'
+  - '!{.demo-profile,.offgrid,.claude,.Codex,coverage}/**'
   - '!src/*'
   - '!pro/**'
   - '!electron.vite.config.{js,ts,mjs,cjs}'

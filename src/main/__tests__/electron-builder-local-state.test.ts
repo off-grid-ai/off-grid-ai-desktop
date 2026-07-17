@@ -8,7 +8,7 @@ const builderConfig = fs.readFileSync(
 )
 
 describe('electron-builder local-state admission', () => {
-  it.each(['.demo-profile', '.offgrid', '.claude', '.Codex'])(
+  it.each(['.demo-profile', '.offgrid', '.claude', '.Codex', 'coverage'])(
     'excludes %s before electron-builder traverses project files',
     (directory) => {
       const localStateExclusion = builderConfig.match(/'!\{([^}]+)\}\/\*\*'/)?.[1]?.split(',')
