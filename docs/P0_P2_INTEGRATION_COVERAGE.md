@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 48 covered, 26 left.
-  - P1: 71 total, 35 covered, 36 left.
+  - P0: 74 total, 50 covered, 24 left.
+  - P1: 71 total, 38 covered, 33 left.
   - P2: 10 total, 3 covered, 7 left.
-  - Overall: 155 total, 86 covered, 69 left.
+  - Overall: 155 total, 91 covered, 64 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -158,6 +158,13 @@ manual claim does not count as complete integration coverage.
 - #137 - Core locked Pro tabs. The free-tier Electron tour discovers every lock-bearing nav item
   rendered from the production catalog, opens each one, verifies its matching upgrade heading, and
   confirms the Pro entitlement remains false.
+- #138 - Pro license activates. `licensing.integration.test.ts` activates through the production
+  IPC/service against a remote license boundary, proves the cached key is encrypted, reloads every
+  module, and verifies the synchronous entitlement gate still unlocks Pro. The rendered Upgrade
+  screen proves the user sees activation and the required restart action.
+- #140 - Offline entitlement behavior. The licensing integration activates a lifetime entitlement,
+  reloads with its network boundary unavailable, and proves the signed cache remains entitled while
+  both a fresh profile and an expired cached entitlement stay locked.
 - #145 - Cold relaunch after forced quit. `e2e/chat-memory.spec.ts` kills the real Electron main
   process during non-destructive chat activity, waits for process exit, reopens the same profile,
   and verifies clean boot, preload availability, usable input, and durable committed chat data.
@@ -269,6 +276,15 @@ manual claim does not count as complete integration coverage.
   the real LLM settings owner, disk persistence, fresh-service launch arguments, recommendation,
   and setup planner with only host RAM controlled; the Electron tour proves selection stays
   responsive and the sizing guards enforce memory clamps.
+- #139 - Invalid or exhausted license fails clearly. `licensing.integration.test.ts` drives invalid
+  and device-limit responses through the production service and proves entitlement remains false;
+  `UpgradeScreen.license.test.tsx` verifies distinct actionable messages remain on the locked screen.
+- #141 - Core and Pro override behavior. The licensing integration applies both development
+  overrides through the production bootstrap seam and proves neither mutates the encrypted persisted
+  entitlement; a core build remains incapable of force-loading Pro implementation code.
+- #142 - Manual update check. `update-check.integration.dbtest.ts` exercises available, current,
+  remote-error, timeout, cleanup, and retry results through the production updater IPC owner, while
+  `Settings.update-check.test.tsx` proves the rendered action never stays stuck in Checking.
 - #143 - Update channel persists. `src/main/__tests__/settings-persistence.dbtest.ts` changes the
   channel through the production update IPC handler, closes the encrypted database, reloads every
   Off Grid module, and verifies the fresh update-preferences handler restores the beta channel.
@@ -373,11 +389,6 @@ manual claim does not count as complete integration coverage.
 
 - #133 - Storage usage is truthful.
 - #134 - Clear cache preserves user data.
-- #138 - Pro license activates.
-- #139 - Invalid or exhausted license fails clearly.
-- #140 - Offline entitlement behavior.
-- #141 - Core and Pro override behavior.
-- #142 - Manual update check.
 
 ## Left - resilience and desktop polish
 
