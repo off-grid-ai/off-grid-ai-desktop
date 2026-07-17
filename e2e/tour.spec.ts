@@ -64,6 +64,13 @@ test.afterAll(async () => {
   }
 })
 
+test('window and runtime use the canonical desktop product name', async () => {
+  await expect(page).toHaveTitle('Off Grid AI Desktop')
+  expect(await app.evaluate(({ app: electronApp }) => electronApp.getName())).toBe(
+    'Off Grid AI Desktop'
+  )
+})
+
 test('Models: merged tab + use-cases + import', async () => {
   await expect(page.getByRole('heading', { name: 'Models' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Import \.gguf/i })).toBeVisible()

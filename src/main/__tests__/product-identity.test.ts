@@ -14,6 +14,9 @@ describe('installed product identity', () => {
     const builder = fs.readFileSync(path.join(root, 'electron-builder.yml'), 'utf8')
     expect(builder).toMatch(/^productName: Off Grid AI Desktop$/m)
 
+    const renderer = fs.readFileSync(path.join(root, 'src/renderer/index.html'), 'utf8')
+    expect(renderer).toContain('<title>Off Grid AI Desktop</title>')
+
     const localBuild = fs.readFileSync(path.join(root, 'scripts/build-mac-local.sh'), 'utf8')
     expect(localBuild.match(/-c\.productName="Off Grid AI Desktop"/g)).toHaveLength(2)
     expect(localBuild).not.toMatch(/-c\.productName="Off Grid AI(?: Pro)?"/)
