@@ -8,18 +8,17 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 32 covered, 42 left.
-  - P1: 71 total, 15 covered, 56 left.
+  - P0: 74 total, 34 covered, 40 left.
+  - P1: 71 total, 16 covered, 55 left.
   - P2: 10 total, 1 covered, 9 left.
-  - Overall: 155 total, 48 covered, 107 left.
+  - Overall: 155 total, 51 covered, 104 left.
 - Green gates today:
-  - `npm test`: 206 files passed, 1 skipped; 2,197 tests passed, 1 skipped.
-  - `npm run test:coverage`: 96.75% statements, 91.55% branches, 96.15% functions,
-    97.52% lines.
-  - `npm run test:db`: 15 files and 108 real SQLite integration tests passed; Electron ABI
+  - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
+    96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
+  - `npm run test:db`: 17 files and 112 real SQLite integration tests passed; Electron ABI
     restored afterward.
   - `npm run test:e2e`: 28 Playwright Electron tests passed against fresh synthetic temp profiles.
-  - Both TypeScript projects pass.
+  - Core main, renderer, and Pro TypeScript projects pass.
 - Not yet a clean handoff: release-journey coverage remains incomplete, and strict ESLint exposes
   a legacy backlog. Neither is hidden by the coverage percentage.
 
@@ -47,6 +46,10 @@ manual claim does not count as complete integration coverage.
 - #52 - Attach a knowledge document. `rag-store-integration.dbtest.ts` drives a real Markdown file
   through production extraction/chunking, real SQLite persistence and retrieval, and prompt
   formatting, with only the local embedding-model boundary deterministic.
+- #53 - Project retrieval is grounded. `rag-store-integration.dbtest.ts` indexes real Markdown
+  files into two projects through the production RAG service and SQLite store, then proves selected
+  project and enabled-document filters exclude obsolete and cross-project facts from retrieval and
+  prompt context.
 - #51 - Create a project. `src/main/__tests__/rag-store-integration.dbtest.ts` exercises the real
   project store against temp SQLite and verifies the round trip.
 - #56 - Delete project cascades. `src/main/__tests__/project-delete-cascade.dbtest.ts` uses the real
@@ -72,6 +75,10 @@ manual claim does not count as complete integration coverage.
 - #84 - Capture disabled means no capture. `capture-disabled.integration.test.ts` backs the real
   capture state machine with the production settings store and proves the persisted privacy pause
   survives hydration, prevents OS capture work across ticks, and resumes only after user action.
+- #86 - Sensitive or excluded apps are omitted. `capture-exclusion.dbtest.ts` drives the production
+  extractor and real SQLite persistence, with only screenshot/OCR and the model socket at their
+  external boundaries, and proves configured apps, authentication surfaces, private browser
+  windows, and password-manager URLs stop before capture while a normal app still persists.
 - #87 - Replay timeline renders. `e2e/pro.spec.ts` launches the real Pro build path with synthetic
   data and verifies Replay renders instead of the upgrade screen.
 - #94 - Delete all removes capture corpus. `pro/main/__tests__/personal-data.integration.test.ts`
@@ -112,6 +119,10 @@ manual claim does not count as complete integration coverage.
 
 ## Covered P1 journeys
 
+- #24 - Offline download fails clearly. `model-integrity.integration.test.ts` drives the real model
+  manager through an offline fetch failure, verifies a clear network-unavailable error and clean
+  filesystem state, preserves an existing installed model, then retries successfully with the same
+  manager and exact GGUF bytes.
 - #45 - Delete conversation cascades. `conversation-delete-cascade.dbtest.ts` proves real messages
   and artifacts do not survive conversation deletion.
 - #60 - Unsupported document fails clearly. The production picker excludes unsupported types;
@@ -186,7 +197,6 @@ manual claim does not count as complete integration coverage.
 - #21 - Image model downloads.
 - #22 - Multiple downloads queue.
 - #23 - Delete does not cancel another download.
-- #24 - Offline download fails clearly.
 - #28 - Active text model survives relaunch.
 - #29 - Active modal models survive relaunch.
 - #30 - Deleting active model clears selection.
@@ -214,7 +224,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - projects and artifacts
 
-- #53 - Project retrieval is grounded.
 - #54 - New chat inherits project.
 - #55 - Edit project.
 - #57 - Text artifact saves and reopens.
@@ -244,7 +253,6 @@ manual claim does not count as complete integration coverage.
 
 - #83 - Screen capture permission path.
 - #85 - OCR creates searchable memory.
-- #86 - Sensitive or excluded apps are omitted.
 - #88 - Replay playback uses media server.
 - #89 - Replay navigation preserves target.
 - #90 - Unified search finds each source.
