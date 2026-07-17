@@ -437,21 +437,33 @@ async function handleChat(
     json(res, 413, errBody('Request too large.'))
     return
   }
-  let body: Record<string, unknown> | null = null
+  let body: Record<string, unknown>
   let forward: Buffer = buf
   try {
-    body = JSON.parse(buf.toString('utf8'))
+    const parsed: unknown = JSON.parse(buf.toString('utf8'))
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      json(res, 400, errBody('Invalid JSON body.'))
+      return
+    }
+    body = parsed as Record<string, unknown>
+  } catch {
+    json(res, 400, errBody('Invalid JSON body.'))
+    return
+  }
+
+  try {
     let changed = await inlineChatImages(body)
     // Gemma 4 (and others) reject system messages that aren't at position 0.
     // Consolidate them before forwarding so any client's ordering works.
     if (sanitizeChatMessages(body)) changed = true
     if (changed) forward = Buffer.from(JSON.stringify(body))
   } catch {
-    // Not JSON, or image fetch failed — forward the original bytes untouched.
+    // Image fetch failed — forward the original valid request unchanged so the
+    // model process can return its own stable input error.
   }
 
   // Async chat: run a non-streaming completion in the background and poll for it.
-  if (body && isAsync(req, body)) {
+  if (isAsync(req, body)) {
     const inlined = body
     await serve(
       res,

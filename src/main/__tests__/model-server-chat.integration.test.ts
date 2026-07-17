@@ -109,6 +109,24 @@ afterAll(async () => {
 })
 
 describe('model gateway chat streaming', () => {
+  it('rejects malformed input with a stable JSON envelope and remains healthy', async () => {
+    const response = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"messages":['
+    })
+
+    expect(response.status).toBe(400)
+    expect(response.headers.get('content-type')).toContain('application/json')
+    expect(await response.json()).toEqual({
+      error: { message: 'Invalid JSON body.', type: 'invalid_request_error' }
+    })
+
+    const health = await fetch(`http://127.0.0.1:${gatewayPort}/v1`)
+    expect(health.status).toBe(200)
+    expect(health.headers.get('content-type')).toContain('application/json')
+  })
+
   it('forwards the real request and streams tokens before llama-server completes', async () => {
     const response = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
       method: 'POST',
