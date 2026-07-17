@@ -9,6 +9,16 @@ interface ErrorWithCause {
   cause?: unknown
 }
 
+function thrownValueMessage(error: unknown): string {
+  if (error === null) return 'null'
+  if (typeof error === 'string') return error
+  if (typeof error === 'number' || typeof error === 'boolean' || typeof error === 'bigint') {
+    return `${error}`
+  }
+  if (typeof error === 'symbol') return error.description ?? 'Symbol'
+  return 'Model download failed.'
+}
+
 /** Normalize runtime/network errors at the download boundary while preserving
  * specific failures (disk full, HTTP status, integrity errors) verbatim. */
 export function downloadFailureMessage(error: unknown): string {
@@ -21,5 +31,7 @@ export function downloadFailureMessage(error: unknown): string {
   if (typeof code === 'string' && NETWORK_UNAVAILABLE_CODES.has(code)) {
     return NETWORK_UNAVAILABLE_MESSAGE
   }
-  return error instanceof Error ? error.message : String(error)
+  if (error instanceof Error) return error.message
+  if (typeof outer?.message === 'string') return outer.message
+  return thrownValueMessage(error)
 }
