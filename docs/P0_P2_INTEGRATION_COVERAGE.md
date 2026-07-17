@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 60 covered, 14 left.
-  - P1: 71 total, 56 covered, 15 left.
+  - P1: 71 total, 58 covered, 13 left.
   - P2: 10 total, 9 covered, 1 left.
-  - Overall: 155 total, 125 covered, 30 left.
+  - Overall: 155 total, 127 covered, 28 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -300,6 +300,10 @@ manual claim does not count as complete integration coverage.
 - #82 - Gateway failure envelope. `model-server-chat.integration.test.ts` sends malformed input
   through the real HTTP gateway, proves it receives the stable OpenAI-style JSON error contract
   without reaching the native model boundary, then calls the gateway again to verify it stays healthy.
+- #89 - Replay navigation preserves target. `e2e/pro.spec.ts` derives a query from an actual
+  interior capture, opens its visible Search result through the production Pro router, and proves
+  Replay lands on that exact image, app, timestamp, caption, and timeline position rather than the
+  beginning of the session.
 - #91 - Search filters and sort apply. The universal-search DB integration proves production source,
   recency, and match filtering over fresh results; `SearchScreen.integration.test.tsx` drives the
   rendered filter and sort controls and verifies visible ordering changes without stale rows.
@@ -322,8 +326,8 @@ manual claim does not count as complete integration coverage.
   rendered drop gesture refreshes into a searchable transcript card.
 - #105 - Speak assistant reply. `e2e/tts-speak.spec.ts` clicks the real rendered Speak action and
   runs production preload, IPC, TTS normalization, worker spawn, WAV data URL, and Chromium audio;
-  only the heavyweight ONNX worker is replaced, and it proves markdown becomes `A local reply with
-  code` before the UI enters and exits the real Stop state.
+  only the heavyweight ONNX worker is replaced. It proves markdown becomes the spoken text
+  `A local reply with code` before the UI enters and exits the real Stop state.
 - #107 - Entities are synthesized. `entity-action-journeys.dbtest.ts` records person, project, and
   company mentions through production observation and entity owners, proving one correctly typed
   record per entity with automatic identifiers and two supporting observations.
@@ -377,6 +381,10 @@ manual claim does not count as complete integration coverage.
 - #143 - Update channel persists. `src/main/__tests__/settings-persistence.dbtest.ts` changes the
   channel through the production update IPC handler, closes the encrypted database, reloads every
   Off Grid module, and verifies the fresh update-preferences handler restores the beta channel.
+- #149 - Large seeded collections stay usable. Core Electron and Pro rendered integrations drive
+  120 models, 120 persisted chats, 120 entities, 300 clipboard items, and 120 observations through
+  their production owners, proving filters, scrolling, dense master-detail layouts, and bounded
+  result surfaces remain usable at desktop scale.
 - #150 - Window resize preserves desktop layout. `e2e/desktop-polish.spec.ts` resizes the real
   Electron viewport from 1280 to 1800 pixels and proves the production Models collection expands
   from three to four computed columns while its search/filter context remains reachable.
@@ -449,7 +457,6 @@ manual claim does not count as complete integration coverage.
 ## Left - capture, memory, and replay
 
 - #88 - Replay playback uses media server.
-- #89 - Replay navigation preserves target.
 - #93 - Day links open correct records.
 
 ## Left - meetings, voice, and dictation
@@ -476,7 +483,6 @@ manual claim does not count as complete integration coverage.
 - #144 - Local use works offline.
 - #146 - Model ports are single-owner.
 - #148 - Low disk space is handled.
-- #149 - Large seeded collections stay usable.
 - #155 - No private data in release evidence.
 
 ## Next implementation order
