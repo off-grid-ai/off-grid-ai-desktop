@@ -10,7 +10,9 @@
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+let App: typeof import('../App').default
 
 const PROJECTS = Array.from({ length: 12 }, (_, index) => {
   const suffix = index === 0 ? 'Alpha' : index === 1 ? 'Beta' : String(index + 1).padStart(2, '0')
@@ -85,22 +87,35 @@ function installStorage(): Storage {
   return storage
 }
 
+function installBrowserBoundary(): void {
+  ;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn()
+  })
+}
+
 describe('<App/> desktop navigation integration', () => {
+  beforeAll(async () => {
+    // App's renderer graph includes modules that capture the preload bridge at
+    // module initialization. Install that real boundary once, then keep module
+    // loading outside the interaction assertion's timeout budget.
+    installBoundary()
+    installBrowserBoundary()
+    ;({ default: App } = await import('../App'))
+  }, 30_000)
+
   beforeEach(() => {
     vi.clearAllMocks()
     installStorage().setItem('onboarding_completed', 'true')
     window.history.replaceState(null, '', '/projects')
     installBoundary()
-    ;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    }
-    window.matchMedia = vi.fn().mockReturnValue({
-      matches: false,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn()
-    })
+    installBrowserBoundary()
   })
 
   afterEach(() => {
@@ -110,11 +125,12 @@ describe('<App/> desktop navigation integration', () => {
   })
 
   it('keeps a dense project master-detail state through Cmd+[ and Cmd+] (#50, #59)', async () => {
-    const { default: App } = await import('../App')
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Projects' })).not.toBeNull()
+    expect(
+      await screen.findByRole('heading', { name: 'Projects' }, { timeout: 5_000 })
+    ).not.toBeNull()
     await Promise.all(
       PROJECTS.map((project) => screen.findByRole('button', { name: project.name }))
     )

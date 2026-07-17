@@ -6,8 +6,10 @@
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Modal, ModalBody, ModalContent, ModalTrigger } from '../ui/animated-modal'
+
+let ModelsScreen: typeof import('../ModelsScreen').ModelsScreen
 
 const MODELS = Array.from({ length: 120 }, (_, index) => ({
   id: `community/model-${String(index + 1).padStart(3, '0')}`,
@@ -61,6 +63,11 @@ function SharedModalHarness(): React.JSX.Element {
 }
 
 describe('desktop collection and transient-layer integration', () => {
+  beforeAll(async () => {
+    installBoundary()
+    ;({ ModelsScreen } = await import('../ModelsScreen'))
+  }, 30_000)
+
   beforeEach(() => {
     vi.clearAllMocks()
     installBoundary()
@@ -77,7 +84,6 @@ describe('desktop collection and transient-layer integration', () => {
   })
 
   it('keeps a large synthetic model catalog filterable and its detail panel usable (#149)', async () => {
-    const { ModelsScreen } = await import('../ModelsScreen')
     const user = userEvent.setup()
     render(<ModelsScreen />)
 
@@ -94,7 +100,6 @@ describe('desktop collection and transient-layer integration', () => {
   })
 
   it('Escape closes only the model detail layer and preserves the filtered collection (#152)', async () => {
-    const { ModelsScreen } = await import('../ModelsScreen')
     const user = userEvent.setup()
     render(<ModelsScreen />)
 
@@ -106,7 +111,7 @@ describe('desktop collection and transient-layer integration', () => {
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: 'Seeded Model 120' })).toBeNull()
     })
-    expect(screen.getByText('84 models')).not.toBeNull()
+    expect(await screen.findByText('84 models')).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Coding' })).not.toBeNull()
   })
 
