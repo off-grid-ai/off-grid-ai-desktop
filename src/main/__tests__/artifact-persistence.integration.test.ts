@@ -94,14 +94,22 @@ describe('artifact persistence across an app module reload', () => {
       conversationId: 'conversation-existing'
     })
     const writeFileSync = fs.writeFileSync.bind(fs)
+    const existingFile = path.join(TMP_DIR, 'artifacts-library', `${existing.id}.json`)
+    let acceptedBytes = 0
+    let partialExistedAtFailure = false
 
     vi.spyOn(fs, 'writeFileSync').mockImplementation((target, data, options) => {
-      if (String(target).endsWith('.json') && !String(target).endsWith(`${existing.id}.json`)) {
+      if (String(target) !== existingFile) {
+        const serialized = Buffer.isBuffer(data) ? data : Buffer.from(data.toString())
+        const accepted = serialized.subarray(0, 24)
+        writeFileSync(String(target), accepted)
+        acceptedBytes = accepted.length
+        partialExistedAtFailure = fs.statSync(String(target)).size === acceptedBytes
         throw Object.assign(new Error('ENOSPC: no space left on device, write'), {
           code: 'ENOSPC'
         })
       }
-      return writeFileSync(target, data, options)
+      return writeFileSync(String(target), data, options)
     })
 
     expect(() =>
@@ -116,6 +124,11 @@ describe('artifact persistence across an app module reload', () => {
     vi.resetModules()
     const { listArtifacts } = await import('../artifacts')
 
+    expect({ acceptedBytes, partialExistedAtFailure }).toEqual({
+      acceptedBytes: 24,
+      partialExistedAtFailure: true
+    })
+    expect(fs.readdirSync(path.join(TMP_DIR, 'artifacts-library'))).toEqual([`${existing.id}.json`])
     expect(listArtifacts()).toEqual([
       expect.objectContaining({
         id: existing.id,

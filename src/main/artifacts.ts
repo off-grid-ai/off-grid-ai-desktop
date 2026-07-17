@@ -129,7 +129,16 @@ export function saveArtifact(a: {
     conversationId: a.conversationId,
     projectId: a.projectId ?? null
   }
-  fs.writeFileSync(file, JSON.stringify(rec))
+  // Write beside the destination and promote only after the complete record is on
+  // disk. A full volume can otherwise leave truncated JSON at the final path and
+  // make the existing artifact library unreadable.
+  const temporaryFile = `${file}.tmp`
+  try {
+    fs.writeFileSync(temporaryFile, JSON.stringify(rec))
+    fs.renameSync(temporaryFile, file)
+  } finally {
+    fs.rmSync(temporaryFile, { force: true })
+  }
   return rec
 }
 
