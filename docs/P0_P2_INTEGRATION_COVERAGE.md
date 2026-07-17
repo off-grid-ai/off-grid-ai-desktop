@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 57 covered, 17 left.
-  - P1: 71 total, 49 covered, 22 left.
-  - P2: 10 total, 3 covered, 7 left.
-  - Overall: 155 total, 109 covered, 46 left.
+  - P1: 71 total, 52 covered, 19 left.
+  - P2: 10 total, 8 covered, 2 left.
+  - Overall: 155 total, 117 covered, 38 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -28,6 +28,10 @@ manual claim does not count as complete integration coverage.
   new temp `OFFGRID_USER_DATA` directory and verifies first-run onboarding and the preload bridge.
 - #9 - Fresh onboarding completes. `e2e/smoke.spec.ts` drives the real onboarding flow and lands on
   Models.
+- #10 - Configure for me completes. `model-server-chat.integration.test.ts` runs production
+  auto-configuration against a temp profile, real catalog/model manager and filesystem, proving
+  the conservative chat, transcription and voice baseline downloads, activates, and reaches the
+  terminal done state through only download/native-process boundaries.
 - #13 - System Health is truthful. `e2e/smoke.spec.ts` launches a fresh profile, compares the real
   gateway `/health` payload with the System Health IPC components, verifies absent runtimes are
   reported as `not_installed`, and confirms the unavailable chat engine port is actually down.
@@ -85,9 +89,6 @@ manual claim does not count as complete integration coverage.
   project store against temp SQLite and verifies the round trip.
 - #56 - Delete project cascades. `src/main/__tests__/project-delete-cascade.dbtest.ts` uses the real
   project, conversation, message, artifact, document, and chunk paths and proves no orphans remain.
-- #63 - Image cancellation keeps text. `MemoryChat.tool-image-cancel.test.tsx` drives the real
-  rendered MemoryChat path with the image engine as the external boundary and verifies the text
-  turn persists.
 - #61 - Text prompt generates an image. `MemoryChat.image.test.tsx` drives the real rendered image
   composer through its preload boundary, holds the native image job pending, emits live production
   progress, then proves exactly one generated image reaches the conversation.
@@ -119,6 +120,10 @@ manual claim does not count as complete integration coverage.
   OpenAI-compatible streaming request through the real HTTP gateway to a loopback llama-server
   boundary and proves the first SSE token arrives before upstream completion, later chunks retain
   their content, and the stream terminates with `[DONE]`.
+- #83 - Screen capture permission path. `capture-disabled.integration.test.ts` keeps the real
+  production capture interval, focus extractor, settings store, and filesystem writer connected
+  while only the Electron/TCC boundary changes from denied to granted; the next eligible tick writes
+  a frame without restarting the loop or app.
 - #84 - Capture disabled means no capture. `capture-disabled.integration.test.ts` backs the real
   capture state machine with the production settings store and proves the persisted privacy pause
   survives hydration, prevents OS capture work across ticks, and resumes only after user action.
@@ -130,8 +135,6 @@ manual claim does not count as complete integration coverage.
   extractor and real SQLite persistence, with only screenshot/OCR and the model socket at their
   external boundaries, and proves configured apps, authentication surfaces, private browser
   windows, and password-manager URLs stop before capture while a normal app still persists.
-- #87 - Replay timeline renders. `e2e/pro.spec.ts` launches the real Pro build path with synthetic
-  data and verifies Replay renders instead of the upgrade screen.
 - #90 - Unified search finds each source. `pro/main/__tests__/universal-search.dbtest.ts` writes
   captured and connector-derived observations plus meeting, entity, fact, memory, chat, and
   knowledge records through their production SQLite owners, then proves one production search
@@ -143,11 +146,12 @@ manual claim does not count as complete integration coverage.
   classifier and controller with only active-window/native-recording boundaries controlled. It
   proves supported presence starts once, explicit lobby/post-call states do not record, leaving
   warns then stops, and the capture resource is released.
+- #106 - Mic and TTS stop cleanly. `MemoryChat.chat-lifecycle.test.tsx` proves canceled synthesis
+  cannot start late and unmount pauses active audio; `DictationOverlay.integration.test.tsx` proves
+  unmount stops the recorder, microphone track and audio context and removes every event listener.
 - #96 - Manual meeting recording. `MeetingsScreen.integration.test.tsx` renders the real screen and
   recorder hook, clicks Record then Stop, and proves exactly one sane-duration completed meeting is
   visible with capture inactive.
-- #100 - Dictation pastes at cursor. `paste-at-cursor.test.ts` exercises the real dictation sink
-  with only the OS automation boundary faked, including ordering and clipboard restoration.
 - #112 - Approval queue gates actions. `approvals.integration.test.ts` exercises real proposal,
   decision, execution, failure, and audit persistence against SQLite.
 - #116 - CRM processing tolerates schema upgrades. `crm-schema-upgrade.dbtest.ts` creates a real
@@ -201,6 +205,9 @@ manual claim does not count as complete integration coverage.
   Core/Pro build, renderer document, and runtime bootstrap names to `Off Grid AI Desktop`;
   `e2e/tour.spec.ts` launches the built Electron app and verifies both its visible window title and
   Electron runtime name match that canonical product identity.
+- #14 - Chat engine stderr is surfaced. The same integration starts a native child that reports an
+  incompatible `gemma4` architecture and exits, then proves System Health returns the classified
+  engine-too-old reason rather than a generic down message.
 - #18 - Vision model downloads. `model-download-matrix.integration.test.ts` proves a real catalog
   vision model remains unavailable until both weights and projector finish, then activates the exact
   primary/projector pair persisted by the production manager.
@@ -229,6 +236,11 @@ manual claim does not count as complete integration coverage.
 - #35 - Empty memory degrades safely. `rag-empty-memory.dbtest.ts` invokes the real `rag:chat` IPC
   handler on an empty SQLite/RAG corpus, verifies a normal answer, empty context and zero retrieval
   counts, then completes an immediate second turn to prove the queue and controller were released.
+- #36 - Thinking streams separately. `MemoryChat.chat-lifecycle.test.tsx` drives a real rendered
+  turn through the production thinking-stream parser and proves reasoning renders in its own block
+  while the final answer remains separate.
+- #37 - Plain reply hides think markers. The same rendered production path proves a plain reply
+  exposes no parser markers or literal think tags while preserving the final response.
 - #40 - Queued message order. `MemoryChat.chat-lifecycle.test.tsx` sends a second message through
   the real composer while the first model-boundary promise is pending, then proves production queue
   draining preserves user/assistant order without collision, duplication, or loss.
@@ -276,9 +288,6 @@ manual claim does not count as complete integration coverage.
 - #82 - Gateway failure envelope. `model-server-chat.integration.test.ts` sends malformed input
   through the real HTTP gateway, proves it receives the stable OpenAI-style JSON error contract
   without reaching the native model boundary, then calls the gateway again to verify it stays healthy.
-- #89 - Replay navigation preserves target. `DayReplay.integration.test.tsx` opens the rendered
-  Replay screen at an exact synthetic capture timestamp, serves the emitted `ogcapture://` file
-  through the production protocol owner, and proves keyboard playback advances to the next frame.
 - #91 - Search filters and sort apply. The universal-search DB integration proves production source,
   recency, and match filtering over fresh results; `SearchScreen.integration.test.tsx` drives the
   rendered filter and sort controls and verifies visible ordering changes without stale rows.
@@ -288,6 +297,12 @@ manual claim does not count as complete integration coverage.
 - #98 - Meeting survives relaunch. `meeting-persistence.dbtest.ts` saves synthetic meeting media,
   transcript, and local-model summary through production filesystem/SQLite owners, closes the DB,
   resets modules, and proves the exact audio metadata, transcript, and summary restore.
+- #102 - Dictation engine selection. `voice-journeys.dbtest.ts` persists Whisper and Parakeet
+  choices through generic dictation settings and runs both real CLI implementations against native
+  executable boundaries without caller-side engine branching.
+- #103 - Import media for transcription. The same real IPC/filesystem/SQLite integration imports
+  synthetic media into a completed recording, while `VoiceScreen.integration.test.tsx` proves the
+  rendered drop gesture refreshes into a searchable transcript card.
 - #107 - Entities are synthesized. `entity-action-journeys.dbtest.ts` records person, project, and
   company mentions through production observation and entity owners, proving one correctly typed
   record per entity with automatic identifiers and two supporting observations.
@@ -302,8 +317,6 @@ manual claim does not count as complete integration coverage.
 - #111 - Action items are extracted. `entity-action-journeys.dbtest.ts` sends a synthetic commitment
   through the production extractor over a loopback native-model boundary and proves exactly one
   imperative action persists with its due date and source evidence.
-- #113 - Action status survives persistence. `actions-status.integration.test.ts` exercises real
-  status, reopen, dismiss, feedback, ordering, and reason storage against SQLite.
 - #115 - Reflect uses real time ranges. `reflect.integration.test.ts` verifies real observation
   windows, dwell caps, category rollups, context switches, and seven-day aggregation.
 - #118 - Clipboard deduplicates repeated copy. `clipboard-store.integration.test.ts` exercises the
@@ -336,24 +349,39 @@ manual claim does not count as complete integration coverage.
 - #141 - Core and Pro override behavior. The licensing integration applies both development
   overrides through the production bootstrap seam and proves neither mutates the encrypted persisted
   entitlement; a core build remains incapable of force-loading Pro implementation code.
-- #142 - Manual update check. `update-check.integration.dbtest.ts` exercises available, current,
-  remote-error, timeout, cleanup, and retry results through the production updater IPC owner, while
-  `Settings.update-check.test.tsx` proves the rendered action never stays stuck in Checking.
 - #143 - Update channel persists. `src/main/__tests__/settings-persistence.dbtest.ts` changes the
   channel through the production update IPC handler, closes the encrypted database, reloads every
   Off Grid module, and verifies the fresh update-preferences handler restores the beta channel.
+- #150 - Window resize preserves desktop layout. `e2e/desktop-polish.spec.ts` resizes the real
+  Electron viewport from 1280 to 1800 pixels and proves the production Models collection expands
+  from three to four computed columns while its search/filter context remains reachable.
 - #154 - External links use the system browser. `e2e/tour.spec.ts` drives the real locked-Pro
   surface through Electron preload and IPC, proves purchase and Mobile links reach
   `shell.openExternal` with their production URLs, and verifies the Electron page never navigates.
 
 ## Covered P2 journeys
 
+- #50 - Keyboard and navigation shortcuts. `App.navigation.integration.test.tsx` drives the real
+  shell through Project Beta to Integrations, then proves Cmd+[ and Cmd+] restore both routes and
+  the selected project instead of losing screen state.
 - #46 - Copy assistant reply. `MemoryChat.clipboard-overlay.test.tsx` invokes Copy on an assistant
   message, proves its exact text reaches the native/browser clipboard boundary, and verifies visible
   success feedback only after the copy completes.
 - #55 - Edit project. `rag-ipc-project-create.dbtest.ts` changes every editable field through the
   production project IPC handlers and real SQLite store, reloads the modules, and proves the updated
   project is returned with its exact name, description, prompt, icon, and memory setting.
+- #31 - Models use desktop density. `e2e/desktop-polish.spec.ts` resizes the real Electron window
+  from 1280 to 1800 pixels and proves the production model collection forms three then four computed
+  columns while its controls remain reachable.
+- #104 - Voice retention settings apply. `voice-journeys.dbtest.ts` persists a seven-day retention
+  setting, completes a new import, and proves expired SQLite rows and media are deleted while the
+  fresh recording and file remain.
+- #152 - Escape closes transient UI. Rendered integrations prove Models detail and nested shared
+  modals close only the top layer, preserve the underlying filter/workspace state, and restore
+  focus; the Electron journey confirms Escape returns to the intact collection.
+- #153 - Reduced motion remains usable. The Electron journey emulates macOS reduced motion, proves
+  production transition duration collapses to a near-zero value, and still opens and closes the
+  model detail layer normally.
 - #124 - Clipboard retention applies. `clipboard-store.integration.test.ts` exercises the real
   retention-days and max-items policies against SQLite while preserving newer rows.
 
@@ -368,34 +396,29 @@ manual claim does not count as complete integration coverage.
 
 ## Left - onboarding and health
 
-- #10 - Configure for me completes.
 - #11 - Manual setup path works.
 - #12 - Onboarding resumes after relaunch.
-- #14 - Chat engine stderr is surfaced.
 - #15 - Required permissions granted.
 - #16 - Denied permission is recoverable.
 
 ## Left - models and downloads
 
 - #22 - Multiple downloads queue.
-- #31 - Models use desktop density.
 
 ## Left - chat and conversations
 
-- #36 - Thinking streams separately.
-- #37 - Plain reply hides think markers.
 - #44 - Rename conversation.
 - #49 - Long answer respects configured cap.
-- #50 - Keyboard and navigation shortcuts.
-
-## Left - projects and artifacts
-
-- #59 - Project list uses desktop layout.
 
 ## Left - image and vision
 
 - #64 - Image settings apply.
 - #66 - Image RAM guard is safe.
+- #63 - Image cancellation keeps text.
+
+## Left - projects and artifacts
+
+- #59 - Project list uses desktop layout.
 
 ## Left - integrations and gateway
 
@@ -403,23 +426,22 @@ manual claim does not count as complete integration coverage.
 
 ## Left - capture, memory, and replay
 
-- #83 - Screen capture permission path.
 - #88 - Replay playback uses media server.
+- #87 - Replay timeline renders.
+- #89 - Replay navigation preserves target.
 - #93 - Day links open correct records.
 
 ## Left - meetings, voice, and dictation
 
 - #97 - Meeting transcript and summary.
 - #99 - Global dictation hotkey.
+- #100 - Dictation pastes at cursor.
 - #101 - Dictation paste failure is visible.
-- #102 - Dictation engine selection.
-- #103 - Import media for transcription.
-- #104 - Voice retention settings apply.
 - #105 - Speak assistant reply.
-- #106 - Mic and TTS stop cleanly.
 
 ## Left - entities, actions, and reflection
 
+- #113 - Action status survives relaunch.
 - #114 - Notifications open their target.
 
 ## Left - clipboard and vault
@@ -429,6 +451,7 @@ manual claim does not count as complete integration coverage.
 ## Left - settings, privacy, licensing, and updates
 
 - #134 - Clear cache preserves user data.
+- #142 - Manual update check.
 
 ## Left - resilience and desktop polish
 
@@ -436,10 +459,7 @@ manual claim does not count as complete integration coverage.
 - #146 - Model ports are single-owner.
 - #148 - Low disk space is handled.
 - #149 - Large seeded collections stay usable.
-- #150 - Window resize preserves desktop layout.
 - #151 - Keyboard focus is visible.
-- #152 - Escape closes transient UI.
-- #153 - Reduced motion remains usable.
 - #155 - No private data in release evidence.
 
 ## Next implementation order
