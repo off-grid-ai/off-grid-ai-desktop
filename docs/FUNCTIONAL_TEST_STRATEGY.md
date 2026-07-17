@@ -28,7 +28,7 @@ really a test of a third-party framework or engine we merely depend on:
   75% branches / 77% functions / 79% lines on the TESTABLE surface (ratchet floor 77/74/76/78,
   climbing toward the 85% goal). ~1200 unit/integration tests.
 - **Swift, `npm run test:swift`:** 37 XCTest cases over the text-extractor pure classifiers.
-- **DB integration, `npm run test:db`:** 104 cases over core and Pro persistence against real
+- **DB integration, `npm run test:db`:** 105 cases over core and Pro persistence against real
   temp SQLite. Kept OUT of the default gate because it needs `better-sqlite3` rebuilt for the
   node ABI (the app builds it for Electron's ABI); the script rebuilds + restores. KNOWN GAP:
   wire `test:db` into CI as an isolated step so database coverage is enforced there.

@@ -8,13 +8,13 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Scope: 155 journeys - 74 P0, 71 P1, and 10 P2.
-- Covered by direct integration or E2E evidence: 21 - 14 P0, 6 P1, and 1 P2.
-- Left: 134 - including partially covered journeys whose exact release behavior is not yet proven.
+- Covered by direct integration or E2E evidence: 22 - 15 P0, 6 P1, and 1 P2.
+- Left: 133 - including partially covered journeys whose exact release behavior is not yet proven.
 - Green gates today:
   - `npm test`: 203 files passed, 1 skipped; 2,190 tests passed, 1 skipped.
   - `npm run test:coverage`: 96.77% statements, 91.54% branches, 96.25% functions,
     97.55% lines.
-  - `npm run test:db`: 13 files and 104 real SQLite integration tests passed; Electron ABI
+  - `npm run test:db`: 13 files and 105 real SQLite integration tests passed; Electron ABI
     restored afterward.
   - `npm run test:e2e`: 22 Playwright Electron tests passed against fresh synthetic temp profiles.
   - Both TypeScript projects pass.
@@ -51,6 +51,9 @@ manual claim does not count as complete integration coverage.
   attachment persistence across lock and unlock.
 - #128 - Vault recovery and backup. `vault-service.test.ts` and `vault-recovery.test.ts` exercise
   real KDBX export bytes, recovery setup, wrong phrases, and recovery to a new password.
+- #135 - Delete category is scoped. The real SQLite/filesystem integration deletes the Chats
+  category through `clearCategory` and proves memory, projects, connectors, encrypted tokens,
+  models, and unrelated personal files remain.
 - #136 - Delete all is complete. Core and Pro DB integration tests seed projects, chats, memory,
   knowledge, connectors, encrypted tokens, profile data, every registered Pro table, and every
   personal-data directory. They run the real delete-all registry, close and reopen the encrypted
@@ -158,8 +161,8 @@ manual claim does not count as complete integration coverage.
 
 - #129 - Runtime residency toggles persist; #130 - Chat residency stays required; #131 - Resource
   mode applies; #132 - Settings survive relaunch; #133 - Storage usage is truthful; #134 - Clear
-  cache preserves user data; #135 - Delete category is scoped; #137 - Core locked Pro tabs; #138 -
-  Pro license activates; #139 - Invalid or exhausted license fails
+  cache preserves user data; #137 - Core locked Pro tabs; #138 - Pro license activates; #139 -
+  Invalid or exhausted license fails
   clearly; #140 - Offline entitlement behavior; #141 - Core and Pro override behavior; #142 - Manual
   update check; #143 - Update channel persists.
 

@@ -42,7 +42,7 @@ vi.mock('electron', () => ({
 vi.mock('@lancedb/lancedb', () => ({ connect: async () => ({}) }))
 
 import * as dbmod from '../database'
-import { deleteAllData } from '../data-privacy'
+import { clearCategory, deleteAllData } from '../data-privacy'
 import { addConnector } from '../mcp'
 import { setSecret } from '../secrets'
 import { createProject, desktopVectorStore } from '../rag/store'
@@ -136,5 +136,37 @@ describe('deleteAllData — erases EVERY core personal store (D29/D30)', () => {
 
     expect(fs.readFileSync(modelPath, 'utf8')).toBe('model')
     expect(dbmod.getSetting('theme', '')).toBe('dark')
+  })
+})
+
+describe('clearCategory — erases only the selected personal-data category', () => {
+  it('clears chats and uploads without touching memory, projects, credentials, or models', async () => {
+    dbmod.createRagConversation('scoped-chat', 'Scoped chat', null)
+    dbmod
+      .getDB()
+      .prepare('INSERT INTO memories (content, source_app) VALUES (?, ?)')
+      .run('keep this memory', 'Notes')
+    createProject({ id: 'keep-project', name: 'Keep project' })
+    addConnector({ name: 'Keep connector', transport: 'http', url: 'https://mcp.example.com' })
+    setSecret('keep:oauth:tokens', JSON.stringify({ access_token: 'keep-token' }))
+
+    const uploadPath = path.join(TMP_DIR, 'uploads', 'private.txt')
+    const entityPhotoPath = path.join(TMP_DIR, 'entity-photos', 'keep.jpg')
+    const modelPath = path.join(TMP_DIR, 'models', 'keep-after-scoped-delete.gguf')
+    for (const file of [uploadPath, entityPhotoPath, modelPath]) {
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, `content for ${path.basename(file)}`)
+    }
+
+    expect(await clearCategory('chats')).toEqual({ success: true })
+
+    expect(count('rag_conversations')).toBe(0)
+    expect(fs.readdirSync(path.join(TMP_DIR, 'uploads'))).toEqual([])
+    expect(count('memories')).toBeGreaterThan(0)
+    expect(count('projects')).toBeGreaterThan(0)
+    expect(count('connectors')).toBeGreaterThan(0)
+    expect(count('secrets')).toBeGreaterThan(0)
+    expect(fs.existsSync(entityPhotoPath)).toBe(true)
+    expect(fs.existsSync(modelPath)).toBe(true)
   })
 })
