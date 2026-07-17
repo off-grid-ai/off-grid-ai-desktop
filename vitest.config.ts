@@ -40,7 +40,13 @@ export default defineConfig({
     // .ts = pure/main unit + integration tests (node env, the default). .tsx = renderer
     // component render tests, which opt into jsdom per-file via `// @vitest-environment jsdom`
     // so the default suite stays node-fast. (React render harness: jsdom + @testing-library/react.)
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'pro/**/*.test.ts', 'pro/**/*.test.tsx'],
+    include: [
+      'integration-tests/*.test.ts',
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+      'pro/**/*.test.ts',
+      'pro/**/*.test.tsx'
+    ],
     exclude: ['e2e/**', 'node_modules/**', 'out/**'],
     coverage: {
       provider: 'v8',
