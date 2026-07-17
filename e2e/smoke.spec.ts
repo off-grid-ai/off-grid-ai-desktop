@@ -109,3 +109,50 @@ test('system:health IPC returns the component list', async () => {
   expect(ids).toContain('chat')
   expect(ids).toContain('gateway')
 })
+
+test('gateway /v1/models serves active local models with modality metadata', async () => {
+  const modelsDir = path.join(userDataDir, 'models')
+  fs.mkdirSync(modelsDir, { recursive: true })
+  fs.writeFileSync(path.join(modelsDir, 'e2e-active.gguf'), 'synthetic gateway model fixture')
+  fs.writeFileSync(
+    path.join(modelsDir, 'active-model.json'),
+    JSON.stringify({ id: 'e2e-active-model', primary: 'e2e-active.gguf', mmproj: null })
+  )
+
+  let catalog: {
+    object?: string
+    data?: Array<{ id?: string; object?: string; kind?: string }>
+    models?: Array<{ name?: string; model?: string; kind?: string }>
+  } = {}
+  await expect
+    .poll(
+      async () => {
+        try {
+          const response = await fetch('http://127.0.0.1:7878/v1/models')
+          if (!response.ok) return false
+          catalog = await response.json()
+          return catalog.data?.some((model) => model.id === 'e2e-active-model') ?? false
+        } catch {
+          return false
+        }
+      },
+      { timeout: 10000 }
+    )
+    .toBe(true)
+
+  expect(catalog.object).toBe('list')
+  expect(catalog.data).toContainEqual(
+    expect.objectContaining({
+      id: 'e2e-active-model',
+      object: 'model',
+      kind: 'chat'
+    })
+  )
+  expect(catalog.models).toContainEqual(
+    expect.objectContaining({
+      name: 'e2e-active-model',
+      model: 'e2e-active-model',
+      kind: 'chat'
+    })
+  )
+})

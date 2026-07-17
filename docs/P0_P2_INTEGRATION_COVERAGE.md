@@ -7,19 +7,21 @@ manual claim does not count as complete integration coverage.
 
 ## Current status - 2026-07-17
 
-- Scope: 155 journeys - 74 P0, 71 P1, and 10 P2.
-- Covered by direct integration or E2E evidence: 29 - 22 P0, 6 P1, and 1 P2.
-- Left: 126 - including partially covered journeys whose exact release behavior is not yet proven.
+- Status snapshot:
+  - P0: 74 total, 23 covered, 51 left.
+  - P1: 71 total, 6 covered, 65 left.
+  - P2: 10 total, 1 covered, 9 left.
+  - Overall: 155 total, 30 covered, 125 left.
 - Green gates today:
   - `npm test`: 202 files passed, 1 skipped; 2,190 tests passed, 1 skipped.
   - `npm run test:coverage`: 96.75% statements, 91.54% branches, 96.14% functions,
     97.52% lines.
   - `npm run test:db`: 13 files and 105 real SQLite integration tests passed; Electron ABI
     restored afterward.
-  - `npm run test:e2e`: 26 Playwright Electron tests passed against fresh synthetic temp profiles.
+  - `npm run test:e2e`: 27 Playwright Electron tests passed against fresh synthetic temp profiles.
   - Both TypeScript projects pass.
-- Not yet a clean handoff: the exact P0-P2 journey count is 29/155, and strict ESLint currently
-  exposes a legacy backlog. Neither is hidden by the coverage percentage.
+- Not yet a clean handoff: release-journey coverage remains incomplete, and strict ESLint exposes
+  a legacy backlog. Neither is hidden by the coverage percentage.
 
 ## Covered P0 journeys
 
@@ -37,6 +39,9 @@ manual claim does not count as complete integration coverage.
 - #63 - Image cancellation keeps text. `MemoryChat.tool-image-cancel.test.tsx` drives the real
   rendered MemoryChat path with the image engine as the external boundary and verifies the text
   turn persists.
+- #79 - Gateway models endpoint. `e2e/smoke.spec.ts` starts the real Electron gateway, seeds an
+  active model only inside the disposable profile, calls `/v1/models` over HTTP, and verifies
+  modality metadata in both supported response shapes.
 - #87 - Replay timeline renders. `e2e/pro.spec.ts` launches the real Pro build path with synthetic
   data and verifies Replay renders instead of the upgrade screen.
 - #94 - Delete all removes capture corpus. `pro/main/__tests__/personal-data.integration.test.ts`
@@ -188,7 +193,6 @@ manual claim does not count as complete integration coverage.
 - #76 - Expired connector becomes error.
 - #77 - Dead connector does not hang all tools.
 - #78 - Connector delete removes secrets.
-- #79 - Gateway models endpoint.
 - #80 - Gateway chat streaming.
 - #81 - Gateway image route.
 - #82 - Gateway failure envelope.
