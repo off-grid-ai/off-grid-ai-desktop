@@ -1,21 +1,6 @@
 /// <reference types="vite/client" />
 
-// DUPLICATE (ambient decl - this file has no top-level import so all interfaces are
-// global; adding an import would break every ambient global in the renderer). Canonical
-// owner: src/main/database.ts `UserProfile`. Keep field-for-field in sync; drift is
-// guarded by src/main/__tests__/ipc-type-parity.test.ts.
-interface UserProfile {
-  role?: string
-  companySize?: string
-  aiUsageFrequency?: string
-  primaryTools?: string[]
-  painPoints?: string[]
-  primaryUseCase?: string
-  privacyConcern?: string
-  expectedBenefit?: string
-  referralSource?: string
-  completedAt?: string
-}
+type UserProfile = import('../../shared/ipc-contracts').UserProfileContract
 
 interface ProLicenseInfo {
   isPro: boolean
@@ -24,13 +9,7 @@ interface ProLicenseInfo {
   verifiedAt: number
 }
 
-// DUPLICATE (ambient decl). Canonical owner: src/main/permissions.ts `PermissionStatus`.
-// Keep in sync; guarded by src/main/__tests__/ipc-type-parity.test.ts.
-interface PermissionStatus {
-  accessibility: boolean
-  screenRecording: boolean
-  allGranted: boolean
-}
+type OffGridPermissionStatus = import('../../shared/ipc-contracts').PermissionStatusContract
 
 interface DashboardStats {
   totalChats: number
@@ -79,28 +58,9 @@ interface DashboardStats {
   }>
 }
 
-// DUPLICATE (ambient decl). Canonical owner: src/main/database.ts `RagConversation`.
-// `project_id` scopes a chat to a project - must stay present or project chat routing
-// silently degrades at the preload boundary. Guarded by ipc-type-parity.test.ts.
-interface RagConversation {
-  id: string
-  title: string | null
-  project_id?: string | null
-  created_at: string
-  updated_at: string
-  message_count?: number
-}
+type RagConversation = import('../../shared/ipc-contracts').RagConversationContract
 
-// DUPLICATE (ambient decl). Canonical owner: src/main/database.ts `RagMessage`.
-// Keep in sync; guarded by ipc-type-parity.test.ts.
-interface RagMessage {
-  id: number
-  conversation_id: string
-  role: 'user' | 'assistant'
-  content: string
-  context: string | null
-  created_at: string
-}
+type RagMessage = import('../../shared/ipc-contracts').RagMessageContract
 
 // DUPLICATE (ambient decl). Canonical shape: the `reprocess:progress` IPC payload
 // emitted in src/main/ipc.ts. Keep in sync; guarded by ipc-type-parity.test.ts.
@@ -110,13 +70,12 @@ interface ReprocessProgress {
   total: number
 }
 
-// DUPLICATE (ambient decl). Canonical owner: src/main/database.ts `AppSettings`.
-// Keep in sync; guarded by ipc-type-parity.test.ts.
 interface AppSettings {
   memoryStrictness?: 'lenient' | 'balanced' | 'strict'
   entityStrictness?: 'lenient' | 'balanced' | 'strict'
   [key: string]: any
 }
+type ArtifactKind = import('../../shared/ipc-contracts').ArtifactKindContract
 
 interface IElectronAPI {
   // Open-core bridge
@@ -243,14 +202,14 @@ interface IElectronAPI {
 
   // Artifacts library
   saveArtifact: (a: {
-    kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'
+    kind: ArtifactKind
     code: string
     title?: string
     conversationId?: string
     projectId?: string | null
   }) => Promise<{
     id: string
-    kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'
+    kind: ArtifactKind
     code: string
     title: string
     created: number
@@ -258,7 +217,7 @@ interface IElectronAPI {
   listArtifacts: (scope?: { conversationId?: string; projectId?: string | null }) => Promise<
     {
       id: string
-      kind: 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'
+      kind: ArtifactKind
       code: string
       title: string
       created: number
@@ -336,7 +295,7 @@ interface IElectronAPI {
   installUpdate: () => Promise<void>
 
   // Permission APIs
-  getPermissionStatus: () => Promise<PermissionStatus>
+  getPermissionStatus: () => Promise<OffGridPermissionStatus>
   requestAccessibilityPermission: () => Promise<boolean>
   requestScreenRecordingPermission: () => Promise<boolean>
   openAccessibilitySettings: () => Promise<boolean>

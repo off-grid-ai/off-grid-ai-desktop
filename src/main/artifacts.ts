@@ -7,6 +7,7 @@ import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { createHash } from 'crypto'
+import type { ArtifactKindContract } from '../shared/ipc-contracts'
 
 function artifactsDir(): string {
   const roots = app.isPackaged
@@ -33,7 +34,7 @@ function read(name: string): string {
 // attached), catalogued alongside model-generated artifacts so a chat's/project's
 // whole working set — inputs and outputs — lives in one place. For 'text' the code
 // is the document body; for 'image' it's the on-disk path. Neither is sandboxed.
-export type ArtifactKind = 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'
+export type ArtifactKind = ArtifactKindContract
 
 /** Return only the runtime libs an artifact kind needs (kept off the wire otherwise). */
 export function artifactRuntime(kind: ArtifactKind): Record<string, string> {

@@ -1,65 +1,26 @@
-// IPC cross-boundary type parity guard (CONSOLIDATION_PLAN A1 + P0.1 + P0.2).
-//
-// UserProfile / RagMessage / AppSettings (src/main/database.ts), PermissionStatus
-// (src/main/permissions.ts) and the ArtifactKind union (src/main/artifacts.ts) are the
-// CANONICAL shapes that cross the IPC boundary. They are hand-duplicated in two ambient
-// .d.ts files - src/preload/index.d.ts and src/renderer/src/env.d.ts - because those
-// files declare renderer globals and cannot `import` the canonical types without turning
-// into modules (which would break every ambient global in the renderer).
-//
-// So the copies can silently drift (P0.1 is the proof: `project_id` was already missing
-// from both .d.ts copies of RagConversation). This test is the drift gate. Each block
-// below mirrors the .d.ts copy as an inline literal and asserts, at compile time, that it
-// is mutually assignable to the canonical type. Remove or rename a field on either side
-// and `tsc`/`vitest` here fail. Runtime field-list assertions guard the same shapes for
-// anyone skimming failures.
-//
-// `import type` is erased before runtime, so pulling from database.ts/permissions.ts does
-// NOT load electron / better-sqlite3 - the test stays Electron-free and runs in-process.
+/// <reference path="../../renderer/src/env.d.ts" />
+
+// Compile-time guard that the renderer-facing IPC API uses the canonical main-process
+// contracts. env.d.ts references these owners through import() type aliases, so there is
+// no hand-copied preload declaration left to drift.
 
 import { describe, it, expect, expectTypeOf } from 'vitest'
 import type { UserProfile, RagConversation, RagMessage, AppSettings } from '../database'
 import type { PermissionStatus } from '../permissions'
 import type { ArtifactKind } from '../artifacts'
 
-// Each `expectTypeOf(...).toEqualTypeOf<Duplicated>()` below asserts the canonical type
-// and the inline mirror of the .d.ts copy are IDENTICAL - drop or rename a field on
-// either side and it fails typecheck. It must be called with concrete types at the site
-// (a generic wrapper erases them), so the checks are inlined per interface.
-
-describe('IPC type parity - canonical vs duplicated .d.ts shapes', () => {
-  it('UserProfile matches the preload/renderer ambient copies', () => {
-    // Mirror of the interface in preload/index.d.ts + renderer/env.d.ts.
-    type Duplicated = {
-      role?: string
-      companySize?: string
-      aiUsageFrequency?: string
-      primaryTools?: string[]
-      painPoints?: string[]
-      primaryUseCase?: string
-      privacyConcern?: string
-      expectedBenefit?: string
-      referralSource?: string
-      completedAt?: string
-    }
-    expectTypeOf<UserProfile>().toEqualTypeOf<Duplicated>()
+describe('IPC type parity - renderer API vs canonical contracts', () => {
+  it('uses the canonical user profile at the API boundary', () => {
+    expectTypeOf<Parameters<IElectronAPI['saveUserProfile']>[0]>().toEqualTypeOf<UserProfile>()
+    expectTypeOf<
+      Awaited<ReturnType<IElectronAPI['getUserProfile']>>
+    >().toEqualTypeOf<UserProfile | null>()
   })
 
-  it('RagConversation still carries project_id (P0.1 regression guard)', () => {
-    // Mirror of the FIXED interface in both .d.ts files. project_id MUST be here or
-    // project-scoped chats lose their scope at the preload boundary.
-    type Duplicated = {
-      id: string
-      title: string | null
-      project_id?: string | null
-      created_at: string
-      updated_at: string
-      message_count?: number
-    }
-    expectTypeOf<RagConversation>().toEqualTypeOf<Duplicated>()
-
-    // Belt-and-braces: project_id must be an accepted key of the canonical type. If it
-    // is ever removed from database.ts this line stops compiling.
+  it('keeps project scope on RAG conversations', () => {
+    expectTypeOf<Awaited<ReturnType<IElectronAPI['getRagConversations']>>>().toEqualTypeOf<
+      RagConversation[]
+    >()
     const withProject: RagConversation = {
       id: 'c1',
       title: null,
@@ -68,39 +29,22 @@ describe('IPC type parity - canonical vs duplicated .d.ts shapes', () => {
       updated_at: ''
     }
     expect(withProject.project_id).toBe('p1')
-    expectTypeOf<RagConversation>().toHaveProperty('project_id')
   })
 
-  it('RagMessage matches the preload/renderer ambient copies', () => {
-    type Duplicated = {
-      id: number
-      conversation_id: string
-      role: 'user' | 'assistant'
-      content: string
-      context: string | null
-      created_at: string
-    }
-    expectTypeOf<RagMessage>().toEqualTypeOf<Duplicated>()
+  it('uses the canonical RAG message shape', () => {
+    expectTypeOf<Awaited<ReturnType<IElectronAPI['getRagMessages']>>>().toEqualTypeOf<
+      RagMessage[]
+    >()
   })
 
-  it('AppSettings matches the preload/renderer ambient copies', () => {
-    type Duplicated = {
-      memoryStrictness?: 'lenient' | 'balanced' | 'strict'
-      entityStrictness?: 'lenient' | 'balanced' | 'strict'
-      [key: string]: any
-    }
-    expectTypeOf<AppSettings>().toEqualTypeOf<Duplicated>()
+  it('uses the canonical app settings shape', () => {
+    expectTypeOf<Awaited<ReturnType<IElectronAPI['getSettings']>>>().toEqualTypeOf<AppSettings>()
   })
 
-  it('PermissionStatus matches the preload/renderer ambient copies', () => {
-    type Duplicated = {
-      accessibility: boolean
-      screenRecording: boolean
-      allGranted: boolean
-    }
-    expectTypeOf<PermissionStatus>().toEqualTypeOf<Duplicated>()
-
-    // Runtime guard on the exact field set the IPC handler must return.
+  it('uses the canonical permission status shape', () => {
+    expectTypeOf<
+      Awaited<ReturnType<IElectronAPI['getPermissionStatus']>>
+    >().toEqualTypeOf<PermissionStatus>()
     const status: PermissionStatus = {
       accessibility: true,
       screenRecording: false,
@@ -109,14 +53,9 @@ describe('IPC type parity - canonical vs duplicated .d.ts shapes', () => {
     expect(Object.keys(status).sort()).toEqual(['accessibility', 'allGranted', 'screenRecording'])
   })
 
-  it('saveArtifact kind union matches the canonical ArtifactKind (P0.2 regression guard)', () => {
-    // The preload `saveArtifact` arg and the renderer env.d.ts `saveArtifact` contract
-    // both use this union. It MUST equal the canonical ArtifactKind or the renderer can
-    // call saveArtifact({kind:'text'}) against a preload type that rejects it.
-    type SaveArtifactKind = 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'
-    expectTypeOf<ArtifactKind>().toEqualTypeOf<SaveArtifactKind>()
-
-    // 'text' and 'image' (the values that were missing from preload) must be valid.
+  it('uses the canonical artifact kind for saves', () => {
+    type SaveArtifactKind = Parameters<IElectronAPI['saveArtifact']>[0]['kind']
+    expectTypeOf<SaveArtifactKind>().toEqualTypeOf<ArtifactKind>()
     const kinds: ArtifactKind[] = ['html', 'svg', 'mermaid', 'react', 'text', 'image']
     expect(kinds).toContain('text')
     expect(kinds).toContain('image')

@@ -6,6 +6,11 @@ import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
 import { createSettingsStore, initializeSettingsStore } from './settings-store'
+import type {
+  RagConversationContract,
+  RagMessageContract,
+  UserProfileContract
+} from '../shared/ipc-contracts'
 
 let db: Database.Database | null = null
 
@@ -1200,18 +1205,7 @@ export function getDashboardStats(): DashboardStats {
 
 // === USER PROFILE ===
 
-export interface UserProfile {
-  role?: string
-  companySize?: string
-  aiUsageFrequency?: string
-  primaryTools?: string[]
-  painPoints?: string[]
-  primaryUseCase?: string
-  privacyConcern?: string
-  expectedBenefit?: string
-  referralSource?: string
-  completedAt?: string
-}
+export type UserProfile = UserProfileContract
 
 export function getUserProfile(): UserProfile | null {
   const db = getDB()
@@ -1243,23 +1237,8 @@ export function saveUserProfile(profile: UserProfile): void {
 
 // === RAG CONVERSATIONS ===
 
-export interface RagConversation {
-  id: string
-  title: string | null
-  project_id?: string | null
-  created_at: string
-  updated_at: string
-  message_count?: number
-}
-
-export interface RagMessage {
-  id: number
-  conversation_id: string
-  role: 'user' | 'assistant'
-  content: string
-  context: string | null
-  created_at: string
-}
+export type RagConversation = RagConversationContract
+export type RagMessage = RagMessageContract
 
 export function createRagConversation(
   id: string,

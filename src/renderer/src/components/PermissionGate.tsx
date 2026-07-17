@@ -5,13 +5,14 @@ import { GridBackdrop } from './ui/grid-backdrop'
 import { cn } from '@renderer/lib/utils'
 import { Shield, Eye, Check, X, ArrowsClockwise as RefreshCw, Cpu } from '@phosphor-icons/react'
 import { SetupPanel } from './setup/SetupPanel'
+import type { PermissionStatusContract } from '../../../shared/ipc-contracts'
 
 interface PermissionGateProps {
   children: React.ReactNode
 }
 
 export function PermissionGate({ children }: PermissionGateProps) {
-  const [permissionStatus, setPermissionStatus] = useState<PermissionStatus | null>(null)
+  const [permissionStatus, setPermissionStatus] = useState<PermissionStatusContract | null>(null)
   const [isChecking, setIsChecking] = useState(true)
   const [modelStatus, setModelStatus] = useState<{ downloaded: boolean; modelsDir: string } | null>(
     null
@@ -24,8 +25,7 @@ export function PermissionGate({ children }: PermissionGateProps) {
   // Capture permissions (Accessibility + Screen Recording) are only needed by the
   // Pro "sees" layer. The free build runs chat/projects/models and gates on the
   // model alone.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const isPro = !!(window as any).api?.isPro
+  const isPro = window.api.isPro === true
   const permsOk = isPro ? (permissionStatus?.allGranted ?? false) : true
 
   const checkPermissions = useCallback(async () => {

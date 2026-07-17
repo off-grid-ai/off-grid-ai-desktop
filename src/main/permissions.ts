@@ -1,10 +1,7 @@
 import { systemPreferences, shell, desktopCapturer } from 'electron'
+import type { PermissionStatusContract } from '../shared/ipc-contracts'
 
-export interface PermissionStatus {
-  accessibility: boolean
-  screenRecording: boolean
-  allGranted: boolean
-}
+export type PermissionStatus = PermissionStatusContract
 
 /**
  * Check if the app has Accessibility permission on macOS.
