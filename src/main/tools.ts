@@ -12,6 +12,7 @@ import { getSetting, saveSetting } from './database'
 import { buildUserContent } from './tool-content'
 import { stripTags, htmlToText, decodeDdgHref } from './tools-parsers'
 import { mimeFromExt } from './model-server/data-url'
+import { evaluateArithmetic } from './calculator'
 
 // Per-tool enable/disable, persisted as a list of disabled tool names.
 function disabledSet(): Set<string> {
@@ -180,13 +181,10 @@ const TOOLS: ToolDef[] = [
     },
     run: (a) => {
       const expr = String(a.expression ?? '')
-      if (!/^[-+*/().\d\s]+$/.test(expr)) return 'Error: only basic arithmetic is allowed.'
       try {
-        // eslint-disable-next-line no-new-func
-        const v = Function(`"use strict"; return (${expr})`)()
-        return String(v)
+        return String(evaluateArithmetic(expr))
       } catch {
-        return 'Error: could not evaluate expression.'
+        return 'Error: only basic arithmetic is allowed.'
       }
     }
   },
