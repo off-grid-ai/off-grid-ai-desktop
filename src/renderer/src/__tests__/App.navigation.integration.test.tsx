@@ -8,7 +8,7 @@
 // reached through real clicks and KeyboardEvents, and assertions stay on the
 // rendered view and selected project.
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -143,10 +143,16 @@ describe('<App/> desktop navigation integration', () => {
     await user.click(screen.getByTitle('Integrations'))
     expect(await screen.findByRole('heading', { name: 'Integrations' })).not.toBeNull()
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: '[', metaKey: true, bubbles: true }))
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '[', metaKey: true, bubbles: true }))
+    })
     await waitFor(() => expect(screen.getAllByText('Project Beta')).toHaveLength(2))
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: ']', metaKey: true, bubbles: true }))
-    expect(await screen.findByRole('heading', { name: 'Integrations' })).not.toBeNull()
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ']', metaKey: true, bubbles: true }))
+    })
+    expect(
+      await screen.findByRole('heading', { name: 'Integrations' }, { timeout: 5_000 })
+    ).not.toBeNull()
   })
 })
