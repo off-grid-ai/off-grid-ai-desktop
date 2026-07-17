@@ -13,12 +13,17 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 const boundary = vi.hoisted(() => ({
   accessibility: false,
   screenRecording: 'denied' as 'denied' | 'granted',
+  accessibilityChecks: [] as boolean[],
+  screenRequests: 0,
   openedSettings: [] as string[]
 }))
 
 vi.mock('electron', () => ({
   systemPreferences: {
-    isTrustedAccessibilityClient: () => boundary.accessibility,
+    isTrustedAccessibilityClient: (prompt: boolean) => {
+      boundary.accessibilityChecks.push(prompt)
+      return boundary.accessibility
+    },
     getMediaAccessStatus: () => boundary.screenRecording
   },
   shell: {
@@ -28,7 +33,10 @@ vi.mock('electron', () => ({
     }
   },
   desktopCapturer: {
-    getSources: async () => []
+    getSources: async () => {
+      boundary.screenRequests++
+      return []
+    }
   }
 }))
 
@@ -81,6 +89,8 @@ function permissionCard(title: string): HTMLElement {
 beforeEach(() => {
   boundary.accessibility = false
   boundary.screenRecording = 'denied'
+  boundary.accessibilityChecks.length = 0
+  boundary.screenRequests = 0
   boundary.openedSettings.length = 0
   installApi()
 })
@@ -92,6 +102,27 @@ afterAll(() => {
 })
 
 describe('capture permission recovery', () => {
+  it('requests TCC explicitly once while repeated health checks stay non-prompting (#15)', async () => {
+    expect(permissions.requestAccessibilityPermission()).toBe(false)
+    await expect(permissions.requestScreenRecordingPermission()).resolves.toBe(false)
+    expect(boundary.accessibilityChecks).toEqual([true])
+    expect(boundary.screenRequests).toBe(1)
+
+    expect(permissions.getPermissionStatus().allGranted).toBe(false)
+    expect(permissions.getPermissionStatus().allGranted).toBe(false)
+    expect(boundary.accessibilityChecks).toEqual([true, false, false])
+
+    boundary.accessibility = true
+    boundary.screenRecording = 'granted'
+    expect(permissions.getPermissionStatus()).toEqual({
+      accessibility: true,
+      screenRecording: true,
+      allGranted: true
+    })
+    expect(boundary.accessibilityChecks.at(-1)).toBe(false)
+    expect(boundary.screenRequests).toBe(1)
+  })
+
   it('stays honest after a partial grant and becomes ready after rechecking both permissions (#16)', async () => {
     const user = userEvent.setup()
     render(

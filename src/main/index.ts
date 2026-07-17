@@ -33,6 +33,7 @@ import { modalityQueue } from './modality-queue/queue'
 import { registerRuntime } from './runtime-manager'
 import { guardConsoleStreams } from './stream-guards'
 import { PRODUCT_NAME } from '../shared/product-identity'
+import { installMediaPermissionHandler } from './media-permission'
 
 // Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
 // must never crash main via an uncaught EPIPE. See stream-guards.ts.
@@ -262,9 +263,7 @@ app.whenReady().then(() => {
   // actual mic behind its own prompt (NSMicrophoneUsageDescription); this just
   // lets the renderer's getUserMedia request through Electron's permission layer.
   try {
-    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-      callback(permission === 'media')
-    })
+    installMediaPermissionHandler(session.defaultSession)
   } catch (e) {
     console.warn('[voice] permission handler setup failed', e)
   }
