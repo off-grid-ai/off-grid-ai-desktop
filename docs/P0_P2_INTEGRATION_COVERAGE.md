@@ -8,17 +8,17 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 24 covered, 50 left.
-  - P1: 71 total, 6 covered, 65 left.
+  - P0: 74 total, 25 covered, 49 left.
+  - P1: 71 total, 7 covered, 64 left.
   - P2: 10 total, 1 covered, 9 left.
-  - Overall: 155 total, 31 covered, 124 left.
+  - Overall: 155 total, 33 covered, 122 left.
 - Green gates today:
-  - `npm test`: 202 files passed, 1 skipped; 2,190 tests passed, 1 skipped.
-  - `npm run test:coverage`: 96.75% statements, 91.54% branches, 96.14% functions,
+  - `npm test`: 203 files passed, 1 skipped; 2,192 tests passed, 1 skipped.
+  - `npm run test:coverage`: 96.75% statements, 91.55% branches, 96.15% functions,
     97.52% lines.
   - `npm run test:db`: 13 files and 105 real SQLite integration tests passed; Electron ABI
     restored afterward.
-  - `npm run test:e2e`: 27 Playwright Electron tests passed against fresh synthetic temp profiles.
+  - `npm run test:e2e`: 28 Playwright Electron tests passed against fresh synthetic temp profiles.
   - Both TypeScript projects pass.
 - Not yet a clean handoff: release-journey coverage remains incomplete, and strict ESLint exposes
   a legacy backlog. Neither is hidden by the coverage percentage.
@@ -70,6 +70,9 @@ manual claim does not count as complete integration coverage.
   production IPC and verifies username, revealed password, and URL copy into the OS clipboard.
 - #128 - Vault recovery and backup. `vault-service.test.ts` and `vault-recovery.test.ts` exercise
   real KDBX export bytes, recovery setup, wrong phrases, and recovery to a new password.
+- #130 - Chat residency stays required. `e2e/settings-residency.spec.ts` verifies the production
+  switch stays checked and disabled before and after relaunch, while the real SQLite integration
+  proves an on-demand write is normalized back to `resident`.
 - #135 - Delete category is scoped. The real SQLite/filesystem integration deletes the Chats
   category through `clearCategory` and proves memory, projects, connectors, encrypted tokens,
   models, and unrelated personal files remain.
@@ -99,6 +102,10 @@ manual claim does not count as complete integration coverage.
 - #120 - Clipboard live refresh keeps valid selection.
   `ClipboardScreen.integration.test.tsx` renders the real screen and proves selection is retained
   while the item exists, then moves to a valid remaining item after deletion.
+- #129 - Runtime residency toggles persist. `e2e/settings-residency.spec.ts` changes image, STT,
+  and TTS through the real Settings controls, verifies production IPC, fully relaunches Electron,
+  and verifies all values reload. The SQLite and runtime-manager integrations prove that same map
+  controls persistence and re-warm behavior.
 
 ## Covered P2 journeys
 
@@ -241,8 +248,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - settings, privacy, licensing, and updates
 
-- #129 - Runtime residency toggles persist.
-- #130 - Chat residency stays required.
 - #131 - Resource mode applies.
 - #132 - Settings survive relaunch.
 - #133 - Storage usage is truthful.
