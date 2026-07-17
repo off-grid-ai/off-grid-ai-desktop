@@ -9,7 +9,7 @@
  *     observations (Attio/Linear/Gmail with no screenshot) must not appear. Asserted
  *     against the live crm:replay-* IPC: every moment an entity returns lines up with a
  *     real captured frame.
- *  2. Text crosses the real OS clipboard, encrypted history, and restore IPC.
+ *  2. Text and pixel images cross the real OS clipboard, encrypted history, and restore IPC.
  *  3. Restoring a copied FILE (of any type, including images) puts a file-url (Finder
  *     pastes the file), the path as plain text (terminal pastes the path), and the file's
  *     native bytes (an editor pastes the content) on the OS clipboard. Driven through the
@@ -43,11 +43,12 @@ const nav = async (label: string): Promise<void> => {
 }
 
 const waitForCapturedClip = async (
-  contentType: 'text' | 'file',
-  textContent: string
-): Promise<string | null> =>
+  contentType: 'text' | 'image' | 'file',
+  textContent: string | null,
+  excludedIds: string[] = []
+): Promise<string> =>
   page.evaluate(
-    async ({ expectedContentType, expectedTextContent }) => {
+    async ({ expectedContentType, expectedTextContent, excludedClipIds }) => {
       const api = (
         window as unknown as {
           api: { proInvoke: (c: string, ...a: unknown[]) => Promise<unknown> }
@@ -62,14 +63,22 @@ const waitForCapturedClip = async (
         }[]
         const hit = items.find(
           (item) =>
-            item.contentType === expectedContentType && item.textContent === expectedTextContent
+            item.contentType === expectedContentType &&
+            item.textContent === expectedTextContent &&
+            !excludedClipIds.includes(item.id)
         )
         if (hit) return hit.id
         await new Promise((resolve) => setTimeout(resolve, 300))
       }
-      return null
+      throw new Error(
+        `Timed out waiting for ${expectedContentType} clipboard item ${String(expectedTextContent)}`
+      )
     },
-    { expectedContentType: contentType, expectedTextContent: textContent }
+    {
+      expectedContentType: contentType,
+      expectedTextContent: textContent,
+      excludedClipIds: excludedIds
+    }
   )
 
 const restoreCapturedClip = async (id: string): Promise<boolean> =>
@@ -192,13 +201,45 @@ test('Capturing and restoring text crosses the real OS clipboard and encrypted h
   }, payload)
 
   const capturedId = await waitForCapturedClip('text', payload)
-  expect(capturedId, 'text clip was captured into history').not.toBeNull()
 
   await app.evaluate(async ({ clipboard }) => {
     clipboard.writeText('clipboard overwritten before restore')
   })
-  expect(await restoreCapturedClip(capturedId!)).toBe(true)
+  expect(await restoreCapturedClip(capturedId)).toBe(true)
   expect(await app.evaluate(async ({ clipboard }) => clipboard.readText())).toBe(payload)
+})
+
+test('Capturing a pixel image persists its bytes and restores the bitmap', async () => {
+  const existingImageIds = await page.evaluate(async () => {
+    const api = (
+      window as unknown as { api: { proInvoke: (c: string, ...a: unknown[]) => Promise<unknown> } }
+    ).api
+    const items = (await api.proInvoke('clipboard:list', 50, 'image')) as { id: string }[]
+    return items.map((item) => item.id)
+  })
+  const sharp = (await import('sharp')).default
+  const png = await sharp({
+    create: { width: 37, height: 29, channels: 3, background: { r: 28, g: 211, b: 153 } }
+  })
+    .png()
+    .toBuffer()
+  await app.evaluate(async ({ clipboard, nativeImage }, base64) => {
+    clipboard.clear()
+    clipboard.writeImage(nativeImage.createFromBuffer(Buffer.from(base64, 'base64')))
+  }, png.toString('base64'))
+
+  const capturedId = await waitForCapturedClip('image', null, existingImageIds)
+  await app.evaluate(async ({ clipboard }) =>
+    clipboard.writeText('image overwritten before restore')
+  )
+  expect(await restoreCapturedClip(capturedId)).toBe(true)
+
+  const restored = await app.evaluate(async ({ clipboard }) => {
+    const image = clipboard.readImage()
+    return { empty: image.isEmpty(), size: image.getSize() }
+  })
+  expect(restored.empty).toBe(false)
+  expect(restored.size).toEqual({ width: 37, height: 29 })
 })
 
 test('Restoring a copied file puts BOTH the path text and the file-url on the clipboard', async () => {
@@ -217,8 +258,7 @@ test('Restoring a copied file puts BOTH the path text and the file-url on the cl
   // 2. Wait for capture, then restore that item via the real IPC.
   const restoredId = await waitForCapturedClip('file', copied.basename)
 
-  expect(restoredId, 'file clip was captured').not.toBeNull()
-  expect(await restoreCapturedClip(restoredId!)).toBe(true)
+  expect(await restoreCapturedClip(restoredId)).toBe(true)
 
   // 3. The multi-flavor write runs through osascript (async); poll the pasteboard.
   const pb = await app.evaluate(async ({ clipboard }) => {
@@ -261,8 +301,7 @@ test('Restoring a copied IMAGE file still gives the terminal a path (plus pixels
   }, copied.fileUrl)
 
   const restoredId = await waitForCapturedClip('file', copied.basename)
-  expect(restoredId, 'image clip was captured').not.toBeNull()
-  expect(await restoreCapturedClip(restoredId!)).toBe(true)
+  expect(await restoreCapturedClip(restoredId)).toBe(true)
 
   const pb = await app.evaluate(async ({ clipboard }) => {
     const deadline = Date.now() + 6000
