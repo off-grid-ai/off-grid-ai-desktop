@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 54 covered, 20 left.
+  - P0: 74 total, 56 covered, 18 left.
   - P1: 71 total, 42 covered, 29 left.
   - P2: 10 total, 3 covered, 7 left.
-  - Overall: 155 total, 99 covered, 56 left.
+  - Overall: 155 total, 101 covered, 54 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -46,6 +46,12 @@ manual claim does not count as complete integration coverage.
 - #28 - Active text model survives relaunch. `model-integrity.integration.test.ts` installs and
   activates a real catalog text fixture through the production model manager, reloads every module,
   and proves the same installed model remains the active chat selection.
+- #32 - First local message replies. `MemoryChat.chat-lifecycle.test.tsx` sends through the real
+  rendered composer, routes a streamed token through production ownership, resolves the local-model
+  boundary, and proves one assistant bubble with the exact answer is persisted once.
+- #33 - No memory scope works. The same rendered integration keeps No memory visibly selected,
+  sends a turn through the production chat path with retrieval disabled and no project scope, then
+  renders the conversation-only answer normally.
 - #38 - Stop before first token. `MemoryChat.chat-lifecycle.test.tsx` holds the real rendered turn
   at the preload persistence boundary, clicks Stop during the pre-stream window, proves the model
   transport never starts, and immediately completes a second turn normally.
@@ -350,8 +356,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - chat and conversations
 
-- #32 - First local message replies.
-- #33 - No memory scope works.
 - #34 - All memory scope works.
 - #36 - Thinking streams separately.
 - #37 - Plain reply hides think markers.
