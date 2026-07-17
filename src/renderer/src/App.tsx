@@ -19,7 +19,8 @@ import { renderProView, type ProViewContext } from './bootstrap/proView'
 import { UpgradeScreen } from './components/pro/UpgradeScreen'
 import { getProFeature, proFeatureComingSoon } from './components/pro/proCatalog'
 import { currentPlatform, isMac } from './lib/device'
-import { NotificationProvider, useNotifications } from './hooks/useNotifications'
+import { NotificationProvider } from './hooks/NotificationProvider'
+import { useNotifications } from './hooks/useNotifications'
 import { ToastProvider } from './hooks/ToastProvider'
 import { ReprocessingProvider, useReprocessing } from './hooks/useReprocessing'
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -48,6 +49,14 @@ import {
 import { OFF_GRID_MOBILE_URL, openExternal } from './constants/links'
 import { cn } from './lib/utils'
 import { normalizeProNavigationIntent, type ProNavigationIntent } from './lib/pro-navigation'
+import { callHook } from './bootstrap/hookRegistry'
+import {
+  NOTIFICATION_METADATA_HOOK,
+  NOTIFICATION_OPEN_TARGET_CHANNEL,
+  NOTIFICATION_RESOLVE_TARGET_HOOK,
+  type NotificationRoutingMetadata,
+  type NotificationSourceRecord
+} from './lib/notification-hooks'
 
 type ViewMode =
   | 'dashboard'
@@ -206,7 +215,7 @@ function AppContent() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isPro = !!(window as any).api?.isPro
   // Re-render once pro renderer features have activated (registers the view-router).
-  const [, setProReady] = useState(false)
+  const [proReady, setProReady] = useState(false)
   useEffect(() => {
     let mounted = true
     void loadProFeaturesRenderer().finally(() => {
@@ -240,6 +249,8 @@ function AppContent() {
   // Which tab the Actions screen opens on when reached via a Day "View all" link.
   const [actionsMode, setActionsMode] = useState<'todo' | 'approvals' | null>(null)
   const [actionTarget, setActionTarget] = useState<number | null>(null)
+  const [approvalTarget, setApprovalTarget] = useState<number | null>(null)
+  const [calendarEventTarget, setCalendarEventTarget] = useState<number | null>(null)
   // When set, the Actions to-do list opens filtered to this entity (from clicking
   // a person chip on a to-do — "all to-dos for Ali").
   const [actionsEntity, setActionsEntity] = useState<{ id: number; name: string } | null>(null)
@@ -400,16 +411,22 @@ function AppContent() {
 
   // Subscribe to notification events from the main process
   useEffect(() => {
+    if (!proReady) return
     const unsubscribers: (() => void)[] = []
 
     // Proactive approval queued — needs the user's decision
     unsubscribers.push(
       window.api.onNewApproval((data) => {
+        const routing = callHook<NotificationRoutingMetadata>(NOTIFICATION_METADATA_HOOK, {
+          source: 'approval',
+          recordId: data.approvalId
+        } satisfies NotificationSourceRecord)
         addNotification({
           type: 'approval',
           title: data.entityName ? `Approval — ${data.entityName}` : 'Approval needed',
           message: data.detail ? `${data.title} — ${data.detail}` : data.title,
-          approvalId: data.approvalId
+          approvalId: data.approvalId,
+          ...routing
         })
       })
     )
@@ -417,12 +434,17 @@ function AppContent() {
     // New to-do extracted from your activity
     unsubscribers.push(
       window.api.onNewAction((data) => {
+        const routing = callHook<NotificationRoutingMetadata>(NOTIFICATION_METADATA_HOOK, {
+          source: 'action',
+          recordId: data.actionId
+        } satisfies NotificationSourceRecord)
         const where = [data.entityName, data.sourceApp].filter(Boolean).join(' · ')
         addNotification({
           type: 'todo',
           title: data.due ? `New to-do — due ${data.due}` : 'New to-do',
           message: where ? `${data.text} (${where})` : data.text,
-          actionId: data.actionId
+          actionId: data.actionId,
+          ...routing
         })
       })
     )
@@ -446,7 +468,7 @@ function AppContent() {
     return () => {
       unsubscribers.forEach((unsub) => unsub())
     }
-  }, [addNotification])
+  }, [addNotification, proReady])
 
   // Navigate back using history stack
   const navigateBack = useCallback(() => {
@@ -558,8 +580,11 @@ function AppContent() {
 
     if (intent.view === 'actions') {
       setActionTarget(intent.actionId ?? null)
-      setActionsMode(intent.mode ?? 'todo')
+      setApprovalTarget(intent.approvalId ?? null)
+      setActionsMode(intent.mode ?? (intent.approvalId ? 'approvals' : 'todo'))
       setActionsEntity(intent.entity ?? null)
+    } else if (intent.view === 'day') {
+      setCalendarEventTarget(intent.calendarEventId ?? null)
     } else if (intent.view === 'replay') {
       setReplayTarget(intent.seekMs ?? null)
     } else {
@@ -567,6 +592,14 @@ function AppContent() {
     }
     setViewMode(intent.view)
   }, [])
+
+  useEffect(() => {
+    if (!proReady) return
+    return window.api.proOn?.(NOTIFICATION_OPEN_TARGET_CHANNEL, (rawTarget) => {
+      const destination = callHook<ProNavigationIntent>(NOTIFICATION_RESOLVE_TARGET_HOOK, rawTarget)
+      if (destination) handleProNavigate(destination)
+    })
+  }, [handleProNavigate, proReady])
 
   // Deep-link targets (Replay moment, specific meeting) are one-shot: clear them
   // only when we ACTUALLY LEAVE the screen that consumes them — tracked against the
@@ -580,8 +613,10 @@ function AppContent() {
     if (prev === viewMode) return
     if (prev === 'replay' && viewMode !== 'replay') setReplayTarget(null)
     if (prev === 'meetings' && viewMode !== 'meetings') setMeetingTarget(null)
+    if (prev === 'day' && viewMode !== 'day') setCalendarEventTarget(null)
     if (prev === 'actions' && viewMode !== 'actions') {
       setActionTarget(null)
+      setApprovalTarget(null)
       setActionsMode(null)
       setActionsEntity(null)
     }
@@ -977,6 +1012,8 @@ function AppContent() {
                       replayTarget,
                       meetingTarget,
                       actionTarget,
+                      approvalTarget,
+                      calendarEventTarget,
                       actionsMode,
                       actionsEntity,
                       searchQuery,

@@ -4,9 +4,11 @@ export type ProNavigationIntent =
   | {
       view: 'actions'
       actionId?: number
+      approvalId?: number
       mode?: ActionsMode
       entity?: { id: number; name: string }
     }
+  | { view: 'day'; calendarEventId?: number }
   | { view: 'replay'; seekMs?: number }
   | { view: 'meetings'; meetingId?: number }
 
@@ -39,6 +41,13 @@ export function normalizeProNavigationIntent(value: unknown): ProNavigationInten
     return normalizeMeetingsIntent(value)
   }
 
+  if (value.view === 'day') {
+    const calendarEventId = optionalPositiveInteger(value, 'calendarEventId')
+    return calendarEventId === null
+      ? null
+      : { view: 'day', ...(calendarEventId ? { calendarEventId } : {}) }
+  }
+
   return value.view === 'actions' ? normalizeActionsIntent(value) : null
 }
 
@@ -54,8 +63,11 @@ function normalizeMeetingsIntent(value: Record<string, unknown>): ProNavigationI
 
 function normalizeActionsIntent(value: Record<string, unknown>): ProNavigationIntent | null {
   const actionId = optionalPositiveInteger(value, 'actionId')
-  if (actionId === null) return null
+  const approvalId = optionalPositiveInteger(value, 'approvalId')
+  if (actionId === null || approvalId === null || (actionId && approvalId)) return null
   if ('mode' in value && value.mode !== 'todo' && value.mode !== 'approvals') return null
+  if (actionId && value.mode === 'approvals') return null
+  if (approvalId && value.mode === 'todo') return null
 
   let entity: { id: number; name: string } | undefined
   if ('entity' in value) {
@@ -67,6 +79,7 @@ function normalizeActionsIntent(value: Record<string, unknown>): ProNavigationIn
   return {
     view: 'actions',
     ...(actionId ? { actionId } : {}),
+    ...(approvalId ? { approvalId } : {}),
     ...(value.mode ? { mode: value.mode as ActionsMode } : {}),
     ...(entity ? { entity } : {})
   }

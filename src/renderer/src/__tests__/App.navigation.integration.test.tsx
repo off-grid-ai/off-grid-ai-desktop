@@ -12,6 +12,14 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const rendererActivation = vi.hoisted(() => ({
+  load: vi.fn<() => Promise<void>>()
+}))
+
+vi.mock('../bootstrap/loadProFeaturesRenderer', () => ({
+  loadProFeaturesRenderer: rendererActivation.load
+}))
+
 let App: typeof import('../App').default
 
 const PROJECTS = Array.from({ length: 12 }, (_, index) => {
@@ -26,7 +34,7 @@ const PROJECTS = Array.from({ length: 12 }, (_, index) => {
   }
 })
 
-function installBoundary(): void {
+function installBoundary(overrides: Record<string, unknown> = {}): void {
   const eventSubscription = (): (() => void) => () => {}
   const values: Record<string, unknown> = {
     isPro: false,
@@ -59,7 +67,9 @@ function installBoundary(): void {
     onReprocessProgress: eventSubscription,
     onNavigate: eventSubscription,
     onMeetingState: eventSubscription,
-    onModelProgress: eventSubscription
+    onModelProgress: eventSubscription,
+    proOn: eventSubscription,
+    ...overrides
   }
   const api = new Proxy(values, {
     get(target, property: string) {
@@ -88,6 +98,7 @@ function installStorage(): Storage {
 }
 
 function installBrowserBoundary(): void {
+  vi.stubGlobal('__OFFGRID_PRO__', false)
   ;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver = class {
     observe(): void {}
     unobserve(): void {}
@@ -112,6 +123,7 @@ describe('<App/> desktop navigation integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    rendererActivation.load.mockResolvedValue(undefined)
     installStorage().setItem('onboarding_completed', 'true')
     window.history.replaceState(null, '', '/projects')
     installBoundary()
@@ -154,5 +166,31 @@ describe('<App/> desktop navigation integration', () => {
     expect(
       await screen.findByRole('heading', { name: 'Integrations' }, { timeout: 5_000 })
     ).not.toBeNull()
+  })
+
+  it('subscribes to notification routes only after Pro target hooks finish activating (#114)', async () => {
+    let finishActivation: (() => void) | undefined
+    rendererActivation.load.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishActivation = resolve
+        })
+    )
+    const onNewApproval = vi.fn(() => () => {})
+    const onNewAction = vi.fn(() => () => {})
+    const proOn = vi.fn(() => () => {})
+    installBoundary({ isPro: true, onNewApproval, onNewAction, proOn })
+
+    render(<App />)
+    await waitFor(() => expect(rendererActivation.load).toHaveBeenCalledTimes(1))
+    expect(onNewApproval).not.toHaveBeenCalled()
+    expect(onNewAction).not.toHaveBeenCalled()
+    expect(proOn).not.toHaveBeenCalled()
+
+    act(() => finishActivation?.())
+
+    await waitFor(() => expect(onNewApproval).toHaveBeenCalledTimes(1))
+    expect(onNewAction).toHaveBeenCalledTimes(1)
+    expect(proOn).toHaveBeenCalledWith('notification:open-target', expect.any(Function))
   })
 })

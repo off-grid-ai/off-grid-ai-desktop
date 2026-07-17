@@ -14,6 +14,8 @@ export interface ProViewContext {
   replayTarget: number | null
   meetingTarget: number | null
   actionTarget: number | null
+  approvalTarget: number | null
+  calendarEventTarget: number | null
   actionsMode: 'todo' | 'approvals' | null
   // When set, the Actions to-do list opens filtered to this entity ("all to-dos for Ali").
   actionsEntity: { id: number; name: string } | null
