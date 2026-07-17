@@ -537,6 +537,37 @@ describe('<MemoryChat/> image and vision release journeys', () => {
     expect(screen.queryByRole('dialog', { name: 'Generated image preview' })).toBeNull()
   })
 
+  it('shows the RAM guard recovery and accepts a safe follow-up without remounting (#66 partial)', async () => {
+    const guardMessage =
+      'Not enough memory to run oversized-image.safetensors (~14.0GB resident) on this 16GB machine. Pick a lighter image model (e.g. SDXL-Lightning or SD 1.5) in the image options.'
+    let attempt = 0
+    const boundary = installApi({
+      active: FULL,
+      models: [FULL],
+      generate: async () => {
+        if (attempt++ === 0) throw new Error(guardMessage)
+        return {
+          dataUrl: 'data:image/png;base64,AAAA',
+          path: '/generated/safe-follow-up.png'
+        }
+      }
+    })
+    const user = userEvent.setup()
+    renderChat()
+
+    await openImageComposer(user)
+    await sendPrompt(user, 'an oversized image request')
+
+    expect(await screen.findByText(guardMessage)).toBeTruthy()
+    expect(screen.queryByAltText('Generated')).toBeNull()
+
+    await sendPrompt(user, 'a safe follow-up image')
+
+    expect(await screen.findByAltText('Generated')).toBeTruthy()
+    expect(boundary.generateImage).toHaveBeenCalledTimes(2)
+    expect(screen.getByText(guardMessage)).toBeTruthy()
+  })
+
   it('keeps image progress and cancellation scoped to the conversation that owns the job (#62)', async () => {
     const turn = deferred<ImageResult>()
     const boundary = installApi({
