@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -11,6 +11,10 @@ vi.mock('electron', () => ({
 
 beforeEach(() => {
   fs.rmSync(path.join(TMP_DIR, 'artifacts-library'), { recursive: true, force: true })
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 afterAll(() => {
@@ -79,5 +83,45 @@ describe('artifact persistence across an app module reload', () => {
       projectId: 'project-release'
     })
     expect(fs.readFileSync(reopened!.code)).toEqual(imageBytes)
+  })
+
+  it('contains an exhausted-filesystem write and keeps existing artifacts readable', async () => {
+    const { saveArtifact } = await import('../artifacts')
+    const existing = saveArtifact({
+      kind: 'text',
+      code: 'Existing release notes',
+      title: 'Existing release notes',
+      conversationId: 'conversation-existing'
+    })
+    const writeFileSync = fs.writeFileSync.bind(fs)
+
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((target, data, options) => {
+      if (String(target).endsWith('.json') && !String(target).endsWith(`${existing.id}.json`)) {
+        throw Object.assign(new Error('ENOSPC: no space left on device, write'), {
+          code: 'ENOSPC'
+        })
+      }
+      return writeFileSync(target, data, options)
+    })
+
+    expect(() =>
+      saveArtifact({
+        kind: 'html',
+        code: '<h1>New artifact</h1>',
+        conversationId: 'conversation-new'
+      })
+    ).toThrow('ENOSPC: no space left on device, write')
+
+    vi.restoreAllMocks()
+    vi.resetModules()
+    const { listArtifacts } = await import('../artifacts')
+
+    expect(listArtifacts()).toEqual([
+      expect.objectContaining({
+        id: existing.id,
+        code: 'Existing release notes',
+        conversationId: 'conversation-existing'
+      })
+    ])
   })
 })
