@@ -1,0 +1,273 @@
+// Release journeys #17-#19, #21, and #23 through the production desktop model manager.
+// Only boundaries outside Off Grid are controlled: HTTP serves small deterministic
+// model bytes, while tiny executable fixtures stand in for the native image, STT,
+// and TTS runtimes. Download sequencing, integrity checks, filesystem promotion,
+// installed/readiness decisions, activation, and runtime selection all stay real.
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+const originalDataDir = process.env.OFFGRID_DATA_DIR
+const originalBinDir = process.env.OFFGRID_BIN_DIR
+const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-model-download-matrix-'))
+const dataDir = path.join(testRoot, 'data')
+const binDir = path.join(testRoot, 'bin')
+process.env.OFFGRID_DATA_DIR = dataDir
+process.env.OFFGRID_BIN_DIR = binDir
+
+vi.mock('electron', () => ({
+  app: {
+    getPath: () => dataDir,
+    isPackaged: false,
+    getAppPath: () => process.cwd(),
+    getVersion: () => 'test'
+  },
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+    encryptString: (value: string) => Buffer.from(value),
+    decryptString: (value: Buffer) => value.toString()
+  }
+}))
+
+const manager = await import('../../models-manager')
+const { CATALOG } = await import('@offgrid/models')
+
+type CatalogModel = (typeof CATALOG)[number]
+type ModelFile = CatalogModel['files'][number]
+type ModelDownloadProgress = import('../../models-manager').DownloadProgress
+
+const byKind = (kind: CatalogModel['kind'], fileCount?: number): CatalogModel => {
+  const entry = CATALOG.find(
+    (candidate) =>
+      candidate.kind === kind && (fileCount === undefined || candidate.files.length === fileCount)
+  )
+  if (!entry) throw new Error(`Model catalog needs an installable ${kind} fixture`)
+  return entry
+}
+
+const textModel = byKind('text', 1)
+const visionModel = byKind('vision', 2)
+const imageModel = byKind('image', 3)
+const speechModel = CATALOG.find(
+  (candidate) => candidate.kind === 'transcription' && candidate.engine === 'parakeet'
+)
+if (!speechModel) throw new Error('Model catalog needs an installable Parakeet fixture')
+
+const installedByTest = new Set<string>()
+
+function executable(file: string, source: string): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, source, { mode: 0o755 })
+}
+
+function modelBytes(file: ModelFile, seed: number): Buffer {
+  if (file.name.endsWith('.gguf')) {
+    return Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(2_044, seed)])
+  }
+  return Buffer.from(`off-grid-${file.name}-${seed}`)
+}
+
+interface PendingResponse {
+  url: string
+  resolve: (response: Response) => void
+}
+
+function controlledHttp(): PendingResponse[] {
+  const pending: PendingResponse[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      (input: string | URL | Request) =>
+        new Promise<Response>((resolve) => {
+          pending.push({ url: String(input), resolve })
+        })
+    )
+  )
+  return pending
+}
+
+async function waitFor(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 2_000
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for the download boundary')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
+async function downloadEveryRequiredFile(entry: CatalogModel): Promise<{
+  progress: ModelDownloadProgress[]
+  bytes: Map<string, Buffer>
+}> {
+  const pending = controlledHttp()
+  const progress: ModelDownloadProgress[] = []
+  const bytes = new Map<string, Buffer>()
+  const result = manager.downloadModel(entry.id, (event) => progress.push(event))
+
+  for (const [index, file] of entry.files.entries()) {
+    await waitFor(() => pending.length === index + 1)
+    expect(pending[index]!.url).toBe(file.url)
+
+    // A model is never ready while its current or any later required file is pending.
+    expect(await manager.listInstalled()).not.toContain(entry.id)
+    expect((await manager.getStorageInfo()).models.map((model) => model.id)).not.toContain(entry.id)
+
+    const body = modelBytes(file, index + 1)
+    bytes.set(file.name, body)
+    pending[index]!.resolve(
+      new Response(new Uint8Array(body), {
+        status: 200,
+        headers: { 'content-length': String(body.length) }
+      })
+    )
+
+    if (index < entry.files.length - 1) {
+      await waitFor(() => pending.length === index + 2)
+      expect(fs.readFileSync(path.join(dataDir, 'models', file.name))).toEqual(body)
+      expect(await manager.listInstalled()).not.toContain(entry.id)
+    }
+  }
+
+  await expect(result).resolves.toEqual({ success: true })
+  installedByTest.add(entry.id)
+
+  expect(await manager.listInstalled()).toContain(entry.id)
+  expect(manager.downloadStatus(entry.id)).toMatchObject({
+    modelId: entry.id,
+    status: 'completed',
+    percent: 100
+  })
+  expect(progress[0]).toMatchObject({ modelId: entry.id, status: 'downloading', percent: 0 })
+  expect(progress.at(-1)).toMatchObject({ modelId: entry.id, status: 'completed', percent: 100 })
+  for (const file of entry.files) {
+    expect(fs.readFileSync(path.join(dataDir, 'models', file.name))).toEqual(bytes.get(file.name))
+    expect(fs.existsSync(path.join(dataDir, 'models', `${file.name}.part`))).toBe(false)
+  }
+
+  return { progress, bytes }
+}
+
+beforeAll(() => {
+  fs.mkdirSync(path.join(dataDir, 'models'), { recursive: true })
+
+  // Native process boundaries only. The real transcription service resolves this
+  // executable and passes the downloaded Parakeet paths to it.
+  executable(
+    path.join(binDir, 'parakeet', 'bin', 'sherpa-onnx-offline'),
+    '#!/bin/sh\nprintf \'%s\\n\' \'{"text":"downloaded model dictation works"}\'\n'
+  )
+  executable(path.join(binDir, 'sd', 'sd-cli'), '#!/bin/sh\nexit 0\n')
+})
+
+afterEach(async () => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+  for (const id of installedByTest) {
+    await manager.deleteModel(id)
+    await manager.clearDownload(id)
+  }
+  installedByTest.clear()
+  fs.rmSync(path.join(dataDir, 'models', 'active-model.json'), { force: true })
+  fs.rmSync(path.join(dataDir, 'models', 'active-modalities.json'), { force: true })
+})
+
+afterAll(() => {
+  if (originalDataDir === undefined) delete process.env.OFFGRID_DATA_DIR
+  else process.env.OFFGRID_DATA_DIR = originalDataDir
+  if (originalBinDir === undefined) delete process.env.OFFGRID_BIN_DIR
+  else process.env.OFFGRID_BIN_DIR = originalBinDir
+  fs.rmSync(testRoot, { recursive: true, force: true })
+})
+
+describe('model download release matrix', () => {
+  it('downloads a text model with observable progress and makes it activatable (#17)', async () => {
+    const { progress } = await downloadEveryRequiredFile(textModel)
+
+    expect(
+      progress.some((event) => event.status === 'downloading' && (event.percent ?? 0) > 0)
+    ).toBe(true)
+    expect(await manager.activateModel(textModel.id)).toEqual({ success: true })
+    expect(manager.getActiveModalities().text).toBe(textModel.id)
+    expect(await manager.getActiveModelIds()).toContain(textModel.id)
+  })
+
+  it('does not make a vision model ready until weights and projector complete (#18)', async () => {
+    await downloadEveryRequiredFile(visionModel)
+
+    expect(await manager.activateModel(visionModel.id)).toEqual({ success: true })
+    const active = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'models', 'active-model.json'), 'utf8')
+    ) as { id: string; primary: string; mmproj: string }
+    expect(active).toEqual({
+      id: visionModel.id,
+      primary: visionModel.files.find((file) => file.role === 'primary')!.name,
+      mmproj: visionModel.files.find((file) => file.role === 'mmproj')!.name
+    })
+  })
+
+  it('makes a complete Parakeet download selectable by the real dictation service (#19)', async () => {
+    const { getActiveTranscription } = await import('../../transcription/select')
+    expect(getActiveTranscription().isAvailable()).toBe(false)
+
+    await downloadEveryRequiredFile(speechModel)
+    expect(await manager.activateModel(speechModel.id)).toEqual({ success: true })
+    const dictation = getActiveTranscription()
+
+    expect(dictation.isAvailable()).toBe(true)
+    await expect(
+      dictation.transcribe({ path: path.join(testRoot, 'synthetic.wav') }, { alreadyWav16k: true })
+    ).resolves.toEqual({ text: 'downloaded model dictation works', language: undefined })
+  })
+
+  it('keeps a multi-file image model unavailable until the whole runtime stack lands (#21)', async () => {
+    const { imageGenStatus } = await import('../../imagegen')
+    expect(imageGenStatus()).toMatchObject({ available: false, models: [] })
+
+    await downloadEveryRequiredFile(imageModel)
+    expect(await manager.activateModel(imageModel.id)).toEqual({ success: true })
+
+    const status = imageGenStatus()
+    expect(status.available).toBe(true)
+    expect(status.models).toContain(imageModel.files.find((file) => file.role === 'primary')!.name)
+    expect(status.active).toBe(imageModel.files.find((file) => file.role === 'primary')!.name)
+  })
+
+  it('deletes only the selected installed model while another download continues (#23)', async () => {
+    const existing = textModel
+    const downloading = CATALOG.find(
+      (candidate) =>
+        candidate.kind === 'text' && candidate.files.length === 1 && candidate.id !== existing.id
+    )
+    if (!downloading) throw new Error('Model catalog needs a second text fixture')
+
+    await downloadEveryRequiredFile(existing)
+
+    const pending = controlledHttp()
+    const inFlight = manager.downloadModel(downloading.id)
+    await waitFor(() => pending.length === 1)
+    expect(manager.downloadStatus(downloading.id)).toMatchObject({ status: 'downloading' })
+
+    await expect(manager.deleteModel(existing.id)).resolves.toEqual({
+      success: true,
+      freedFiles: 1
+    })
+    installedByTest.delete(existing.id)
+    expect(await manager.listInstalled()).not.toContain(existing.id)
+    expect(manager.downloadStatus(downloading.id)).toMatchObject({ status: 'downloading' })
+
+    const file = downloading.files[0]!
+    const body = modelBytes(file, 9)
+    pending[0]!.resolve(
+      new Response(new Uint8Array(body), {
+        status: 200,
+        headers: { 'content-length': String(body.length) }
+      })
+    )
+
+    await expect(inFlight).resolves.toEqual({ success: true })
+    installedByTest.add(downloading.id)
+    expect(fs.readFileSync(path.join(dataDir, 'models', file.name))).toEqual(body)
+    expect(await manager.listInstalled()).toContain(downloading.id)
+    expect(manager.downloadStatus(downloading.id)).toMatchObject({ status: 'completed' })
+  })
+})
