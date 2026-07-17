@@ -46,7 +46,7 @@ really a test of a third-party framework or engine we merely depend on:
   dependency (binary/model) is absent, so it runs on a dev Mac + release builds and SKIPS in a
   plain `npm ci` CI rather than failing. This is where "the feature works" is proven.
 - **swift unit (XCTest / swift-testing via SwiftPM)** - pure logic inside a Swift package.
-- **e2e (Playwright Electron)** - the rendered app tour (e2e/, 21 tests today).
+- **e2e (Playwright Electron)** - the rendered app tour (e2e/, 22 tests today).
 - **gateway smoke (`npm run smoke`)** - the OpenAI `/v1` surface against a running app.
 
 ## Surface matrix (status - keep current)

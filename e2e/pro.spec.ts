@@ -1,21 +1,22 @@
 /**
- * Pro-tier E2E for the two production fixes this change ships. Launches the REAL built
+ * Pro-tier E2E for behavior that crosses the Electron and OS boundaries. Launches the real built
  * app with pro features active (OFFGRID_PRO=1, no license needed) against a fresh temp
  * profile, seeded with deterministic pro data (OFFGRID_SEED_PRO=force on the TEMP
- * profile — never the real one). Drives both fixes end-to-end through the real main
+ * profile - never the real one). Drives these paths end-to-end through the real main
  * process:
  *
  *  1. Replay only surfaces moments backed by a captured SCREEN — connector-only
  *     observations (Attio/Linear/Gmail with no screenshot) must not appear. Asserted
  *     against the live crm:replay-* IPC: every moment an entity returns lines up with a
  *     real captured frame.
- *  2. Restoring a copied FILE (of any type, including images) puts a file-url (Finder
+ *  2. Text crosses the real OS clipboard, encrypted history, and restore IPC.
+ *  3. Restoring a copied FILE (of any type, including images) puts a file-url (Finder
  *     pastes the file), the path as plain text (terminal pastes the path), and the file's
  *     native bytes (an editor pastes the content) on the OS clipboard. Driven through the
  *     real capture → restore loop, asserting the resulting NSPasteboard flavors.
  *
- * macOS only (the app is macOS; fix 2 uses NSPasteboard via osascript). Requires the pro
- * package to be present — skipped in a core-only checkout, exactly as the build gates pro.
+ * The file-flavor assertions are macOS-only because they use NSPasteboard via osascript. Requires
+ * the pro package to be present - skipped in a core-only checkout, exactly as the build gates pro.
  */
 import {
   test,
@@ -40,6 +41,44 @@ const nav = async (label: string): Promise<void> => {
   await page.getByRole('button', { name: label, exact: true }).first().click()
   await page.waitForTimeout(500)
 }
+
+const waitForCapturedClip = async (
+  contentType: 'text' | 'file',
+  textContent: string
+): Promise<string | null> =>
+  page.evaluate(
+    async ({ expectedContentType, expectedTextContent }) => {
+      const api = (
+        window as unknown as {
+          api: { proInvoke: (c: string, ...a: unknown[]) => Promise<unknown> }
+        }
+      ).api
+      const deadline = Date.now() + 12000
+      while (Date.now() < deadline) {
+        const items = (await api.proInvoke('clipboard:list', 50)) as {
+          id: string
+          contentType: string
+          textContent: string | null
+        }[]
+        const hit = items.find(
+          (item) =>
+            item.contentType === expectedContentType && item.textContent === expectedTextContent
+        )
+        if (hit) return hit.id
+        await new Promise((resolve) => setTimeout(resolve, 300))
+      }
+      return null
+    },
+    { expectedContentType: contentType, expectedTextContent: textContent }
+  )
+
+const restoreCapturedClip = async (id: string): Promise<boolean> =>
+  page.evaluate(async (clipId) => {
+    const api = (
+      window as unknown as { api: { proInvoke: (c: string, ...a: unknown[]) => Promise<unknown> } }
+    ).api
+    return (await api.proInvoke('clipboard:restore', clipId)) as boolean
+  }, id)
 
 test.beforeAll(async () => {
   test.skip(!PRO_PRESENT, 'pro package not present — pro features cannot activate')
@@ -145,6 +184,23 @@ test('Voice is unlocked in the pro build (renders the dictation library)', async
   await expect(page.getByRole('button', { name: 'Transcribe file' })).toBeVisible()
 })
 
+test('Capturing and restoring text crosses the real OS clipboard and encrypted history', async () => {
+  const payload = `off-grid clipboard text ${Date.now()}-${process.pid}`
+  await app.evaluate(async ({ clipboard }, text) => {
+    clipboard.clear()
+    clipboard.writeText(text)
+  }, payload)
+
+  const capturedId = await waitForCapturedClip('text', payload)
+  expect(capturedId, 'text clip was captured into history').not.toBeNull()
+
+  await app.evaluate(async ({ clipboard }) => {
+    clipboard.writeText('clipboard overwritten before restore')
+  })
+  expect(await restoreCapturedClip(capturedId!)).toBe(true)
+  expect(await app.evaluate(async ({ clipboard }) => clipboard.readText())).toBe(payload)
+})
+
 test('Restoring a copied file puts BOTH the path text and the file-url on the clipboard', async () => {
   // 1. A real file on disk (written from the test process — Playwright's evaluate
   //    sandbox has no `require`), then simulate a Finder "copy file" by putting its
@@ -159,28 +215,10 @@ test('Restoring a copied file puts BOTH the path text and the file-url on the cl
   }, copied.fileUrl)
 
   // 2. Wait for capture, then restore that item via the real IPC.
-  const restoredId = await page.evaluate(async (basename) => {
-    const api = (
-      window as unknown as { api: { proInvoke: (c: string, ...a: unknown[]) => Promise<unknown> } }
-    ).api
-    const deadline = Date.now() + 12000
-    while (Date.now() < deadline) {
-      const items = (await api.proInvoke('clipboard:list', 50)) as {
-        id: string
-        contentType: string
-        textContent: string | null
-      }[]
-      const hit = items.find((it) => it.contentType === 'file' && it.textContent === basename)
-      if (hit) {
-        await api.proInvoke('clipboard:restore', hit.id)
-        return hit.id
-      }
-      await new Promise((res) => setTimeout(res, 300))
-    }
-    return null
-  }, copied.basename)
+  const restoredId = await waitForCapturedClip('file', copied.basename)
 
-  expect(restoredId, 'file clip was captured and restored').not.toBeNull()
+  expect(restoredId, 'file clip was captured').not.toBeNull()
+  expect(await restoreCapturedClip(restoredId!)).toBe(true)
 
   // 3. The multi-flavor write runs through osascript (async); poll the pasteboard.
   const pb = await app.evaluate(async ({ clipboard }) => {
@@ -222,27 +260,9 @@ test('Restoring a copied IMAGE file still gives the terminal a path (plus pixels
     clipboard.writeBuffer('public.file-url', Buffer.from(fileUrl, 'utf8'))
   }, copied.fileUrl)
 
-  const restoredId = await page.evaluate(async (basename) => {
-    const api = (
-      window as unknown as { api: { proInvoke: (c: string, ...a: unknown[]) => Promise<unknown> } }
-    ).api
-    const deadline = Date.now() + 12000
-    while (Date.now() < deadline) {
-      const items = (await api.proInvoke('clipboard:list', 50)) as {
-        id: string
-        contentType: string
-        textContent: string | null
-      }[]
-      const hit = items.find((it) => it.contentType === 'file' && it.textContent === basename)
-      if (hit) {
-        await api.proInvoke('clipboard:restore', hit.id)
-        return hit.id
-      }
-      await new Promise((res) => setTimeout(res, 300))
-    }
-    return null
-  }, copied.basename)
-  expect(restoredId, 'image clip was captured and restored').not.toBeNull()
+  const restoredId = await waitForCapturedClip('file', copied.basename)
+  expect(restoredId, 'image clip was captured').not.toBeNull()
+  expect(await restoreCapturedClip(restoredId!)).toBe(true)
 
   const pb = await app.evaluate(async ({ clipboard }) => {
     const deadline = Date.now() + 6000

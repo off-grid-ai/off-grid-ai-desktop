@@ -8,17 +8,17 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Scope: 155 journeys - 74 P0, 71 P1, and 10 P2.
-- Covered by direct integration or E2E evidence: 23 - 16 P0, 6 P1, and 1 P2.
-- Left: 132 - including partially covered journeys whose exact release behavior is not yet proven.
+- Covered by direct integration or E2E evidence: 25 - 18 P0, 6 P1, and 1 P2.
+- Left: 130 - including partially covered journeys whose exact release behavior is not yet proven.
 - Green gates today:
   - `npm test`: 202 files passed, 1 skipped; 2,190 tests passed, 1 skipped.
-  - `npm run test:coverage`: 96.77% statements, 91.54% branches, 96.25% functions,
-    97.55% lines.
+  - `npm run test:coverage`: 96.75% statements, 91.54% branches, 96.14% functions,
+    97.52% lines.
   - `npm run test:db`: 13 files and 105 real SQLite integration tests passed; Electron ABI
     restored afterward.
-  - `npm run test:e2e`: 21 Playwright Electron tests passed against fresh synthetic temp profiles.
+  - `npm run test:e2e`: 22 Playwright Electron tests passed against fresh synthetic temp profiles.
   - Both TypeScript projects pass.
-- Not yet a clean handoff: the exact P0-P2 journey count is 23/155, and strict ESLint currently
+- Not yet a clean handoff: the exact P0-P2 journey count is 25/155, and strict ESLint currently
   exposes a legacy backlog. Neither is hidden by the coverage percentage.
 
 ## Covered P0 journeys
@@ -43,6 +43,10 @@ manual claim does not count as complete integration coverage.
   with only the OS automation boundary faked, including ordering and clipboard restoration.
 - #112 - Approval queue gates actions. `approvals.integration.test.ts` exercises real proposal,
   decision, execution, failure, and audit persistence against SQLite.
+- #117 - Clipboard records text. `e2e/pro.spec.ts` writes unique text to the real OS clipboard and
+  waits for the production poller and encrypted history store to expose that exact item over IPC.
+- #121 - Clipboard restore text. The same E2E journey overwrites the OS clipboard after capture,
+  restores the stored item through production IPC, and verifies the original text returns.
 - #122 - Clipboard restore file. `e2e/pro.spec.ts` drives the real capture-to-restore path and
   verifies macOS receives path text, file URL, and native bytes, including an image-file case.
 - #125 - Create and unlock vault. `vault-service.test.ts` uses real KDBX4, Argon2id, WASM crypto,
@@ -218,9 +222,7 @@ manual claim does not count as complete integration coverage.
 
 ## Left - clipboard and vault
 
-- #117 - Clipboard records text.
 - #119 - Clipboard records images and files.
-- #121 - Clipboard restore text.
 - #123 - Clipboard popup hotkey.
 - #127 - Vault copy actions.
 
