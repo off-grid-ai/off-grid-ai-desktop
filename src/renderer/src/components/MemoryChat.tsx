@@ -3,6 +3,8 @@ import { shouldQueue, enqueue, dequeue, queuedCount, clearQueue } from '@rendere
 import { buildSendHistory } from '@renderer/lib/chat-history'
 import { waitingLabel } from '@renderer/lib/chat-labels'
 import { timeAgo } from '@renderer/lib/time'
+import { writeClipboardWithFallback } from '@renderer/lib/clipboard-write'
+import { createUiId } from '@renderer/lib/ui-id'
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
@@ -1096,7 +1098,7 @@ export function MemoryChat({
 
     // Create new conversation if none active
     if (!convId) {
-      convId = `rag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      convId = createUiId('rag')
       const title = trimmed.length > 50 ? trimmed.slice(0, 47) + '...' : trimmed
       try {
         await window.api.createRagConversation(convId, title, projectId)
@@ -1878,21 +1880,9 @@ export function MemoryChat({
     // Electron's renderer navigator.clipboard is flaky (silent reject), so copy via
     // the main-process clipboard; fall back to navigator if the bridge is missing.
     const api = window.api as { writeClipboardText?: (s: string) => Promise<boolean> }
-    if (api.writeClipboardText)
-      void api.writeClipboardText(t).catch(() => {
-        try {
-          void navigator.clipboard.writeText(t)
-        } catch {
-          /* ignore */
-        }
-      })
-    else {
-      try {
-        void navigator.clipboard.writeText(t)
-      } catch (e) {
-        console.error(e)
-      }
-    }
+    writeClipboardWithFallback(t, api.writeClipboardText, (text) =>
+      navigator.clipboard.writeText(text)
+    ).catch(() => false)
     // Brief "Copied" confirmation on the button that was pressed.
     const k = key ?? 'copy'
     setCopiedKey(k)
@@ -1963,7 +1953,7 @@ export function MemoryChat({
       }
       const usable = chatVision ? arr : arr.filter((f) => !f.type.startsWith('image/'))
       for (const file of usable) {
-        const id = `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+        const id = createUiId('att')
         // Show images as images straight away (local preview) so an upload reads as
         // an image while it captions in the background, not a generic TEXT box.
         const isImg = file.type.startsWith('image/')
@@ -2036,7 +2026,7 @@ export function MemoryChat({
       const text = dt.getData('text')
       if (text && text.length > 1200) {
         e.preventDefault()
-        const id = `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+        const id = createUiId('att')
         setAttachments((prev) => [
           ...prev,
           { id, name: 'Pasted text', kind: 'pasted', text, status: 'ready' }
@@ -4337,12 +4327,18 @@ export function MemoryChat({
       {viewer && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-10 font-mono"
-          onClick={() => setViewer(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={viewer.title}
+          tabIndex={-1}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setViewer(null)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setViewer(null)
+          }}
         >
-          <div
-            className="absolute right-4 top-4 flex items-center gap-2"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="absolute right-4 top-4 flex items-center gap-2">
             <span className="mr-2 max-w-[40vw] truncate self-center text-xs text-neutral-400">
               {viewer.title}
             </span>
@@ -4361,10 +4357,7 @@ export function MemoryChat({
               Close
             </button>
           </div>
-          <pre
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-full w-full max-w-3xl overflow-auto whitespace-pre-wrap break-words rounded-md border border-neutral-800 bg-neutral-950 p-5 text-sm leading-relaxed text-neutral-200"
-          >
+          <pre className="max-h-full w-full max-w-3xl overflow-auto whitespace-pre-wrap break-words rounded-md border border-neutral-800 bg-neutral-950 p-5 text-sm leading-relaxed text-neutral-200">
             {viewer.text}
           </pre>
         </div>
@@ -4374,12 +4367,18 @@ export function MemoryChat({
       {lightbox && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-10"
-          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Generated image preview"
+          tabIndex={-1}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setLightbox(null)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setLightbox(null)
+          }}
         >
-          <div
-            className="absolute right-4 top-4 flex items-center gap-2"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="absolute right-4 top-4 flex items-center gap-2">
             {lightbox.path && (
               <>
                 <button
@@ -4405,9 +4404,8 @@ export function MemoryChat({
           </div>
           <img
             src={lightbox.url}
-            alt=""
+            alt="Generated preview"
             className="max-h-full max-w-full rounded-md object-contain"
-            onClick={(e) => e.stopPropagation()}
           />
         </div>
       )}
