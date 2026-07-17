@@ -77,7 +77,7 @@ interface AppSettings {
 }
 type ArtifactKind = import('../../shared/ipc-contracts').ArtifactKindContract
 
-interface IElectronAPI {
+interface RendererAPIOverrides {
   // Open-core bridge
   isPro?: boolean
   proInvoke?: (channel: string, ...args: unknown[]) => Promise<unknown>
@@ -301,6 +301,9 @@ interface IElectronAPI {
   openAccessibilitySettings: () => Promise<boolean>
   openScreenRecordingSettings: () => Promise<boolean>
 }
+
+type IElectronAPI = Omit<import('../../preload').OffGridAPI, keyof RendererAPIOverrides> &
+  RendererAPIOverrides
 
 interface Window {
   api: IElectronAPI

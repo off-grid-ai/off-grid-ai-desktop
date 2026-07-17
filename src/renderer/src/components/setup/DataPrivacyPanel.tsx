@@ -19,13 +19,13 @@ function fmtBytes(b?: number): string | null {
 /** One place to delete on-device data: per-category clear + a full reset. Real,
  *  immediate deletion (this is local data on the user's machine). */
 export function DataPrivacyPanel(): React.ReactElement {
-  const api = (window as { api?: Record<string, (...args: unknown[]) => Promise<unknown>> }).api
+  const api = window.api
   const [cats, setCats] = useState<DataCategory[]>([])
   const [busy, setBusy] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
-      const c = await api?.getDataSummary?.()
+      const c = await api.getDataSummary()
       if (Array.isArray(c)) setCats(c as DataCategory[])
     } catch {
       /* keep last */
@@ -62,7 +62,7 @@ export function DataPrivacyPanel(): React.ReactElement {
       return
     setBusy(c.id)
     try {
-      await api?.clearDataCategory?.(c.id, olderThanDays)
+      await api.clearDataCategory(c.id, olderThanDays)
       await refresh()
     } finally {
       setBusy(null)
@@ -84,7 +84,7 @@ export function DataPrivacyPanel(): React.ReactElement {
       return
     setBusy('all')
     try {
-      await api?.deleteAllData?.()
+      await api.deleteAllData()
       await refresh()
       // Reload so every screen reflects the wiped state.
       setTimeout(() => window.location.reload(), 300)

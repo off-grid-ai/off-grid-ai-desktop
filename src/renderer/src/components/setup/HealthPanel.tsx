@@ -44,13 +44,13 @@ function StatusIcon({ status }: { status: ComponentStatus }): React.ReactElement
 
 /** Live status of every local component. Polls system:health on an interval. */
 export function HealthPanel(): React.ReactElement {
-  const api = (window as { api?: Record<string, (...args: unknown[]) => Promise<unknown>> }).api
+  const api = window.api
   const [health, setHealth] = useState<SystemHealth | null>(null)
   const [restarting, setRestarting] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
-      const h = (await api?.systemHealth?.()) as SystemHealth | undefined
+      const h = (await api.systemHealth()) as SystemHealth | undefined
       if (h) setHealth(h)
     } catch {
       /* ignore — keep last snapshot */
@@ -66,7 +66,7 @@ export function HealthPanel(): React.ReactElement {
   const restart = async (id: string): Promise<void> => {
     setRestarting(id)
     try {
-      await api?.restartComponent?.(id)
+      await api.restartComponent(id)
       await refresh()
     } finally {
       setRestarting(null)

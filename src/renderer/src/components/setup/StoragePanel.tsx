@@ -39,14 +39,14 @@ const KIND_ORDER = ['text', 'vision', 'image', 'voice', 'transcription', 'other'
 /** Disk usage for downloaded models, orphan cleanup, and a download manager
  *  (active / failed / interrupted downloads with retry + cancel). */
 export function StoragePanel(): React.ReactElement {
-  const api = (window as { api?: Record<string, (...args: unknown[]) => Promise<unknown>> }).api
+  const api = window.api
   const [info, setInfo] = useState<StorageInfo | null>(null)
   const [downloads, setDownloads] = useState<DownloadEntry[]>([])
   const [busy, setBusy] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
-      const [s, d] = await Promise.all([api?.getStorageInfo?.(), api?.listDownloads?.()])
+      const [s, d] = await Promise.all([api.getStorageInfo(), api.listDownloads()])
       if (s) setInfo(s as StorageInfo)
       if (Array.isArray(d)) setDownloads(d as DownloadEntry[])
     } catch {
@@ -70,7 +70,7 @@ export function StoragePanel(): React.ReactElement {
     if (!window.confirm(`Delete "${name}"? This removes its files from disk.`)) return
     setBusy(id)
     try {
-      await api?.deleteModel?.(id)
+      await api.deleteModel(id)
       await refresh()
     } finally {
       setBusy(null)
@@ -81,7 +81,7 @@ export function StoragePanel(): React.ReactElement {
   const use = async (id: string): Promise<void> => {
     setBusy(id)
     try {
-      await api?.activateModel?.(id)
+      await api.activateModel(id)
       await refresh()
     } finally {
       setBusy(null)
@@ -90,7 +90,7 @@ export function StoragePanel(): React.ReactElement {
   const cleanOrphans = async (): Promise<void> => {
     setBusy('orphans')
     try {
-      await api?.deleteOrphans?.()
+      await api.deleteOrphans()
       await refresh()
     } finally {
       setBusy(null)
@@ -99,7 +99,7 @@ export function StoragePanel(): React.ReactElement {
   const retry = async (id: string): Promise<void> => {
     setBusy(id)
     try {
-      await api?.retryDownload?.(id)
+      await api.retryDownload(id)
       await refresh()
     } finally {
       setBusy(null)
@@ -108,7 +108,7 @@ export function StoragePanel(): React.ReactElement {
   const cancel = async (id: string): Promise<void> => {
     setBusy(id)
     try {
-      await api?.cancelModelDownload?.(id)
+      await api.cancelModelDownload(id)
       await refresh()
     } finally {
       setBusy(null)
@@ -117,7 +117,7 @@ export function StoragePanel(): React.ReactElement {
   const clearOne = async (id: string): Promise<void> => {
     setBusy(id)
     try {
-      await api?.clearDownload?.(id)
+      await api.clearDownload(id)
       await refresh()
     } finally {
       setBusy(null)
@@ -126,7 +126,7 @@ export function StoragePanel(): React.ReactElement {
   const clearAllIncomplete = async (): Promise<void> => {
     setBusy('clear-dl')
     try {
-      await api?.clearDownloads?.()
+      await api.clearDownloads()
       await refresh()
     } finally {
       setBusy(null)

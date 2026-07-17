@@ -72,7 +72,7 @@ interface SetupPanelProps {
 /** The reusable setup surface: pick a resource mode, see exactly which model it'll
  *  install, then one-click Configure. Used on the first-run gate and in Settings. */
 export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React.ReactElement {
-  const api = (window as { api?: Record<string, (...args: unknown[]) => Promise<unknown>> }).api
+  const api = window.api
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState<SetupProgress | null>(null)
   const [mode, setMode] = useState<Mode>('balanced')
@@ -82,7 +82,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
   const loadPlan = useCallback(
     async (m: Mode) => {
       try {
-        const p = (await api?.setupPlan?.(m)) as SetupPlan | null
+        const p = (await api.setupPlan(m)) as SetupPlan | null
         setPlan(p ?? null)
       } catch {
         setPlan(null)
@@ -96,7 +96,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
     void (async () => {
       let m: Mode = 'balanced'
       try {
-        const s = (await api?.getLlmSettings?.()) as { performanceMode?: Mode } | undefined
+        const s = (await api.getLlmSettings()) as { performanceMode?: Mode } | undefined
         if (s?.performanceMode) m = s.performanceMode
       } catch {
         /* default */
@@ -123,7 +123,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
 
   const pickMode = (m: Mode): void => {
     setMode(m)
-    api?.setLlmSettings?.({ performanceMode: m }) // persist + apply preset
+    void api.setLlmSettings({ performanceMode: m }) // persist + apply preset
     void loadPlan(m)
   }
 
@@ -133,7 +133,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
     setRunning(true)
     setProgress({ phase: 'select', message: 'Picking a model that fits your Mac…' })
     try {
-      await api?.autoConfigure?.()
+      await api.autoConfigure()
     } catch (e) {
       setProgress({ phase: 'error', message: e instanceof Error ? e.message : 'Setup failed.' })
       setRunning(false)
@@ -142,7 +142,7 @@ export function SetupPanel({ onConfigured, hideHealth }: SetupPanelProps): React
 
   const cancel = (): void => {
     const id = progress?.modelId
-    if (id) void api?.cancelModelDownload?.(id) // aborts the in-flight download; autoConfigure emits the cancelled/error state
+    if (id) void api.cancelModelDownload(id) // aborts the in-flight download; autoConfigure emits the cancelled/error state
   }
 
   const done = progress?.phase === 'done'
