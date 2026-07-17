@@ -13,6 +13,7 @@ describe('rendered storage usage', () => {
     getDataSummary: ReturnType<typeof vi.fn>
     onModelProgress: ReturnType<typeof vi.fn>
     retryDownload: ReturnType<typeof vi.fn>
+    clearAppCache: ReturnType<typeof vi.fn>
   }
 
   beforeEach(() => {
@@ -57,7 +58,8 @@ describe('rendered storage usage', () => {
         }
       ]),
       onModelProgress: vi.fn(() => () => {}),
-      retryDownload: vi.fn(async () => ({ success: false }))
+      retryDownload: vi.fn(async () => ({ success: false })),
+      clearAppCache: vi.fn(async () => ({ success: true, freedBytes: 3_000_000 }))
     }
     ;(globalThis as unknown as { window: Window }).window.api = api as never
   })
@@ -107,5 +109,48 @@ describe('rendered storage usage', () => {
     expect(screen.getByText(diskFullMessage)).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(api.retryDownload).toHaveBeenCalledWith('synthetic/text-model')
+  })
+
+  it('clears only temporary cache and explains which durable stores remain (#134)', async () => {
+    const user = userEvent.setup()
+    render(<StoragePanel />)
+
+    expect(await screen.findByText('Temporary app cache')).toBeTruthy()
+    expect(
+      screen.getByText(
+        'Safe to clear. Chats, projects, models, vault, settings, and Pro access stay.'
+      )
+    ).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Clear cache' }))
+
+    expect(api.clearAppCache).toHaveBeenCalledTimes(1)
+    expect((await screen.findByRole('status')).textContent).toBe(
+      'Temporary cache cleared. 3 MB reclaimed. Your data and models were kept.'
+    )
+  })
+
+  it('does not claim success when the cache boundary fails', async () => {
+    api.clearAppCache.mockRejectedValue(new Error('cache clear failed'))
+    const user = userEvent.setup()
+    render(<StoragePanel />)
+
+    await user.click(await screen.findByRole('button', { name: 'Clear cache' }))
+
+    expect((await screen.findByRole('status')).textContent).toBe(
+      'Cache could not be cleared. Your data and models were not changed.'
+    )
+  })
+
+  it('reports successful cleanup when Electron cannot measure reclaimed bytes', async () => {
+    api.clearAppCache.mockResolvedValue({ success: true, freedBytes: null })
+    const user = userEvent.setup()
+    render(<StoragePanel />)
+
+    await user.click(await screen.findByRole('button', { name: 'Clear cache' }))
+
+    expect((await screen.findByRole('status')).textContent).toBe(
+      'Temporary cache cleared. Your data and models were kept.'
+    )
   })
 })

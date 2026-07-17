@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ArtifactKindContract } from '../shared/ipc-contracts'
+import {
+  CACHE_CLEANUP_CHANNEL,
+  type ArtifactKindContract,
+  type CacheCleanupResultContract
+} from '../shared/ipc-contracts'
 
 console.log('PRELOAD SCRIPT LOADED')
 
@@ -351,6 +355,8 @@ const offGridApi = {
   retryDownload: (modelId: string) => ipcRenderer.invoke('models:retry-download', modelId),
   clearDownload: (modelId: string) => ipcRenderer.invoke('models:clear-download', modelId),
   clearDownloads: () => ipcRenderer.invoke('models:clear-downloads'),
+  clearAppCache: () =>
+    ipcRenderer.invoke(CACHE_CLEANUP_CHANNEL) as Promise<CacheCleanupResultContract>,
   importLocalModel: () => ipcRenderer.invoke('models:import'),
 
   // Data & privacy

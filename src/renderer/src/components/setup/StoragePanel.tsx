@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { HardDrives, Trash, ArrowsClockwise, X, Broom } from '@phosphor-icons/react'
 import { cn } from '@renderer/lib/utils'
 import { modelKindLabel } from '@renderer/lib/model-kind-labels'
+import { CacheCleanupControl } from './CacheCleanupControl'
+import { formatStorageBytes } from './storage-format'
 
 interface ModelDiskEntry {
   id: string
@@ -24,12 +26,6 @@ interface DownloadEntry {
   downloadedMB?: string
   totalMB?: string
   error?: string
-}
-
-function gb(bytes: number): string {
-  if (!bytes) return '0 GB'
-  if (bytes < 1e9) return `${(bytes / 1e6).toFixed(0)} MB`
-  return `${(bytes / 1e9).toFixed(1)} GB`
 }
 
 // Group order for the by-type storage layout. Display labels come from the shared
@@ -132,7 +128,6 @@ export function StoragePanel(): React.ReactElement {
       setBusy(null)
     }
   }
-
   const active = downloads.filter((d) => d.status === 'downloading')
   const incomplete = downloads.filter((d) => d.status === 'failed' || d.status === 'cancelled')
   const orphanBytes = (info?.orphans ?? []).reduce((s, o) => s + o.bytes, 0)
@@ -159,9 +154,13 @@ export function StoragePanel(): React.ReactElement {
       <div className="px-4 py-2">
         <div className="mb-1 flex items-center justify-between">
           <span className="text-[11px] text-neutral-400">
-            {info ? `${gb(info.totalBytes)} used by models` : 'Reading…'}
+            {info ? `${formatStorageBytes(info.totalBytes)} used by models` : 'Reading…'}
           </span>
-          {info && <span className="text-[10px] text-neutral-600">{gb(info.freeBytes)} free</span>}
+          {info && (
+            <span className="text-[10px] text-neutral-600">
+              {formatStorageBytes(info.freeBytes)} free
+            </span>
+          )}
         </div>
         <div className="h-1 w-full overflow-hidden rounded-full bg-neutral-800">
           <div
@@ -292,7 +291,7 @@ export function StoragePanel(): React.ReactElement {
                           <span
                             className={`shrink-0 font-mono text-[10px] text-neutral-500 tabular-nums ${activatable ? 'group-hover:hidden' : ''}`}
                           >
-                            {gb(m.bytes)}
+                            {formatStorageBytes(m.bytes)}
                           </span>
                           <button
                             onClick={() => del(m.id, m.name)}
@@ -319,7 +318,7 @@ export function StoragePanel(): React.ReactElement {
         <div className="flex items-center justify-between border-t border-neutral-800/60 px-4 py-2.5">
           <span className="text-[11px] text-neutral-500">
             {info.orphans.length} unused file{info.orphans.length > 1 ? 's' : ''} ·{' '}
-            {gb(orphanBytes)}
+            {formatStorageBytes(orphanBytes)}
           </span>
           <button
             onClick={cleanOrphans}
@@ -333,6 +332,8 @@ export function StoragePanel(): React.ReactElement {
           </button>
         </div>
       )}
+
+      <CacheCleanupControl />
     </div>
   )
 }

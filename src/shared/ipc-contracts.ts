@@ -36,4 +36,12 @@ export interface PermissionStatusContract {
   allGranted: boolean
 }
 
+export interface CacheCleanupResultContract {
+  success: true
+  /** HTTP cache bytes reclaimed when Electron can measure them; null otherwise. */
+  freedBytes: number | null
+}
+
+export const CACHE_CLEANUP_CHANNEL = 'storage:clear-cache'
+
 export type ArtifactKindContract = 'html' | 'svg' | 'mermaid' | 'react' | 'text' | 'image'

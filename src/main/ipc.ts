@@ -49,6 +49,7 @@ import {
   openAccessibilitySettings,
   openScreenRecordingSettings
 } from './permissions'
+import { CACHE_CLEANUP_CHANNEL } from '../shared/ipc-contracts'
 import { getAllPromptDefs } from './prompts'
 import { getPrompt, getPromptTemplate, resetPrompt } from './prompt-store'
 import {
@@ -1571,6 +1572,9 @@ export function setupIPC() {
   )
   ipcMain.handle('models:clear-downloads', () =>
     import('./models-manager').then((m) => m.clearInactiveDownloads())
+  )
+  ipcMain.handle(CACHE_CLEANUP_CHANNEL, () =>
+    import('./cache-cleanup').then((m) => m.clearEphemeralCache())
   )
   // Import a local .gguf from disk (file picker → validate → copy → register).
   ipcMain.handle('models:import', async () => {
