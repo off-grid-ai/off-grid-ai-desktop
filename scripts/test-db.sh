@@ -29,4 +29,7 @@ echo "[test:db] rebuilding better-sqlite3-multiple-ciphers for node $(node -v)..
 npm rebuild better-sqlite3-multiple-ciphers >/dev/null 2>&1
 
 echo "[test:db] running DB integration tests..."
-npx vitest run --config vitest.db.config.ts "$@"
+# Native/model/UI DB journeys are intentionally serial. Parallel files compete for
+# process-wide engines, Electron module state, and timing-sensitive recorder owners,
+# which turns real integration coverage into suite-load flakes.
+npx vitest run --config vitest.db.config.ts --no-file-parallelism --maxWorkers=1 "$@"
