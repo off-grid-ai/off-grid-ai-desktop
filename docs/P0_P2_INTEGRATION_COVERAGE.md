@@ -8,7 +8,7 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 72 integration-covered, 2 signed-DMG checks left.
+  - P0: 74 total, 72 covered, 2 left.
   - P1: 71 total, 61 covered, 10 left.
   - P2: 10 total, 9 covered, 1 left.
   - Overall: 155 total, 142 covered, 13 left.
