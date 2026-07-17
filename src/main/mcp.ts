@@ -275,7 +275,7 @@ export async function testConnector(
 // unreachable connector (no server / stalled OAuth) would otherwise block every
 // send. Bound each connect+list; on timeout the caller drops that connector's tools
 // (and marks it errored) and the turn proceeds.
-const FETCH_TOOLS_TIMEOUT_MS = 8000
+export const FETCH_TOOLS_TIMEOUT_MS = 8000
 
 /** Full tool definitions (incl. inputSchema) for a connected connector. Rejects if
  *  the connect+list exceeds FETCH_TOOLS_TIMEOUT_MS. */
