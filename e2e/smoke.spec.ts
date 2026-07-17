@@ -25,7 +25,7 @@ let app: ElectronApplication
 let page: Page
 let userDataDir: string
 
-test.beforeAll(async () => {
+test.beforeEach(async () => {
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-e2e-'))
   app = await electron.launch({
     args: ['.'],
@@ -40,7 +40,7 @@ test.beforeAll(async () => {
   await page.waitForLoadState('domcontentloaded')
 })
 
-test.afterAll(async () => {
+test.afterEach(async () => {
   await app?.close()
   try {
     fs.rmSync(userDataDir, { recursive: true, force: true })
