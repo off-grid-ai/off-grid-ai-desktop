@@ -8,17 +8,17 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Scope: 155 journeys - 74 P0, 71 P1, and 10 P2.
-- Covered by direct integration or E2E evidence: 27 - 20 P0, 6 P1, and 1 P2.
-- Left: 128 - including partially covered journeys whose exact release behavior is not yet proven.
+- Covered by direct integration or E2E evidence: 28 - 21 P0, 6 P1, and 1 P2.
+- Left: 127 - including partially covered journeys whose exact release behavior is not yet proven.
 - Green gates today:
   - `npm test`: 202 files passed, 1 skipped; 2,190 tests passed, 1 skipped.
   - `npm run test:coverage`: 96.75% statements, 91.54% branches, 96.14% functions,
     97.52% lines.
   - `npm run test:db`: 13 files and 105 real SQLite integration tests passed; Electron ABI
     restored afterward.
-  - `npm run test:e2e`: 24 Playwright Electron tests passed against fresh synthetic temp profiles.
+  - `npm run test:e2e`: 25 Playwright Electron tests passed against fresh synthetic temp profiles.
   - Both TypeScript projects pass.
-- Not yet a clean handoff: the exact P0-P2 journey count is 27/155, and strict ESLint currently
+- Not yet a clean handoff: the exact P0-P2 journey count is 28/155, and strict ESLint currently
   exposes a legacy backlog. Neither is hidden by the coverage percentage.
 
 ## Covered P0 journeys
@@ -27,6 +27,9 @@ manual claim does not count as complete integration coverage.
   new temp `OFFGRID_USER_DATA` directory and verifies first-run onboarding and the preload bridge.
 - #9 - Fresh onboarding completes. `e2e/smoke.spec.ts` drives the real onboarding flow and lands on
   Models.
+- #43 - Chat survives relaunch. `e2e/chat-memory.spec.ts` creates multiple scoped and unscoped
+  conversations with messages and context through production IPC, fully closes Electron, reopens
+  the same profile, and verifies every association and payload through the reloaded preload path.
 - #51 - Create a project. `src/main/__tests__/rag-store-integration.dbtest.ts` exercises the real
   project store against temp SQLite and verifies the round trip.
 - #56 - Delete project cascades. `src/main/__tests__/project-delete-cascade.dbtest.ts` uses the real
@@ -142,7 +145,6 @@ manual claim does not count as complete integration coverage.
 - #40 - Queued message order.
 - #41 - Conversation switch isolation.
 - #42 - Project switch isolation.
-- #43 - Chat survives relaunch.
 - #44 - Rename conversation.
 - #46 - Copy assistant reply.
 - #47 - Regenerate reply.

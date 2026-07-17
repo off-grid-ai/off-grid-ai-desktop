@@ -2,6 +2,7 @@
  * Chat + memory regression tests for:
  *   - No-memory toggle actually sticking (fix: assignProject no longer overrides noMemory)
  *   - Streaming placeholder appearing immediately (fix: streamConvRef routes tokens to correct conv)
+ *   - Conversation, message, scope, and project persistence across a full process relaunch
  *
  * Runs against the built app with OFFGRID_PRO=1 so the memory dropdown is visible.
  * No LLM model is expected — we only assert UI state and IPC plumbing, not model output.
@@ -21,8 +22,7 @@ let app: ElectronApplication
 let page: Page
 let userDataDir: string
 
-test.beforeAll(async () => {
-  userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-chat-e2e-'))
+const launchApp = async (): Promise<void> => {
   app = await electron.launch({
     args: ['.'],
     env: {
@@ -34,18 +34,49 @@ test.beforeAll(async () => {
   })
   page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
+}
 
-  // Skip onboarding so we land in the app shell.
+const closeApp = async (): Promise<void> => {
+  const child = app.process()
+  await app.close()
+  if (child.exitCode !== null) return
+  await new Promise<void>((resolve) => {
+    child.once('exit', () => resolve())
+  })
+}
+
+const enterChat = async (): Promise<void> => {
   for (let i = 0; i < 8; i++) {
     const btn = page.getByRole('button', { name: /Continue|Start using Off Grid/i })
     if (!(await btn.isVisible().catch(() => false))) break
     await btn.click()
     await page.waitForTimeout(300)
   }
+
+  const chatNav = page.getByRole('button', { name: /chat|mind|ask/i }).first()
+  await expect(chatNav).toBeVisible()
+  await chatNav.click()
+  await page.waitForTimeout(500)
+
+  const banner = page
+    .locator('div')
+    .filter({ hasText: /set up your local ai/i })
+    .first()
+  if (await banner.isVisible().catch(() => false)) {
+    await banner.locator('button').last().click()
+    await page.waitForTimeout(300)
+  }
+  await page.keyboard.press('Escape')
+}
+
+test.beforeEach(async () => {
+  userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-chat-e2e-'))
+  await launchApp()
+  await enterChat()
 })
 
-test.afterAll(async () => {
-  await app?.close()
+test.afterEach(async () => {
+  if (app) await closeApp()
   try {
     fs.rmSync(userDataDir, { recursive: true, force: true })
   } catch {
@@ -54,44 +85,17 @@ test.afterAll(async () => {
 })
 
 test('navigates to the chat screen', async () => {
-  // Find the chat/mind-share nav item and click it.
-  const chatNav = page.getByRole('button', { name: /chat|mind|ask/i }).first()
-  if (await chatNav.isVisible().catch(() => false)) {
-    await chatNav.click()
-    await page.waitForTimeout(500)
-  }
+  await expect(page.getByPlaceholder(/ask anything/i)).toBeVisible()
   await page.screenshot({ path: 'e2e/screenshots/chat-screen.png', fullPage: false })
 })
 
 test('memory toggle: No memory sticks after selection', async () => {
-  // Dismiss the "Set up your local AI" banner (and any other overlays) that block clicks.
-  const dismissBtns = page
-    .locator('button')
-    .filter({ hasText: '' })
-    .filter({ has: page.locator('svg') })
-  const banner = page
-    .locator('div')
-    .filter({ hasText: /set up your local ai/i })
-    .first()
-  if (await banner.isVisible().catch(() => false)) {
-    const closeBtn = banner.locator('button').last()
-    await closeBtn.click().catch(() => {})
-    await page.waitForTimeout(300)
-  }
-  void dismissBtns // suppress unused warning
-  await page.keyboard.press('Escape')
-  await page.waitForTimeout(200)
-
   // Open the memory/scope dropdown.
   const memoryBtn = page
     .locator('button')
     .filter({ hasText: /memory|no memory/i })
     .first()
-  if (!(await memoryBtn.isVisible().catch(() => false))) {
-    test.skip(true, 'Memory toggle not visible — may be on a different screen')
-    return
-  }
-
+  await expect(memoryBtn).toBeVisible()
   await memoryBtn.click({ force: true })
   await page.waitForTimeout(500)
   await page.screenshot({ path: 'e2e/screenshots/memory-dropdown-open.png' })
@@ -121,19 +125,12 @@ test('memory toggle: All memory sticks after selection', async () => {
     .locator('button')
     .filter({ hasText: /no memory|memory/i })
     .first()
-  if (!(await memoryBtn.isVisible().catch(() => false))) {
-    test.skip(true, 'Memory toggle not visible')
-    return
-  }
-
+  await expect(memoryBtn).toBeVisible()
   await memoryBtn.click({ force: true })
   await page.waitForTimeout(200)
 
   const allMemoryItem = page.getByRole('menuitem', { name: /all memory/i })
-  if (!(await allMemoryItem.isVisible().catch(() => false))) {
-    test.skip(true, 'All memory item not in dropdown (non-pro build?)')
-    return
-  }
+  await expect(allMemoryItem).toBeVisible()
   await allMemoryItem.click()
   await page.waitForTimeout(300)
 
@@ -149,11 +146,7 @@ test('memory toggle: All memory sticks after selection', async () => {
 
 test('chat composer renders and accepts input', async () => {
   const composer = page.getByPlaceholder(/ask anything/i)
-  if (!(await composer.isVisible().catch(() => false))) {
-    test.skip(true, 'Chat composer not visible')
-    return
-  }
-
+  await expect(composer).toBeVisible()
   await composer.fill('Hello, test message')
   await page.screenshot({ path: 'e2e/screenshots/chat-composer-filled.png' })
 
@@ -174,11 +167,7 @@ test('streaming placeholder appears immediately after send', async () => {
   // It validates the fix — previously nothing appeared until the full response
   // resolved because stream tokens routed to the wrong conversation bucket.
   const composer = page.getByPlaceholder(/ask anything/i)
-  if (!(await composer.isVisible().catch(() => false))) {
-    test.skip(true, 'Chat composer not visible')
-    return
-  }
-
+  await expect(composer).toBeVisible()
   await composer.fill('What did I work on today?')
   await page.keyboard.press('Enter')
 
@@ -215,4 +204,94 @@ test('streaming placeholder appears immediately after send', async () => {
   expect(errorBubbleCount).toBeLessThanOrEqual(1)
 
   await page.screenshot({ path: 'e2e/screenshots/streaming-after-send.png' })
+})
+
+test('conversations, messages, scopes, and project associations survive relaunch', async () => {
+  const seeded = await page.evaluate(async () => {
+    const projectId = await window.api.createProject({ name: 'Relaunch Project' })
+    await window.api.createRagConversation('persist-general', 'Persistent General', null)
+    await window.api.addRagMessage('persist-general', 'user', 'general question')
+    await window.api.addRagMessage('persist-general', 'assistant', 'general answer', {
+      sources: ['local-memory']
+    })
+    await window.api.createRagConversation('persist-project', 'Persistent Project', projectId)
+    await window.api.addRagMessage('persist-project', 'user', 'project question')
+    await window.api.addRagMessage('persist-project', 'assistant', 'project answer', {
+      projectId
+    })
+    return { projectId }
+  })
+
+  await closeApp()
+  await launchApp()
+
+  const persisted = await page.evaluate(async ({ projectId }) => {
+    const conversations = await window.api.getRagConversations()
+    const projects = await window.api.listProjects()
+    const generalMessages = await window.api.getRagMessages('persist-general')
+    const projectMessages = await window.api.getRagMessages('persist-project')
+    const selectConversation = (
+      id: string
+    ): {
+      id: string
+      title: string | null
+      projectId: string | null | undefined
+      messageCount: number | undefined
+    } | null => {
+      const conversation = conversations.find((item) => item.id === id)
+      return conversation
+        ? {
+            id: conversation.id,
+            title: conversation.title,
+            projectId: conversation.project_id,
+            messageCount: conversation.message_count
+          }
+        : null
+    }
+    const selectMessages = (
+      messages: typeof generalMessages
+    ): Array<{ role: string; content: string; context: string | null }> =>
+      messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        context: message.context
+      }))
+    return {
+      projectExists: projects.some((project) => project.id === projectId),
+      general: selectConversation('persist-general'),
+      project: selectConversation('persist-project'),
+      generalMessages: selectMessages(generalMessages),
+      projectMessages: selectMessages(projectMessages)
+    }
+  }, seeded)
+
+  expect(persisted.projectExists).toBe(true)
+  expect(persisted.general).toEqual({
+    id: 'persist-general',
+    title: 'Persistent General',
+    projectId: null,
+    messageCount: 2
+  })
+  expect(persisted.project).toEqual({
+    id: 'persist-project',
+    title: 'Persistent Project',
+    projectId: seeded.projectId,
+    messageCount: 2
+  })
+  expect(persisted.generalMessages).toEqual([
+    { role: 'user', content: 'general question', context: null },
+    {
+      role: 'assistant',
+      content: 'general answer',
+      context: JSON.stringify({ sources: ['local-memory'] })
+    }
+  ])
+  expect(persisted.projectMessages).toEqual([
+    { role: 'user', content: 'project question', context: null },
+    {
+      role: 'assistant',
+      content: 'project answer',
+      context: JSON.stringify({ projectId: seeded.projectId })
+    }
+  ])
 })
