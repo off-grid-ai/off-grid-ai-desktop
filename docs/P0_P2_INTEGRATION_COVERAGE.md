@@ -8,15 +8,15 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 27 covered, 47 left.
-  - P1: 71 total, 8 covered, 63 left.
+  - P0: 74 total, 34 covered, 40 left.
+  - P1: 71 total, 10 covered, 61 left.
   - P2: 10 total, 1 covered, 9 left.
-  - Overall: 155 total, 36 covered, 119 left.
+  - Overall: 155 total, 45 covered, 110 left.
 - Green gates today:
-  - `npm test`: 205 files passed, 1 skipped; 2,195 tests passed, 1 skipped.
+  - `npm test`: 206 files passed, 1 skipped; 2,197 tests passed, 1 skipped.
   - `npm run test:coverage`: 96.75% statements, 91.55% branches, 96.15% functions,
     97.52% lines.
-  - `npm run test:db`: 14 files and 106 real SQLite integration tests passed; Electron ABI
+  - `npm run test:db`: 15 files and 108 real SQLite integration tests passed; Electron ABI
     restored afterward.
   - `npm run test:e2e`: 28 Playwright Electron tests passed against fresh synthetic temp profiles.
   - Both TypeScript projects pass.
@@ -35,6 +35,9 @@ manual claim does not count as complete integration coverage.
 - #26 - Truncated GGUF is rejected. `model-integrity.integration.test.ts` drives the real model
   manager against a temp filesystem, with only HTTP delivery faked, and proves truncated downloads
   and local imports are rejected before promotion, installation, copying, or registration.
+- #27 - Disk write failure does not crash. The same real model-manager integration injects
+  `ENOSPC` only at the OS write boundary and proves the error is contained, no partial model is
+  installed, failed status is recorded, and an existing installed model remains readable.
 - #43 - Chat survives relaunch. `e2e/chat-memory.spec.ts` creates multiple scoped and unscoped
   conversations with messages and context through production IPC, fully closes Electron, reopens
   the same profile, and verifies every association and payload through the reloaded preload path.
@@ -42,12 +45,30 @@ manual claim does not count as complete integration coverage.
   project store against temp SQLite and verifies the round trip.
 - #56 - Delete project cascades. `src/main/__tests__/project-delete-cascade.dbtest.ts` uses the real
   project, conversation, message, artifact, document, and chunk paths and proves no orphans remain.
+- #60 - Unsupported document fails clearly. The production picker excludes unsupported types;
+  `rag-store-integration.dbtest.ts` drives a corrupt PDF through the real parser, RAG service, and
+  SQLite store and proves extraction fails clearly before documents, chunks, or embeddings exist.
 - #63 - Image cancellation keeps text. `MemoryChat.tool-image-cancel.test.tsx` drives the real
   rendered MemoryChat path with the image engine as the external boundary and verifies the text
   turn persists.
+- #73 - Connector tool executes. The real connector extension executes a read-only tool through
+  its remote boundary and returns the result; `tools-loop.dbtest.ts` proves extension output flows
+  through the production tool loop into the final answer.
+- #74 - Write tool requires approval. `mcp-connector-tool-extension.dbtest.ts` uses real connector
+  state and the production extension to prove a write is queued at the approval boundary before
+  the remote call can execute.
+- #75 - Stop prevents connector side effect. `tools-loop.dbtest.ts` aborts after the streamed tool
+  call but before extension execution and proves the side-effect implementation is never invoked;
+  the dispatch guard ensures connector tools use that same abstraction.
+- #76 - Expired connector becomes error. The connector integration injects an authorization
+  failure only at the remote boundary and proves the real SQLite connector changes to an error
+  state with an actionable detail while healthy tools remain available.
 - #79 - Gateway models endpoint. `e2e/smoke.spec.ts` starts the real Electron gateway, seeds an
   active model only inside the disposable profile, calls `/v1/models` over HTTP, and verifies
   modality metadata in both supported response shapes.
+- #84 - Capture disabled means no capture. `capture-disabled.integration.test.ts` backs the real
+  capture state machine with the production settings store and proves the persisted privacy pause
+  survives hydration, prevents OS capture work across ticks, and resumes only after user action.
 - #87 - Replay timeline renders. `e2e/pro.spec.ts` launches the real Pro build path with synthetic
   data and verifies Replay renders instead of the upgrade screen.
 - #94 - Delete all removes capture corpus. `pro/main/__tests__/personal-data.integration.test.ts`
@@ -97,6 +118,12 @@ manual claim does not count as complete integration coverage.
 
 - #45 - Delete conversation cascades. `conversation-delete-cascade.dbtest.ts` proves real messages
   and artifacts do not survive conversation deletion.
+- #72 - Connector tools load. `mcp-connector-tool-extension.dbtest.ts` discovers schemas through
+  the production extension and real connector database, preserving enabled/disabled state while
+  controlling only the remote MCP transport.
+- #77 - Dead connector does not hang all tools. `mcp-timeout.dbtest.ts` runs the default production
+  extension over real SQLite connectors and the real eight-second timeout; a non-responsive MCP
+  process becomes an error while the healthy connector schema still returns.
 - #110 - Entity merge preserves evidence. `resolve.integration.test.ts` exercises real entity,
   aliases, observations, relationships, action reassignment, split, and merge persistence.
 - #113 - Action status survives persistence. `actions-status.integration.test.ts` exercises real
@@ -152,7 +179,6 @@ manual claim does not count as complete integration coverage.
 - #23 - Delete does not cancel another download.
 - #24 - Offline download fails clearly.
 - #25 - Interrupted download recovers.
-- #27 - Disk write failure does not crash.
 - #28 - Active text model survives relaunch.
 - #29 - Active modal models survive relaunch.
 - #30 - Deleting active model clears selection.
@@ -187,7 +213,6 @@ manual claim does not count as complete integration coverage.
 - #57 - Text artifact saves and reopens.
 - #58 - Image artifact saves and reopens.
 - #59 - Project list uses desktop layout.
-- #60 - Unsupported document fails clearly.
 
 ## Left - image and vision
 
@@ -204,12 +229,6 @@ manual claim does not count as complete integration coverage.
 ## Left - integrations and gateway
 
 - #71 - Connector can be added.
-- #72 - Connector tools load.
-- #73 - Connector tool executes.
-- #74 - Write tool requires approval.
-- #75 - Stop prevents connector side effect.
-- #76 - Expired connector becomes error.
-- #77 - Dead connector does not hang all tools.
 - #78 - Connector delete removes secrets.
 - #80 - Gateway chat streaming.
 - #81 - Gateway image route.
@@ -218,7 +237,6 @@ manual claim does not count as complete integration coverage.
 ## Left - capture, memory, and replay
 
 - #83 - Screen capture permission path.
-- #84 - Capture disabled means no capture.
 - #85 - OCR creates searchable memory.
 - #86 - Sensitive or excluded apps are omitted.
 - #88 - Replay playback uses media server.
