@@ -21,6 +21,14 @@ const fixtures = CATALOG.flatMap((entry) => {
   return [{ entry, fileName: file.name, filePath: path.join(dataDir, 'models', file.name) }]
 })
 
+const activeSelectionFixtures = ['text', 'vision', 'image', 'voice', 'transcription'].map(
+  (kind) => {
+    const entry = CATALOG.find((candidate) => candidate.kind === kind && candidate.files.length > 0)
+    if (!entry) throw new Error(`Model catalog needs an installable ${kind} fixture`)
+    return { kind, entry }
+  }
+)
+
 const [primary, diskFailure, interrupted, offline] = fixtures
 if (!primary || !diskFailure || !interrupted || !offline) {
   throw new Error('Model catalog needs four single-file text GGUF fixtures')
@@ -37,6 +45,13 @@ afterEach(() => {
     fs.rmSync(fixture.filePath, { force: true })
     fs.rmSync(`${fixture.filePath}.part`, { force: true })
   }
+  for (const { entry } of activeSelectionFixtures) {
+    for (const file of entry.files) {
+      fs.rmSync(path.join(dataDir, 'models', file.name), { force: true })
+    }
+  }
+  fs.rmSync(path.join(dataDir, 'models', 'active-model.json'), { force: true })
+  fs.rmSync(path.join(dataDir, 'models', 'active-modalities.json'), { force: true })
 })
 
 afterAll(() => {
@@ -255,4 +270,43 @@ describe('model-manager GGUF integrity', () => {
       expect.arrayContaining([primary.entry.id, offline.entry.id])
     )
   })
+})
+
+describe('active model deletion', () => {
+  it.each(activeSelectionFixtures)(
+    'clears the persisted $kind selection when its installed model is deleted',
+    async ({ entry }) => {
+      for (const file of entry.files) {
+        fs.writeFileSync(path.join(dataDir, 'models', file.name), Buffer.alloc(2_048, 1))
+      }
+      expect(await manager.listInstalled()).toContain(entry.id)
+
+      expect(await manager.activateModel(entry.id)).toEqual({ success: true })
+      expect(await manager.getActiveModelIds()).toContain(entry.id)
+
+      const deletion = await manager.deleteModel(entry.id)
+
+      expect(deletion).toEqual({ success: true, freedFiles: entry.files.length })
+      expect(await manager.getActiveModelIds()).not.toContain(entry.id)
+      expect(manager.getActiveModalities()).toEqual({
+        text: null,
+        image: null,
+        speech: null,
+        transcription: null
+      })
+      for (const file of entry.files) {
+        expect(fs.existsSync(path.join(dataDir, 'models', file.name))).toBe(false)
+      }
+
+      vi.resetModules()
+      const restartedManager = await import('../../models-manager')
+      expect(restartedManager.getActiveModalities()).toEqual({
+        text: null,
+        image: null,
+        speech: null,
+        transcription: null
+      })
+      expect(await restartedManager.getActiveModelIds()).not.toContain(entry.id)
+    }
+  )
 })
