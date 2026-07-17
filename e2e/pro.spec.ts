@@ -14,6 +14,7 @@
  *     pastes the file), the path as plain text (terminal pastes the path), and the file's
  *     native bytes (an editor pastes the content) on the OS clipboard. Driven through the
  *     real capture → restore loop, asserting the resulting NSPasteboard flavors.
+ *  4. Vault copy controls write through the reliable main-process clipboard bridge.
  *
  * The file-flavor assertions are macOS-only because they use NSPasteboard via osascript. Requires
  * the pro package to be present - skipped in a core-only checkout, exactly as the build gates pro.
@@ -88,6 +89,12 @@ const restoreCapturedClip = async (id: string): Promise<boolean> =>
     ).api
     return (await api.proInvoke('clipboard:restore', clipId)) as boolean
   }, id)
+
+const expectSystemClipboardText = async (expected: string): Promise<void> => {
+  await expect
+    .poll(() => app.evaluate(async ({ clipboard }) => clipboard.readText()), { timeout: 3000 })
+    .toBe(expected)
+}
 
 test.beforeAll(async () => {
   test.skip(!PRO_PRESENT, 'pro package not present — pro features cannot activate')
@@ -193,6 +200,46 @@ test('Voice is unlocked in the pro build (renders the dictation library)', async
   await expect(page.getByRole('button', { name: 'Transcribe file' })).toBeVisible()
 })
 
+test('Vault copy actions write username, revealed password, and URL to the OS clipboard', async () => {
+  const entry = {
+    title: 'E2E Vault Login',
+    username: 'vault-user@offgrid.test',
+    password: 'vault-password-e2e',
+    url: 'https://vault-e2e.offgrid.test'
+  }
+  const seeded = await page.evaluate(async (input) => {
+    const api = (
+      window as unknown as { api: { proInvoke: (c: string, ...a: unknown[]) => Promise<unknown> } }
+    ).api
+    const initialized = (await api.proInvoke('vault:init', 'vault-master-password')) as {
+      ok: boolean
+      error?: string
+    }
+    if (!initialized.ok) return initialized
+    return (await api.proInvoke('vault:entries:add', { ...input, type: 'login' })) as {
+      ok: boolean
+      error?: string
+    }
+  }, entry)
+  expect(seeded.ok, seeded.error).toBe(true)
+
+  await nav('Vault')
+  await page.getByRole('button', { name: new RegExp(entry.title) }).click()
+
+  const usernameRow = page.getByText('Username / Email', { exact: true }).locator('..')
+  await usernameRow.getByRole('button', { name: 'Copy', exact: true }).click()
+  await expectSystemClipboardText(entry.username)
+
+  const passwordRow = page.getByText('Password', { exact: true }).locator('..')
+  await passwordRow.getByTitle('Reveal').click()
+  await passwordRow.getByRole('button', { name: 'Copy', exact: true }).click()
+  await expectSystemClipboardText(entry.password)
+
+  const websiteRow = page.getByText('Website', { exact: true }).locator('..')
+  await websiteRow.getByRole('button', { name: 'Copy', exact: true }).click()
+  await expectSystemClipboardText(entry.url)
+})
+
 test('Capturing and restoring text crosses the real OS clipboard and encrypted history', async () => {
   const payload = `off-grid clipboard text ${Date.now()}-${process.pid}`
   await app.evaluate(async ({ clipboard }, text) => {
@@ -206,7 +253,7 @@ test('Capturing and restoring text crosses the real OS clipboard and encrypted h
     clipboard.writeText('clipboard overwritten before restore')
   })
   expect(await restoreCapturedClip(capturedId)).toBe(true)
-  expect(await app.evaluate(async ({ clipboard }) => clipboard.readText())).toBe(payload)
+  await expectSystemClipboardText(payload)
 })
 
 test('Capturing a pixel image persists its bytes and restores the bitmap', async () => {

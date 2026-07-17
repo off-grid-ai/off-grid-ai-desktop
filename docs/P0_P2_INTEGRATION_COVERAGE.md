@@ -8,17 +8,17 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Scope: 155 journeys - 74 P0, 71 P1, and 10 P2.
-- Covered by direct integration or E2E evidence: 26 - 19 P0, 6 P1, and 1 P2.
-- Left: 129 - including partially covered journeys whose exact release behavior is not yet proven.
+- Covered by direct integration or E2E evidence: 27 - 20 P0, 6 P1, and 1 P2.
+- Left: 128 - including partially covered journeys whose exact release behavior is not yet proven.
 - Green gates today:
   - `npm test`: 202 files passed, 1 skipped; 2,190 tests passed, 1 skipped.
   - `npm run test:coverage`: 96.75% statements, 91.54% branches, 96.14% functions,
     97.52% lines.
   - `npm run test:db`: 13 files and 105 real SQLite integration tests passed; Electron ABI
     restored afterward.
-  - `npm run test:e2e`: 23 Playwright Electron tests passed against fresh synthetic temp profiles.
+  - `npm run test:e2e`: 24 Playwright Electron tests passed against fresh synthetic temp profiles.
   - Both TypeScript projects pass.
-- Not yet a clean handoff: the exact P0-P2 journey count is 26/155, and strict ESLint currently
+- Not yet a clean handoff: the exact P0-P2 journey count is 27/155, and strict ESLint currently
   exposes a legacy backlog. Neither is hidden by the coverage percentage.
 
 ## Covered P0 journeys
@@ -55,6 +55,8 @@ manual claim does not count as complete integration coverage.
   and a real temp directory; correct and incorrect passwords are covered.
 - #126 - Vault item types round-trip. `vault-service.test.ts` covers real encrypted CRUD and binary
   attachment persistence across lock and unlock.
+- #127 - Vault copy actions. `e2e/pro.spec.ts` creates a real encrypted KDBX entry through
+  production IPC and verifies username, revealed password, and URL copy into the OS clipboard.
 - #128 - Vault recovery and backup. `vault-service.test.ts` and `vault-recovery.test.ts` exercise
   real KDBX export bytes, recovery setup, wrong phrases, and recovery to a new password.
 - #135 - Delete category is scoped. The real SQLite/filesystem integration deletes the Chats
@@ -225,7 +227,6 @@ manual claim does not count as complete integration coverage.
 ## Left - clipboard and vault
 
 - #123 - Clipboard popup hotkey.
-- #127 - Vault copy actions.
 
 ## Left - settings, privacy, licensing, and updates
 
