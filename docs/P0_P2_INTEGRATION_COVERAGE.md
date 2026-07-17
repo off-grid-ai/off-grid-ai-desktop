@@ -8,10 +8,10 @@ manual claim does not count as complete integration coverage.
 ## Current status - 2026-07-17
 
 - Status snapshot:
-  - P0: 74 total, 60 covered, 14 left.
+  - P0: 74 total, 61 covered, 13 left.
   - P1: 71 total, 59 covered, 12 left.
   - P2: 10 total, 9 covered, 1 left.
-  - Overall: 155 total, 128 covered, 27 left.
+  - Overall: 155 total, 129 covered, 26 left.
 - Green gates today:
   - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
     96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
@@ -203,6 +203,11 @@ manual claim does not count as complete integration coverage.
 - #140 - Offline entitlement behavior. The licensing integration activates a lifetime entitlement,
   reloads with its network boundary unavailable, and proves the signed cache remains entitled while
   both a fresh profile and an expired cached entitlement stay locked.
+- #144 - Local use works offline. A shared offline boundary rejects and records every outbound
+  request while preserving real loopback transports. Connected Core and Pro integrations prove
+  local chat, image generation, Vision OCR, replay, SQLite/FTS search, dictation, and KDBX/Argon2
+  vault operations remain usable with zero unexpected egress; the real model manager also proves a
+  network-only download fails clearly and retries without corrupting installed state.
 - #145 - Cold relaunch after forced quit. `e2e/chat-memory.spec.ts` kills the real Electron main
   process during non-destructive chat activity, waits for process exit, reopens the same profile,
   and verifies clean boot, preload availability, usable input, and durable committed chat data.
@@ -483,7 +488,6 @@ manual claim does not count as complete integration coverage.
 
 ## Left - resilience and desktop polish
 
-- #144 - Local use works offline.
 - #146 - Model ports are single-owner.
 - #148 - Low disk space is handled.
 - #155 - No private data in release evidence.
