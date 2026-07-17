@@ -32,6 +32,7 @@ import { purgeLegacyChatImports, getSetting } from './database'
 import { modalityQueue } from './modality-queue/queue'
 import { registerRuntime } from './runtime-manager'
 import { guardConsoleStreams } from './stream-guards'
+import { PRODUCT_NAME } from '../shared/product-identity'
 
 // Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
 // must never crash main via an uncaught EPIPE. See stream-guards.ts.
@@ -42,11 +43,11 @@ guardConsoleStreams([process.stdout, process.stderr])
 // models, "my-memories" had the DB) so nothing is lost / re-downloaded. Must run
 // before app 'ready' and before any getPath('userData') usage.
 // Brand the app name as early as possible (before ready) so the menu bar, the
-// about panel, and notifications read "Off Grid AI" rather than the Electron
+// about panel, and notifications read the canonical product name rather than the Electron
 // default. (In `electron-vite dev` the macOS Dock tooltip still reads "Electron"
 // because that's the dev binary's bundle name; the packaged build's CFBundleName
 // comes from electron-builder `productName`, so it's correct there.)
-app.setName('Off Grid AI')
+app.setName(PRODUCT_NAME)
 ;(function unifyUserDataPath(): void {
   try {
     // Test/CI seam: let a harness isolate userData (e.g. screenshot capture of
@@ -89,7 +90,7 @@ function createWindow(): void {
     width: 900,
     height: 670,
     show: false,
-    title: 'Off Grid AI',
+    title: PRODUCT_NAME,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' || process.platform === 'win32' ? { icon } : {}),
     webPreferences: {

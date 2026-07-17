@@ -48,7 +48,7 @@ build_core() {
   OFFGRID_FORCE_CORE=1 npx electron-vite build
   npx electron-builder --mac \
     -c.mac.notarize=false \
-    -c.productName="Off Grid AI" \
+    -c.productName="Off Grid AI Desktop" \
     -c.appId="co.getoffgridai.desktop" \
     -c.dmg.artifactName="OffGrid-core-\${version}.dmg" \
     --publish never
@@ -59,7 +59,7 @@ build_pro() {
   npx electron-vite build
   npx electron-builder --mac \
     -c.mac.notarize=false \
-    -c.productName="Off Grid AI Pro" \
+    -c.productName="Off Grid AI Desktop" \
     -c.appId="co.getoffgridai.desktop.pro" \
     -c.dmg.artifactName="OffGrid-pro-\${version}.dmg" \
     --publish never

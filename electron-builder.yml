@@ -1,7 +1,7 @@
 # Single build is the pro-capable one (license-gated). Keep the `.pro` bundle id so
 # existing Pro installs auto-update into it (bundle id + granted TCC permissions match).
 appId: co.getoffgridai.desktop.pro
-productName: Off Grid AI
+productName: Off Grid AI Desktop
 copyright: © Off Grid AI
 directories:
   buildResources: build
