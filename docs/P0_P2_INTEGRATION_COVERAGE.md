@@ -9,9 +9,9 @@ manual claim does not count as complete integration coverage.
 
 - Status snapshot:
   - P0: 74 total, 72 covered, 2 left.
-  - P1: 71 total, 68 covered, 3 left.
+  - P1: 71 total, 69 covered, 2 left.
   - P2: 10 total, 10 covered, 0 left.
-  - Overall: 155 total, 150 covered, 5 left.
+  - Overall: 155 total, 151 covered, 4 left.
 - P0 handoff status:
   - Every P0 journey with an automatable application seam is integration-covered.
   - #1 Core DMG install and #2 Pro DMG install remain release-device checks against the signed,
@@ -390,6 +390,10 @@ manual claim does not count as complete integration coverage.
 - #92 - Day briefing renders. `DayReplay.integration.test.tsx` backs the rendered Day view with real
   SQLite and filesystem owners plus the real LLM service over a native-engine HTTP boundary, then
   proves priorities, meetings, suggestions, journal, time spent, and timeline all render.
+- #93 - Day links open correct records. The rendered Day integration follows typed production
+  targets to an exact action backed by real SQLite, entity ID, external calendar URL, Replay block
+  timestamp, and meeting; stale action or meeting targets fail closed instead of selecting an
+  unrelated record.
 - #98 - Meeting survives relaunch. `meeting-persistence.dbtest.ts` saves synthetic meeting media,
   transcript, and local-model summary through production filesystem/SQLite owners, closes the DB,
   resets modules, and proves the exact audio metadata, transcript, and summary restore.
@@ -528,10 +532,6 @@ manual claim does not count as complete integration coverage.
 ## Left - onboarding and health
 
 - #12 - Onboarding resumes after relaunch.
-
-## Left - capture, memory, and replay
-
-- #93 - Day links open correct records.
 
 ## Left - entities, actions, and reflection
 
