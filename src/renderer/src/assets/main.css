@@ -9,7 +9,7 @@
 
 @theme {
   --animate-spotlight: spotlight 2s ease 0.75s 1 forwards;
-  --animate-orbit: orbit calc(var(--duration) * 1s) linear infinite;
+  --animate-orbit: offgrid-orbit-circles calc(var(--duration) * 1s) linear infinite;
 
   /*
    * Remap the Tailwind palette the components already use onto the Off Grid
@@ -92,7 +92,9 @@
     }
   }
 
-  @keyframes orbit {
+  /* Namespaced because onboarding.css also carries a legacy `orbit` keyframe.
+     Global keyframe names collide even when the rules live in separate files. */
+  @keyframes offgrid-orbit-circles {
     0% {
       transform: rotate(var(--angle, 0deg)) translateY(calc(-1 * var(--radius, 160px)))
         rotate(calc(-1 * var(--angle, 0deg)));

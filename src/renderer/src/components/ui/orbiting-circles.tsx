@@ -55,7 +55,7 @@ export function OrbitingCircles({
               position: 'absolute',
               width: iconSize,
               height: iconSize,
-              animation: `orbit ${calculatedDuration}s linear infinite ${reverse ? 'reverse' : 'normal'}`,
+              animation: `offgrid-orbit-circles ${calculatedDuration}s linear infinite ${reverse ? 'reverse' : 'normal'}`,
               animationDelay: '0s',
               // Start position - each icon at different angle
               transform: `rotate(${angle}deg) translateY(-${radius}px) rotate(-${angle}deg)`,
