@@ -34,6 +34,7 @@ import { registerRuntime } from './runtime-manager'
 import { guardConsoleStreams } from './stream-guards'
 import { PRODUCT_NAME } from '../shared/product-identity'
 import { installMediaPermissionHandler } from './media-permission'
+import { localMediaRoots } from './media-roots'
 
 // Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
 // must never crash main via an uncaught EPIPE. See stream-guards.ts.
@@ -209,14 +210,7 @@ app.whenReady().then(() => {
   // NOTE: keep this in sync with the dirs the renderer requests over ogcapture://.
   // 'generated-images' + 'style-thumbs' were missing, so every image-gen output and
   // every style-picker thumbnail 403'd and rendered as a broken image.
-  const ogCaptureRoots = [
-    'meetings',
-    'uploads',
-    'captures',
-    'entity-photos',
-    'generated-images',
-    'style-thumbs'
-  ].map((d) => join(app.getPath('userData'), d))
+  const ogCaptureRoots = localMediaRoots(app.getPath('userData'))
   protocol.handle('ogcapture', async (request) => {
     try {
       const requestedPath = decodeURIComponent(request.url.slice('ogcapture://'.length))
