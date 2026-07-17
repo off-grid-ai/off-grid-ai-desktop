@@ -24,12 +24,17 @@ class ArithmeticParser {
   }
 
   private term(): number {
-    let value = this.factor()
+    let value = this.power()
     for (;;) {
-      if (this.consume('*')) value *= this.factor()
-      else if (this.consume('/')) value /= this.factor()
+      if (this.consume('*')) value *= this.power()
+      else if (this.consume('/')) value /= this.power()
       else return value
     }
+  }
+
+  private power(): number {
+    const value = this.factor()
+    return this.consume('**') ? value ** this.power() : value
   }
 
   private factor(): number {
@@ -50,8 +55,8 @@ class ArithmeticParser {
 
   private consume(token: string): boolean {
     this.skipWhitespace()
-    if (this.source[this.index] !== token) return false
-    this.index += 1
+    if (!this.source.startsWith(token, this.index)) return false
+    this.index += token.length
     return true
   }
 
