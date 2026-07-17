@@ -56,6 +56,8 @@ type GenPayload = {
   width?: number
   height?: number
   prompt?: string
+  negativePrompt?: string
+  seed?: number
   conversationId?: string
 }
 
@@ -345,6 +347,68 @@ describe('<MemoryChat/> image mode — the generateImage payload is the terminal
     // Switching to the few-step model with no user override resolves to THAT model's
     // default (10), not a leftover value — proving the [imgModel] effect re-resolves.
     expect(payload.steps).toBe(10)
+  })
+
+  it('applies every existing image setting at the native boundary and reloads persisted values (#64)', async () => {
+    const boundary = installApi({ active: FULL, models: [FULL, FEW_STEP] })
+    const firstUser = userEvent.setup()
+    const firstMount = renderChat()
+    await openImageComposer(firstUser)
+
+    const modelSelect = screen.getByLabelText('Model') as HTMLSelectElement
+    await firstUser.selectOptions(modelSelect, FEW_STEP)
+    await firstUser.selectOptions(modelSelect, FULL)
+    await waitFor(() =>
+      expect(boundary.setActiveModalModel).toHaveBeenLastCalledWith('image', FULL)
+    )
+
+    const sizeSelect = screen.getByLabelText('Size') as HTMLSelectElement
+    await firstUser.selectOptions(sizeSelect, '768')
+    typeSteps(17)
+    const seedInput = screen.getByLabelText('Seed') as HTMLInputElement
+    await firstUser.type(seedInput, '4242')
+    await firstUser.type(screen.getByPlaceholderText('Negative prompt'), 'blurry, watermark')
+    await sendPrompt(firstUser, 'a glass observatory under an aurora')
+
+    await waitFor(() => expect(boundary.generateImage).toHaveBeenCalledTimes(1))
+    expect(boundary.generateImage.mock.calls[0]![0]).toMatchObject({
+      prompt: 'a glass observatory under an aurora',
+      negativePrompt: 'blurry, watermark',
+      model: FULL,
+      width: 768,
+      height: 768,
+      steps: 17,
+      seed: 4242
+    })
+    expect(await screen.findByAltText('Generated')).toBeTruthy()
+
+    // The component persists per-model size/steps plus the global seed. A fresh
+    // render must hydrate those controls and send the same values without editing.
+    firstMount.unmount()
+    boundary.generateImage.mockClear()
+    const secondUser = userEvent.setup()
+    renderChat()
+    await openImageComposer(secondUser)
+
+    expect((screen.getByLabelText('Model') as HTMLSelectElement).value).toBe(FULL)
+    expect((screen.getByLabelText('Size') as HTMLSelectElement).value).toBe('768')
+    expect(stepsInput().value).toBe('17')
+    expect((screen.getByLabelText('Seed') as HTMLInputElement).value).toBe('4242')
+    expect((screen.getByPlaceholderText('Negative prompt') as HTMLInputElement).value).toBe(
+      'blurry, watermark'
+    )
+
+    await sendPrompt(secondUser, 'a second observatory')
+    await waitFor(() => expect(boundary.generateImage).toHaveBeenCalledTimes(1))
+    expect(boundary.generateImage.mock.calls[0]![0]).toMatchObject({
+      prompt: 'a second observatory',
+      negativePrompt: 'blurry, watermark',
+      model: FULL,
+      width: 768,
+      height: 768,
+      steps: 17,
+      seed: 4242
+    })
   })
 })
 
