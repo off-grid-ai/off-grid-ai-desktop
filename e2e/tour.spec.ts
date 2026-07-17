@@ -15,6 +15,7 @@ import {
 import os from 'os'
 import path from 'path'
 import fs from 'fs'
+import { OFF_GRID_MOBILE_URL } from '../src/renderer/src/constants/links'
 
 let app: ElectronApplication
 let page: Page
@@ -121,6 +122,35 @@ test('every locked Pro navigation item renders its matching upgrade screen', asy
 
   expect(new Set(labels).size).toBe(labels.length)
   expect(await page.evaluate(() => window.api.isPro)).toBe(false)
+})
+
+test('purchase and product links open externally without navigating Electron', async () => {
+  await page.getByRole('button', { name: 'Replay Pro', exact: true }).click()
+  await expect(page.getByText('Off Grid Pro · Available now')).toBeVisible()
+
+  const expectedPayUrl = await page.evaluate(() => window.api.license.payUrl())
+  const electronUrl = page.url()
+  await app.evaluate(({ shell }) => {
+    const capture = globalThis as typeof globalThis & { __offgridOpenedExternal?: string[] }
+    capture.__offgridOpenedExternal = []
+    shell.openExternal = async (url: string): Promise<void> => {
+      capture.__offgridOpenedExternal?.push(url)
+    }
+  })
+
+  await page.getByRole('button', { name: /Get Pro/ }).click()
+  await page.getByRole('button', { name: /Get Off Grid AI Mobile/ }).click()
+
+  await expect
+    .poll(() =>
+      app.evaluate(
+        () =>
+          (globalThis as typeof globalThis & { __offgridOpenedExternal?: string[] })
+            .__offgridOpenedExternal ?? []
+      )
+    )
+    .toEqual([expectedPayUrl, OFF_GRID_MOBILE_URL])
+  expect(page.url()).toBe(electronUrl)
 })
 
 test('Gateway screen renders', async () => {
