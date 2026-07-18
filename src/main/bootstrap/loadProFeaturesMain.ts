@@ -8,8 +8,8 @@ import { llm } from '../llm'
 import { registerHook } from './hookRegistry'
 import { registerToolExtension } from '../tools'
 import { isProEntitled } from '../licensing/license-service'
-import { isPackaged } from '../runtime-env'
 import { getForcedProActivation } from './pro-activation'
+import { app } from 'electron'
 
 // What the pro main entry receives. Pro registers IPC handlers + intervals +
 // tool extensions itself, using these core helpers (no core→pro imports).
@@ -28,7 +28,7 @@ export interface ProMainApi {
  *    unset/other   → license-gated (the real paid path; see license-service). */
 export function proEnabled(): boolean {
   return (
-    getForcedProActivation(__OFFGRID_PRO__, process.env.OFFGRID_PRO, isPackaged()) ??
+    getForcedProActivation(__OFFGRID_PRO__, process.env.OFFGRID_PRO, app.isPackaged) ??
     isProEntitled()
   )
 }

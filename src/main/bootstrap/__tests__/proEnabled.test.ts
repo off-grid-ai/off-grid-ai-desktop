@@ -1,5 +1,9 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { getForcedProActivation } from '../pro-activation'
+
+const MAIN_ACTIVATION_SOURCE = path.resolve(__dirname, '../loadProFeaturesMain.ts')
 
 describe('getForcedProActivation', () => {
   it('always disables pro when the private package is not bundled', () => {
@@ -21,5 +25,13 @@ describe('getForcedProActivation', () => {
     expect(getForcedProActivation(true, undefined, false)).toBeUndefined()
     expect(getForcedProActivation(true, 'yes', false)).toBeUndefined()
     expect(getForcedProActivation(true, undefined, true)).toBeUndefined()
+  })
+
+  it('uses Electron packaging state directly instead of an environment-overridable runtime hint', () => {
+    const source = fs.readFileSync(MAIN_ACTIVATION_SOURCE, 'utf8')
+
+    expect(source).toContain('app.isPackaged')
+    expect(source).not.toContain("from '../runtime-env'")
+    expect(source).not.toContain('OFFGRID_PACKAGED')
   })
 })
