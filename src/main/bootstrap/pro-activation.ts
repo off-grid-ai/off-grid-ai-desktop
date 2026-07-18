@@ -4,12 +4,13 @@
  */
 export function getForcedProActivation(
   proBundled: boolean,
-  environmentOverride: string | undefined
+  environmentOverride: string | undefined,
+  packaged: boolean
 ): boolean | undefined {
   if (!proBundled || environmentOverride === '0') {
     return false
   }
-  if (environmentOverride === '1') {
+  if (environmentOverride === '1' && !packaged) {
     return true
   }
   return undefined

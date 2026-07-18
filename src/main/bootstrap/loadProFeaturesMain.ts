@@ -8,6 +8,7 @@ import { llm } from '../llm'
 import { registerHook } from './hookRegistry'
 import { registerToolExtension } from '../tools'
 import { isProEntitled } from '../licensing/license-service'
+import { isPackaged } from '../runtime-env'
 import { getForcedProActivation } from './pro-activation'
 
 // What the pro main entry receives. Pro registers IPC handlers + intervals +
@@ -23,10 +24,13 @@ export interface ProMainApi {
 /** Whether pro features should activate. The pro submodule must be present AND
  *  the user entitled by a valid Keygen license. Local env override (dev/contributor):
  *    OFFGRID_PRO=0 → force free even with pro code bundled,
- *    OFFGRID_PRO=1 → force pro on without a license (working on pro features),
+ *    OFFGRID_PRO=1 → force pro on without a license only in development,
  *    unset/other   → license-gated (the real paid path; see license-service). */
 export function proEnabled(): boolean {
-  return getForcedProActivation(__OFFGRID_PRO__, process.env.OFFGRID_PRO) ?? isProEntitled()
+  return (
+    getForcedProActivation(__OFFGRID_PRO__, process.env.OFFGRID_PRO, isPackaged()) ??
+    isProEntitled()
+  )
 }
 
 export async function loadProFeaturesMain(): Promise<void> {

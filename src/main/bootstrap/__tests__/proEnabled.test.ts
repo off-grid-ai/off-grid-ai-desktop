@@ -3,20 +3,23 @@ import { getForcedProActivation } from '../pro-activation'
 
 describe('getForcedProActivation', () => {
   it('always disables pro when the private package is not bundled', () => {
-    expect(getForcedProActivation(false, undefined)).toBe(false)
-    expect(getForcedProActivation(false, '1')).toBe(false)
+    expect(getForcedProActivation(false, undefined, false)).toBe(false)
+    expect(getForcedProActivation(false, '1', false)).toBe(false)
   })
 
   it('forces free mode when OFFGRID_PRO is 0', () => {
-    expect(getForcedProActivation(true, '0')).toBe(false)
+    expect(getForcedProActivation(true, '0', false)).toBe(false)
+    expect(getForcedProActivation(true, '0', true)).toBe(false)
   })
 
-  it('forces pro mode when OFFGRID_PRO is 1', () => {
-    expect(getForcedProActivation(true, '1')).toBe(true)
+  it('forces pro mode from OFFGRID_PRO only during development', () => {
+    expect(getForcedProActivation(true, '1', false)).toBe(true)
+    expect(getForcedProActivation(true, '1', true)).toBeUndefined()
   })
 
   it('defers to license entitlement when no recognized override exists', () => {
-    expect(getForcedProActivation(true, undefined)).toBeUndefined()
-    expect(getForcedProActivation(true, 'yes')).toBeUndefined()
+    expect(getForcedProActivation(true, undefined, false)).toBeUndefined()
+    expect(getForcedProActivation(true, 'yes', false)).toBeUndefined()
+    expect(getForcedProActivation(true, undefined, true)).toBeUndefined()
   })
 })
