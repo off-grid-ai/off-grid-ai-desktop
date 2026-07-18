@@ -1,14 +1,14 @@
 /**
- * Guards the Windows/non-Mac notice on the Pro UPGRADE (buy) screen.
+ * Guards the "coming soon to your device" notice on the Pro UPGRADE (buy) screen.
  *
- * Pro is macOS-tested only for now, so a Windows/Linux user opening the buy screen
- * must be told Pro is coming soon to their device and that their purchase works today
- * on Mac + the phone app - otherwise they could buy expecting it to run locally.
- *
- * The banner is gated purely on `!isMac()` (isMac itself is unit-tested in
- * lib/__tests__/device.test.ts). This is a source-reading guard - the repo has no
- * React render harness (no jsdom/testing-library), so we assert the wiring + copy by
- * reading the component, matching the pattern in main/__tests__/extract-prompt.test.ts.
+ * A prospective buyer on a platform where a feature isn't live yet must be told so -
+ * otherwise they could buy expecting it to run locally. The notice is now gated
+ * PER FEATURE (`platformNotice`, computed from `featureSupportsPlatform` +
+ * `currentPlatform`), not a blanket `!isMac()`: a feature that IS ported to this
+ * platform (e.g. Vault on Windows) shows no warning, while a not-yet-ported feature
+ * still does. This is a source-reading guard - the repo has no React render harness
+ * (no jsdom/testing-library), so we assert the wiring + copy by reading the
+ * component, matching the pattern in main/__tests__/extract-prompt.test.ts.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
@@ -21,14 +21,22 @@ const SRC = fs.readFileSync(
 
 // Scope every assertion to the UPGRADE (buy) branch of the aside ternary, so a test
 // can't pass if the notice or the buy CTA drifts into the coming-soon branch. The
-// upgrade branch runs from the notice comment to the shared cross-sell block.
-const UPGRADE_BRANCH = SRC.slice(SRC.indexOf('Off macOS, Pro is not yet tested'), SRC.indexOf('Cross-sell'));
+// upgrade branch runs from the per-feature notice gate to the shared cross-sell block.
+const UPGRADE_BRANCH = SRC.slice(SRC.indexOf('platformNotice &&'), SRC.indexOf('Cross-sell'));
 // The coming-soon branch is everything in the aside before the upgrade branch.
-const COMINGSOON_BRANCH = SRC.slice(SRC.indexOf('You have Pro'), SRC.indexOf('Off macOS, Pro is not yet tested'));
+const COMINGSOON_BRANCH = SRC.slice(SRC.indexOf('You have Pro'), SRC.indexOf('platformNotice &&'));
 
-describe('UpgradeScreen - non-Mac "coming soon" notice on the buy screen', () => {
-  it('imports the isMac platform helper', () => {
-    expect(SRC).toMatch(/import\s*\{[^}]*\bisMac\b[^}]*\}\s*from\s*'@renderer\/lib\/device'/);
+describe('UpgradeScreen - per-feature "coming soon" notice on the buy screen', () => {
+  it('computes the notice per-feature via featureSupportsPlatform + currentPlatform', () => {
+    expect(SRC).toMatch(/import\s*\{[^}]*\bfeatureSupportsPlatform\b[^}]*\}\s*from\s*'\.\/proCatalog'/);
+    expect(SRC).toMatch(/import\s*\{[^}]*\bcurrentPlatform\b[^}]*\}\s*from\s*'@renderer\/lib\/device'/);
+    // The gate reads the feature's own support, not a blanket platform check.
+    expect(SRC).toMatch(/const platformNotice =[\s\S]*featureSupportsPlatform/);
+  });
+
+  it('no longer gates the notice on a blanket !isMac()', () => {
+    // The per-feature seam replaced the all-or-nothing rule; guard against a regression.
+    expect(SRC).not.toMatch(/!isMac\(\)\s*&&/);
   });
 
   it('scoping anchors exist (guards this test against a refactor of the variants)', () => {
@@ -36,11 +44,11 @@ describe('UpgradeScreen - non-Mac "coming soon" notice on the buy screen', () =>
     expect(COMINGSOON_BRANCH.length).toBeGreaterThan(0);
   });
 
-  it('gates the notice on !isMac() within the upgrade branch', () => {
-    expect(UPGRADE_BRANCH).toMatch(/!isMac\(\)\s*&&/);
+  it('gates the notice on the per-feature platformNotice within the upgrade branch', () => {
+    expect(UPGRADE_BRANCH).toMatch(/platformNotice &&/);
   });
 
-  it('tells the user Pro is coming soon and works on Mac + phone (upgrade branch)', () => {
+  it('tells the user coming soon + works on Mac + phone when the notice shows (upgrade branch)', () => {
     expect(UPGRADE_BRANCH).toMatch(/Coming soon to your \{deviceNoun\(\)\}/);
     expect(UPGRADE_BRANCH).toMatch(/macOS-tested/);
     expect(UPGRADE_BRANCH).toMatch(/phone app/);

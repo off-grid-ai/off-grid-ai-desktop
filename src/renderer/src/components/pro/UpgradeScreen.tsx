@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { ArrowSquareOut, Check, Sparkle, Key, CircleNotch, DeviceMobile, Clock, Desktop } from '@phosphor-icons/react';
-import { PRO_PAY_URL, PRO_FEATURES, type ProFeature } from './proCatalog';
+import { PRO_PAY_URL, PRO_FEATURES, featureSupportsPlatform, type ProFeature } from './proCatalog';
 import { OFF_GRID_MOBILE_URL, OFF_GRID_WEBSITE_URL, openExternal } from '../../constants/links';
-import { deviceNoun, isMac } from '@renderer/lib/device';
+import { deviceNoun, currentPlatform } from '@renderer/lib/device';
 
 // License-key activation. Only meaningful in a pro-capable build (__OFFGRID_PRO__);
 // a core build has no pro code bundled, so entering a key would unlock nothing.
@@ -92,6 +92,13 @@ export function UpgradeScreen({
 }): React.ReactElement {
   const f = feature;
   const comingSoon = variant === 'coming-soon';
+  // Whether to warn a prospective buyer that Pro isn't fully live on their device
+  // yet. Per-feature: if this writeup is for a specific feature, only warn when THAT
+  // feature isn't ported here (so a Windows-ready feature like Vault shows no
+  // warning). For the generic pitch, warn while any feature is still coming soon.
+  const platformNotice = f
+    ? !featureSupportsPlatform(f, currentPlatform())
+    : PRO_FEATURES.some((x) => !featureSupportsPlatform(x, currentPlatform()));
   const open = (url: string): void => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const api = (window as any).api;
@@ -183,10 +190,11 @@ export function UpgradeScreen({
             </>
           ) : (
             <>
-              {/* Off macOS, Pro is not yet tested on this platform. Keep the buy CTA
+              {/* On a platform where this feature isn't live yet, keep the buy CTA
                   (the license is valid on Mac + phone today), but set expectations up
-                  front so a Windows/Linux user doesn't buy expecting it to run here. */}
-              {!isMac() && (
+                  front so a user doesn't buy expecting it to run here. A feature that
+                  IS ported to this platform (e.g. Vault on Windows) shows no notice. */}
+              {platformNotice && (
                 <div className="flex items-start gap-2 rounded-lg border border-neutral-700 bg-neutral-800/50 px-3 py-2.5 text-[11px] leading-relaxed text-neutral-300">
                   <Clock weight="fill" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400" />
                   <span>
