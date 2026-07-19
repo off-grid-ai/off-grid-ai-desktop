@@ -5,7 +5,7 @@ Living status for the 155 release journeys in
 conservative: a unit test, source-reading assertion, rendered shell without the real behavior, or
 manual claim does not count as complete integration coverage.
 
-## Current status - 2026-07-17
+## Current status - 2026-07-19
 
 - Status snapshot:
   - P0: 74 total, 72 covered, 2 left.
@@ -14,19 +14,30 @@ manual claim does not count as complete integration coverage.
   - Overall: 155 total, 153 covered, 2 left.
 - P0 handoff status:
   - Every P0 journey with an automatable application seam is integration-covered.
-  - #1 Core DMG install and #2 Pro DMG install remain release-device checks against the signed,
-    notarized artifacts.
+  - The current-HEAD local 0.0.39 Pro-capable app is installed at
+    `~/Applications/Off Grid AI Desktop.app`. The build and installed copy pass the positive ASAR
+    inventory, strict local codesign, ASAR fuse, 8/8 UI, and forged plaintext-license smoke gates.
+  - #1 and #2 remain open only as the locked and validly entitled install journeys against the one
+    final Developer ID-signed and notarized production artifact. The local Core and Pro DMGs are
+    diagnostic variants, not separate release artifacts.
+  - Local release-trust verification is unavailable because this Keychain has no Developer ID
+    Application certificate and private key. Apple Distribution does not satisfy the pinned release
+    gate. Credentialed CI must prove Developer ID, notarization, staple, and Gatekeeper acceptance.
   - Signed macOS permission, global-hotkey, cross-app paste, and full-volume behavior still require
     manual confirmation even where the application seam is integration-covered below.
 - Green gates today:
-  - `npm run test:coverage`: 209 files passed, 1 skipped; 2,223 tests passed, 1 skipped;
-    96.80% statements, 91.64% branches, 96.19% functions, and 97.54% lines.
-  - `npm run test:db`: 17 files and 112 real SQLite integration tests passed; Electron ABI
-    restored afterward.
-  - `npm run test:e2e`: 28 Playwright Electron tests passed against fresh synthetic temp profiles.
+  - Packaging regression focus: 1 file passed; 16 tests passed, including the macOS 13 package and
+    chat-engine deployment-target alignment guard.
+  - Core license policy: 3 files and 28 tests passed.
+  - Pro license/Upgrade integration: 2 files and 10 tests passed.
+  - Core full suite: 273 files passed, 1 skipped; 2,527 tests passed, 2 skipped.
+  - Pro full suite: 99 files passed; 1,038 tests passed.
   - Core main, renderer, and Pro TypeScript projects pass.
-- Not yet a clean handoff: release-journey coverage remains incomplete, and strict ESLint exposes
-  a legacy backlog. Neither is hidden by the coverage percentage.
+  - Core coverage: 95.57% statements, 90.67% branches, 95.94% functions, and 96.47% lines.
+  - Installed local app: version 0.0.39, minimum macOS 13.0, ASAR SHA-256
+    `f10524730fca8c45ea9ee58649a320e4d566d5bbeda98cb935f00567b3694fde`.
+- Local manual product testing is ready. Final release approval is still open for the credentialed
+  signed/notarized artifact and the manual release-device checks.
 
 ## Covered P0 journeys
 
@@ -242,8 +253,8 @@ manual claim does not count as complete integration coverage.
   module, and verifies the synchronous entitlement gate still unlocks Pro. The rendered Upgrade
   screen proves the user sees activation and the required restart action.
 - #140 - Offline entitlement behavior. The licensing integration activates a lifetime entitlement,
-  reloads with its network boundary unavailable, and proves the signed cache remains entitled while
-  both a fresh profile and an expired cached entitlement stay locked.
+  reloads with its network boundary unavailable, and proves the OS-protected encrypted cache remains
+  entitled while a fresh profile, a forged plaintext cache, and an expired entitlement stay locked.
 - #144 - Local use works offline. A shared offline boundary rejects and records every outbound
   request while preserving real loopback transports. Connected Core and Pro integrations prove
   local chat, image generation, Vision OCR, replay, SQLite/FTS search, dictation, and KDBX/Argon2
@@ -534,13 +545,22 @@ manual claim does not count as complete integration coverage.
 
 ## Left - package and install
 
-- #1 - Core DMG installs cleanly.
-- #2 - Pro DMG installs cleanly.
+- #1 - Final production artifact installs cleanly and remains locked when unentitled.
+  - Local 0.0.39 ad-hoc app: installed-copy launch and forged-license harness passed.
+  - Left: repeat against the Developer ID-signed and notarized release artifact.
+- #2 - The same final production artifact activates Pro with a valid entitlement.
+  - Local 0.0.39 Pro-capable app: packaged UI and locked-state gates passed; valid-license activation
+    is part of the immediate manual pass.
+  - Left: repeat the valid-license journey against the signed/notarized release artifact.
 
 ## Next implementation order
 
-- Run #1 and #2 against the signed, notarized Core and Pro DMGs on the release Mac.
+- Run #1 and #2 as locked and entitled states against the one signed, notarized production DMG on
+  the release Mac. The release
+  workflow now blocks publication until Developer ID, pinned Team ID, hardened runtime, nested
+  signatures, notarization staple, Gatekeeper, ZIP/DMG contents, update metadata, installed UI, and
+  packaged license gates all pass.
 - Complete the signed-device permission, global-hotkey, TextEdit paste, full-volume, and installer
   replacement confirmations recorded beside their integration-covered journeys.
-- Resume the remaining P1 and P2 seams only after the P0 release-device pass, reusing the same real
-  harnesses rather than adding parallel mocks.
+- Record the final release-artifact hashes, signed-device evidence, updater upgrade results, and
+  every manual P0/P1/P2 result in `MANUAL_RELEASE_TESTS_0.0.39.md`.
