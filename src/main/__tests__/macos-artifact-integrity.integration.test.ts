@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -14,6 +15,9 @@ import {
 import verifyElectronBuilderArtifact from '../../../scripts/verify-electron-builder-artifact.mjs'
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '../../..')
+const require = createRequire(import.meta.url)
+const { getMainFileMatchers } = require('app-builder-lib/out/fileMatcher')
+const { getConfig } = require('app-builder-lib/out/util/config/load')
 const ASAR_CLI = path.join(REPO_ROOT, 'node_modules', '@electron', 'asar', 'bin', 'asar.js')
 const tempRoots: string[] = []
 const FRAMEWORK_EXECUTABLE =
@@ -251,10 +255,63 @@ describe('macOS artifact integrity', () => {
     expect(imageSizeGiB).toBeGreaterThanOrEqual(5)
     expect(builderConfig).toMatch(/^\s+shrink:\s+true$/m)
     expect(builderConfig).toContain("- 'out/**/*'")
-    expect(builderConfig).toContain("- 'node_modules/**/*'")
     expect(builderConfig).toContain("- 'package.json'")
     expect(builderConfig).toContain('extends: scripts/config/electron-builder-runtime.yml')
     expect(builderConfig).toContain("'!out/packaged-helpers-*/**'")
+  })
+
+  it('uses the real production matcher to exclude repository data and development modules', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-builder-matcher-'))
+    tempRoots.push(root)
+    const relativeFiles = [
+      'out/main/index.js',
+      'package.json',
+      'marketing/emails/pro-earlybird/do-not-contact.csv',
+      'node_modules/vitest/package.json',
+      'node_modules/electron/dist/Electron.app/Contents/Info.plist'
+    ]
+    for (const relative of relativeFiles) {
+      const file = path.join(root, relative)
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, relative)
+    }
+
+    const loaded = await getConfig(
+      {
+        packageKey: 'build',
+        configFilename: 'electron-builder',
+        projectDir: REPO_ROOT,
+        packageMetadata: null
+      },
+      path.join(REPO_ROOT, 'electron-builder.yml')
+    )
+    const info = {
+      config: loaded.result,
+      projectDir: root,
+      buildResourcesDir: 'build',
+      isPrepackedAppAsar: false,
+      debugLogger: { isEnabled: false }
+    }
+    const [matcher] = getMainFileMatchers(
+      root,
+      path.join(root, 'destination'),
+      (value: string): string => value,
+      {},
+      { info },
+      path.join(root, 'dist'),
+      false
+    )
+    const filter = matcher.createFilter()
+    const admitted = (relative: string): boolean => {
+      const absolute = path.join(root, relative)
+      return filter(absolute, fs.lstatSync(absolute))
+    }
+
+    expect(admitted('out/main/index.js')).toBe(true)
+    expect(admitted('package.json')).toBe(true)
+    expect(admitted('marketing/emails/pro-earlybird/do-not-contact.csv')).toBe(false)
+    expect(admitted('node_modules/vitest/package.json')).toBe(false)
+    expect(admitted('node_modules/electron/dist/Electron.app/Contents/Info.plist')).toBe(false)
   })
 
   it('ad-hoc signs local bundles after fuses while keeping artifact verification strict', () => {

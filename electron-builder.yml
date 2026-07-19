@@ -13,7 +13,6 @@ files:
   # Positive application boundary. Source, tests, documentation, marketing data,
   # and local tooling are not runtime inputs and must never enter app.asar.
   - 'out/**/*'
-  - 'node_modules/**/*'
   - 'package.json'
   - '!**/.vscode/*'
   # Local profiles and agent worktrees may contain private user data, downloaded
