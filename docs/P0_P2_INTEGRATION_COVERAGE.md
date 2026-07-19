@@ -39,8 +39,8 @@ manual claim does not count as complete integration coverage.
   - Pro full suite: 99 files passed; 1,038 tests passed.
   - Core main, renderer, and Pro TypeScript projects pass.
   - Core coverage: 95.57% statements, 90.67% branches, 95.94% functions, and 96.47% lines.
-  - Installed local app: version 0.0.40, minimum macOS 13.0. Record the final ASAR SHA-256 after
-    packaging and installation.
+  - Installed local app: version 0.0.40, minimum macOS 13.0, ASAR SHA-256
+    `102576b78b8fa7c71455e9cbd418cabb23a422f00cfb85c217e7616c7320846c`.
 - Local manual product testing is ready. Final release approval is still open for the credentialed
   signed/notarized artifact and the manual release-device checks.
 
