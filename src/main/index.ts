@@ -35,6 +35,7 @@ import { guardConsoleStreams } from './stream-guards'
 import { PRODUCT_NAME } from '../shared/product-identity'
 import { installMediaPermissionHandler } from './media-permission'
 import { localMediaRoots } from './media-roots'
+import { beginProductIdentityBootstrap } from './product-identity-lifecycle'
 
 // Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
 // must never crash main via an uncaught EPIPE. See stream-guards.ts.
@@ -44,12 +45,10 @@ guardConsoleStreams([process.stdout, process.stderr])
 // name, and migrate data from the legacy split dirs ("My Memories" had the
 // models, "my-memories" had the DB) so nothing is lost / re-downloaded. Must run
 // before app 'ready' and before any getPath('userData') usage.
-// Brand the app name as early as possible (before ready) so the menu bar, the
-// about panel, and notifications read the canonical product name rather than the Electron
-// default. (In `electron-vite dev` the macOS Dock tooltip still reads "Electron"
-// because that's the dev binary's bundle name; the packaged build's CFBundleName
-// comes from electron-builder `productName`, so it's correct there.)
-app.setName(PRODUCT_NAME)
+// Preserve the Keychain namespace used by every existing install during Electron's
+// early safeStorage bootstrap. The returned callback restores the canonical visible
+// product name at the beginning of the ready phase.
+const restoreCanonicalProductName = beginProductIdentityBootstrap(app, process.platform)
 ;(function unifyUserDataPath(): void {
   try {
     // Test/CI seam: let a harness isolate userData (e.g. screenshot capture of
@@ -148,6 +147,8 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.whenReady().then(() => {
+  restoreCanonicalProductName()
+
   // Server-only (headless) mode: boot just the multimodal gateway + LLM runtime,
   // no window / tray / capture / CRM loops. Lets the gateway be deployed on its
   // own — `<app-binary> --server-only` (or OFFGRID_SERVER_ONLY=1) — while still
@@ -271,7 +272,7 @@ app.whenReady().then(() => {
   // Native About panel branding (macOS / Linux).
   try {
     app.setAboutPanelOptions({
-      applicationName: 'Off Grid AI',
+      applicationName: PRODUCT_NAME,
       applicationVersion: app.getVersion(),
       copyright: 'Off Grid AI — private, on-device AI',
       website: 'https://getoffgridai.co'
