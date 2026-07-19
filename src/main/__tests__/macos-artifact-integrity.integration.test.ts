@@ -138,6 +138,14 @@ describe('macOS artifact integrity', () => {
     expect(localBuild).toContain('export OFFGRID_ALLOW_LOCAL_ARTIFACT=1')
     expect(localBuild).toContain('export OFFGRID_LOCAL_PUBLISH_POLICY=never')
     expect(localBuild.match(/^\s+--publish never$/gm)).toHaveLength(2)
+    expect(localBuild).toContain('bash scripts/build-meeting-recorder.sh')
+    expect(localBuild).toContain('bash scripts/build-dictation-hotkey.sh')
+    expect(localBuild).toContain(
+      'cp scripts/meeting-recorder/meeting-recorder resources/bin/meeting-recorder'
+    )
+    expect(localBuild).toContain(
+      'cp scripts/dictation-hotkey/dictation-hotkey resources/bin/dictation-hotkey'
+    )
     expect(artifactHook).not.toContain('OFFGRID_ALLOW_UNSIGNED_ARTIFACT')
     expect(artifactHook).toContain("artifact.endsWith('.zip')")
     expect(artifactHook).toContain('verifyReleaseZipArtifact')

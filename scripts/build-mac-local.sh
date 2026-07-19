@@ -46,6 +46,16 @@ check_lfs() {
   echo "   OK"
 }
 
+stage_native_helpers() {
+  echo "==> Building native helpers through the production staging path…"
+  bash scripts/build-meeting-recorder.sh
+  bash scripts/build-dictation-hotkey.sh
+  mkdir -p resources/bin
+  cp scripts/meeting-recorder/meeting-recorder resources/bin/meeting-recorder
+  cp scripts/dictation-hotkey/dictation-hotkey resources/bin/dictation-hotkey
+  chmod +x resources/bin/meeting-recorder resources/bin/dictation-hotkey
+}
+
 build_core() {
   echo "==> Building CORE (free) macOS DMG  v$VERSION"
   OFFGRID_FORCE_CORE=1 npx electron-vite build
@@ -71,6 +81,7 @@ build_pro() {
 }
 
 check_lfs
+stage_native_helpers
 case "$TARGET" in
   core) build_core ;;
   pro)  build_pro ;;
