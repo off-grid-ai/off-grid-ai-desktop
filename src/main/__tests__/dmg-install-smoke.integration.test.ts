@@ -11,6 +11,70 @@ import {
 const REPO_ROOT = path.resolve(__dirname, '../../..')
 const VERIFIER = path.join(REPO_ROOT, 'scripts', 'smoke-dmg-install.sh')
 const CAN_MOUNT_DMG = process.platform === 'darwin' && fs.existsSync('/usr/bin/hdiutil')
+const DMG_TEST_TIMEOUT_MS = 120_000
+
+const makeFakeDmgBoundary = (root: string): string => {
+  const boundary = path.join(root, 'fake-hdiutil.sh')
+  fs.writeFileSync(
+    boundary,
+    `#!/usr/bin/env bash
+set -euo pipefail
+case "\${1:-}" in
+  attach)
+    mount_point=""
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = -mountpoint ]; then mount_point="$2"; break; fi
+      shift
+    done
+    test -n "$mount_point"
+    /usr/bin/ditto "$FAKE_DMG_SOURCE" "$mount_point"
+    ;;
+  detach)
+    mount_point="$2"
+    find "$mount_point" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    ;;
+  *) exit 64 ;;
+esac
+`
+  )
+  fs.chmodSync(boundary, 0o755)
+  return boundary
+}
+
+const makeFakeDmg = (root: string): string => {
+  const dmg = path.join(root, 'fixture.dmg')
+  fs.writeFileSync(dmg, 'hdiutil boundary fixture')
+  return dmg
+}
+
+const makeHangingDmgBoundary = (root: string): string => {
+  const boundary = path.join(root, 'hanging-hdiutil.sh')
+  fs.writeFileSync(
+    boundary,
+    `#!/usr/bin/env bash
+set -euo pipefail
+case "\${1:-}" in
+  attach)
+    mount_point=""
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = -mountpoint ]; then mount_point="$2"; break; fi
+      shift
+    done
+    /usr/bin/ditto "$FAKE_DMG_SOURCE" "$mount_point"
+    printf 'attach\n' >> "$FAKE_HDIUTIL_LOG"
+    exec /bin/sleep 5
+    ;;
+  detach)
+    printf 'detach\n' >> "$FAKE_HDIUTIL_LOG"
+    find "$2" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    ;;
+  *) exit 64 ;;
+esac
+`
+  )
+  fs.chmodSync(boundary, 0o755)
+  return boundary
+}
 
 const createAppBundle = (root: string, appName = 'Off Grid AI Desktop.app'): string => {
   const app = path.join(root, appName)
@@ -35,26 +99,16 @@ const createAppBundle = (root: string, appName = 'Off Grid AI Desktop.app'): str
   return app
 }
 
-const createDmg = (source: string, output: string): void => {
-  const result = spawnSync(
-    '/usr/bin/hdiutil',
-    [
-      'create',
-      '-quiet',
-      '-fs',
-      'HFS+',
-      '-volname',
-      'OGAD DMG smoke',
-      '-srcfolder',
-      source,
-      '-format',
-      'UDZO',
-      output
-    ],
-    { encoding: 'utf8' }
-  )
-  expect(result.status, result.stderr).toBe(0)
-}
+const runVerifier = (
+  dmg: string,
+  environment: Record<string, string | undefined> = {}
+): ReturnType<typeof spawnSync> =>
+  spawnSync('bash', [VERIFIER, dmg], {
+    encoding: 'utf8',
+    env: { ...process.env, ...environment },
+    timeout: 20_000,
+    killSignal: 'SIGKILL'
+  })
 
 const makeReleaseShapedBundle = (root: string): string => {
   const nativeFixture = path.join(path.dirname(root), 'native-fixture')
@@ -135,18 +189,20 @@ describe.skipIf(!CAN_MOUNT_DMG)('DMG installed-copy smoke verifier', () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
-  it('mounts a real DMG read-only, copies its app outside /Applications, detaches, then runs smoke', () => {
-    const source = path.join(root, 'source')
-    fs.mkdirSync(source)
-    createAppBundle(source)
-    const dmg = path.join(root, 'OffGrid-test.dmg')
-    createDmg(source, dmg)
+  it(
+    'copies the mounted app outside /Applications, detaches, then runs smoke',
+    () => {
+      const source = path.join(root, 'source')
+      fs.mkdirSync(source)
+      createAppBundle(source)
+      const dmg = makeFakeDmg(root)
+      const hdiutil = makeFakeDmgBoundary(root)
 
-    const capture = path.join(root, 'smoke-capture.txt')
-    const runner = path.join(root, 'assert-installed-copy.sh')
-    fs.writeFileSync(
-      runner,
-      `#!/usr/bin/env bash
+      const capture = path.join(root, 'smoke-capture.txt')
+      const runner = path.join(root, 'assert-installed-copy.sh')
+      fs.writeFileSync(
+        runner,
+        `#!/usr/bin/env bash
 set -euo pipefail
 : "\${APP:?missing copied app path}"
 : "\${OFFGRID_DMG_MOUNT_POINT:?missing mount point}"
@@ -156,141 +212,199 @@ test "$(cat "$APP/Contents/fixture-marker.txt")" = copied-from-mounted-dmg
 test ! -e "$OFFGRID_DMG_MOUNT_POINT/Off Grid AI Desktop.app"
 printf '%s\n' "$APP" > "$DMG_SMOKE_CAPTURE"
 `
-    )
+      )
 
-    const result = spawnSync('bash', [VERIFIER, dmg], {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
+      const result = runVerifier(dmg, {
+        DMG_HDIUTIL: hdiutil,
+        FAKE_DMG_SOURCE: source,
         DMG_SMOKE_RUNNER: runner,
         DMG_SMOKE_CAPTURE: capture
-      }
-    })
+      })
 
-    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
-    const installedApp = fs.readFileSync(capture, 'utf8').trim()
-    expect(installedApp).toContain('/offgrid-dmg-install.')
-    expect(installedApp).toMatch(/\/install\/Off Grid AI Desktop\.app$/)
-    expect(installedApp.startsWith('/Applications/')).toBe(false)
-    expect(fs.existsSync(installedApp)).toBe(false)
-  }, 30_000)
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
+      const installedApp = fs.readFileSync(capture, 'utf8').trim()
+      expect(installedApp).toContain('/offgrid-dmg-install.')
+      expect(installedApp).toMatch(/\/install\/Off Grid AI Desktop\.app$/)
+      expect(installedApp.startsWith('/Applications/')).toBe(false)
+      expect(fs.existsSync(installedApp)).toBe(false)
+    },
+    DMG_TEST_TIMEOUT_MS
+  )
 
-  it('uses the isolated packaged UI smoke by default with the copied executable', () => {
-    const source = path.join(root, 'source')
-    fs.mkdirSync(source)
-    createAppBundle(source)
-    const dmg = path.join(root, 'OffGrid-default-smoke.dmg')
-    createDmg(source, dmg)
+  it(
+    'uses the isolated packaged UI smoke by default with the copied executable',
+    () => {
+      const source = path.join(root, 'source')
+      fs.mkdirSync(source)
+      createAppBundle(source)
+      const dmg = makeFakeDmg(root)
+      const hdiutil = makeFakeDmgBoundary(root)
 
-    const capture = path.join(root, 'default-smoke-capture.txt')
-    const binDir = path.join(root, 'bin')
-    fs.mkdirSync(binDir)
-    fs.writeFileSync(
-      path.join(binDir, 'node'),
-      `#!/usr/bin/env bash
+      const capture = path.join(root, 'default-smoke-capture.txt')
+      const binDir = path.join(root, 'bin')
+      fs.mkdirSync(binDir)
+      fs.writeFileSync(
+        path.join(binDir, 'node'),
+        `#!/usr/bin/env bash
 set -euo pipefail
-test "$1" = "$EXPECTED_SMOKE_TEST"
-: "\${APP_BIN:?missing copied executable path}"
-: "\${OFFGRID_DMG_MOUNT_POINT:?missing mount point}"
-case "$APP_BIN" in /Applications/*) exit 21 ;; esac
-test -x "$APP_BIN"
-test ! -e "$OFFGRID_DMG_MOUNT_POINT/Off Grid AI Desktop.app"
-printf '%s\n' "$APP_BIN" > "$DMG_SMOKE_CAPTURE"
+if [ "$1" = "$TIMEOUT_RUNNER" ]; then
+  shift
+  exec "$REAL_NODE" "$TIMEOUT_RUNNER" "$@"
+fi
+case "$1" in
+  "$EXPECTED_SMOKE_TEST")
+    : "\${APP_BIN:?missing copied executable path}"
+    : "\${OFFGRID_DMG_MOUNT_POINT:?missing mount point}"
+    case "$APP_BIN" in /Applications/*) exit 21 ;; esac
+    test -x "$APP_BIN"
+    test ! -e "$OFFGRID_DMG_MOUNT_POINT/Off Grid AI Desktop.app"
+    printf 'ui:%s\n' "$APP_BIN" >> "$DMG_SMOKE_CAPTURE"
+    ;;
+  "$EXPECTED_LICENSE_SMOKE")
+    case "$2" in /Applications/*) exit 21 ;; esac
+    test -x "$2"
+    printf 'license:%s\n' "$2" >> "$DMG_SMOKE_CAPTURE"
+    ;;
+  *) exit 64 ;;
+esac
 `
-    )
-    fs.chmodSync(path.join(binDir, 'node'), 0o755)
+      )
+      fs.chmodSync(path.join(binDir, 'node'), 0o755)
 
-    const result = spawnSync('bash', [VERIFIER, dmg], {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
+      const result = runVerifier(dmg, {
+        DMG_HDIUTIL: hdiutil,
+        FAKE_DMG_SOURCE: source,
         PATH: `${binDir}:${process.env.PATH ?? ''}`,
+        REAL_NODE: process.execPath,
+        TIMEOUT_RUNNER: path.join(REPO_ROOT, 'scripts', 'exec-with-timeout.mjs'),
         EXPECTED_SMOKE_TEST: path.join(REPO_ROOT, 'scripts', 'smoke-test.mjs'),
+        EXPECTED_LICENSE_SMOKE: path.join(REPO_ROOT, 'scripts', 'smoke-license-gate.mjs'),
         DMG_SMOKE_CAPTURE: capture
-      }
-    })
+      })
 
-    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
-    const installedExecutable = fs.readFileSync(capture, 'utf8').trim()
-    expect(installedExecutable).toMatch(
-      /\/install\/Off Grid AI Desktop\.app\/Contents\/MacOS\/Off Grid AI Desktop$/
-    )
-    expect(fs.existsSync(installedExecutable)).toBe(false)
-  }, 30_000)
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
+      const calls = fs.readFileSync(capture, 'utf8').trim().split('\n')
+      expect(calls).toHaveLength(2)
+      const installedExecutable = calls[0]!.replace(/^ui:/, '')
+      expect(calls[1]).toBe(`license:${installedExecutable}`)
+      expect(installedExecutable).toMatch(
+        /\/install\/Off Grid AI Desktop\.app\/Contents\/MacOS\/Off Grid AI Desktop$/
+      )
+      expect(fs.existsSync(installedExecutable)).toBe(false)
+    },
+    DMG_TEST_TIMEOUT_MS
+  )
 
-  it('rejects an ambiguous image instead of silently choosing one app', () => {
-    const source = path.join(root, 'source')
-    fs.mkdirSync(source)
-    createAppBundle(source)
-    createAppBundle(source, 'Unexpected Copy.app')
-    const dmg = path.join(root, 'OffGrid-ambiguous.dmg')
-    createDmg(source, dmg)
+  it(
+    'rejects an ambiguous image instead of silently choosing one app',
+    () => {
+      const source = path.join(root, 'source')
+      fs.mkdirSync(source)
+      createAppBundle(source)
+      createAppBundle(source, 'Unexpected Copy.app')
+      const dmg = makeFakeDmg(root)
+      const hdiutil = makeFakeDmgBoundary(root)
 
-    const runner = path.join(root, 'must-not-run.sh')
-    fs.writeFileSync(runner, '#!/usr/bin/env bash\nexit 99\n')
-    const result = spawnSync('bash', [VERIFIER, dmg], {
-      encoding: 'utf8',
-      env: { ...process.env, DMG_SMOKE_RUNNER: runner }
-    })
+      const runner = path.join(root, 'must-not-run.sh')
+      fs.writeFileSync(runner, '#!/usr/bin/env bash\nexit 99\n')
+      const result = runVerifier(dmg, {
+        DMG_HDIUTIL: hdiutil,
+        FAKE_DMG_SOURCE: source,
+        DMG_SMOKE_RUNNER: runner
+      })
 
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain('expected exactly one .app in the DMG, found 2')
-  }, 30_000)
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('expected exactly one .app in the DMG, found 2')
+    },
+    DMG_TEST_TIMEOUT_MS
+  )
 
   it('rejects a missing DMG before creating or mounting anything', () => {
-    const result = spawnSync('bash', [VERIFIER, path.join(root, 'missing.dmg')], {
-      encoding: 'utf8'
-    })
+    const result = runVerifier(path.join(root, 'missing.dmg'))
 
     expect(result.status).toBe(2)
     expect(result.stderr).toContain('pass an existing DMG path')
   })
 
-  it('re-signs after a fuse-like mutation and preserves strict signatures through install', () => {
-    const source = path.join(root, 'source')
-    fs.mkdirSync(source)
-    const app = makeReleaseShapedBundle(source)
-    const framework = path.join(
-      app,
-      'Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework'
-    )
+  it('refuses a custom DiskImages boundary when release trust is required', () => {
+    const dmg = makeFakeDmg(root)
+    const hdiutil = makeFakeDmgBoundary(root)
 
-    for (const result of signReleaseShapedBundle(app)) {
-      expect(result.status, String(result.stderr)).toBe(0)
-    }
-    expect(codesign('--verify', '--deep', '--strict', app).status).toBe(0)
-
-    const descriptor = fs.openSync(framework, 'r+')
-    const changedByte = Buffer.alloc(1)
-    const mutationOffset = textSectionOffset(framework) + 4
-    fs.readSync(descriptor, changedByte, 0, 1, mutationOffset)
-    changedByte[0] = changedByte[0]! ^ 1
-    fs.writeSync(descriptor, changedByte, 0, 1, mutationOffset)
-    fs.closeSync(descriptor)
-    expect(codesign('--verify', '--deep', '--strict', app).status).not.toBe(0)
-
-    for (const result of signReleaseShapedBundle(app)) {
-      expect(result.status, String(result.stderr)).toBe(0)
-    }
-    expect(codesign('--verify', '--deep', '--strict', app).status).toBe(0)
-
-    const dmg = path.join(root, 'OffGrid-signed-after-fuses.dmg')
-    createDmg(source, dmg)
-    const runner = path.join(root, 'verify-installed-signature.sh')
-    fs.writeFileSync(
-      runner,
-      '#!/usr/bin/env bash\nset -euo pipefail\n/usr/bin/codesign --verify --deep --strict "$APP"\n'
-    )
-
-    const result = spawnSync('bash', [VERIFIER, dmg], {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        DMG_REFERENCE_APP: app,
-        DMG_SMOKE_RUNNER: runner
-      }
+    const result = runVerifier(dmg, {
+      DMG_HDIUTIL: hdiutil,
+      OFFGRID_REQUIRE_RELEASE_TRUST: '1'
     })
 
-    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
-  }, 30_000)
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain('release verification cannot override /usr/bin/hdiutil')
+  })
+
+  it('detaches after attach populates the mount and then exceeds its deadline', () => {
+    const source = path.join(root, 'source')
+    fs.mkdirSync(source)
+    createAppBundle(source)
+    const dmg = makeFakeDmg(root)
+    const hdiutil = makeHangingDmgBoundary(root)
+    const log = path.join(root, 'hdiutil.log')
+
+    const result = runVerifier(dmg, {
+      DMG_COMMAND_TIMEOUT_MS: '500',
+      DMG_HDIUTIL: hdiutil,
+      FAKE_DMG_SOURCE: source,
+      FAKE_HDIUTIL_LOG: log
+    })
+
+    expect(result.status).toBe(124)
+    expect(fs.readFileSync(log, 'utf8').trim().split('\n')).toEqual(['attach', 'detach'])
+  })
+
+  it(
+    're-signs after a fuse-like mutation and preserves strict signatures through install',
+    () => {
+      const source = path.join(root, 'source')
+      fs.mkdirSync(source)
+      const app = makeReleaseShapedBundle(source)
+      const framework = path.join(
+        app,
+        'Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework'
+      )
+
+      for (const result of signReleaseShapedBundle(app)) {
+        expect(result.status, String(result.stderr)).toBe(0)
+      }
+      expect(codesign('--verify', '--deep', '--strict', app).status).toBe(0)
+
+      const descriptor = fs.openSync(framework, 'r+')
+      const changedByte = Buffer.alloc(1)
+      const mutationOffset = textSectionOffset(framework) + 4
+      fs.readSync(descriptor, changedByte, 0, 1, mutationOffset)
+      changedByte[0] = changedByte[0]! ^ 1
+      fs.writeSync(descriptor, changedByte, 0, 1, mutationOffset)
+      fs.closeSync(descriptor)
+      expect(codesign('--verify', '--deep', '--strict', app).status).not.toBe(0)
+
+      for (const result of signReleaseShapedBundle(app)) {
+        expect(result.status, String(result.stderr)).toBe(0)
+      }
+      expect(codesign('--verify', '--deep', '--strict', app).status).toBe(0)
+
+      const dmg = makeFakeDmg(root)
+      const hdiutil = makeFakeDmgBoundary(root)
+      const runner = path.join(root, 'verify-installed-signature.sh')
+      fs.writeFileSync(
+        runner,
+        '#!/usr/bin/env bash\nset -euo pipefail\n/usr/bin/codesign --verify --deep --strict "$APP"\n'
+      )
+
+      const result = runVerifier(dmg, {
+        DMG_HDIUTIL: hdiutil,
+        FAKE_DMG_SOURCE: source,
+        DMG_REFERENCE_APP: app,
+        DMG_SMOKE_RUNNER: runner
+      })
+
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
+    },
+    DMG_TEST_TIMEOUT_MS
+  )
 })

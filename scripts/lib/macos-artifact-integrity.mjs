@@ -5,8 +5,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import { verifyReleaseAppTrust, verifyStrictAppTrust } from './macos-app-trust.mjs'
 
-const execFileAsync = promisify(execFile)
+const rawExecFileAsync = promisify(execFile)
+const execFileAsync = (executable, args) =>
+  rawExecFileAsync(executable, args, { timeout: 120_000, killSignal: 'SIGKILL' })
 
 export const REQUIRED_MAC_BUNDLE_FILES = Object.freeze([
   'Contents/Info.plist',
@@ -175,7 +178,7 @@ function findSingleApp(mountPoint) {
   return apps[0]
 }
 
-export async function verifyDmgArtifact(dmgPath, referenceBundle) {
+async function verifyDmgArtifactWithTrust(dmgPath, referenceBundle, releaseTeamId) {
   if (process.platform !== 'darwin') {
     throw new Error('DMG integrity verification requires macOS')
   }
@@ -186,9 +189,11 @@ export async function verifyDmgArtifact(dmgPath, referenceBundle) {
   const workRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-dmg-integrity-'))
   const mountPoint = path.join(workRoot, 'mount')
   fs.mkdirSync(mountPoint)
-  let attached = false
+  let attachAttempted = false
+  let operationError
 
   try {
+    attachAttempted = true
     await execFileAsync('/usr/bin/hdiutil', [
       'attach',
       dmgPath,
@@ -197,17 +202,82 @@ export async function verifyDmgArtifact(dmgPath, referenceBundle) {
       '-mountpoint',
       mountPoint
     ])
-    attached = true
     const candidateBundle = findSingleApp(mountPoint)
     verifyBundlePair(referenceBundle, candidateBundle)
-    await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', referenceBundle])
-    await execFileAsync('/usr/bin/codesign', ['--verify', '--deep', '--strict', candidateBundle])
-  } finally {
-    if (attached) {
-      await execFileAsync('/usr/bin/hdiutil', ['detach', mountPoint, '-force']).catch(
-        () => undefined
-      )
+    if (releaseTeamId) {
+      await verifyReleaseAppTrust(referenceBundle, releaseTeamId)
+      await verifyReleaseAppTrust(candidateBundle, releaseTeamId)
+    } else {
+      await verifyStrictAppTrust(referenceBundle)
+      await verifyStrictAppTrust(candidateBundle)
     }
+  } catch (error) {
+    operationError = error
+  }
+
+  let cleanupError
+  if (attachAttempted) {
+    try {
+      await execFileAsync('/usr/bin/hdiutil', ['detach', mountPoint, '-force'])
+    } catch (error) {
+      cleanupError = error
+    }
+  }
+  if (!cleanupError) {
     fs.rmSync(workRoot, { recursive: true, force: true })
   }
+  if (operationError) {
+    if (cleanupError && typeof operationError === 'object') {
+      operationError.cause = cleanupError
+    }
+    throw operationError
+  }
+  if (cleanupError) throw cleanupError
+}
+
+async function verifyZipArtifactWithTrust(zipPath, referenceBundle, releaseTeamId) {
+  if (process.platform !== 'darwin') {
+    throw new Error('macOS ZIP integrity verification requires macOS')
+  }
+  if (!fs.existsSync(zipPath) || !fs.statSync(zipPath).isFile()) {
+    throw new Error(`ZIP artifact does not exist: ${zipPath}`)
+  }
+
+  const workRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-zip-integrity-'))
+  try {
+    await execFileAsync('/usr/bin/ditto', ['-x', '-k', zipPath, workRoot])
+    const candidateBundle = findSingleApp(workRoot)
+    verifyBundlePair(referenceBundle, candidateBundle)
+    if (releaseTeamId) {
+      await verifyReleaseAppTrust(referenceBundle, releaseTeamId)
+      await verifyReleaseAppTrust(candidateBundle, releaseTeamId)
+    } else {
+      await verifyStrictAppTrust(referenceBundle)
+      await verifyStrictAppTrust(candidateBundle)
+    }
+  } finally {
+    fs.rmSync(workRoot, { recursive: true, force: true })
+  }
+}
+
+export async function verifyDmgArtifact(dmgPath, referenceBundle) {
+  await verifyDmgArtifactWithTrust(dmgPath, referenceBundle, null)
+}
+
+export async function verifyReleaseDmgArtifact(dmgPath, referenceBundle, expectedTeamId) {
+  if (!expectedTeamId.trim()) {
+    throw new Error('Expected Apple team identifier must not be empty')
+  }
+  await verifyDmgArtifactWithTrust(dmgPath, referenceBundle, expectedTeamId)
+}
+
+export async function verifyZipArtifact(zipPath, referenceBundle) {
+  await verifyZipArtifactWithTrust(zipPath, referenceBundle, null)
+}
+
+export async function verifyReleaseZipArtifact(zipPath, referenceBundle, expectedTeamId) {
+  if (!expectedTeamId.trim()) {
+    throw new Error('Expected Apple team identifier must not be empty')
+  }
+  await verifyZipArtifactWithTrust(zipPath, referenceBundle, expectedTeamId)
 }

@@ -1,10 +1,12 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   REQUIRED_MAC_BUNDLE_FILES,
-  verifyBundlePair
+  verifyBundlePair,
+  verifyZipArtifact
 } from '../../../scripts/lib/macos-artifact-integrity.mjs'
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '../../..')
@@ -83,6 +85,29 @@ describe('macOS artifact integrity', () => {
     )
   })
 
+  it.skipIf(process.platform !== 'darwin')(
+    'extracts the real updater ZIP and rejects required-file corruption',
+    async () => {
+      const { packagedBundle, candidateBundle } = matchingBundles()
+      const executable = path.join(candidateBundle, FRAMEWORK_EXECUTABLE)
+      const content = fs.readFileSync(executable, 'utf8')
+      fs.writeFileSync(executable, content.replace('fixture', 'corrupt'))
+      const archive = path.join(path.dirname(candidateBundle), 'updater.zip')
+      const create = spawnSync('/usr/bin/ditto', [
+        '-c',
+        '-k',
+        '--keepParent',
+        candidateBundle,
+        archive
+      ])
+      expect(create.status, create.stderr?.toString()).toBe(0)
+
+      await expect(verifyZipArtifact(archive, packagedBundle)).rejects.toThrow(
+        `candidate bundle required file content differs: ${FRAMEWORK_EXECUTABLE}`
+      )
+    }
+  )
+
   it('pins a fixed builder with explicit image headroom for the large macOS bundle', () => {
     const packageJson = JSON.parse(
       fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')
@@ -110,6 +135,11 @@ describe('macOS artifact integrity', () => {
     )
 
     expect(localBuild.match(/-c\.mac\.identity=-/g)).toHaveLength(2)
+    expect(localBuild).toContain('export OFFGRID_ALLOW_LOCAL_ARTIFACT=1')
+    expect(localBuild).toContain('export OFFGRID_LOCAL_PUBLISH_POLICY=never')
+    expect(localBuild.match(/^\s+--publish never$/gm)).toHaveLength(2)
     expect(artifactHook).not.toContain('OFFGRID_ALLOW_UNSIGNED_ARTIFACT')
+    expect(artifactHook).toContain("artifact.endsWith('.zip')")
+    expect(artifactHook).toContain('verifyReleaseZipArtifact')
   })
 })

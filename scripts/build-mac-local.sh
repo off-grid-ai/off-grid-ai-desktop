@@ -25,6 +25,8 @@ VERSION=$(node -p "require('./package.json').version")
 TARGET="${1:-both}"
 
 export CSC_IDENTITY_AUTO_DISCOVERY=false # do not search for a Developer ID locally
+export OFFGRID_ALLOW_LOCAL_ARTIFACT=1 # artifact verifier permits ad-hoc only on this unpublished path
+export OFFGRID_LOCAL_PUBLISH_POLICY=never # kept in sync with both electron-builder invocations below
 
 # Guard against the bug that broke the last release: the runtime binaries in
 # resources/bin/ are stored in Git LFS. If they're still 131-byte pointer stubs,

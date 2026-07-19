@@ -23,6 +23,18 @@ DMG_PATH="${1:-${DMG:-}}"
 EXPECTED_APP_NAME="${EXPECTED_APP_NAME:-Off Grid AI Desktop.app}"
 SMOKE_RUNNER="${DMG_SMOKE_RUNNER:-}"
 REFERENCE_APP="${DMG_REFERENCE_APP:-}"
+DMG_COMMAND_TIMEOUT_MS="${DMG_COMMAND_TIMEOUT_MS:-120000}"
+HDIUTIL_BIN="${DMG_HDIUTIL:-/usr/bin/hdiutil}"
+
+if [ "${OFFGRID_REQUIRE_RELEASE_TRUST:-0}" = 1 ] && [ "$HDIUTIL_BIN" != /usr/bin/hdiutil ]; then
+  echo "[dmg-smoke] release verification cannot override /usr/bin/hdiutil" >&2
+  exit 2
+fi
+
+run_hdiutil() {
+  node "$REPO_ROOT/scripts/exec-with-timeout.mjs" \
+    "$DMG_COMMAND_TIMEOUT_MS" "$HDIUTIL_BIN" "$@"
+}
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "[dmg-smoke] macOS is required because DMG mounting uses hdiutil" >&2
@@ -44,20 +56,25 @@ fi
 WORK_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/offgrid-dmg-install.XXXXXX")
 MOUNT_POINT="$WORK_ROOT/mount"
 INSTALL_ROOT="$WORK_ROOT/install"
-ATTACHED=0
+ATTACH_ATTEMPTED=0
 mkdir -p "$MOUNT_POINT" "$INSTALL_ROOT"
 
 cleanup() {
-  if [ "$ATTACHED" = 1 ]; then
-    hdiutil detach "$MOUNT_POINT" -force >/dev/null 2>&1 || true
+  local detach_status=0
+  if [ "$ATTACH_ATTEMPTED" = 1 ]; then
+    run_hdiutil detach "$MOUNT_POINT" -force >/dev/null 2>&1 || detach_status=$?
+  fi
+  if [ "$detach_status" -ne 0 ]; then
+    echo "[dmg-smoke] cleanup could not detach $MOUNT_POINT; leaving $WORK_ROOT intact" >&2
+    return
   fi
   rm -rf "$WORK_ROOT"
 }
 trap cleanup EXIT
 
 echo "[dmg-smoke] mounting read-only: $DMG_PATH"
-hdiutil attach "$DMG_PATH" -readonly -nobrowse -mountpoint "$MOUNT_POINT" >/dev/null
-ATTACHED=1
+ATTACH_ATTEMPTED=1
+run_hdiutil attach "$DMG_PATH" -readonly -nobrowse -mountpoint "$MOUNT_POINT" >/dev/null
 
 APPS=()
 while IFS= read -r app; do
@@ -102,8 +119,8 @@ fi
 
 # Detach before launch so success cannot depend on files remaining available from
 # the mounted image. This is the important difference from launching in-place.
-hdiutil detach "$MOUNT_POINT" >/dev/null
-ATTACHED=0
+run_hdiutil detach "$MOUNT_POINT" >/dev/null
+ATTACH_ATTEMPTED=0
 
 echo "[dmg-smoke] detached source; running packaged UI smoke against copied app"
 if [ -n "$SMOKE_RUNNER" ]; then
@@ -112,5 +129,7 @@ else
   APP_BIN="$INSTALLED_APP/Contents/MacOS/$BUNDLE_EXECUTABLE" \
     OFFGRID_DMG_MOUNT_POINT="$MOUNT_POINT" \
     node "$REPO_ROOT/scripts/smoke-test.mjs"
+  node "$REPO_ROOT/scripts/smoke-license-gate.mjs" \
+    "$INSTALLED_APP/Contents/MacOS/$BUNDLE_EXECUTABLE"
 fi
 echo "[dmg-smoke] installed-copy smoke passed"

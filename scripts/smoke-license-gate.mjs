@@ -12,7 +12,15 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type -- Node loads this smoke runner directly as JavaScript. */
 import { _electron as electron } from '@playwright/test'
 import { spawnSync } from 'node:child_process'
-import { constants, accessSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import {
+  constants,
+  accessSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -138,6 +146,20 @@ async function run() {
   mkdirSync(profileRoot, { recursive: true })
   const profile = mkdtempSync(path.join(profileRoot, 'offgrid-license-gate-'))
   activeProfile = profile
+  writeFileSync(
+    path.join(profile, 'license.json'),
+    JSON.stringify({
+      enc: false,
+      data: JSON.stringify({
+        isPro: true,
+        key: 'FORGED-PACKAGED-SMOKE-KEY',
+        licenseId: 'forged-packaged-smoke-license',
+        expiry: null,
+        verifiedAt: Date.now()
+      })
+    }),
+    { mode: 0o600 }
+  )
   const environment = {
     ...process.env,
     OFFGRID_USER_DATA: profile,
