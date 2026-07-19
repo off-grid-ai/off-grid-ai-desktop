@@ -16,7 +16,12 @@ manual claim does not count as complete integration coverage.
   - Every P0 journey with an automatable application seam is integration-covered.
   - The current-HEAD local 0.0.39 Pro-capable app is installed at
     `~/Applications/Off Grid AI Desktop.app`. The build and installed copy pass the positive ASAR
-    inventory, strict local codesign, ASAR fuse, 8/8 UI, and forged plaintext-license smoke gates.
+    inventory, strict local codesign, and ASAR fuse gates. The prior packaged artifact passed the
+    8/8 UI and forged plaintext-license smoke gates before the final Safe Storage compatibility
+    change; the final manual launch is intentionally left to the tester.
+  - macOS bootstrap retains the legacy `Off Grid AI` Safe Storage namespace long enough to read
+    existing encrypted database keys, licenses, and connector secrets, then restores the canonical
+    visible product name before any ready-time service or server-only path.
   - #1 and #2 remain open only as the locked and validly entitled install journeys against the one
     final Developer ID-signed and notarized production artifact. The local Core and Pro DMGs are
     diagnostic variants, not separate release artifacts.
@@ -35,7 +40,7 @@ manual claim does not count as complete integration coverage.
   - Core main, renderer, and Pro TypeScript projects pass.
   - Core coverage: 95.57% statements, 90.67% branches, 95.94% functions, and 96.47% lines.
   - Installed local app: version 0.0.39, minimum macOS 13.0, ASAR SHA-256
-    `f10524730fca8c45ea9ee58649a320e4d566d5bbeda98cb935f00567b3694fde`.
+    `f0621ca7532ac21b6d6421843ffa9f1d1082bcd5a519473bd422c4d707587d8f`.
 - Local manual product testing is ready. Final release approval is still open for the credentialed
   signed/notarized artifact and the manual release-device checks.
 

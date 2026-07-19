@@ -1,6 +1,6 @@
 # Off Grid AI Desktop 0.0.39 manual release tests
 
-Use this checklist first on the local Apple-silicon package installed at
+Use this checklist first on the canonical local Apple-silicon package installed at
 `~/Applications/Off Grid AI Desktop.app`, then repeat the trust and release-device checks on the
 single final Developer ID-signed and notarized artifact. The production artifact is Pro-capable
 but stays locked until entitlement; the local builder's separate Core and Pro DMGs are diagnostic
@@ -144,8 +144,6 @@ Stop and mark the build failed if any of these occurs:
 - [ ] **[P1][Both][Manual-only] Verify product identity.**
   - Inspect Finder, Dock, menu bar, window title, About, permission prompts, and Settings footer.
   - Expected: every visible product name is **Off Grid AI Desktop** with no legacy name.
-  - Local-only exception: the isolated ad-hoc handoff uses **Off Grid AI Desktop Local** so it does
-    not request the installed Developer ID app's Safe Storage key. The final artifact has no suffix.
 
 - [ ] **[P0][Both][Manual-only] Verify the Windows package if Windows 0.0.39 will ship.**
   - On a clean supported Windows machine, verify installer signature, install/uninstall, first
