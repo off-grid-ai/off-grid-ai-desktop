@@ -72,9 +72,13 @@ describe('isProActive', () => {
     expect(isProActive(lic({ isPro: false, expiry: future }))).toBe(false)
   })
 
-  it('treats an unparseable expiry as not-expired (Date.parse NaN is not <= now)', () => {
-    // NaN <= now is false, so a garbage expiry does not by itself revoke — matches source.
-    expect(isProActive(lic({ expiry: 'not-a-date' }))).toBe(true)
+  it('denies Pro when the cached expiry is unparseable', () => {
+    expect(isProActive(lic({ expiry: 'not-a-date' }))).toBe(false)
+  })
+
+  it('denies a claimed entitlement without a key and license id', () => {
+    expect(isProActive(lic({ key: null }))).toBe(false)
+    expect(isProActive(lic({ licenseId: null }))).toBe(false)
   })
 })
 

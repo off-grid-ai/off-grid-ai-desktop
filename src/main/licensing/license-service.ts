@@ -16,7 +16,7 @@
  *    notifier pushes updates to the renderer instead of mutating a Zustand store.
  */
 import { app, safeStorage } from 'electron'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   validateKey,
@@ -27,6 +27,7 @@ import {
   type KeygenMachine
 } from './keygen-client'
 import { getDeviceFingerprint, getPlatformTag } from './device-fingerprint'
+import { decodeLicenseCache, encodeLicenseCache, type ProLicense } from './license-cache'
 
 const LICENSE_FILE = 'license.json'
 
@@ -36,13 +37,7 @@ export const PRO_PAY_PAGE_URL = 'https://getoffgridai.co/pay'
 
 export type ActivateResult = { ok: true } | { ok: false; reason: 'invalid' | 'limit' | 'network' }
 
-export type ProLicense = {
-  isPro: boolean
-  key: string | null
-  licenseId: string | null
-  expiry: string | null // ISO timestamp, or null for a perpetual (lifetime) key
-  verifiedAt: number
-}
+export type { ProLicense } from './license-cache'
 
 const EMPTY: ProLicense = { isPro: false, key: null, licenseId: null, expiry: null, verifiedAt: 0 }
 
@@ -73,10 +68,13 @@ function licensePath(): string {
 
 /** Whether the cached license grants Pro right now (offline-safe, synchronous). */
 export function isProActive(lic: ProLicense): boolean {
-  if (!lic.isPro) return false
+  if (!lic.isPro || !lic.key || !lic.licenseId) return false
   // Monthly keys carry an expiry — once it passes, no Pro even offline. Lifetime
   // keys have null expiry. Revocation propagates at the next online revalidate.
-  if (lic.expiry && Date.parse(lic.expiry) <= Date.now()) return false
+  if (lic.expiry) {
+    const expiry = Date.parse(lic.expiry)
+    if (!Number.isFinite(expiry) || expiry <= Date.now()) return false
+  }
   return true
 }
 
@@ -95,18 +93,10 @@ function readLicenseFromDisk(): ProLicense {
   try {
     if (!existsSync(file)) return EMPTY
     const raw = readFileSync(file, 'utf8')
-    const wrapper = JSON.parse(raw) as { enc: boolean; data: string }
-    const json = wrapper.enc
-      ? safeStorage.decryptString(Buffer.from(wrapper.data, 'base64'))
-      : wrapper.data
-    const p = JSON.parse(json)
-    return {
-      isPro: p.isPro ?? false,
-      key: p.key ?? null,
-      licenseId: p.licenseId ?? null,
-      expiry: p.expiry ?? null,
-      verifiedAt: p.verifiedAt ?? 0
-    }
+    return decodeLicenseCache(raw, {
+      packaged: app.isPackaged,
+      decrypt: (encrypted) => safeStorage.decryptString(encrypted)
+    })
   } catch (e) {
     console.error(`[Pro] readLicense failed: ${e instanceof Error ? e.message : String(e)}`)
     return EMPTY
@@ -116,11 +106,15 @@ function readLicenseFromDisk(): ProLicense {
 function writeLicense(lic: ProLicense): void {
   cache = lic
   try {
-    const json = JSON.stringify(lic)
-    const canEncrypt = safeStorage.isEncryptionAvailable()
-    const wrapper = canEncrypt
-      ? { enc: true, data: safeStorage.encryptString(json).toString('base64') }
-      : { enc: false, data: json }
+    const wrapper = encodeLicenseCache(lic, {
+      packaged: app.isPackaged,
+      encryptionAvailable: safeStorage.isEncryptionAvailable(),
+      encrypt: (plaintext) => safeStorage.encryptString(plaintext)
+    })
+    if (!wrapper) {
+      rmSync(licensePath(), { force: true })
+      throw new Error('OS-protected license storage is unavailable')
+    }
     writeFileSync(licensePath(), JSON.stringify(wrapper), { encoding: 'utf8', mode: 0o600 })
   } catch (e) {
     console.error(`[Pro] writeLicense failed: ${e instanceof Error ? e.message : String(e)}`)
