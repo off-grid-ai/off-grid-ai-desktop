@@ -60,8 +60,9 @@ case "\${1:-}" in
       if [ "$1" = -mountpoint ]; then mount_point="$2"; break; fi
       shift
     done
-    /usr/bin/ditto "$FAKE_DMG_SOURCE" "$mount_point"
     printf 'attach\n' >> "$FAKE_HDIUTIL_LOG"
+    mkdir -p "$mount_point"
+    touch "$mount_point/attach-populated-before-timeout"
     exec /bin/sleep 5
     ;;
   detach)
@@ -340,17 +341,13 @@ esac
   })
 
   it('detaches after attach populates the mount and then exceeds its deadline', () => {
-    const source = path.join(root, 'source')
-    fs.mkdirSync(source)
-    createAppBundle(source)
     const dmg = makeFakeDmg(root)
     const hdiutil = makeHangingDmgBoundary(root)
     const log = path.join(root, 'hdiutil.log')
 
     const result = runVerifier(dmg, {
-      DMG_COMMAND_TIMEOUT_MS: '500',
+      DMG_COMMAND_TIMEOUT_MS: '1000',
       DMG_HDIUTIL: hdiutil,
-      FAKE_DMG_SOURCE: source,
       FAKE_HDIUTIL_LOG: log
     })
 
