@@ -115,7 +115,7 @@ function assertNoPrivateState(manifest, label) {
   for (const relative of manifest.keys()) {
     const privateSegment = relative
       .split('/')
-      .find((segment) => FORBIDDEN_PRIVATE_SEGMENTS.has(segment))
+      .find((segment) => FORBIDDEN_PRIVATE_SEGMENTS.has(segment.toLowerCase()))
     if (privateSegment) {
       throw new Error(`${label} bundle contains forbidden private state: ${relative}`)
     }

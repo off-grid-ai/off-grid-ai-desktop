@@ -100,13 +100,13 @@ describe('macOS artifact integrity', () => {
   it('blocks private local state even when it exists in both bundle trees', () => {
     const { packagedBundle, candidateBundle } = matchingBundles()
     for (const bundle of [packagedBundle, candidateBundle]) {
-      const privateFile = path.join(bundle, 'Contents/Resources/.offgrid/private.db')
+      const privateFile = path.join(bundle, 'Contents/Resources/.Codex/private.db')
       fs.mkdirSync(path.dirname(privateFile), { recursive: true })
       fs.writeFileSync(privateFile, 'private')
     }
 
     expect(() => verifyBundlePair(packagedBundle, candidateBundle)).toThrow(
-      'packaged bundle contains forbidden private state: Contents/Resources/.offgrid'
+      'packaged bundle contains forbidden private state: Contents/Resources/.Codex'
     )
   })
 
