@@ -260,6 +260,18 @@ describe('macOS artifact integrity', () => {
     expect(builderConfig).toContain("'!out/packaged-helpers-*/**'")
   })
 
+  it('advertises the same minimum macOS version required by the bundled chat engine', () => {
+    const builderConfig = fs.readFileSync(path.join(REPO_ROOT, 'electron-builder.yml'), 'utf8')
+    const llamaBuild = fs.readFileSync(path.join(REPO_ROOT, 'scripts/build-llama.sh'), 'utf8')
+    const appMinimum = builderConfig.match(
+      /^\s+minimumSystemVersion:\s+['"]?([^'"\s]+)['"]?$/m
+    )?.[1]
+    const llamaMinimum = llamaBuild.match(/TARGET="\$\{MACOS_DEPLOYMENT_TARGET:-([^}]+)\}"/)?.[1]
+
+    expect(appMinimum).toBeDefined()
+    expect(appMinimum).toBe(llamaMinimum)
+  })
+
   it('uses the real production matcher to exclude repository data and development modules', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-builder-matcher-'))
     tempRoots.push(root)

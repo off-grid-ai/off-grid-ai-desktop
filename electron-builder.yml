@@ -42,6 +42,9 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  # Every bundled native runtime is compiled for macOS 13 or newer. Advertising
+  # macOS 12 here lets the app install while its local chat engine cannot launch.
+  minimumSystemVersion: '13.0'
   # DMG is the human download; the zip + latest-mac.yml (generated for the zip)
   # are what electron-updater needs, so auto-update keeps working. One build, one
   # update channel — no core/pro split, no arch variants to confuse anyone.
