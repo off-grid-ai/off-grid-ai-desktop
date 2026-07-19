@@ -46,6 +46,13 @@ describe('installed product identity', () => {
     expect(PRODUCT_NAME).toBe('Off Grid AI Desktop')
     expect(pkg.productName).toBe(PRODUCT_NAME)
 
+    const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8')) as {
+      version: string
+      packages: Record<string, { version?: string }>
+    }
+    expect(lock.version).toBe(pkg.version)
+    expect(lock.packages['']?.version).toBe(pkg.version)
+
     const builder = fs.readFileSync(path.join(root, 'electron-builder.yml'), 'utf8')
     expect(builder).toMatch(/^productName: Off Grid AI Desktop$/m)
 

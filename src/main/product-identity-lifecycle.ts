@@ -2,7 +2,7 @@ import { PRODUCT_NAME } from '../shared/product-identity'
 
 /**
  * Electron derives macOS safeStorage's Keychain service from the application
- * name during early bootstrap. Released builds before 0.0.39 used this name,
+ * name during early bootstrap. Released builds before 0.0.40 used this name,
  * so changing it would strand encrypted database keys, licenses, and connector
  * secrets in a different Keychain namespace.
  */

@@ -1,4 +1,4 @@
-# Off Grid AI Desktop 0.0.39 manual release tests
+# Off Grid AI Desktop 0.0.40 manual release tests
 
 Use this checklist first on the canonical local Apple-silicon package installed at
 `~/Applications/Off Grid AI Desktop.app`, then repeat the trust and release-device checks on the
@@ -104,7 +104,7 @@ Stop and mark the build failed if any of these occurs:
   - Run `/usr/bin/codesign --verify --deep --strict --verbose=4 <app>`,
     `/usr/bin/xcrun stapler validate <app>`, and
     `/usr/sbin/spctl --assess --type execute --verbose=4 <app>`.
-  - Confirm version `0.0.39`, bundle identifier `co.getoffgridai.desktop.pro`, hardened runtime,
+  - Confirm version `0.0.40`, bundle identifier `co.getoffgridai.desktop.pro`, hardened runtime,
     Off Grid Apple Team ID `84V6KCAC49`, and both ASAR fuses:
     `EnableEmbeddedAsarIntegrityValidation` and `OnlyLoadAppFromAsar`.
   - Confirm the only ASAR roots are `/node_modules`, `/out`, and `/package.json`; the only `/out`
@@ -145,7 +145,7 @@ Stop and mark the build failed if any of these occurs:
   - Inspect Finder, Dock, menu bar, window title, About, permission prompts, and Settings footer.
   - Expected: every visible product name is **Off Grid AI Desktop** with no legacy name.
 
-- [ ] **[P0][Both][Manual-only] Verify the Windows package if Windows 0.0.39 will ship.**
+- [ ] **[P0][Both][Manual-only] Verify the Windows package if Windows 0.0.40 will ship.**
   - On a clean supported Windows machine, verify installer signature, install/uninstall, first
     launch, packaged license lock, valid entitlement, helper startup, update, and 0.0.38 upgrade.
   - Expected: no SmartScreen or missing-runtime failure; the forged license/override stays locked;
@@ -575,7 +575,7 @@ Stop and mark the build failed if any of these occurs:
     install (`co.getoffgridai.desktop.pro`). Create synthetic chats, project knowledge, active
     model selections, settings, and all available Pro stores and entitlement before upgrading.
   - Exercise the real updater ZIP/feed/download/restart path as well as a manual DMG replacement.
-  - Expected: 0.0.39 opens without onboarding; migrations run once; all data and selections remain;
+  - Expected: 0.0.40 opens without onboarding; migrations run once; all data and selections remain;
     locked and entitled gating remain correct; TCC permissions behave predictably; no duplicate or
     orphaned records appear.
 
@@ -653,10 +653,10 @@ Stop and mark the build failed if any of these occurs:
 
 ## Final approval
 
-- [ ] Single macOS 0.0.39 signed/notarized install pass approved while locked.
-- [ ] The same macOS 0.0.39 install pass approved with valid Pro entitlement.
-- [ ] Both Core and Pro 0.0.38 to 0.0.39 upgrade origins approved.
-- [ ] Windows 0.0.39 install and upgrade pass approved, or Windows explicitly removed from release.
+- [ ] Single macOS 0.0.40 signed/notarized install pass approved while locked.
+- [ ] The same macOS 0.0.40 install pass approved with valid Pro entitlement.
+- [ ] Both Core and Pro 0.0.38 to 0.0.40 upgrade origins approved.
+- [ ] Windows 0.0.40 install and upgrade pass approved, or Windows explicitly removed from release.
 - [ ] Core open-source boundary and packaged entitlement gate approved.
 - [ ] Pro license, permission, capture privacy, and action approval gates approved.
 - [ ] Synthetic-only release evidence approved.

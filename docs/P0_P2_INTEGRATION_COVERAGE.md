@@ -14,7 +14,7 @@ manual claim does not count as complete integration coverage.
   - Overall: 155 total, 153 covered, 2 left.
 - P0 handoff status:
   - Every P0 journey with an automatable application seam is integration-covered.
-  - The current-HEAD local 0.0.39 Pro-capable app is installed at
+  - The current-HEAD local 0.0.40 Pro-capable app is installed at
     `~/Applications/Off Grid AI Desktop.app`. The build and installed copy pass the positive ASAR
     inventory, strict local codesign, and ASAR fuse gates. The prior packaged artifact passed the
     8/8 UI and forged plaintext-license smoke gates before the final Safe Storage compatibility
@@ -39,8 +39,8 @@ manual claim does not count as complete integration coverage.
   - Pro full suite: 99 files passed; 1,038 tests passed.
   - Core main, renderer, and Pro TypeScript projects pass.
   - Core coverage: 95.57% statements, 90.67% branches, 95.94% functions, and 96.47% lines.
-  - Installed local app: version 0.0.39, minimum macOS 13.0, ASAR SHA-256
-    `f0621ca7532ac21b6d6421843ffa9f1d1082bcd5a519473bd422c4d707587d8f`.
+  - Installed local app: version 0.0.40, minimum macOS 13.0. Record the final ASAR SHA-256 after
+    packaging and installation.
 - Local manual product testing is ready. Final release approval is still open for the credentialed
   signed/notarized artifact and the manual release-device checks.
 
@@ -551,10 +551,10 @@ manual claim does not count as complete integration coverage.
 ## Left - package and install
 
 - #1 - Final production artifact installs cleanly and remains locked when unentitled.
-  - Local 0.0.39 ad-hoc app: installed-copy launch and forged-license harness passed.
+  - Local 0.0.40 ad-hoc app: installed-copy launch and forged-license harness passed.
   - Left: repeat against the Developer ID-signed and notarized release artifact.
 - #2 - The same final production artifact activates Pro with a valid entitlement.
-  - Local 0.0.39 Pro-capable app: packaged UI and locked-state gates passed; valid-license activation
+  - Local 0.0.40 Pro-capable app: packaged UI and locked-state gates passed; valid-license activation
     is part of the immediate manual pass.
   - Left: repeat the valid-license journey against the signed/notarized release artifact.
 
@@ -568,4 +568,4 @@ manual claim does not count as complete integration coverage.
 - Complete the signed-device permission, global-hotkey, TextEdit paste, full-volume, and installer
   replacement confirmations recorded beside their integration-covered journeys.
 - Record the final release-artifact hashes, signed-device evidence, updater upgrade results, and
-  every manual P0/P1/P2 result in `MANUAL_RELEASE_TESTS_0.0.39.md`.
+  every manual P0/P1/P2 result in `MANUAL_RELEASE_TESTS_0.0.40.md`.
