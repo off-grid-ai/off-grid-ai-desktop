@@ -15,6 +15,9 @@ files:
   # never application inputs. Keep this boundary here rather than relying on
   # .gitignore: electron-builder packages filesystem contents, not only git files.
   - '!{.demo-profile,.offgrid,.claude,.Codex,coverage}/**'
+  # The packaged-helper integration test must use an in-repo workspace because
+  # electron-builder rejects macOS's /tmp alias. Never admit that disposable output.
+  - '!out/packaged-helpers-*/**'
   - '!src/*'
   - '!pro/**'
   - '!electron.vite.config.{js,ts,mjs,cjs}'

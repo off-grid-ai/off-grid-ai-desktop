@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import { listPackage } from '@electron/asar'
 import { verifyReleaseAppTrust, verifyStrictAppTrust } from './macos-app-trust.mjs'
 
 const rawExecFileAsync = promisify(execFile)
@@ -30,6 +31,8 @@ export const REQUIRED_EXECUTABLE_FILES = new Set([
 ])
 
 const FORBIDDEN_PRIVATE_SEGMENTS = new Set(['.demo-profile', '.offgrid', '.claude', '.Codex'])
+
+export const ALLOWED_ASAR_OUT_ROOTS = Object.freeze(['/out/main', '/out/preload', '/out/renderer'])
 
 function normalizeRelative(relative) {
   return relative.split(path.sep).join('/')
@@ -166,6 +169,30 @@ export function verifyBundlePair(referenceBundle, candidateBundle) {
   compareRequiredDigests(referenceBundle, candidateBundle)
 }
 
+function isAllowedAsarOutEntry(entry) {
+  return ALLOWED_ASAR_OUT_ROOTS.some((root) => entry === root || entry.startsWith(`${root}/`))
+}
+
+export function assertAsarInventory(bundle) {
+  const archive = path.join(bundle, 'Contents/Resources/app.asar')
+
+  for (const entry of listPackage(archive)) {
+    if (entry === '/out' || isAllowedAsarOutEntry(entry)) continue
+    if (entry.startsWith('/out/')) {
+      throw new Error(`app.asar contains unexpected build output: ${entry}`)
+    }
+
+    const segments = entry.split('/').filter(Boolean)
+    const privateSegment = segments.find((segment) => FORBIDDEN_PRIVATE_SEGMENTS.has(segment))
+    if (privateSegment) {
+      throw new Error(`app.asar contains forbidden private state: ${entry}`)
+    }
+    if (segments.some((segment) => segment.endsWith('.app'))) {
+      throw new Error(`app.asar contains a nested application bundle: ${entry}`)
+    }
+  }
+}
+
 function findSingleApp(mountPoint) {
   const apps = fs
     .readdirSync(mountPoint, { withFileTypes: true })
@@ -204,6 +231,8 @@ async function verifyDmgArtifactWithTrust(dmgPath, referenceBundle, releaseTeamI
     ])
     const candidateBundle = findSingleApp(mountPoint)
     verifyBundlePair(referenceBundle, candidateBundle)
+    assertAsarInventory(referenceBundle)
+    assertAsarInventory(candidateBundle)
     if (releaseTeamId) {
       await verifyReleaseAppTrust(referenceBundle, releaseTeamId)
       await verifyReleaseAppTrust(candidateBundle, releaseTeamId)
@@ -248,6 +277,8 @@ async function verifyZipArtifactWithTrust(zipPath, referenceBundle, releaseTeamI
     await execFileAsync('/usr/bin/ditto', ['-x', '-k', zipPath, workRoot])
     const candidateBundle = findSingleApp(workRoot)
     verifyBundlePair(referenceBundle, candidateBundle)
+    assertAsarInventory(referenceBundle)
+    assertAsarInventory(candidateBundle)
     if (releaseTeamId) {
       await verifyReleaseAppTrust(referenceBundle, releaseTeamId)
       await verifyReleaseAppTrust(candidateBundle, releaseTeamId)

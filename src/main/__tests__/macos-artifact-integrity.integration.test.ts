@@ -4,12 +4,15 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  ALLOWED_ASAR_OUT_ROOTS,
   REQUIRED_MAC_BUNDLE_FILES,
+  assertAsarInventory,
   verifyBundlePair,
   verifyZipArtifact
 } from '../../../scripts/lib/macos-artifact-integrity.mjs'
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '../../..')
+const ASAR_CLI = path.join(REPO_ROOT, 'node_modules', '@electron', 'asar', 'bin', 'asar.js')
 const tempRoots: string[] = []
 const FRAMEWORK_EXECUTABLE =
   'Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework'
@@ -37,6 +40,23 @@ function matchingBundles(): { packagedBundle: string; candidateBundle: string } 
   writeBundleFixture(packagedBundle)
   fs.cpSync(packagedBundle, candidateBundle, { recursive: true })
   return { packagedBundle, candidateBundle }
+}
+
+function writeAsarFixture(bundle: string, relativeFiles: string[]): void {
+  const source = fs.mkdtempSync(path.join(path.dirname(bundle), 'asar-source-'))
+  for (const relative of relativeFiles) {
+    const file = path.join(source, relative)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, `fixture:${relative}`)
+  }
+
+  const archive = path.join(bundle, 'Contents', 'Resources', 'app.asar')
+  fs.mkdirSync(path.dirname(archive), { recursive: true })
+  const result = spawnSync(process.execPath, [ASAR_CLI, 'pack', source, archive], {
+    encoding: 'utf8'
+  })
+  fs.rmSync(source, { recursive: true, force: true })
+  expect(result.status, result.stderr).toBe(0)
 }
 
 describe('macOS artifact integrity', () => {
@@ -85,6 +105,44 @@ describe('macOS artifact integrity', () => {
     )
   })
 
+  it('accepts only the production output roots in app.asar', () => {
+    const bundle = tempBundle('offgrid-asar-inventory-')
+    const allowedOutputFiles = ALLOWED_ASAR_OUT_ROOTS.map((root) => `${root.slice(1)}/fixture.js`)
+    writeAsarFixture(bundle, [...allowedOutputFiles, 'node_modules/example/index.js'])
+
+    expect(() => assertAsarInventory(bundle)).not.toThrow()
+  })
+
+  it('rejects a disposable packaged-helper workspace inside app.asar', () => {
+    const bundle = tempBundle('offgrid-contaminated-asar-')
+    writeAsarFixture(bundle, [
+      'out/main/index.js',
+      'out/packaged-helpers-stale/package/mac-arm64/Off Grid AI Desktop.app/Contents/Info.plist'
+    ])
+
+    expect(() => assertAsarInventory(bundle)).toThrow(
+      'app.asar contains unexpected build output: /out/packaged-helpers-stale'
+    )
+  })
+
+  it('rejects private state anywhere inside app.asar', () => {
+    const bundle = tempBundle('offgrid-private-asar-')
+    writeAsarFixture(bundle, ['node_modules/example/.offgrid/private.db'])
+
+    expect(() => assertAsarInventory(bundle)).toThrow(
+      'app.asar contains forbidden private state: /node_modules/example/.offgrid'
+    )
+  })
+
+  it('rejects a nested application bundle anywhere inside app.asar', () => {
+    const bundle = tempBundle('offgrid-nested-app-asar-')
+    writeAsarFixture(bundle, ['fixtures/Nested.app/Contents/Info.plist'])
+
+    expect(() => assertAsarInventory(bundle)).toThrow(
+      'app.asar contains a nested application bundle: /fixtures/Nested.app'
+    )
+  })
+
   it.skipIf(process.platform !== 'darwin')(
     'extracts the real updater ZIP and rejects required-file corruption',
     async () => {
@@ -125,6 +183,7 @@ describe('macOS artifact integrity', () => {
     expect(numericVersion).toBeGreaterThanOrEqual(minimumFixedVersion)
     expect(imageSizeGiB).toBeGreaterThanOrEqual(5)
     expect(builderConfig).toMatch(/^\s+shrink:\s+true$/m)
+    expect(builderConfig).toContain("'!out/packaged-helpers-*/**'")
   })
 
   it('ad-hoc signs local bundles after fuses while keeping artifact verification strict', () => {
