@@ -1,0 +1,12 @@
+# Shared by the production build and the packaged-helper integration test. Keep the
+# runtime resource contract here so the test exercises the same staging rules without
+# inheriting production's multi-gigabyte application dependency payload.
+extraResources:
+  - from: resources
+    to: .
+    filter:
+      - '**/*'
+      - '!models/**'
+
+# Native modules are installed for Electron by postinstall/CI before packaging.
+npmRebuild: false

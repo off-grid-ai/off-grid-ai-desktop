@@ -30,7 +30,9 @@ export const REQUIRED_EXECUTABLE_FILES = new Set([
   'Contents/Resources/bin/dictation-hotkey'
 ])
 
-const FORBIDDEN_PRIVATE_SEGMENTS = new Set(['.demo-profile', '.offgrid', '.claude', '.Codex'])
+const FORBIDDEN_PRIVATE_SEGMENTS = new Set(['.demo-profile', '.offgrid', '.claude', '.codex'])
+
+export const ALLOWED_ASAR_ROOTS = Object.freeze(['/node_modules', '/out', '/package.json'])
 
 export const ALLOWED_ASAR_OUT_ROOTS = Object.freeze(['/out/main', '/out/preload', '/out/renderer'])
 
@@ -173,24 +175,31 @@ function isAllowedAsarOutEntry(entry) {
   return ALLOWED_ASAR_OUT_ROOTS.some((root) => entry === root || entry.startsWith(`${root}/`))
 }
 
-export function assertAsarInventory(bundle) {
-  const archive = path.join(bundle, 'Contents/Resources/app.asar')
-
+export function assertAsarArchiveInventory(archive) {
   for (const entry of listPackage(archive)) {
+    const segments = entry.split('/').filter(Boolean)
+    const privateSegment = segments.find((segment) =>
+      FORBIDDEN_PRIVATE_SEGMENTS.has(segment.toLowerCase())
+    )
+    if (privateSegment) {
+      throw new Error(`app.asar contains forbidden private state: ${entry}`)
+    }
+    if (segments.some((segment) => segment.toLowerCase().endsWith('.app'))) {
+      throw new Error(`app.asar contains a nested application bundle: ${entry}`)
+    }
+
     if (entry === '/out' || isAllowedAsarOutEntry(entry)) continue
     if (entry.startsWith('/out/')) {
       throw new Error(`app.asar contains unexpected build output: ${entry}`)
     }
-
-    const segments = entry.split('/').filter(Boolean)
-    const privateSegment = segments.find((segment) => FORBIDDEN_PRIVATE_SEGMENTS.has(segment))
-    if (privateSegment) {
-      throw new Error(`app.asar contains forbidden private state: ${entry}`)
-    }
-    if (segments.some((segment) => segment.endsWith('.app'))) {
-      throw new Error(`app.asar contains a nested application bundle: ${entry}`)
+    if (!ALLOWED_ASAR_ROOTS.some((root) => entry === root || entry.startsWith(`${root}/`))) {
+      throw new Error(`app.asar contains unexpected application root: ${entry}`)
     }
   }
+}
+
+export function assertAsarInventory(bundle) {
+  assertAsarArchiveInventory(path.join(bundle, 'Contents/Resources/app.asar'))
 }
 
 function findSingleApp(mountPoint) {

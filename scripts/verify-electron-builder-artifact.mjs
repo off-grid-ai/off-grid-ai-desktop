@@ -3,6 +3,7 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import {
+  assertAsarArchiveInventory,
   verifyDmgArtifact,
   verifyReleaseDmgArtifact,
   verifyReleaseZipArtifact,
@@ -30,9 +31,17 @@ async function runInstalledDmgSmoke(dmgPath, referenceBundle) {
 
 export default async function verifyElectronBuilderArtifact(event) {
   const artifact = event.file.toLowerCase()
-  if (!artifact.endsWith('.dmg') && !artifact.endsWith('.zip')) return
+  if (!artifact.endsWith('.dmg') && !artifact.endsWith('.zip') && !artifact.endsWith('.exe')) {
+    return
+  }
 
   const appOutDir = event.packager.computeAppOutDir(event.target.outDir, event.arch)
+  if (artifact.endsWith('.exe')) {
+    assertAsarArchiveInventory(path.join(appOutDir, 'resources', 'app.asar'))
+    console.log('[artifact-integrity] Windows installer input passed ASAR inventory')
+    return
+  }
+
   const referenceBundle = path.join(appOutDir, `${event.packager.appInfo.productFilename}.app`)
   const releaseTeamId = releaseTeamIdForEnvironment(process.env)
 

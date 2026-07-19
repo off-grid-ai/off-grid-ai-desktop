@@ -9,6 +9,7 @@ import { ffmpegBin } from '../transcription/whisper-cli'
 const root = path.resolve(import.meta.dirname, '../../..')
 const electronVite = path.join(root, 'node_modules', '.bin', 'electron-vite')
 const electronBuilder = path.join(root, 'node_modules', '.bin', 'electron-builder')
+const runtimeBuilderConfig = path.join(root, 'scripts', 'config', 'electron-builder-runtime.yml')
 const execFileAsync = promisify(execFile)
 const PACKAGE_TIMEOUT_MS = 120_000
 
@@ -72,13 +73,16 @@ describe.sequential('packaged helper artifact', () => {
       timeout: PACKAGE_TIMEOUT_MS
     })
 
-    // Inherit the real production packaging config, including extraResources. Only
-    // redirect the already-built app bundle and output into the isolated workspace.
+    // Inherit the same runtime-resource contract as production. Only redirect the
+    // already-built app bundle and output into the isolated workspace.
     // Runtime dependency packaging is covered by the packaged launch checks (#1/#2);
     // this focused artifact test excludes node_modules to keep helper placement fast.
     fs.writeFileSync(
       testConfig,
-      `extends: ${yamlPath(path.join(root, 'electron-builder.yml'))}
+      `extends: ${yamlPath(runtimeBuilderConfig)}
+appId: co.getoffgridai.desktop.packaged-helper-test
+productName: Off Grid AI Desktop
+electronDist: ${yamlPath(path.join(root, 'node_modules', 'electron', 'dist'))}
 directories:
   app: ${yamlPath(root)}
   output: ${yamlPath(packageOut)}
