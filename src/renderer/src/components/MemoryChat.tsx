@@ -186,6 +186,8 @@ interface MemoryChatProps {
   onNavigateToMemory?: (memoryId: number) => void
   onNavigateToChat?: (sessionId: string) => void
   onNavigateToEntity?: (entityId: number) => void
+  /** Open the Projects screen focused on this chat's linked project. */
+  onOpenProject?: (projectId: string) => void
   /** Open the Replay screen seeked to a capture's moment (epoch ms). */
   onSeekReplay?: (ts: number) => void
   /** Open a specific conversation, or start a new one scoped to a project. */
@@ -365,6 +367,7 @@ export function MemoryChat({
   onNavigateToMemory,
   onNavigateToChat,
   onNavigateToEntity,
+  onOpenProject,
   onSeekReplay,
   openTarget,
   onTargetConsumed
@@ -2232,9 +2235,20 @@ export function MemoryChat({
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-medium tracking-wide text-neutral-200">Off Grid AI</h2>
-          <p className="truncate text-xs text-neutral-500">
-            Private, on-device — chat, generate, and build
-          </p>
+          {activeProjectId && activeProjectName ? (
+            <button
+              onClick={() => onOpenProject?.(activeProjectId)}
+              title={`Open project “${activeProjectName}”`}
+              className="flex max-w-full items-center gap-1 truncate text-xs text-neutral-500 transition-colors hover:text-green-500"
+            >
+              <FolderOpen className="h-3 w-3 shrink-0" />
+              <span className="truncate">In {activeProjectName}</span>
+            </button>
+          ) : (
+            <p className="truncate text-xs text-neutral-500">
+              Private, on-device — chat, generate, and build
+            </p>
+          )}
         </div>
 
         {/* Active models — pick the model per modality (text/image/voice/STT) */}

@@ -972,6 +972,10 @@ function AppContent() {
                       onNavigateToMemory={handleSelectMemory}
                       onNavigateToChat={handleSelectChat}
                       onNavigateToEntity={handleSelectEntity}
+                      onOpenProject={(id) => {
+                        setSelectedProjectId(id)
+                        setViewMode('projects')
+                      }}
                       onSeekReplay={(ts) => {
                         setReplayTarget(ts || Date.now())
                         setViewMode('replay')
