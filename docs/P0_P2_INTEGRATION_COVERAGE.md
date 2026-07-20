@@ -5,46 +5,83 @@ Living status for the 155 release journeys in
 conservative: a unit test, source-reading assertion, rendered shell without the real behavior, or
 manual claim does not count as complete integration coverage.
 
-## Current status - 2026-07-19
+## Strict status - 2026-07-20
 
+- Counting rule:
+  - Complete means the decisive production collaborators run through the real application seam.
+  - A packaged or native-sensitive behavior needs an exact packaged/native proof.
+  - A test that replaces Off Grid code, preload/IPC ownership, persistence, or the decisive runtime
+    is partial. Partial does not count as done.
+  - A fake at a genuinely uncontrollable remote or OS boundary may support a seam test, but it does
+    not by itself prove the complete release journey.
 - Status snapshot:
-  - P0: 74 total, 72 covered, 2 left.
-  - P1: 71 total, 71 covered, 0 left.
-  - P2: 10 total, 10 covered, 0 left.
-  - Overall: 155 total, 153 covered, 2 left.
-- P0 handoff status:
-  - Every P0 journey with an automatable application seam is integration-covered.
-  - The current-HEAD local 0.0.40 Pro-capable app is installed at
-    `~/Applications/Off Grid AI Desktop.app`. The build and installed copy pass the positive ASAR
-    inventory, strict local codesign, and ASAR fuse gates. The prior packaged artifact passed the
-    8/8 UI and forged plaintext-license smoke gates before the final Safe Storage compatibility
-    change; the final manual launch is intentionally left to the tester.
-  - macOS bootstrap retains the legacy `Off Grid AI` Safe Storage namespace long enough to read
-    existing encrypted database keys, licenses, and connector secrets, then restores the canonical
-    visible product name before any ready-time service or server-only path.
-  - #1 and #2 remain open only as the locked and validly entitled install journeys against the one
-    final Developer ID-signed and notarized production artifact. The local Core and Pro DMGs are
-    diagnostic variants, not separate release artifacts.
-  - Local release-trust verification is unavailable because this Keychain has no Developer ID
-    Application certificate and private key. Apple Distribution does not satisfy the pinned release
-    gate. Credentialed CI must prove Developer ID, notarization, staple, and Gatekeeper acceptance.
-  - Signed macOS permission, global-hotkey, cross-app paste, and full-volume behavior still require
-    manual confirmation even where the application seam is integration-covered below.
-- Green gates today:
-  - Packaging regression focus: 1 file passed; 16 tests passed, including the macOS 13 package and
-    chat-engine deployment-target alignment guard.
-  - Core license policy: 3 files and 28 tests passed.
-  - Pro license/Upgrade integration: 2 files and 10 tests passed.
-  - Core full suite: 273 files passed, 1 skipped; 2,527 tests passed, 2 skipped.
-  - Pro full suite: 99 files passed; 1,038 tests passed.
-  - Core main, renderer, and Pro TypeScript projects pass.
-  - Core coverage: 95.57% statements, 90.67% branches, 95.94% functions, and 96.47% lines.
-  - Installed local app: version 0.0.40, minimum macOS 13.0, ASAR SHA-256
-    `102576b78b8fa7c71455e9cbd418cabb23a422f00cfb85c217e7616c7320846c`.
-- Local manual product testing is ready. Final release approval is still open for the credentialed
-  signed/notarized artifact and the manual release-device checks.
+  - P0: 74 total.
+  - P0 complete: 4.
+  - P0 partial: 68.
+  - P0 open: 2.
+  - P0 left: 70.
+  - P1: 71 total.
+  - P1 complete: 12.
+  - P1 partial: 59.
+  - P1 open: 0.
+  - P1 left: 59.
+  - P2: 10 total.
+  - P2 complete: 1.
+  - P2 partial: 9.
+  - P2 open: 0.
+  - P2 left: 9.
+  - Overall: 155 total.
+  - Overall complete: 17.
+  - Overall partial: 136.
+  - Overall open: 2.
+  - Overall left: 138.
+- Complete P0 journeys:
+  - #9 - Fresh onboarding completes.
+  - #79 - Gateway models endpoint.
+  - #87 - Replay timeline renders.
+  - #145 - Cold relaunch after forced quit.
+- Complete P1 journeys:
+  - #8 - Product identity is consistent.
+  - #12 - Onboarding resumes an interrupted model download.
+  - #29 - Delete an inactive model.
+  - #30 - Delete the active model.
+  - #89 - Replay opens the selected captured moment.
+  - #118 - Duplicate clipboard changes do not reorder the selected item.
+  - #119 - Clipboard captures native image bytes.
+  - #127 - Vault copy reaches the real OS clipboard.
+  - #129 - Runtime residency settings survive relaunch.
+  - #130 - Runtime residency controls use the real settings owner.
+  - #150 - Desktop collections respond at real Electron widths.
+  - #151 - Desktop keyboard focus is visible and ordered.
+- Complete P2 journeys:
+  - #59 - Project desktop layout.
+- Open journeys:
+  - #1 - Core DMG install against the final Developer ID-signed and notarized artifact.
+  - #2 - Pro entitlement/installation against that same final production artifact.
+- Corrective note:
+  - The prior `153 covered / 2 left` snapshot overcounted rendered tests, source guards, direct
+    database tests, and fake-boundary integrations as full release journeys.
+  - The detailed evidence below is retained as a useful test inventory, but every item not named in
+    the complete lists above is strictly partial until its missing production seam is added.
+  - TTS exposed this defect: the former download-to-speech test used a fake worker and could not
+    catch packaged module or ONNX model-loading failures.
+- Current local TTS correction:
+  - `/Applications/Off Grid AI Desktop.app` is version 0.0.40 with bundle id
+    `co.getoffgridai.desktop.pro`.
+  - The installed exact artifact imports `kokoro-js` from its integrity-checked ASAR, materializes
+    the ONNX model into a writable cache, and synthesized 100,844 bytes of non-zero PCM16 mono
+    24 kHz audio in the headless package probe.
+  - Installed ASAR SHA-256:
+    `041f576bdeb82b0332ede5346b1f3353831edcf1fb1035952caf50b8baf179e0`.
+  - The application now persists redacted main-process business/runtime diagnostics at
+    `~/Library/Application Support/Off Grid AI Desktop/logs/off-grid-ai-desktop.log`.
 
-## Covered P0 journeys
+## Prior evidence inventory
+
+The sections below describe the previously accumulated evidence. Their old `Covered` headings are
+historical labels, not strict completion claims. Use the strict snapshot above for release status.
+
+## Previously claimed P0 evidence
 
 - #3 - Fresh profile is truly fresh. `e2e/smoke.spec.ts` launches the built Electron app with a
   new temp `OFFGRID_USER_DATA` directory and verifies first-run onboarding and the preload bridge.
@@ -282,7 +319,7 @@ manual claim does not count as complete integration coverage.
   real user-data path cannot be selected; the defect where Core's tour opened the default profile
   is fixed.
 
-## Covered P1 journeys
+## Previously claimed P1 evidence
 
 - #8 - Window identity and product name. `product-identity.test.ts` locks package, builder, local
   Core/Pro build, renderer document, and runtime bootstrap names to `Off Grid AI Desktop`;
@@ -516,7 +553,7 @@ manual claim does not count as complete integration coverage.
   surface through Electron preload and IPC, proves purchase and Mobile links reach
   `shell.openExternal` with their production URLs, and verifies the Electron page never navigates.
 
-## Covered P2 journeys
+## Previously claimed P2 evidence
 
 - #44 - Rename conversation. `conversation-rename.dbtest.ts` renders production chat against real
   temp SQLite and proves scoped and unscoped rename update the sidebar and tab, survive remount,
@@ -548,7 +585,7 @@ manual claim does not count as complete integration coverage.
 - #124 - Clipboard retention applies. `clipboard-store.integration.test.ts` exercises the real
   retention-days and max-items policies against SQLite while preserving newer rows.
 
-## Left - package and install
+## Previously identified package/install gaps
 
 - #1 - Final production artifact installs cleanly and remains locked when unentitled.
   - Local 0.0.40 ad-hoc app: installed-copy launch and forged-license harness passed.
@@ -558,7 +595,7 @@ manual claim does not count as complete integration coverage.
     is part of the immediate manual pass.
   - Left: repeat the valid-license journey against the signed/notarized release artifact.
 
-## Next implementation order
+## Previous implementation order
 
 - Run #1 and #2 as locked and entitled states against the one signed, notarized production DMG on
   the release Mac. The release
