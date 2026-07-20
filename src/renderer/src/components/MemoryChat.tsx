@@ -584,6 +584,7 @@ export function MemoryChat({
   const [autoPlayId, setAutoPlayId] = useState<string | null>(null) // assistant reply to auto-speak once
   const [speakingId, setSpeakingId] = useState<string | null>(null)
   const [speakLoadingId, setSpeakLoadingId] = useState<string | null>(null)
+  const [speakError, setSpeakError] = useState<{ id: string; message: string } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [canvasWidth, setCanvasWidth] = useState<number | null>(null) // px; null = default 30vw
@@ -1844,8 +1845,10 @@ export function MemoryChat({
       if (speakingId === id || speakLoadingId === id) {
         setSpeakingId(null)
         setSpeakLoadingId(null)
+        setSpeakError(null)
         return
       }
+      setSpeakError(null)
       setSpeakLoadingId(id) // generating on-device — show a loading state
       try {
         const { dataUrl } = await window.api.speak(text)
@@ -1861,14 +1864,25 @@ export function MemoryChat({
           console.error('[tts] audio element error', audio.error)
           setSpeakingId((cur) => (cur === id ? null : cur))
           setSpeakLoadingId((cur) => (cur === id ? null : cur))
+          setSpeakError({
+            id,
+            message:
+              'Speech could not be played. Check your audio output, then try speaking the reply again.'
+          })
         }
         await audio.play()
         setSpeakLoadingId((cur) => (cur === id ? null : cur))
         setSpeakingId(id) // now actually speaking
       } catch (e) {
         console.error('[tts] failed', e)
+        if (!voiceMountedRef.current || speechRequestRef.current !== request) return
         setSpeakLoadingId((cur) => (cur === id ? null : cur))
         setSpeakingId((cur) => (cur === id ? null : cur))
+        setSpeakError({
+          id,
+          message:
+            'Speech could not be generated. Check that Text-to-speech is installed in Settings, then try again.'
+        })
       }
     },
     [speakingId, speakLoadingId]
@@ -3120,7 +3134,7 @@ export function MemoryChat({
                       ) : null}
 
                       {message.role === 'assistant' && !message.image ? (
-                        <div className="mt-1.5 flex items-center gap-3">
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                           <button
                             onClick={() => speakMessage(message.id, message.content)}
                             className={`flex items-center gap-1 text-[11px] transition-colors ${speakingId === message.id || speakLoadingId === message.id ? 'text-green-500' : 'text-neutral-600 hover:text-green-500'}`}
@@ -3316,6 +3330,14 @@ export function MemoryChat({
                               </svg>
                               Open canvas
                             </button>
+                          ) : null}
+                          {speakError?.id === message.id ? (
+                            <p
+                              role="alert"
+                              className="basis-full text-[11px] leading-4 text-red-400"
+                            >
+                              {speakError.message}
+                            </p>
                           ) : null}
                         </div>
                       ) : null}

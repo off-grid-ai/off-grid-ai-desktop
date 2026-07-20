@@ -114,9 +114,10 @@ describe('<MemoryChat/> - chat lifecycle integration (#36-#42, #47-#48)', () => 
     await user.click(await screen.findByRole('button', { name: 'Speak' }))
     await waitFor(() => expect(boundary.speechTurns).toHaveLength(1))
     await user.click(screen.getByRole('button', { name: /Generating/ }))
-    boundary.speechTurns[0]!.resolve({ dataUrl: 'data:audio/wav;base64,UklGRg==' })
+    boundary.speechTurns[0]!.reject(new Error('canceled synthesis settled late'))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Speak' })).toBeTruthy())
     expect(audios).toHaveLength(0)
+    expect(screen.queryByRole('alert')).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Speak' }))
     await waitFor(() => expect(boundary.speechTurns).toHaveLength(2))
@@ -127,6 +128,22 @@ describe('<MemoryChat/> - chat lifecycle integration (#36-#42, #47-#48)', () => 
 
     view.unmount()
     expect(audios[0]!.pause).toHaveBeenCalledOnce()
+  })
+
+  it('shows an actionable error when assistant speech cannot be generated (#105)', async () => {
+    const boundary = new ChatBoundary()
+    installBoundary(boundary)
+    const user = userEvent.setup()
+    renderChat({ conversationId: 'conversation-b' })
+
+    await user.click(await screen.findByRole('button', { name: 'Speak' }))
+    await waitFor(() => expect(boundary.speechTurns).toHaveLength(1))
+    boundary.speechTurns[0]!.reject(new Error('native worker unavailable'))
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(
+      /speech could not be generated.*text-to-speech is installed in settings/i
+    )
+    expect(screen.getByRole('button', { name: 'Speak' })).toBeTruthy()
   })
 
   it('streams and persists the first local reply in one assistant bubble (#32)', async () => {

@@ -53,6 +53,7 @@ import { CACHE_CLEANUP_CHANNEL } from '../shared/ipc-contracts'
 import { toResponseGenerationResult, type ResponseGenerationResult } from './llm/response-result'
 import { getAllPromptDefs } from './prompts'
 import { getPrompt, getPromptTemplate, resetPrompt } from './prompt-store'
+import { setupTtsIpc } from './tts-ipc'
 import {
   safeParseJson,
   tokenizeQuery,
@@ -467,6 +468,7 @@ export async function summarizeSession(sessionId: string): Promise<string | null
 
 export function setupIPC() {
   const db = getDB()
+  setupTtsIpc()
 
   ipcMain.handle('db:get-memories', (_, limit: number = 50, appName?: string) => {
     let query = 'SELECT * FROM memories '
@@ -1914,32 +1916,6 @@ export function setupIPC() {
   ipcMain.handle('skills:dir', async () => {
     const { skillsDir } = await import('./skills')
     return skillsDir()
-  })
-
-  // --- Voice output (TTS via Kokoro) --------------------------------------
-  ipcMain.handle('tts:voices', async () => {
-    const { listVoices } = await import('./tts')
-    try {
-      return await listVoices()
-    } catch (e) {
-      console.error('[tts] voices failed', e)
-      return []
-    }
-  })
-
-  ipcMain.handle('tts:speak', async (_e, text: string, voice?: string) => {
-    const { synthesize } = await import('./tts')
-    // Fall back to the user's saved voice (Settings → Voice) when none is passed.
-    let chosen = voice
-    if (!chosen) {
-      try {
-        const v = getSetting<string>('ttsVoice', '')
-        if (v) chosen = v
-      } catch {
-        /* default */
-      }
-    }
-    return synthesize(text, chosen)
   })
 
   // --- Voice input (STT via the active engine: whisper default / Parakeet opt-in) ---
