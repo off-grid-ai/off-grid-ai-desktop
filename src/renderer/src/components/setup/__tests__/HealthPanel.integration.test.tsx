@@ -16,7 +16,7 @@ import { HealthPanel } from '../HealthPanel'
 const tccBoundary = vi.hoisted(() => ({
   accessibility: true,
   screenRecording: false,
-  error: null as Error | null
+  error: null as unknown
 }))
 
 vi.mock('electron', () => ({
@@ -29,7 +29,7 @@ vi.mock('electron', () => ({
   systemPreferences: {
     isTrustedAccessibilityClient: () => tccBoundary.accessibility,
     getMediaAccessStatus: () => {
-      if (tccBoundary.error) throw tccBoundary.error
+      if (tccBoundary.error !== null) throw tccBoundary.error
       return tccBoundary.screenRecording ? 'granted' : 'denied'
     }
   },
@@ -52,6 +52,8 @@ class NativeIpcBoundary {
     return handler({}, ...args)
   }
 }
+
+const boundary = new NativeIpcBoundary()
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-system-health-'))
 const profile = path.join(root, 'profile')
@@ -119,7 +121,6 @@ beforeAll(async () => {
   executable(ffmpegPath, "process.stdout.write('ffmpeg version integration\\n')")
   executable(whisperPath, "process.stdout.write('usage: whisper-cli [options]\\n')")
 
-  const boundary = new NativeIpcBoundary()
   setupSystemStatusIpc(boundary)
   ;(globalThis as unknown as { window: { api: unknown } }).window.api = {
     systemHealth: async () => {
@@ -151,6 +152,11 @@ describe('<HealthPanel/> production status integration', () => {
     render(<HealthPanel />)
 
     await screen.findByRole('status', { name: 'Chat model (llama-server)' })
+    await expect(boundary.invoke('permissions:get-status')).resolves.toEqual({
+      accessibility: true,
+      screenRecording: false,
+      allGranted: false
+    })
     expect(latestComponent('chat').status).toBe('ready')
     expectRenderedRecord('chat')
     expect(latestComponent('helper-ffmpeg').status).toBe('installed')
@@ -179,6 +185,14 @@ describe('<HealthPanel/> production status integration', () => {
     tccBoundary.error = new Error('TCC database unavailable')
     await user.click(screen.getByRole('button', { name: 'Refresh' }))
     await waitFor(() => expect(latestComponent('permission-accessibility').status).toBe('down'))
+    expectRenderedRecord('permission-accessibility')
+    expectRenderedRecord('permission-screen-recording')
+
+    tccBoundary.error = 'TCC bridge unavailable'
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() =>
+      expect(latestComponent('permission-accessibility').detail).toContain('TCC bridge unavailable')
+    )
     expectRenderedRecord('permission-accessibility')
     expectRenderedRecord('permission-screen-recording')
 
