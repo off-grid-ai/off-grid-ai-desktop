@@ -57,3 +57,6 @@ scripts/dictation-hotkey/dictation-hotkey
 # Test coverage output
 coverage/
 swift-tests/**/.build/
+
+# Off Grid AI Pro early-bird campaign (customer PII + send tooling - do not commit)
+marketing/emails/pro-earlybird/

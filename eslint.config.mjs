@@ -91,6 +91,20 @@ const goldStandardRatchet = {
   }
 }
 
+const intentionalUnusedParameters = {
+  name: 'intentional unused parameters',
+  files: ['**/*.{js,mjs,ts,tsx}'],
+  rules: {
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      {
+        argsIgnorePattern: '^_',
+        destructuredArrayIgnorePattern: '^_'
+      }
+    ]
+  }
+}
+
 export default defineConfig(
   {
     ignores: [
@@ -129,6 +143,22 @@ export default defineConfig(
     rules: {
       ...eslintPluginReactHooks.configs.recommended.rules,
       ...eslintPluginReactRefresh.configs.vite.rules
+    }
+  },
+  intentionalUnusedParameters,
+  {
+    name: 'CommonJS build hooks',
+    files: ['scripts/resign.js'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off'
+    }
+  },
+  {
+    name: 'test boundary fakes',
+    files: ['**/*.{test,spec,dbtest}.{ts,tsx}', '**/__tests__/**/*.{ts,tsx}'],
+    rules: {
+      // Framework fakes such as ResizeObserver intentionally expose no-op methods.
+      '@typescript-eslint/no-empty-function': 'off'
     }
   },
   eslintConfigPrettier
