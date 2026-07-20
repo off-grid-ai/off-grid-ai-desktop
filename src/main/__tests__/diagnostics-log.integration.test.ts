@@ -2,7 +2,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { formatDiagnosticLog, writeDiagnosticLog } from '../diagnostics-log'
+import {
+  formatDiagnosticLog,
+  installIpcDiagnostics,
+  writeDiagnosticLog,
+  type IpcHandlerRegistrar
+} from '../diagnostics-log'
 import { formatConsoleMessage } from '../diagnostics-log'
 
 const originalLogPath = process.env.OFFGRID_DIAGNOSTIC_LOG
@@ -53,5 +58,59 @@ describe('diagnostic log', () => {
     expect(lines[0]).toContain('INFO [tts] request.started requestId="tts-1" chars=10')
     expect(lines[1]).toContain('INFO [tts] request.completed requestId="tts-1" wavBytes=100')
     expect(fs.statSync(logPath).mode & 0o777).toBe(0o600)
+  })
+
+  it('traces real handler lifecycles at the Electron boundary without logging payloads', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-ipc-diagnostics-'))
+    roots.push(root)
+    const logPath = path.join(root, 'desktop.log')
+    process.env.OFFGRID_DIAGNOSTIC_LOG = logPath
+
+    type Handler = (event: unknown, ...args: unknown[]) => unknown
+    const handlers = new Map<string, Handler>()
+    const registrar: IpcHandlerRegistrar = {
+      handle: (channel, listener) => handlers.set(channel, listener)
+    }
+
+    installIpcDiagnostics(registrar)
+    installIpcDiagnostics(registrar)
+    registrar.handle('chat:send', (_event, ...args) => {
+      expect(args).toEqual(['private prompt text'])
+      return { reply: String(args[0]).length }
+    })
+    registrar.handle('models:download', () => {
+      const error = new Error('request failed token=private-token') as Error & { code: string }
+      error.code = 'DOWNLOAD_FAILED'
+      throw error
+    })
+
+    await expect(handlers.get('chat:send')?.({}, 'private prompt text')).resolves.toEqual({
+      reply: 19
+    })
+    await expect(handlers.get('models:download')?.({})).rejects.toThrow('request failed')
+
+    const output = fs.readFileSync(logPath, 'utf8')
+    const started = output.match(/request\.started requestId="([^"]+)" channel="chat:send"/)
+    expect(started?.[1]).toBeTruthy()
+    expect(output).toContain(
+      `request.completed requestId="${started?.[1]}" channel="chat:send" durationMs=`
+    )
+    expect(output).toContain('channel="models:download"')
+    expect(output).toContain('errorCode="DOWNLOAD_FAILED"')
+    expect(output).toContain('token=[redacted]')
+    expect(output).not.toContain('private-token')
+    expect(output).not.toContain('private prompt text')
+    expect(output).not.toContain('reply')
+    expect(output.match(/tracing\.installed/g)).toHaveLength(1)
+  })
+
+  it('installs IPC tracing before core and Pro handler registration', () => {
+    const mainSource = fs.readFileSync(path.resolve(import.meta.dirname, '../index.ts'), 'utf8')
+    const tracing = mainSource.indexOf('installIpcDiagnostics(ipcMain)')
+
+    expect(tracing).toBeGreaterThan(-1)
+    expect(tracing).toBeLessThan(mainSource.indexOf('setupLicenseIpc()', tracing))
+    expect(tracing).toBeLessThan(mainSource.indexOf('setupIPC()', tracing))
+    expect(tracing).toBeLessThan(mainSource.indexOf('loadProFeaturesMain()', tracing))
   })
 })

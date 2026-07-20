@@ -4,6 +4,11 @@ import { dataDir } from './runtime-env'
 
 export type DiagnosticLevel = 'info' | 'warn' | 'error'
 export type DiagnosticValue = string | number | boolean | null | undefined
+type IpcHandler = (event: unknown, ...args: unknown[]) => unknown
+
+export interface IpcHandlerRegistrar {
+  handle(channel: string, listener: IpcHandler): void
+}
 
 const MAX_LOG_BYTES = 5 * 1024 * 1024
 const MAX_VALUE_CHARS = 1_500
@@ -116,6 +121,69 @@ export function writeDiagnosticLog(
 }
 
 let consoleCaptureInstalled = false
+const tracedIpcRegistrars = new WeakSet<object>()
+let ipcRequestSequence = 0
+
+function ipcErrorFields(error: unknown): Record<string, DiagnosticValue> {
+  const normalized = error instanceof Error ? error : new Error(String(error))
+  const candidateCode =
+    typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
+  return {
+    errorName: normalized.name,
+    error: normalized.message,
+    errorCode:
+      typeof candidateCode === 'string' || typeof candidateCode === 'number'
+        ? candidateCode
+        : undefined
+  }
+}
+
+/** Trace every request-response IPC lifecycle without persisting arguments or results. */
+export function installIpcDiagnostics(registrar: IpcHandlerRegistrar): void {
+  if (tracedIpcRegistrars.has(registrar)) return
+  tracedIpcRegistrars.add(registrar)
+
+  const register = registrar.handle.bind(registrar)
+  Object.defineProperty(registrar, 'handle', {
+    configurable: true,
+    writable: true,
+    value(channel: string, listener: IpcHandler): void {
+      register(channel, async (event: unknown, ...args: unknown[]) => {
+        const requestId = `ipc-${process.pid}-${++ipcRequestSequence}`
+        const startedAt = Date.now()
+        writeDiagnosticLog('ipc', 'request.started', {
+          requestId,
+          channel,
+          argumentCount: args.length
+        })
+        try {
+          const result = await listener(event, ...args)
+          writeDiagnosticLog('ipc', 'request.completed', {
+            requestId,
+            channel,
+            durationMs: Date.now() - startedAt
+          })
+          return result
+        } catch (error) {
+          writeDiagnosticLog(
+            'ipc',
+            'request.failed',
+            {
+              requestId,
+              channel,
+              durationMs: Date.now() - startedAt,
+              ...ipcErrorFields(error)
+            },
+            'error'
+          )
+          throw error
+        }
+      })
+    }
+  })
+
+  writeDiagnosticLog('ipc', 'tracing.installed')
+}
 
 /** Capture every existing main-process console event in the private rotating log. */
 export function installDiagnosticConsoleCapture(): void {

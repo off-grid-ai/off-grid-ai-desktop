@@ -36,7 +36,11 @@ import { PRODUCT_NAME } from '../shared/product-identity'
 import { installMediaPermissionHandler } from './media-permission'
 import { localMediaRoots } from './media-roots'
 import { beginProductIdentityBootstrap } from './product-identity-lifecycle'
-import { installDiagnosticConsoleCapture, writeDiagnosticLog } from './diagnostics-log'
+import {
+  installDiagnosticConsoleCapture,
+  installIpcDiagnostics,
+  writeDiagnosticLog
+} from './diagnostics-log'
 
 // Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
 // must never crash main via an uncaught EPIPE. See stream-guards.ts.
@@ -296,6 +300,7 @@ app.whenReady().then(() => {
 
   // 2. Setup IPC Handlers (core) + the local model gateway
   try {
+    installIpcDiagnostics(ipcMain)
     // Licensing first: load the cached Keygen entitlement into memory and register
     // the SYNC `pro:is-enabled` handler BEFORE createWindow() (line below) so the
     // preload's sendSync resolves and window.api.isPro reflects the real license.
