@@ -5,12 +5,13 @@
 // loopback. Uses PKCE + dynamic client registration (no per-provider client_id
 // to pre-bake). Tokens auto-refresh via the SDK on later calls.
 
-import http from 'http'
 import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { app, shell } from 'electron'
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
 import { getSecret, setSecret, deleteSecret } from './secrets'
+import { OAuthLoopbackServer } from './mcp-oauth-loopback'
 
 // The Off Grid brand mark, served by the loopback at /oglogo.png so the consent
 // success page (and its favicon) show the real logo instead of a generic glyph.
@@ -35,7 +36,6 @@ function logoBytes(): Buffer | null {
 }
 
 const REDIRECT_PORT = 33418
-const REDIRECT_URL = `http://127.0.0.1:${REDIRECT_PORT}/callback`
 
 // A pre-registered OAuth client to use INSTEAD of dynamic client registration.
 // Google has no DCR, so we ship a client_id/secret and pin the request to a
@@ -46,12 +46,16 @@ export interface StaticOAuthClient {
   scope: string
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface OffGridOAuthClientProvider extends OAuthClientProvider {
+  getCodePromise(): Promise<string>
+  invalidateCredentials(scope: 'all' | 'client' | 'tokens' | 'verifier' | 'discovery'): void
+}
+
 export function makeOAuthProvider(
   connectorId: number,
   google?: StaticOAuthClient,
   interactive = true
-): any {
+): OffGridOAuthClientProvider {
   const skey = (k: string): string => `connector:${connectorId}:oauth:${k}`
   const loadJson = <T>(k: string): T | undefined => {
     const v = getSecret(skey(k))
@@ -60,6 +64,7 @@ export function makeOAuthProvider(
   // Set when redirectToAuthorization runs (during connect, before it throws), so
   // the caller can await the code routed back to us by `state`.
   let pendingCode: Promise<string> | null = null
+  let pendingState: string | null = null
 
   return {
     getCodePromise(): Promise<string> {
@@ -67,12 +72,12 @@ export function makeOAuthProvider(
       return pendingCode
     },
     get redirectUrl(): string {
-      return REDIRECT_URL
+      return oauthLoopback.redirectUrl
     },
     get clientMetadata() {
       return {
         client_name: 'Off Grid AI Desktop',
-        redirect_uris: [REDIRECT_URL],
+        redirect_uris: [oauthLoopback.redirectUrl],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         // Google Desktop clients send the secret on token exchange; DCR uses none.
@@ -106,7 +111,7 @@ export function makeOAuthProvider(
       if (!v) throw new Error('missing PKCE code verifier')
       return v
     },
-    redirectToAuthorization(url: URL): void {
+    async redirectToAuthorization(url: URL): Promise<void> {
       // Background (non-interactive) connects must NEVER pop a login — if the
       // saved token is stale, the sync just fails quietly and the user can
       // reconnect from the UI. Only interactive connects open the browser.
@@ -121,8 +126,28 @@ export function makeOAuthProvider(
       }
       // Register for the redirect (keyed by state) BEFORE opening the browser, so
       // even an instant skip-consent redirect is caught by the persistent server.
-      pendingCode = awaitOAuthCode(url.searchParams.get('state') ?? '')
-      shell.openExternal(url.toString())
+      const state = url.searchParams.get('state')
+      if (!state) throw new Error('OAuth authorization URL is missing state')
+      await oauthLoopback.start()
+      if (pendingState) {
+        oauthLoopback.cancel(pendingState, new Error('Authorization superseded by a newer request'))
+      }
+      pendingCode = oauthLoopback.awaitCode(state)
+      pendingState = state
+      void pendingCode.then(
+        () => {
+          if (pendingState === state) pendingState = null
+        },
+        () => {
+          if (pendingState === state) pendingState = null
+        }
+      )
+      try {
+        await shell.openExternal(url.toString())
+      } catch (error) {
+        oauthLoopback.cancel(state, new Error('Unable to open OAuth authorization URL'))
+        throw error
+      }
     },
     invalidateCredentials(scope: 'all' | 'client' | 'tokens' | 'verifier' | 'discovery'): void {
       if (scope === 'all' || scope === 'tokens') deleteSecret(skey('tokens'))
@@ -140,78 +165,19 @@ export function hasOAuthTokens(connectorId: number): boolean {
 const SUCCESS_HTML = (err: string | null): string =>
   `<!doctype html><html><head><meta charset="utf-8"><title>Off Grid AI Desktop</title><link rel="icon" type="image/png" href="/oglogo.png"></head><body style="font-family:Menlo,ui-monospace,monospace;background:#0a0a0a;color:#e5e5e5;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><img src="/oglogo.png" alt="Off Grid" width="80" height="80" style="border-radius:18px;margin:0 auto 20px;display:block"><h2 style="color:#34D399;font-weight:500">${err ? 'Authorization failed' : 'Connected to Off Grid'}</h2><p style="color:#737373">You can close this tab and return to the app.</p></div></body></html>`
 
-// ONE persistent loopback server for the whole app lifetime. Each authorization
-// is keyed by its OAuth `state`, so concurrent/retried connects never collide on
-// the port and a code is always routed to the right request. This replaces the
-// fragile per-attempt servers (which caused ERR_CONNECTION_REFUSED races).
-interface Pending {
-  resolve: (c: string) => void
-  reject: (e: Error) => void
-  timer: ReturnType<typeof setTimeout>
-}
-const pendingByState = new Map<string, Pending>()
-let loopback: http.Server | null = null
+// ONE persistent loopback server for the whole app lifetime. The server owns
+// exact state admission, expiry, one-time consumption, and concurrent routing.
+const oauthLoopback = new OAuthLoopbackServer({
+  port: REDIRECT_PORT,
+  renderCompletionPage: SUCCESS_HTML,
+  logoBytes,
+  onError: (error) => console.error('[oauth] loopback error', error),
+  // eslint-disable-next-line no-console -- listener readiness is an operational lifecycle event
+  onListening: (port) => console.log('[oauth] loopback listening on', port)
+})
 
 export function ensureLoopback(): void {
-  if (loopback) return
-  const server = http.createServer((req, res) => {
-    try {
-      const u = new URL(req.url ?? '', REDIRECT_URL)
-      if (u.pathname === '/oglogo.png') {
-        const b = logoBytes()
-        if (b) {
-          res.writeHead(200, { 'Content-Type': 'image/png' })
-          res.end(b)
-        } else {
-          res.writeHead(404)
-          res.end()
-        }
-        return
-      }
-      if (!u.pathname.startsWith('/callback')) {
-        res.writeHead(404)
-        res.end()
-        return
-      }
-      const state = u.searchParams.get('state') ?? ''
-      const code = u.searchParams.get('code')
-      const err = u.searchParams.get('error')
-      res.writeHead(200, { 'Content-Type': 'text/html' })
-      res.end(SUCCESS_HTML(err))
-      // Match by state; if the provider didn't echo one, fall back to the sole
-      // pending request (the common single-connect case).
-      const p =
-        pendingByState.get(state) ??
-        (pendingByState.size === 1 ? [...pendingByState.values()][0] : undefined)
-      if (!p) return
-      pendingByState.delete(state)
-      clearTimeout(p.timer)
-      if (err) p.reject(new Error(`OAuth error: ${err}`))
-      else if (code) p.resolve(code)
-      else p.reject(new Error('No authorization code in redirect'))
-    } catch {
-      /* ignore malformed callback */
-    }
-  })
-  server.on('error', (e) => {
-    console.error('[oauth] loopback error', e)
-    loopback = null
-  })
-  server.listen(REDIRECT_PORT, '127.0.0.1', () => {
-    loopback = server
-    console.log('[oauth] loopback listening on', REDIRECT_PORT)
-  })
-  loopback = server // mark immediately so we don't double-bind
-}
-
-/** Register interest in the code for an OAuth `state` (server already listening). */
-function awaitOAuthCode(state: string, timeoutMs = 3 * 60 * 1000): Promise<string> {
-  ensureLoopback()
-  return new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pendingByState.delete(state)
-      reject(new Error('Authorization timed out'))
-    }, timeoutMs)
-    pendingByState.set(state, { resolve, reject, timer })
+  void oauthLoopback.start().catch(() => {
+    // The server logs its actionable startup error through the shared owner.
   })
 }
