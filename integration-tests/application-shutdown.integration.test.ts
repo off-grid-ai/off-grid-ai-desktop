@@ -5,7 +5,7 @@ import {
   registerCoreShutdownOwners,
   type ApplicationQuitSource
 } from '../src/main/shutdown'
-import { createProServiceShutdownOwner } from '../pro/main/service-shutdown'
+import { registerRuntime, shutdownRuntimes, type ManagedRuntime } from '../src/main/runtime-manager'
 
 class QuitBoundary implements ApplicationQuitSource {
   private readonly listeners = new Set<() => void>()
@@ -75,20 +75,21 @@ describe('application shutdown integration', () => {
     const tray = resource(trace, 'pro:tray')
     const recorder = resource(trace, 'pro:recorder')
 
-    registry.register(
-      createProServiceShutdownOwner({
-        cancelScheduledWork: () => scheduled.stop(),
-        unsubscribeCapture: () => captureSubscription.stop(),
-        unsubscribeSystemLifecycle: () => lifecycleSubscription.stop(),
-        stopCapture: () => captureLoop.stop(),
-        stopMeetingLoop: () => meetingLoop.stop(),
-        stopDictation: () => dictationHelper.stop(),
-        stopConsole: () => consoleLoop.stop(),
-        detachMeetingTray: () => meetingTrayHook.stop(),
-        destroyTray: () => tray.stop(),
-        stopRecording: async () => recorder.stop()
-      })
-    )
+    registry.register({
+      name: 'pro:services',
+      shutdown: async () => {
+        scheduled.stop()
+        captureSubscription.stop()
+        lifecycleSubscription.stop()
+        captureLoop.stop()
+        meetingLoop.stop()
+        dictationHelper.stop()
+        consoleLoop.stop()
+        meetingTrayHook.stop()
+        tray.stop()
+        recorder.stop()
+      }
+    })
 
     installApplicationShutdown(source, registry)
     expect(source.listenerCount).toBe(1)
@@ -150,5 +151,70 @@ describe('application shutdown integration', () => {
 
     await Promise.resolve()
     expect(active).toBe(false)
+  })
+
+  it('isolates owner failures and supports removing an owner before shutdown', async () => {
+    const registry = new ShutdownRegistry()
+    const expected = new Error('native stop failed')
+    let removedOwnerActive = true
+    let healthyOwnerActive = true
+    const unregister = registry.register({
+      name: 'removed',
+      shutdown: () => {
+        removedOwnerActive = false
+      }
+    })
+    unregister()
+    registry.register({
+      name: 'failure',
+      shutdown: () => {
+        throw expected
+      }
+    })
+    registry.register({
+      name: 'healthy',
+      shutdown: () => {
+        healthyOwnerActive = false
+      }
+    })
+
+    const failures = await registry.shutdown()
+    expect(removedOwnerActive).toBe(true)
+    expect(healthyOwnerActive).toBe(false)
+    expect(failures).toEqual([{ owner: 'failure', error: expected }])
+  })
+
+  it('rejects duplicate ownership and permits manual quit-listener removal', () => {
+    const registry = new ShutdownRegistry()
+    registry.register({ name: 'one-owner', shutdown: () => {} })
+    expect(() => registry.register({ name: 'one-owner', shutdown: () => {} })).toThrow(
+      'Shutdown owner already registered: one-owner'
+    )
+
+    const source = new QuitBoundary()
+    const remove = installApplicationShutdown(source, registry)
+    remove()
+    remove()
+    expect(source.listenerCount).toBe(0)
+  })
+
+  it('stops every real managed runtime and immediately evicts late async registration', async () => {
+    const evicted: string[] = []
+    const runtime = (modality: ManagedRuntime['modality']): ManagedRuntime => ({
+      modality,
+      evict: () => {
+        evicted.push(modality)
+      },
+      warm: () => {},
+      release: () => {}
+    })
+    registerRuntime(runtime('llm'))
+    registerRuntime(runtime('tts'))
+
+    await shutdownRuntimes()
+    registerRuntime(runtime('image'))
+    await Promise.resolve()
+
+    expect(evicted).toEqual(['tts', 'llm', 'image'])
   })
 })

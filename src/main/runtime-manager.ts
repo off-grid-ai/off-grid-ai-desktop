@@ -69,7 +69,9 @@ export async function shutdownRuntimes(): Promise<void> {
   shuttingDown = true
   const runtimes = [...registry.values()].reverse()
   registry.clear()
-  const results = await Promise.allSettled(runtimes.map((runtime) => runtime.evict()))
+  const results = await Promise.allSettled(
+    runtimes.map((runtime) => Promise.resolve().then(() => runtime.evict()))
+  )
   const failure = results.find((result) => result.status === 'rejected')
   if (failure?.status === 'rejected') throw failure.reason
 }
