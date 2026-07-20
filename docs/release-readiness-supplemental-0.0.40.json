@@ -90,9 +90,9 @@
     "status": "PARTIAL",
     "layer": "Integration + package gate",
     "evidence": "src/main/__tests__/updater.test.ts; src/main/__tests__/update-check.integration.dbtest.ts; src/main/__tests__/mac-release-assets.integration.test.ts; pro/main/__tests__/upgrade-profile.dbtest.ts",
-    "proof": "Updater state, release assets, schema owners, and representative prior-profile migrations are automated separately.",
+    "proof": "Updater state and release assets remain separate, while the pinned 0.0.39 Core+Pro profile now runs current schema owners under a forced SQLite-full interruption, proves rollback preserves user data and encrypted entitlement, then reopens, completes the 0.0.40 migration, writes new data, and survives another relaunch.",
     "remaining": "Join them through the real CDN/feed, signed ZIP, OS restart, Keychain, and installed application.",
-    "confidence": "LOW",
+    "confidence": "MEDIUM",
     "notes": "Run both locked and entitled upgrade fixtures."
   },
   {
@@ -106,9 +106,9 @@
     "status": "PARTIAL",
     "layer": "Database integration",
     "evidence": "pro/main/__tests__/upgrade-profile.dbtest.ts; src/main/__tests__/settings-persistence.dbtest.ts; pro/main/__tests__/crm-schema-upgrade.dbtest.ts",
-    "proof": "Pinned legacy schemas migrate through real Core and Pro database owners.",
+    "proof": "The pinned 0.0.39 schema carries chats, memory, projects, documents, actions, observations, settings, model selections, and encrypted entitlement through real Core and Pro owners. A forced SQLite-full failure rolls back atomically; storage recovery and two module/database relaunches complete idempotently without data loss or duplication.",
     "remaining": "Upgrade complete real prior-version profiles through the installed artifact and macOS Keychain.",
-    "confidence": "LOW",
+    "confidence": "MEDIUM",
     "notes": "Use backed-up synthetic profiles."
   },
   {

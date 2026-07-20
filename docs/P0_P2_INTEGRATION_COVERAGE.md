@@ -138,9 +138,12 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   `@rpath` closure, non-symlink staging, exact deployment-target comparison, and rejection of both
   `/opt/homebrew` and `/usr/local` dependencies.
 - #7 - Upgrade preserves user data. Pro `upgrade-profile.dbtest.ts` loads a fixture pinned to the
-  previous release's Core and Pro schemas, runs current migrations and owners, then relaunches and
-  proves chats, memory, projects, knowledge, settings, Pro data, entitlement, and model selections
-  remain intact. Signed installer replacement remains a separate device check.
+  previous release's Core and Pro schemas, forces the current Pro migration to fail with SQLite
+  `FULL`, proves the transaction leaves chats, Pro observations, and encrypted entitlement intact,
+  then reopens the same profile, completes current migrations and owners, and relaunches again.
+  Chats, memory, projects, knowledge, settings, Pro data, entitlement, model selections, and new
+  post-upgrade writes all remain intact. Signed installer replacement remains a separate device
+  check.
 - #9 - Fresh onboarding completes. `e2e/smoke.spec.ts` drives the real onboarding flow and lands on
   Models.
 - #10 - Configure for me completes. `model-server-chat.integration.test.ts` runs production
