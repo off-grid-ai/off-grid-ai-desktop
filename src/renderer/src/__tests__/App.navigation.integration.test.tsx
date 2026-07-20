@@ -11,6 +11,12 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  APP_PROJECTS,
+  installAppBoundary,
+  installAppBrowserBoundary,
+  installAppStorage
+} from './harness/app-boundary'
 
 const rendererActivation = vi.hoisted(() => ({
   load: vi.fn<() => Promise<void>>()
@@ -22,112 +28,23 @@ vi.mock('../bootstrap/loadProFeaturesRenderer', () => ({
 
 let App: typeof import('../App').default
 
-const PROJECTS = Array.from({ length: 12 }, (_, index) => {
-  const suffix = index === 0 ? 'Alpha' : index === 1 ? 'Beta' : String(index + 1).padStart(2, '0')
-  return {
-    id: `project-${suffix.toLowerCase()}`,
-    name: `Project ${suffix}`,
-    description: '',
-    systemPrompt: '',
-    includeMemory: false,
-    updatedAt: '2026-07-17T00:00:00.000Z'
-  }
-})
-
-function installBoundary(overrides: Record<string, unknown> = {}): void {
-  const eventSubscription = (): (() => void) => () => {}
-  const values: Record<string, unknown> = {
-    isPro: false,
-    platform: 'darwin',
-    getPermissionStatus: async () => ({
-      accessibility: true,
-      screenRecording: true,
-      allGranted: true
-    }),
-    checkModelStatus: async () => ({ downloaded: true, modelsDir: '/tmp/models' }),
-    systemHealth: async () => ({ ramGb: 16, components: [{ id: 'chat', status: 'ready' }] }),
-    getStagedUpdateVersion: async () => null,
-    meetingGetState: async () => ({
-      recording: false,
-      busy: false,
-      platform: null,
-      startedAt: 0,
-      warnUntil: 0,
-      error: ''
-    }),
-    getModelCatalog: async () => ({ kinds: ['text'], models: [] }),
-    getInstalledModels: async () => [],
-    getActiveModelIds: async () => [],
-    listProjects: async () => PROJECTS.map((project) => ({ ...project })),
-    getRagConversations: async () => [],
-    getSettings: async () => ({}),
-    onNewApproval: eventSubscription,
-    onNewAction: eventSubscription,
-    onUpdateDownloaded: eventSubscription,
-    onReprocessProgress: eventSubscription,
-    onNavigate: eventSubscription,
-    onMeetingState: eventSubscription,
-    onModelProgress: eventSubscription,
-    proOn: eventSubscription,
-    ...overrides
-  }
-  const api = new Proxy(values, {
-    get(target, property: string) {
-      if (property in target) return target[property]
-      return async () => undefined
-    }
-  })
-  ;(globalThis as unknown as { window: { api: unknown } }).window.api = api
-}
-
-function installStorage(): Storage {
-  const values = new Map<string, string>()
-  const storage: Storage = {
-    get length() {
-      return values.size
-    },
-    clear: () => values.clear(),
-    getItem: (key) => values.get(key) ?? null,
-    key: (index) => [...values.keys()][index] ?? null,
-    removeItem: (key) => values.delete(key),
-    setItem: (key, value) => values.set(key, String(value))
-  }
-  Object.defineProperty(window, 'localStorage', { configurable: true, value: storage })
-  vi.stubGlobal('localStorage', storage)
-  return storage
-}
-
-function installBrowserBoundary(): void {
-  vi.stubGlobal('__OFFGRID_PRO__', false)
-  ;(globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver = class {
-    observe(): void {}
-    unobserve(): void {}
-    disconnect(): void {}
-  }
-  window.matchMedia = vi.fn().mockReturnValue({
-    matches: false,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn()
-  })
-}
-
 describe('<App/> desktop navigation integration', () => {
   beforeAll(async () => {
     // App's renderer graph includes modules that capture the preload bridge at
     // module initialization. Install that real boundary once, then keep module
     // loading outside the interaction assertion's timeout budget.
-    installBoundary()
-    installBrowserBoundary()
+    installAppBoundary()
+    installAppBrowserBoundary()
     ;({ default: App } = await import('../App'))
   }, 30_000)
 
   beforeEach(() => {
     vi.clearAllMocks()
     rendererActivation.load.mockResolvedValue(undefined)
-    installStorage().setItem('onboarding_completed', 'true')
+    installAppStorage().setItem('onboarding_completed', 'true')
     window.history.replaceState(null, '', '/projects')
-    installBoundary()
-    installBrowserBoundary()
+    installAppBoundary()
+    installAppBrowserBoundary()
   })
 
   afterEach(() => {
@@ -144,7 +61,7 @@ describe('<App/> desktop navigation integration', () => {
       await screen.findByRole('heading', { name: 'Projects' }, { timeout: 5_000 })
     ).not.toBeNull()
     await Promise.all(
-      PROJECTS.map((project) => screen.findByRole('button', { name: project.name }))
+      APP_PROJECTS.map((project) => screen.findByRole('button', { name: project.name }))
     )
     await user.click(await screen.findByRole('button', { name: 'Project Beta' }))
     expect(screen.getAllByText('Project Beta')).toHaveLength(2)
@@ -187,7 +104,7 @@ describe('<App/> desktop navigation integration', () => {
     const onNewApproval = vi.fn(() => () => {})
     const onNewAction = vi.fn(() => () => {})
     const proOn = vi.fn(() => () => {})
-    installBoundary({ isPro: true, onNewApproval, onNewAction, proOn })
+    installAppBoundary({ isPro: true, onNewApproval, onNewAction, proOn })
 
     render(<App />)
     await waitFor(() => expect(rendererActivation.load).toHaveBeenCalledTimes(1))

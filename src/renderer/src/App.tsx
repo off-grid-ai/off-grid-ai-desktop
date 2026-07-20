@@ -413,7 +413,7 @@ function AppContent() {
 
   // Subscribe to notification events from the main process
   useEffect(() => {
-    if (!proReady) return
+    if (!proReady || !isPro) return
     const unsubscribers: (() => void)[] = []
 
     // Proactive approval queued — needs the user's decision
@@ -470,7 +470,7 @@ function AppContent() {
     return () => {
       unsubscribers.forEach((unsub) => unsub())
     }
-  }, [addNotification, proReady])
+  }, [addNotification, isPro, proReady])
 
   // Navigate back using history stack
   const navigateBack = useCallback(() => {
@@ -596,12 +596,12 @@ function AppContent() {
   }, [])
 
   useEffect(() => {
-    if (!proReady) return
+    if (!proReady || !isPro) return
     return window.api.proOn?.(NOTIFICATION_OPEN_TARGET_CHANNEL, (rawTarget) => {
       const destination = callHook<ProNavigationIntent>(NOTIFICATION_RESOLVE_TARGET_HOOK, rawTarget)
       if (destination) handleProNavigate(destination)
     })
-  }, [handleProNavigate, proReady])
+  }, [handleProNavigate, isPro, proReady])
 
   // Deep-link targets (Replay moment, specific meeting) are one-shot: clear them
   // only when we ACTUALLY LEAVE the screen that consumes them — tracked against the
@@ -840,7 +840,11 @@ function AppContent() {
       <div className="flex h-full relative z-10">
         {/* Aceternity Sidebar */}
         <Sidebar open={sidebarOpen} setOpen={setSidebarOpen}>
-          <SidebarBody className="justify-between gap-3 bg-neutral-900/80 backdrop-blur-xl border-r border-neutral-800">
+          <SidebarBody
+            role="navigation"
+            aria-label="Primary navigation"
+            className="justify-between gap-3 bg-neutral-900/80 backdrop-blur-xl border-r border-neutral-800"
+          >
             <div className="flex min-h-0 flex-1 flex-col">
               {/* Brand + a dedicated collapse/expand toggle */}
               {sidebarOpen ? (
