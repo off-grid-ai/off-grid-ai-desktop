@@ -139,6 +139,12 @@ describe('P0-P2 integration coverage ledger', () => {
       'Automated test evidence',
       'What automation proves',
       'What remains manual',
+      'Automation coverage %',
+      'Manual verification %',
+      'Release readiness %',
+      'Remaining gap %',
+      'Work state',
+      'Gap-closing action',
       'Regression confidence',
       'Confidence rationale',
       'Manual result',
@@ -176,6 +182,13 @@ describe('P0-P2 integration coverage ledger', () => {
       expect(row[column('Automated test exists')]).toBe(status === 'OPEN' ? 'No' : 'Yes')
       expect(row[column('What automation proves')]).not.toHaveLength(0)
       expect(row[column('What remains manual')]).not.toHaveLength(0)
+      expect(Number(row[column('Automation coverage %')])).toBeGreaterThanOrEqual(0)
+      expect(Number(row[column('Automation coverage %')])).toBeLessThanOrEqual(100)
+      expect(row[column('Manual verification %')]).toMatch(/^=IF\(/)
+      expect(row[column('Release readiness %')]).toMatch(/^=IF\(/)
+      expect(row[column('Remaining gap %')]).toMatch(/^=100-/)
+      expect(row[column('Work state')]).toMatch(/^=IF\(/)
+      expect(row[column('Gap-closing action')]).not.toHaveLength(0)
       expect(['LOW', 'MEDIUM', 'HIGH']).toContain(row[column('Regression confidence')])
       expect(row[column('Confidence rationale')]).not.toHaveLength(0)
       expect(row[column('Manual result')]).toBe('NOT RUN')

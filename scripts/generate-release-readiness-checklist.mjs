@@ -169,6 +169,43 @@ function confidenceReason(status, confidence) {
   return 'Useful real integration exists, but at least one rendered, persistence, runtime, or full-journey seam is still substituted or separate.'
 }
 
+function automationCoverage(status, layer, confidence) {
+  if (status === 'COMPLETE') return 100
+  if (status === 'OPEN') return 0
+
+  const normalized = layer.toLowerCase()
+  let score = 40
+  if (normalized.includes('e2e') && normalized.includes('integration')) score = 80
+  else if (normalized.includes('package') && normalized.includes('integration')) score = 75
+  else if (normalized.includes('e2e')) score = 70
+  else if (normalized.includes('integration') || normalized.includes('dbtest')) score = 65
+  else if (normalized.includes('package') || normalized.includes('contract')) score = 50
+
+  if (confidence === 'LOW') score -= 10
+  else if (confidence === 'HIGH') score += 5
+  return Math.max(25, Math.min(85, score))
+}
+
+function progressColumns(status, layer, confidence, remaining, sheetRow) {
+  const automated = automationCoverage(status, layer, confidence)
+  const manualResultCell = `W${sheetRow}`
+  const automationCell = `O${sheetRow}`
+  const manualCell = `P${sheetRow}`
+  const readinessCell = `Q${sheetRow}`
+  const statusCell = `J${sheetRow}`
+  const manual = `=IF(${manualResultCell}="PASS",100,0)`
+  const readiness = `=IF(OR(${manualResultCell}="FAIL",${manualResultCell}="BLOCKED"),0,ROUND(${automationCell}*0.7+${manualCell}*0.3,0))`
+  const gap = `=100-${readinessCell}`
+  const workState = `=IF(OR(${manualResultCell}="FAIL",${manualResultCell}="BLOCKED"),"BLOCKED",IF(AND(${statusCell}="COMPLETE",${manualResultCell}="PASS"),"DONE",IF(${statusCell}="COMPLETE","MANUAL VERIFICATION LEFT",IF(${statusCell}="PARTIAL","AUTOMATION + MANUAL LEFT","NOT AUTOMATED"))))`
+  const action =
+    status === 'COMPLETE'
+      ? `Execute and attach evidence for the remaining manual boundary: ${remaining}`
+      : status === 'PARTIAL'
+        ? `Join the split automation seams into one production journey, then verify: ${remaining}`
+        : `Add a no-mockist production integration or E2E journey, then verify: ${remaining}`
+  return [automated, manual, readiness, gap, workState, action]
+}
+
 function remainingBoundary(status, row, evidence) {
   const title = row[2]
   if (status === 'OPEN') {
@@ -206,6 +243,12 @@ const outputHeader = [
   'Automated test evidence',
   'What automation proves',
   'What remains manual',
+  'Automation coverage %',
+  'Manual verification %',
+  'Release readiness %',
+  'Remaining gap %',
+  'Work state',
+  'Gap-closing action',
   'Regression confidence',
   'Confidence rationale',
   'Manual result',
@@ -222,6 +265,9 @@ const outputRows = sourceRows.map((row) => {
   if (!status) throw new Error(`Journey ${id} has no strict automation classification`)
   const proof = evidence.get(id) ?? ''
   const confidence = confidenceFor(status, row[2])
+  const layer = automationType(proof, status)
+  const remaining = remainingBoundary(status, row, proof)
+  const progress = progressColumns(status, layer, confidence, remaining, id + 1)
   return [
     '0.0.40',
     id,
@@ -233,10 +279,11 @@ const outputRows = sourceRows.map((row) => {
     row[4],
     status === 'OPEN' ? 'No' : 'Yes',
     status,
-    automationType(proof, status),
+    layer,
     testEvidence(proof),
     proof || 'No automated release-journey evidence is recorded.',
-    remainingBoundary(status, row, proof),
+    remaining,
+    ...progress,
     confidence,
     confidenceReason(status, confidence),
     'NOT RUN',
@@ -249,6 +296,8 @@ const outputRows = sourceRows.map((row) => {
 })
 
 for (const row of supplementalRows) {
+  const sheetRow = outputRows.length + 2
+  const progress = progressColumns(row.status, row.layer, row.confidence, row.remaining, sheetRow)
   outputRows.push([
     '0.0.40',
     row.id,
@@ -264,6 +313,7 @@ for (const row of supplementalRows) {
     row.evidence,
     row.proof,
     row.remaining,
+    ...progress,
     row.confidence,
     confidenceReason(row.status, row.confidence),
     'NOT RUN',

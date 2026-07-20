@@ -30,13 +30,29 @@ node scripts/generate-release-readiness-checklist.mjs
 npx vitest run src/main/__tests__/p0-p2-coverage-ledger.test.ts
 ```
 
-The generator must produce 210 unique rows with one header row and 22 columns. The validation test
+The generator must produce 210 unique rows with one header row and 28 columns. The validation test
 prevents canonical journey/status drift, duplicate IDs, invalid tiers/confidence, empty evidence
 explanations, and non-pending manual results in a newly generated sheet.
 
 The generated CSV is UTF-8 with RFC-style quote escaping and no multiline records. In Google
 Sheets, use **File > Import > Upload**, select the CSV, choose comma as the separator, and import it
 as a new sheet. Do not enable automatic conversion of IDs such as `NR-01`, `PR-01`, or `CR-01`.
+
+The percentage columns use one deterministic policy:
+
+- `Automation coverage %` is `100` for strict `COMPLETE`, `0` for `OPEN`, and `25-85` for
+  `PARTIAL`, based on whether evidence is a real E2E, integration, package, or contract seam and
+  whether a decisive native/external boundary remains.
+- `Manual verification %` becomes `100` only when `Manual result` is `PASS`; it remains `0` for
+  `NOT RUN`, `FAIL`, or `BLOCKED`.
+- `Release readiness %` weights faithful automation at 70% and exact release-device manual evidence
+  at 30%. A `FAIL` or `BLOCKED` manual result forces readiness to `0`.
+- `Remaining gap %` is `100 - Release readiness %`.
+- `Work state` and `Gap-closing action` explain whether the remaining work is automation, manual
+  verification, or both.
+
+These are coverage/readiness estimates, not probability-of-no-bug claims. Do not change a percentage
+by hand to make a release look healthier; improve the evidence or record the manual result.
 
 ## Classification rules
 
