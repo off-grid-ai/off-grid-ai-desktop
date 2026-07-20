@@ -182,11 +182,23 @@ var RagService = class {
       onProgress?.("done");
       return { docId, chunkCount: 0, kind };
     }
-    onProgress?.("embedding");
-    const texts = chunks.map((c) => c.content);
-    const embeddings = this.deps.embeddings.embedBatch ? await this.deps.embeddings.embedBatch(texts) : await Promise.all(texts.map((t) => this.deps.embeddings.embed(t)));
-    onProgress?.("indexing");
-    await this.deps.store.addChunks(docId, chunks, embeddings);
+    try {
+      onProgress?.("embedding");
+      const texts = chunks.map((c) => c.content);
+      const embeddings = this.deps.embeddings.embedBatch ? await this.deps.embeddings.embedBatch(texts) : await Promise.all(texts.map((t) => this.deps.embeddings.embed(t)));
+      onProgress?.("indexing");
+      await this.deps.store.addChunks(docId, chunks, embeddings);
+    } catch (error) {
+      try {
+        await this.deps.store.deleteDocument(docId);
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          `Document indexing failed and document ${docId} could not be rolled back`
+        );
+      }
+      throw error;
+    }
     onProgress?.("done");
     return { docId, chunkCount: chunks.length, kind };
   }
