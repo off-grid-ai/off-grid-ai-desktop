@@ -112,6 +112,50 @@ manual claim does not count as complete integration coverage.
     These journeys remain partial because the rendered controls and installed-app relaunch are not
     part of this integration test.
 
+## High-leverage integration wave 3 - 5 of 5 complete
+
+- Capture privacy, memory, Replay, search, and lifecycle recovery:
+  - `capture-privacy-lifecycle.integration.dbtest.ts` joins production capture policy, OCR and
+    extraction, observations, frames, entities, universal search, Replay, lock/sleep coordination,
+    category deletion, and encrypted-profile reopen.
+  - Capture-category deletion now invokes feature-owned projection cleaners, removes screen-owned
+    observations, frames, entity links, actions, and index receipts, and preserves shared entities
+    and multi-source actions.
+- Multimodal import, scoped RAG, deletion, and reopen:
+  - `multimodal-rag-lifecycle.integration.dbtest.ts` imports real text, PDF, DOCX, audio, video, and
+    image fixtures through production extraction, SQLite, project scoping, citations, conversation
+    persistence, source deletion, failure rollback, and profile reopen.
+  - Interrupted embedding now rolls back its document row and chunks instead of leaving ghost
+    knowledge records.
+- Local-first no-egress sessions across Core and Pro:
+  - `image-runtime-reliability.integration.dbtest.ts` proves local RAG, chat, image generation,
+    vision, and artifact persistence issue no external requests while a loopback model engine is
+    active.
+  - Pro `local-first-pro-session.integration.dbtest.ts` proves Replay, CRM ingestion, dictation
+    memory, entities, actions, and the encrypted KDBX vault remain local in the same session.
+- Generated-image and artifact lifecycle:
+  - `image-runtime-reliability.integration.dbtest.ts` now generates a real PNG through the native
+    executable boundary, scopes it, catalogs it as an image artifact, exports exact bytes, reloads
+    its modules, and deletes the artifact, PNG, and metadata without deleting the exported copy.
+  - Generated-image scope and export ownership now live in the image service. Export rejects
+    renderer-supplied source paths outside the image library, metadata/export writes are atomic,
+    and deletion no longer orphans scope sidecars.
+- Universal retrieval, typed navigation, and mutation invalidation:
+  - Pro `universal-search.dbtest.ts` seeds capture, connector, meeting, entity, fact, memory, chat,
+    and knowledge sources, then drives every returned kind through the shared typed renderer
+    navigation adapter.
+  - The journey renames, hides, and deletes the production sources and proves keyword, facets, and
+    the deliberately stale semantic cache return no ghost results. Hidden-entity facts are filtered,
+    fact keys retain fact identity, and deleting an observation removes its orphan raw frames.
+- Verification status:
+  - Commissioned journeys: 5 total.
+  - Commissioned journeys complete: 5.
+  - Commissioned journeys left: 0.
+  - No Playwright or Electron E2E tests were added or run for this wave.
+  - The strict 155-journey release counts above remain unchanged because these composed seams do
+    not replace signed-package, rendered-control, physical-device, or audible-output evidence where
+    those terminal artifacts are required.
+
 ## High-leverage integration wave 2 - 5 of 5 complete
 
 - Connector approval and revocation lifecycle:
