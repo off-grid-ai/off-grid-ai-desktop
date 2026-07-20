@@ -156,17 +156,21 @@ button:disabled,
 
 /* Keyboard navigation must remain visible even on controls that use outline-none
    for pointer styling. Keep one theme-aware focus policy for every interactive
-   surface instead of duplicating ring utilities across screens. */
-:where(
-  button,
-  [role='button'],
-  a[href],
-  input,
-  textarea,
-  select,
-  summary,
-  [tabindex]:not([tabindex='-1'])
-):focus-visible {
+   surface instead of duplicating ring utilities across screens.
+   Scoped to keyboard modality (main.tsx stamps [data-user-modality]) so the ring
+   shows on Tab navigation but NOT on a mouse click — browsers otherwise match
+   :focus-visible on clicked text inputs, painting the ring on every field click. */
+:root[data-user-modality='keyboard']
+  :where(
+    button,
+    [role='button'],
+    a[href],
+    input,
+    textarea,
+    select,
+    summary,
+    [tabindex]:not([tabindex='-1'])
+  ):focus-visible {
   outline: 2px solid var(--og-primary);
   outline-offset: 2px;
 }
