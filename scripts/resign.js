@@ -2,9 +2,9 @@
  * After-sign hook for electron-builder.
  *
  * electron-builder signs the app bundle, but the binaries we ship in
- * Contents/Resources/bin (llama-server, whisper, ffmpeg, sd, dylibs) and the
- * Swift `watcher` are extraResources it doesn't sign — so they must be signed
- * here, and the outer bundle re-sealed afterwards.
+ * Contents/Resources/bin (llama-server, whisper, ffmpeg, sd, dylibs) are
+ * extraResources it doesn't sign — so they must be signed here, and the outer
+ * bundle re-sealed afterwards.
  *
  * CRITICAL: when a Developer ID identity is available (CI / release), we sign
  * with THAT identity + hardened runtime so the build NOTARIZES. Only when no
@@ -92,12 +92,6 @@ exports.default = async function (context) {
         }
       }
       walkExec(binDir)
-    }
-
-    const watcherPath = path.join(resourcesPath, 'watcher')
-    if (fs.existsSync(watcherPath)) {
-      console.log('[resign] watcher')
-      sign(watcherPath, true)
     }
 
     // Re-seal the outer bundle. With a real identity we DON'T use --deep (that

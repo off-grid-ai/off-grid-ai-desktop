@@ -5,7 +5,7 @@ export type PermissionStatus = PermissionStatusContract
 
 /**
  * Check if the app has Accessibility permission on macOS.
- * This permission is required for the watcher to read window content.
+ * This permission is required for global dictation input and text insertion.
  */
 function checkAccessibilityPermission(prompt: boolean = false): boolean {
   if (process.platform !== 'darwin') {

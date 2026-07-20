@@ -222,18 +222,6 @@ const offGridApi = {
     ipcRenderer.invoke('update:set-channel', channel),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
 
-  // Watcher Events
-  onWatcherData: (callback: (data: unknown) => void) => {
-    const subscription = (_event: unknown, data: unknown): void => callback(data)
-    ipcRenderer.on('watcher:data', subscription)
-    return unsubscribe('watcher:data', subscription)
-  },
-  onPermissionDenied: (callback: () => void) => {
-    const subscription = (): void => callback()
-    ipcRenderer.on('watcher:permission-denied', subscription)
-    return unsubscribe('watcher:permission-denied', subscription)
-  },
-
   // Notification Events — only the things that need the user's attention:
   // proactive approvals queued, and new to-dos extracted.
   onNewApproval: (

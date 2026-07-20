@@ -274,8 +274,6 @@ interface RendererAPIOverrides {
   saveUserProfile: (profile: UserProfile) => Promise<boolean>
 
   // Events
-  onWatcherData: (callback: (data: any) => void) => () => void
-  onPermissionDenied: (callback: () => void) => () => void
   onNewApproval: (
     callback: (data: {
       approvalId: number

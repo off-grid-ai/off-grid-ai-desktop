@@ -186,7 +186,7 @@ app.whenReady().then(() => {
     void import('./llm').then(({ llm }) =>
       llm.init().catch((err) => console.error('[gateway] LLM init failed', err))
     )
-    return // skip window, tray, watcher, IPC, capture, connectors — gateway only
+    return // skip window, tray, IPC, capture, connectors — gateway only
   }
 
   console.log('APP READY: Initializing Services...')
@@ -276,8 +276,8 @@ app.whenReady().then(() => {
     console.warn('[voice] permission handler setup failed', e)
   }
 
-  // NOTE: Accessibility is a Pro (capture) permission — the free build never asks
-  // for it. Pro requests it when capture starts (see pro focus/watcher).
+  // NOTE: Accessibility is a Pro permission for global input/text insertion — the
+  // free build never asks for it. Screen capture itself is owned by pro/focus.ts.
 
   // Set app user model id for Windows notifications/taskbar grouping.
   electronApp.setAppUserModelId('co.getoffgridai.desktop')
@@ -314,7 +314,7 @@ app.whenReady().then(() => {
     ipcMain.handle('media:url', (_e, absPath: string) => mediaUrlFor(absPath))
     // (clipboard is now a pro feature — setupClipboard runs in pro's activateMain)
     // Pro features (capture, CRM, meetings, connectors, secretary, proactive,
-    // skills engine, console, tray) register their own IPC + intervals + watchers
+    // skills engine, console, tray) register their own IPC + intervals/capture loop
     // here. No-op in the free build (the pro submodule is absent → stub).
     void loadProFeaturesMain().catch((e) => console.error('[pro] load failed', e))
     // Demo seeder for testing: OFFGRID_SEED=1 seeds once; OFFGRID_SEED=force re-seeds.

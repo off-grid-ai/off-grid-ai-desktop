@@ -164,9 +164,7 @@ export default defineConfig({
         'pro/main/meeting-controller.ts',
         'pro/main/meeting-service.ts',
         'pro/main/meetings.ts',
-        'pro/main/watcher.ts',
         'pro/main/text-injection.ts',
-        'pro/main/scraper.ts',
         'pro/main/console.ts',
         'pro/main/google-rest.ts',
         // Core settings composition; IdentityService rules are measured in identity.ts.
