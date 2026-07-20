@@ -68,6 +68,7 @@
     "kdbxweb": "^2.1.1",
     "kokoro-js": "^1.2.1",
     "mammoth": "^1.8.0",
+    "mdast-util-to-string": "^4.0.0",
     "motion": "^12.27.1",
     "node-machine-id": "^1.1.12",
     "ollama": "^0.6.3",
@@ -78,9 +79,11 @@
     "react-resizable-panels": "^2.1.9",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.0",
+    "remark-parse": "^11.0.0",
     "sharp": "^0.35.2",
     "tailwind-merge": "^3.4.0",
-    "three": "^0.182.0"
+    "three": "^0.182.0",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",

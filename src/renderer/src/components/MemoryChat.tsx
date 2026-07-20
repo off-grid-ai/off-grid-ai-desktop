@@ -4,6 +4,7 @@ import { buildSendHistory } from '@renderer/lib/chat-history'
 import { waitingLabel } from '@renderer/lib/chat-labels'
 import { timeAgo } from '@renderer/lib/time'
 import { writeClipboardWithFallback } from '@renderer/lib/clipboard-write'
+import { toSpeakableText } from '@renderer/lib/speakable'
 import { createUiId } from '@renderer/lib/ui-id'
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -1854,7 +1855,7 @@ export function MemoryChat({
       setSpeakError(null)
       setSpeakLoadingId(id) // generating on-device — show a loading state
       try {
-        const { dataUrl } = await window.api.speak(text)
+        const { dataUrl } = await window.api.speak(toSpeakableText(text))
         if (!voiceMountedRef.current || speechRequestRef.current !== request) return
         if (!dataUrl) throw new Error('empty dataUrl')
         const audio = new Audio(dataUrl)
