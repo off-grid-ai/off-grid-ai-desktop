@@ -358,6 +358,77 @@ describe('multimodal runtime reliability', () => {
     })
   })
 
+  it('keeps the core product session private across RAG, image generation, vision, and artifacts', async () => {
+    const blockedBefore = [...offlineNetwork.blockedRequests]
+    const sourcePath = path.join(fixture.dataDir, 'private-session.md')
+    fs.writeFileSync(
+      sourcePath,
+      'LOCAL_SESSION_AURORA records the release decision without using a remote service.'
+    )
+
+    const [{ RagService }, ragStore, { desktopExtraction }] = await Promise.all([
+      import('@offgrid/rag'),
+      import('../rag/store'),
+      import('../rag/extractors')
+    ])
+    ragStore.createProject({ id: 'offline-session', name: 'Offline session' })
+    ragStore.updateProject('offline-session', { includeMemory: false })
+    const localRag = new RagService({
+      store: ragStore.desktopVectorStore,
+      embeddings: {
+        dimension: 1,
+        async embed(text: string) {
+          return [Number(text.toLowerCase().includes('local_session_aurora'))]
+        }
+      },
+      extraction: desktopExtraction
+    })
+    await localRag.indexDocument({
+      projectId: 'offline-session',
+      path: sourcePath,
+      fileName: path.basename(sourcePath),
+      size: fs.statSync(sourcePath).size
+    })
+    const retrieval = await localRag.searchProject(
+      'offline-session',
+      'What does LOCAL_SESSION_AURORA record?'
+    )
+    expect(retrieval.chunks).toEqual([
+      expect.objectContaining({
+        name: 'private-session.md',
+        content: expect.stringContaining('LOCAL_SESSION_AURORA')
+      })
+    ])
+    expect(await llm.chat(localRag.formatForPrompt(retrieval))).toBe('chat recovered')
+
+    const image = await generateImage({
+      prompt: 'An emerald privacy diagram',
+      model: IMAGE_MODEL,
+      seed: 404,
+      width: 512,
+      height: 512,
+      steps: 4
+    })
+    const modelDir = path.join(fixture.dataDir, 'models')
+    fs.writeFileSync(path.join(modelDir, 'mmproj.gguf'), 'gguf')
+    fs.writeFileSync(
+      path.join(modelDir, 'active-model.json'),
+      JSON.stringify({ id: 'runtime-fixture', primary: CHAT_MODEL, mmproj: 'mmproj.gguf' })
+    )
+    expect(await llm.chat('Describe the private diagram.', [image.path])).toBe('chat recovered')
+
+    const artifacts = await import('../artifacts')
+    const saved = artifacts.saveArtifact({
+      kind: 'text',
+      code: 'LOCAL_SESSION_AURORA evidence',
+      title: 'Offline evidence',
+      conversationId: 'offline-session-chat',
+      projectId: 'offline-session'
+    })
+    expect(artifacts.listArtifacts({ projectId: 'offline-session' })).toEqual([saved])
+    expect(offlineNetwork.blockedRequests).toEqual(blockedBefore)
+  }, 20_000)
+
   it('coalesces concurrent cold starts into one native model process', async () => {
     const startsBefore = lineCount(fixture.llamaLog)
     llm.stop()
