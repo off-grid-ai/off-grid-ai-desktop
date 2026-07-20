@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ModelDownloadQueue } from '../download-queue'
+import { DOWNLOAD_INTERRUPTED_ERROR, ModelDownloadQueue } from '../download-queue'
 
 function deferred<T>(): {
   promise: Promise<T>
@@ -113,5 +113,47 @@ describe('ModelDownloadQueue', () => {
     await expect(first).resolves.toEqual({ success: false, error: 'network down' })
     await expect(second).resolves.toEqual({ success: true })
     expect(started).toEqual(['first', 'second'])
+  })
+
+  it('interrupts active and queued transfers and permanently closes admission on shutdown', async () => {
+    const queue = new ModelDownloadQueue(1)
+    const states: string[] = []
+    const active = queue.enqueue(
+      'active',
+      (signal) =>
+        new Promise((resolve) => {
+          signal.addEventListener(
+            'abort',
+            () => resolve({ success: false, error: String(signal.reason) }),
+            { once: true }
+          )
+        }),
+      () => {}
+    )
+    const queued = queue.enqueue(
+      'queued',
+      async () => ({ success: true }),
+      (state) => states.push(state)
+    )
+
+    const shutdown = queue.shutdown()
+    await expect(queued).resolves.toEqual({
+      success: false,
+      error: DOWNLOAD_INTERRUPTED_ERROR
+    })
+    await expect(active).resolves.toEqual({
+      success: false,
+      error: DOWNLOAD_INTERRUPTED_ERROR
+    })
+    await expect(shutdown).resolves.toBeUndefined()
+    expect(states).toEqual(['queued', 'interrupted'])
+    expect(queue.counts()).toEqual({ running: 0, queued: 0 })
+    await expect(
+      queue.enqueue(
+        'late',
+        async () => ({ success: true }),
+        () => {}
+      )
+    ).resolves.toEqual({ success: false, error: DOWNLOAD_INTERRUPTED_ERROR })
   })
 })

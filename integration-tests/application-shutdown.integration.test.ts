@@ -53,10 +53,12 @@ describe('application shutdown integration', () => {
     const gateway = resource(trace, 'core:gateway')
     const media = resource(trace, 'core:media')
     const runtimes = resource(trace, 'core:runtimes')
+    const downloads = resource(trace, 'core:downloads')
     registerCoreShutdownOwners(registry, {
       stopGateway: () => gateway.stop(),
       stopMediaServer: () => media.stop(),
-      stopModelRuntimes: () => runtimes.stop()
+      stopModelRuntimes: () => runtimes.stop(),
+      stopModelDownloads: () => downloads.stop()
     })
 
     // Clipboard and dictation stand at the OS/native boundary in production: one
@@ -98,6 +100,7 @@ describe('application shutdown integration', () => {
       gateway,
       media,
       runtimes,
+      downloads,
       clipboard,
       scheduled,
       captureSubscription,
@@ -131,6 +134,7 @@ describe('application shutdown integration', () => {
       'pro:tray',
       'pro:recorder',
       'pro:clipboard-helper',
+      'core:downloads',
       'core:runtimes',
       'core:media',
       'core:gateway'

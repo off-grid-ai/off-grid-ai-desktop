@@ -72,6 +72,7 @@ export interface CoreShutdownResources {
   stopGateway(): void | Promise<void>
   stopMediaServer(): void | Promise<void>
   stopModelRuntimes(): void | Promise<void>
+  stopModelDownloads(): void | Promise<void>
 }
 
 /** Register Core resources in construction order. The registry reverses this on
@@ -83,6 +84,7 @@ export function registerCoreShutdownOwners(
   registry.register({ name: 'core:model-gateway', shutdown: resources.stopGateway })
   registry.register({ name: 'core:media-server', shutdown: resources.stopMediaServer })
   registry.register({ name: 'core:model-runtimes', shutdown: resources.stopModelRuntimes })
+  registry.register({ name: 'core:model-downloads', shutdown: resources.stopModelDownloads })
 }
 
 /** Connect the registry to the real Electron quit seam. The subscription removes

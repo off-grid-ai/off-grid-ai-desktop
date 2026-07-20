@@ -47,6 +47,7 @@ import {
   registerCoreShutdownOwners
 } from './shutdown'
 import { shutdownRuntimes } from './runtime-manager'
+import { shutdownModelDownloads } from './models/download-queue'
 
 // Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
 // must never crash main via an uncaught EPIPE. See stream-guards.ts.
@@ -107,7 +108,8 @@ installApplicationShutdown(app, applicationShutdown, ({ owner, error }) =>
 registerCoreShutdownOwners(applicationShutdown, {
   stopGateway: stopModelServer,
   stopMediaServer,
-  stopModelRuntimes: shutdownRuntimes
+  stopModelRuntimes: shutdownRuntimes,
+  stopModelDownloads: shutdownModelDownloads
 })
 
 // FORCE UPDATE VERIFICATION: 3 - SHELL OVERWRITE

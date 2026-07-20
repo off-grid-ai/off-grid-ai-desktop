@@ -140,7 +140,7 @@ test('relaunch resumes onboarding progress and one interrupted transfer (#12)', 
       modelId: interrupted.modelId,
       status: 'failed',
       percent: 37,
-      error: 'interrupted — retry to resume'
+      error: 'interrupted - retry to resume'
     })
   ])
   expect(fs.readFileSync(path.join(modelsDir, `${interrupted.fileName}.part`))).toEqual(
@@ -153,7 +153,7 @@ test('relaunch resumes onboarding progress and one interrupted transfer (#12)', 
   await page.getByRole('button', { name: /Setup & health/ }).click()
 
   await expect(page.getByText(interrupted.modelId, { exact: true })).toBeVisible()
-  await expect(page.getByText('interrupted — retry to resume', { exact: true })).toBeVisible()
+  await expect(page.getByText('interrupted - retry to resume', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible()
   expect(await page.evaluate(async () => (await window.api.listDownloads()).length)).toBe(1)
   expect(fs.readFileSync(path.join(modelsDir, `${interrupted.fileName}.part`))).toEqual(

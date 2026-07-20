@@ -9,7 +9,11 @@ import { isValidGgufFile } from './models/gguf'
 import { pumpToFile } from './models/download-pump'
 import { downloadIntegrityError } from './models/download-verify'
 import { downloadFailureMessage, isStorageCapacityError } from './models/download-error'
-import { ModelDownloadQueue } from './models/download-queue'
+import {
+  DOWNLOAD_INTERRUPTED_ERROR,
+  modelDownloadQueue,
+  shutdownModelDownloads
+} from './models/download-queue'
 import { getAllActiveModals, setActiveModal as setModal, type Modality } from './active-models'
 import {
   recordDownloaded,
@@ -44,8 +48,10 @@ export interface DownloadProgress {
 }
 export type ProgressCb = (p: DownloadProgress) => void
 
-const downloadQueue = new ModelDownloadQueue()
+const downloadQueue = modelDownloadQueue
 const lastProgress = new Map<string, DownloadProgress>()
+
+export { DOWNLOAD_INTERRUPTED_ERROR, shutdownModelDownloads }
 
 function activeModelFile(): string {
   return path.join(llm.getModelsDir(), 'active-model.json')
@@ -119,6 +125,13 @@ export async function downloadModel(
   modelId: string,
   onProgress?: ProgressCb
 ): Promise<{ success: boolean; error?: string }> {
+  if (!downloadQueue.isAccepting()) {
+    writeDiagnosticLog('models.download', 'request.rejected', {
+      modelId,
+      reason: 'application_shutdown'
+    })
+    return { success: false, error: DOWNLOAD_INTERRUPTED_ERROR }
+  }
   const { CATALOG, resolveHuggingFaceModel } = await import('@offgrid/models')
   const inCatalog = CATALOG.find((m) => m.id === modelId)
   const entry = inCatalog ?? (await resolveHuggingFaceModel(modelId))
@@ -163,6 +176,16 @@ export async function downloadModel(
     // Queue/start persistence happens in the lifecycle callback below. Persist
     // terminal transitions here, but skip high-frequency transfer ticks.
     if (p.status && p.status !== 'queued' && p.status !== 'downloading') persistRegistry()
+  }
+  const interruptedResult = (
+    signal: AbortSignal,
+    activePartPath: string | null
+  ): { success: false; error: string } => {
+    const interrupted = signal.reason === DOWNLOAD_INTERRUPTED_ERROR
+    if (!interrupted && activePartPath) fs.rmSync(activePartPath, { force: true })
+    const error = interrupted ? DOWNLOAD_INTERRUPTED_ERROR : 'cancelled'
+    send(interrupted ? { status: 'failed', error } : { status: 'cancelled' })
+    return { success: false, error }
   }
   return downloadQueue.enqueue(
     modelId,
@@ -235,8 +258,7 @@ export async function downloadModel(
             })
           })
           if (signal.aborted) {
-            fs.rmSync(partPath, { force: true })
-            break
+            return interruptedResult(signal, partPath)
           }
           // Verify the file is complete + valid BEFORE promoting it — never mark a
           // truncated/corrupt download installed (it loads as a blank "Chat model Down").
@@ -250,10 +272,7 @@ export async function downloadModel(
             bytes: written
           })
         }
-        if (signal.aborted) {
-          send({ status: 'cancelled' })
-          return { success: false, error: 'cancelled' }
-        }
+        if (signal.aborted) return interruptedResult(signal, activePartPath)
         // Register a free-form Hugging Face download (not a catalog entry) so it counts
         // as installed + activatable and its files aren't flagged as "unused". Catalog
         // models are recognized by CATALOG membership already, so skip them.
@@ -279,8 +298,7 @@ export async function downloadModel(
           }
         }
         if (signal.aborted || (err as Error).name === 'AbortError') {
-          send({ status: 'cancelled' })
-          return { success: false, error: 'cancelled' }
+          return interruptedResult(signal, activePartPath)
         }
         const error = downloadFailureMessage(err)
         send({ status: 'failed', error })
@@ -288,7 +306,11 @@ export async function downloadModel(
       }
     },
     (state) => {
-      send({ status: state, percent: 0 })
+      if (state === 'interrupted') {
+        send({ status: 'failed', error: DOWNLOAD_INTERRUPTED_ERROR, percent: 0 })
+      } else {
+        send({ status: state, percent: 0 })
+      }
       if (state === 'queued' || state === 'downloading') persistRegistry()
     }
   )
@@ -723,7 +745,7 @@ function ensureRegistryLoaded(): void {
       // never drain in this fresh process.
       if (p.status === 'downloading' || p.status === 'queued') {
         p.status = 'failed'
-        p.error = 'interrupted — retry to resume'
+        p.error = DOWNLOAD_INTERRUPTED_ERROR
       }
       lastProgress.set(p.modelId, p)
     }
