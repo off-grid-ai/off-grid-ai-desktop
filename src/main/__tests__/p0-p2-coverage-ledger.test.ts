@@ -4,6 +4,8 @@ import path from 'path'
 
 const checklistPath = path.join(process.cwd(), 'docs/RELEASE_TEST_CHECKLIST.csv')
 const ledgerPath = path.join(process.cwd(), 'docs/P0_P2_INTEGRATION_COVERAGE.md')
+const releaseReadinessPath = path.join(process.cwd(), 'docs/RELEASE_READINESS_CHECKLIST_0.0.40.csv')
+const supplementalPath = path.join(process.cwd(), 'docs/release-readiness-supplemental-0.0.40.json')
 
 function parseCsvRow(row: string): string[] {
   const fields: string[] = []
@@ -120,5 +122,63 @@ describe('P0-P2 integration coverage ledger', () => {
     expect(snapshotCount('Overall open')).toBe(overall.open)
     expect(snapshotCount('Overall left')).toBe(overall.left)
     expect(overall.complete + overall.left).toBe(checklistTotal)
+  })
+
+  it('publishes one actionable 0.0.40 release-readiness row for every journey', () => {
+    const [header = [], ...rows] = fs
+      .readFileSync(releaseReadinessPath, 'utf8')
+      .trim()
+      .split(/\r?\n/)
+      .map(parseCsvRow)
+    const column = (name: string) => header.indexOf(name)
+    const requiredColumns = [
+      'Journey ID',
+      'Tier',
+      'Automated test exists',
+      'Strict automation status',
+      'Automated test evidence',
+      'What automation proves',
+      'What remains manual',
+      'Regression confidence',
+      'Confidence rationale',
+      'Manual result',
+      'Evidence path or URL',
+      'Defect link'
+    ]
+
+    for (const name of requiredColumns) expect(column(name)).toBeGreaterThanOrEqual(0)
+    const supplemental = JSON.parse(fs.readFileSync(supplementalPath, 'utf8')) as Array<{
+      id: string
+    }>
+    expect(rows).toHaveLength(checklistRows.length + supplemental.length)
+    expect(
+      rows.slice(0, checklistRows.length).map((row) => Number(row[column('Journey ID')]))
+    ).toEqual(checklistRows.map((row) => Number(row[0])))
+    expect(rows.slice(checklistRows.length).map((row) => row[column('Journey ID')])).toEqual(
+      supplemental.map((row) => row.id)
+    )
+    expect(new Set(rows.map((row) => row[column('Journey ID')])).size).toBe(rows.length)
+
+    const statusById = new Map<number, string>()
+    for (const id of Object.values(classifications.complete).flatMap(ids)) {
+      statusById.set(id, 'COMPLETE')
+    }
+    for (const id of Object.values(classifications.partial).flatMap(ids)) {
+      statusById.set(id, 'PARTIAL')
+    }
+    for (const id of ids(classifications.open)) statusById.set(id, 'OPEN')
+
+    for (const row of rows) {
+      const id = Number(row[column('Journey ID')])
+      const status = row[column('Strict automation status')]
+      expect(['Core', 'Pro', 'Both']).toContain(row[column('Tier')])
+      if (Number.isFinite(id)) expect(status).toBe(statusById.get(id))
+      expect(row[column('Automated test exists')]).toBe(status === 'OPEN' ? 'No' : 'Yes')
+      expect(row[column('What automation proves')]).not.toHaveLength(0)
+      expect(row[column('What remains manual')]).not.toHaveLength(0)
+      expect(['LOW', 'MEDIUM', 'HIGH']).toContain(row[column('Regression confidence')])
+      expect(row[column('Confidence rationale')]).not.toHaveLength(0)
+      expect(row[column('Manual result')]).toBe('NOT RUN')
+    }
   })
 })

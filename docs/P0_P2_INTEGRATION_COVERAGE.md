@@ -71,8 +71,8 @@ manual claim does not count as complete integration coverage.
 - Partial P2 journeys left:
   - #31, #50, #55, #104, #124, #152, #153.
 - Open journeys:
-  - #1 - Core DMG install against the final Developer ID-signed and notarized artifact.
-  - #2 - Pro entitlement/installation against that same final production artifact.
+  - #1 - Locked Core-state install against the final Developer ID-signed and notarized artifact.
+  - #2 - Pro entitlement/activation against that same final production artifact.
 - Corrective note:
   - The prior `153 covered / 2 left` snapshot overcounted rendered tests, source guards, direct
     database tests, and fake-boundary integrations as full release journeys.
@@ -261,7 +261,7 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   captured and connector-derived observations plus meeting, entity, fact, memory, chat, and
   knowledge records through their production SQLite owners, then proves one production search
   returns every source with its real facet and deep-link identifier.
-- #94 - Delete all removes capture corpus. `pro/main/__tests__/personal-data.integration.test.ts`
+- #94 - Delete all removes capture corpus. `pro/main/__tests__/personal-data.dbtest.ts`
   registers the real Pro personal-data owner, runs the real delete-all path, and verifies the
   observations corpus is gone.
 - #95 - Meeting detection is truthful. `meeting-lifecycle.integration.test.ts` drives the production

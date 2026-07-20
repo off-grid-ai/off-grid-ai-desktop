@@ -9,6 +9,14 @@ the release journeys in [`RELEASE_TEST_CHECKLIST.csv`](RELEASE_TEST_CHECKLIST.cs
 coverage status in [`P0_P2_INTEGRATION_COVERAGE.md`](P0_P2_INTEGRATION_COVERAGE.md) into a practical
 device pass.
 
+For a shareable execution sheet, import
+[`RELEASE_READINESS_CHECKLIST_0.0.40.csv`](RELEASE_READINESS_CHECKLIST_0.0.40.csv) into Google
+Sheets. It contains 210 Core and Pro journeys: the canonical 155 product journeys plus 55
+manually-audited native, security, release, and omitted-surface cases. Every row includes exact
+steps and expected results, strict automation status and evidence, remaining manual boundaries,
+calibrated regression confidence, and blank tester/result/evidence/defect columns for the release
+team.
+
 Automation-backed items still need manual execution when the remaining risk is macOS permissions,
 Gatekeeper, installation, a global hotkey, another application, real audio, real display capture,
 or visual quality. Do not replace a failed manual check with a green unit or integration test.
