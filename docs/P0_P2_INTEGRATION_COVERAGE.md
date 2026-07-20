@@ -138,9 +138,11 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   auto-configuration against a temp profile, real catalog/model manager and filesystem, proving
   the conservative chat, transcription and voice baseline downloads, activates, and reaches the
   terminal done state through only download/native-process boundaries.
-- #13 - System Health is truthful. `e2e/smoke.spec.ts` launches a fresh profile, compares the real
-  gateway `/health` payload with the System Health IPC components, verifies absent runtimes are
-  reported as `not_installed`, and confirms the unavailable chat engine port is actually down.
+- #13 - System Health is truthful. `HealthPanel.integration.test.tsx` mounts the real panel through
+  the production system-status IPC, setup, LLM, helper-resolution, and TCC owners on a disposable
+  profile. It proves running and unavailable helpers, denied then granted permissions, and a real
+  spawned engine stderr classified as `unknown model architecture: gemma4` render the matching
+  actionable states. Comparing every row with the signed installed artifact remains manual.
 - #15 - Required macOS permissions granted. `permission-recovery.test.ts`,
   `media-permission.test.ts`, Pro notification tests, the live capture scheduler journey, and the
   connected dictation overlay prove explicit Screen Recording and Accessibility requests,
