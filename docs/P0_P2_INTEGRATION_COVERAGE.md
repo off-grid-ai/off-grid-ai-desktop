@@ -289,12 +289,18 @@ historical labels, not strict completion claims. Use the strict snapshot above f
 - #116 - CRM processing tolerates schema upgrades. `crm-schema-upgrade.dbtest.ts` creates a real
   legacy SQLite schema, drives the production observation funnel, verifies additive migration and
   row preservation, then reopens the database and proves processing remains idempotent.
-- #117 - Clipboard records text. `e2e/pro.spec.ts` writes unique text to the real OS clipboard and
-  waits for the production poller and encrypted history store to expose that exact item over IPC.
-- #121 - Clipboard restore text. The same E2E journey overwrites the OS clipboard after capture,
-  restores the stored item through production IPC, and verifies the original text returns.
-- #122 - Clipboard restore file. `e2e/pro.spec.ts` drives the real capture-to-restore path and
-  verifies macOS receives path text, file URL, and native bytes, including an image-file case.
+- #117 - Clipboard records text. Pro `clipboard-popup-journey.dbtest.ts` changes a controlled native
+  clipboard boundary after capture starts, then waits for the production poller, Electron adapter,
+  encrypted SQLite store, and IPC list to expose that exact text. Manual verification still owns
+  the signed-app macOS pasteboard boundary.
+- #121 - Clipboard restore text. Pro `clipboard-popup-journey.dbtest.ts` inserts through the
+  production store, overwrites the controlled native clipboard, restores through production IPC
+  and the Electron adapter, and verifies the original text returns. Pasting into another signed app
+  remains manual.
+- #122 - Clipboard restore file. Pro `clipboard-popup-journey.dbtest.ts` inserts real file bytes
+  through the production store, restores over production IPC, verifies byte-exact reconstruction in
+  the disposable profile, and proves the macOS pasteboard writer receives the reconstructed path.
+  Finder and Terminal paste behavior remain native manual checks.
 - #125 - Create and unlock vault. `vault-service.test.ts` uses real KDBX4, Argon2id, WASM crypto,
   and a real temp directory; correct and incorrect passwords are covered.
 - #126 - Vault item types round-trip. `vault-service.test.ts` covers real encrypted CRUD and binary
@@ -528,8 +534,10 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   windows, dwell caps, category rollups, context switches, and seven-day aggregation.
 - #118 - Clipboard deduplicates repeated copy. `clipboard-store.integration.test.ts` exercises the
   real store and proves timestamp bump-to-top without duplicate rows or lost tags.
-- #119 - Clipboard records images and files. `e2e/pro.spec.ts` captures real file URLs and a new
-  pixel bitmap, then restores the bitmap bytes and verifies their exact dimensions.
+- #119 - Clipboard records images and files. Pro `clipboard-popup-journey.dbtest.ts` drives real
+  temporary-file bytes and deterministic image bytes through the production poller, Electron
+  adapter, encrypted SQLite store, and IPC list. The existing native tour additionally captures a
+  real file URL and pixel bitmap and verifies exact bitmap dimensions.
 - #120 - Clipboard live refresh keeps valid selection.
   `ClipboardScreen.integration.test.tsx` renders the real screen and proves selection is retained
   while the item exists, then moves to a valid remaining item after deletion.
