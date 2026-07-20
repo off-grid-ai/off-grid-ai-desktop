@@ -391,6 +391,16 @@ export class LLMService {
     return !!this.mmProjPath && fs.existsSync(this.mmProjPath)
   }
 
+  /** Refuse image-bearing work before starting or contacting llama-server when the
+   *  active model has no projector. Callers may choose a text-only fallback before
+   *  invoking chat; this remains the engine-boundary invariant that protects every
+   *  explicit image entry point if selection changes between capability check and use. */
+  private assertImageInputSupported(images: string[]): void {
+    if (images.length > 0 && !this.hasVision()) {
+      throw new Error('Active chat model does not support image input (no vision projector)')
+    }
+  }
+
   modelsExist(): boolean {
     this.resolveModel()
     return fs.existsSync(this.modelPath)
@@ -767,6 +777,7 @@ export class LLMService {
       signal?: AbortSignal
     } = {}
   ): Promise<string> {
+    this.assertImageInputSupported(images)
     await this.ensureReady()
 
     return this.chatMutex.runExclusive(async () => {
@@ -825,6 +836,7 @@ export class LLMService {
     maxTokens?: number,
     timeoutMs: number = 300000
   ): Promise<ChatStreamResult> {
+    this.assertImageInputSupported(images)
     await this.ensureReady()
 
     const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt)
