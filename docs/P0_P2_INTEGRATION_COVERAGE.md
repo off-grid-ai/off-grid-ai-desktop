@@ -180,9 +180,10 @@ historical labels, not strict completion claims. Use the strict snapshot above f
 - #42 - Project switch isolation. The same integration sends from Project Alpha, changes the real
   project selector to Project Beta while the model boundary is pending, and proves the result and
   parsed HTML artifact retain the Alpha project and conversation captured at send time.
-- #43 - Chat survives relaunch. `e2e/chat-memory.spec.ts` creates multiple scoped and unscoped
-  conversations with messages and context through production IPC, fully closes Electron, reopens
-  the same profile, and verifies every association and payload through the reloaded preload path.
+- #43 - Chat survives relaunch. `chat-relaunch.dbtest.ts` creates a conversation and ordered user
+  and assistant messages with exact scope, attachment, and finish context through the production
+  repository, closes the real SQLite profile, reopens it, and verifies the conversation, message
+  count, order, content, and context. Reloading the visible conversation list remains manual.
 - #48 - Error clears busy state. `MemoryChat.chat-lifecycle.test.tsx` rejects a live turn at the
   native-model boundary, proves the rendered error is useful and Stop clears, then sends and renders
   a successful second turn through the same production composer.
