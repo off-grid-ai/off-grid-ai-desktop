@@ -1,4 +1,5 @@
 export const packagingIntegrationTests = [
+  'src/main/__tests__/dmg-install-smoke.integration.test.ts',
   'src/main/__tests__/packaged-helpers.integration.test.ts',
   'src/main/__tests__/release-packaging.integration.test.ts'
 ]

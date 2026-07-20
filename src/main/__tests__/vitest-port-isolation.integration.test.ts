@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createVitestProjects,
   modelPortIntegrationTests,
+  packagingIntegrationTests,
   type VitestProjectDefinition
 } from './vitest-projects'
 
@@ -23,6 +24,9 @@ describe('Vitest exclusive model-port scheduling', () => {
     expect(modelPort.fileParallelism).toBe(false)
     expect(modelPort.sequence?.groupOrder).toBe(1)
     expect(product.exclude).toEqual(expect.arrayContaining(modelPortIntegrationTests))
+    expect(packaging.include).toEqual(packagingIntegrationTests)
+    expect(packaging.fileParallelism).toBe(false)
+    expect(product.exclude).toEqual(expect.arrayContaining(packagingIntegrationTests))
     expect(packaging.sequence?.groupOrder).toBeGreaterThan(modelPort.sequence?.groupOrder ?? 0)
   })
 })
