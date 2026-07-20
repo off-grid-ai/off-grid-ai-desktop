@@ -39,7 +39,8 @@ function workerEnvironment(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',
-    OFFGRID_TTS_CACHE_DIR: path.join(modelsDir(), '.cache', 'kokoro')
+    OFFGRID_TTS_CACHE_DIR: path.join(modelsDir(), '.cache', 'kokoro'),
+    OFFGRID_TTS_MODEL_FILE: path.join(modelsDir(), 'kokoro-82m-v1.0.onnx')
   }
   delete env.ELECTRON_NO_ASAR
   return env

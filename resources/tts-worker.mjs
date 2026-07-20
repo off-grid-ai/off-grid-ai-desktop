@@ -12,6 +12,7 @@
 //   tts-worker.mjs speak <out> <voice>  -> reads text from stdin, writes WAV to <out>
 
 import fs from 'node:fs'
+import path from 'node:path'
 
 const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX'
 const DEFAULT_VOICE = 'af_heart'
@@ -23,6 +24,41 @@ function log(event, fields = {}) {
   process.stderr.write(
     `${new Date().toISOString()} INFO [tts-worker] ${event}${details ? ` ${details}` : ''}\n`
   )
+}
+
+function materializeRuntimeFile(target, sources) {
+  if (fs.existsSync(target)) return false
+  const source = sources.find((candidate) => candidate && fs.existsSync(candidate))
+  if (!source) return false
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  try {
+    fs.linkSync(source, target)
+  } catch {
+    fs.copyFileSync(source, target)
+  }
+  return true
+}
+
+function configureWritableCache(transformersEnv) {
+  const writableCache = process.env.OFFGRID_TTS_CACHE_DIR
+  if (!writableCache) return
+  const bundledCache = transformersEnv.cacheDir
+  const relativeFiles = [
+    'config.json',
+    'tokenizer.json',
+    'tokenizer_config.json',
+    'onnx/model_quantized.onnx'
+  ]
+  let materialized = 0
+  for (const relative of relativeFiles) {
+    const target = path.join(writableCache, MODEL_ID, relative)
+    const bundled = bundledCache ? path.join(bundledCache, MODEL_ID, relative) : null
+    const downloaded =
+      relative === 'onnx/model_quantized.onnx' ? process.env.OFFGRID_TTS_MODEL_FILE : null
+    if (materializeRuntimeFile(target, [downloaded, bundled])) materialized++
+  }
+  transformersEnv.cacheDir = writableCache
+  log('cache.configured', { writable: true, materialized })
 }
 
 // kokoro-js' RawAudio.toWav() emits 32-bit IEEE-float WAV (format 3), which
@@ -69,7 +105,10 @@ async function synthToFile(tts, text, voice, outPath) {
 async function main() {
   const mode = process.argv[2]
   log('process.started', { mode, pid: process.pid })
-  const { KokoroTTS, env } = await import('kokoro-js')
+  const [{ KokoroTTS }, { env: transformersEnv }] = await Promise.all([
+    import('kokoro-js'),
+    import('@huggingface/transformers')
+  ])
   log('dependency.loaded', { kokoro: typeof KokoroTTS?.from_pretrained === 'function' })
   if (mode === 'probe') {
     process.stdout.write(
@@ -77,11 +116,7 @@ async function main() {
     )
     return { persist: false }
   }
-  if (process.env.OFFGRID_TTS_CACHE_DIR) {
-    fs.mkdirSync(process.env.OFFGRID_TTS_CACHE_DIR, { recursive: true })
-    env.cacheDir = process.env.OFFGRID_TTS_CACHE_DIR
-    log('cache.configured', { writable: true })
-  }
+  configureWritableCache(transformersEnv)
   const loadStarted = Date.now()
   log('model.loading', { model: MODEL_ID, dtype: 'q8', device: 'cpu' })
   const tts = await KokoroTTS.from_pretrained(MODEL_ID, { dtype: 'q8', device: 'cpu' })

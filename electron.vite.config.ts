@@ -45,7 +45,15 @@ export default defineConfig({
     // from externalization so Rollup BUNDLES them into the main chunk (transpiled
     // to the output format), sidestepping the ESM/CJS boundary. Used by the pro
     // vault recovery-phrase feature (pro/main/vault/vault-recovery.ts).
-    plugins: [externalizeDepsPlugin({ exclude: ['@scure/bip39', '@noble/hashes'] })],
+    plugins: [
+      externalizeDepsPlugin({
+        // Kokoro owns Transformers v3 transitively. The worker imports its env
+        // directly so cache configuration and Kokoro share one module instance;
+        // keep that native Node package external instead of bundling browser shims.
+        include: ['@huggingface/transformers'],
+        exclude: ['@scure/bip39', '@noble/hashes']
+      })
+    ],
     resolve: {
       alias: {
         '@offgrid/core': resolve('src'),
