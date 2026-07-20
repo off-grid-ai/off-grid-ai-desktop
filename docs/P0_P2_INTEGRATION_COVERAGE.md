@@ -102,6 +102,13 @@ manual claim does not count as complete integration coverage.
   - #69 remains partial. The real LLM service now refuses image input without a projector, and Pro
     capture layout learning skips that optional vision work while OCR continues. The rendered chat
     guard still substitutes the preload/API seam, so the full user journey is not yet proven.
+  - #34, #43, #52, and #53 now share a composed production-seam proof in
+    `memory-rag-chat-lifecycle.integration.dbtest.ts`. It creates projects through IPC, indexes real
+    files, embeds captured memory, persists current and sibling chats, invokes scoped chat over the
+    real LLM transport, enforces the `includeMemory` policy, deletes and reindexes sources, closes
+    and reopens SQLite, and proves old, current-chat, and cross-project context never leaks back in.
+    These journeys remain partial because the rendered controls and installed-app relaunch are not
+    part of this integration test.
 
 ## Prior evidence inventory
 
@@ -172,7 +179,8 @@ historical labels, not strict completion claims. Use the strict snapshot above f
 - #34 - All memory scope works. `rag-empty-memory.dbtest.ts` seeds a synthetic capture into real
   SQLite/FTS storage, invokes the production `rag:chat` IPC handler in All memory mode, and proves
   the local-model prompt, answer, streamed retrieval count, and returned `[S1]` citation all carry
-  the exact matching source.
+  the exact matching source. `memory-rag-chat-lifecycle.integration.dbtest.ts` additionally proves
+  captured memory enters and leaves project-scoped retrieval through the persisted project policy.
 - #38 - Stop before first token. `MemoryChat.chat-lifecycle.test.tsx` holds the real rendered turn
   at the preload persistence boundary, clicks Stop during the pre-stream window, proves the model
   transport never starts, and immediately completes a second turn normally.
@@ -188,17 +196,22 @@ historical labels, not strict completion claims. Use the strict snapshot above f
 - #43 - Chat survives relaunch. `chat-relaunch.dbtest.ts` creates a conversation and ordered user
   and assistant messages with exact scope, attachment, and finish context through the production
   repository, closes the real SQLite profile, reopens it, and verifies the conversation, message
-  count, order, content, and context. Reloading the visible conversation list remains manual.
+  count, order, content, and context. The composed memory/RAG lifecycle also reloads the application
+  modules and runs another scoped chat against the reopened profile. Reloading the visible
+  conversation list remains manual.
 - #48 - Error clears busy state. `MemoryChat.chat-lifecycle.test.tsx` rejects a live turn at the
   native-model boundary, proves the rendered error is useful and Stop clears, then sends and renders
   a successful second turn through the same production composer.
 - #52 - Attach a knowledge document. `rag-store-integration.dbtest.ts` drives a real Markdown file
   through production extraction/chunking, real SQLite persistence and retrieval, and prompt
-  formatting, with only the local embedding-model boundary deterministic.
+  formatting, with only the local embedding-model boundary deterministic. The composed lifecycle
+  adds the production attach-dialog IPC, delete, changed-file reindex, and post-reopen retrieval.
 - #53 - Project retrieval is grounded. `rag-store-integration.dbtest.ts` indexes real Markdown
   files into two projects through the production RAG service and SQLite store, then proves selected
   project and enabled-document filters exclude obsolete and cross-project facts from retrieval and
-  prompt context.
+  prompt context. The composed lifecycle extends this through production chat prompt assembly and
+  proves sibling chat inclusion plus current-chat and cross-project exclusion before and after
+  reopen.
 - #51 - Create a project. `src/main/__tests__/rag-store-integration.dbtest.ts` exercises the real
   project store against temp SQLite and verifies the round trip.
 - #56 - Delete project cascades. `src/main/__tests__/project-delete-cascade.dbtest.ts` uses the real
