@@ -42,13 +42,14 @@ as a new sheet. Do not enable automatic conversion of IDs such as `NR-01`, `PR-0
 
 - Total: 210 journeys - 21 `COMPLETE`, 179 `PARTIAL`, 10 `OPEN`.
 - P0: 93 journeys - 59.7% automation coverage, 41.8% initial readiness before manual results.
-- P1: 93 journeys - 63.5% automation coverage, 44.4% initial readiness before manual results.
+- P1: 93 journeys - 63.6% automation coverage, 44.5% initial readiness before manual results.
 - P2: 21 journeys - 71.2% automation coverage, 49.8% initial readiness before manual results.
 - P3: 3 journeys - 45.0% automation coverage, 31.5% initial readiness before manual results.
-- Overall: 62.3% automation coverage, 43.6% initial readiness before manual results.
+- Overall: 62.4% automation coverage, 43.7% initial readiness before manual results.
 - This pass closed the gateway and OAuth P0 automation gaps, added production composition coverage
   for TCC revocation and shutdown, replaced clipboard and chat tours with real persistence/runtime
-  integrations, and added guarded entity graph plus rendered contextual Jot coverage.
+  integrations, and added guarded entity graph, contextual Jot, and complete rendered action-state
+  lifecycle coverage.
 
 Initial readiness is lower than automation coverage because every newly generated row starts with
 `Manual result = NOT RUN`. Passing release-device evidence raises the manual component; a manual

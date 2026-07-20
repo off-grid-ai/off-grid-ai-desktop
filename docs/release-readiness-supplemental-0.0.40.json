@@ -601,10 +601,10 @@
     "expected": "Status/counts persist, Undo restores correctly, entity and provenance stay attached, filters show the same record, and stale targets fail closed without opening another item.",
     "status": "PARTIAL",
     "layer": "Integration + rendered integration",
-    "evidence": "pro/main/__tests__/approval-relaunch.dbtest.ts; pro/main/__tests__/entity-action-guardrails.integration.dbtest.ts; pro/main/crm/__tests__/actions-status.integration.test.ts; pro/renderer/screens/__tests__/ActionsTarget.integration.test.tsx",
-    "proof": "Real SQLite close/reopen coverage now proves stable canonical entity IDs, immutable exact source evidence, status persistence, retry deduplication, and fail-closed stale entity references. Rendered status, Waiting, and Undo controls remain separate.",
-    "remaining": "Join the rendered Actions and Waiting controls, Undo, production IPC, and the guarded persistence spine in one integration.",
-    "confidence": "MEDIUM",
+    "evidence": "pro/main/__tests__/action-lifecycle-renderer.integration.dbtest.ts; pro/main/__tests__/approval-relaunch.dbtest.ts; pro/main/__tests__/entity-action-guardrails.integration.dbtest.ts",
+    "proof": "The real Actions UI, production action/entity services, and disposable SQLite profile now run together through Open, Waiting, Done, Dismissed, Restore, and toast Undo. Counts, entity filters, exact provenance, stale-target failure, delegated visibility, and close/reopen persistence follow the same canonical record.",
+    "remaining": "Repeat the lifecycle through the packaged Electron IPC bridge and verify native notification entry points.",
+    "confidence": "HIGH",
     "notes": "Broader than canonical journey #113."
   },
   {
@@ -648,11 +648,11 @@
     "steps": "Open Entity Graph with synthetic people/projects/companies and relationships; search, focus, zoom, reset, rebuild, select a node, and return to entity detail.",
     "expected": "The graph remains responsive and legible, uses canonical entity IDs/relationships, rebuild does not duplicate data, and selected nodes open the exact entity.",
     "status": "PARTIAL",
-    "layer": "Real SQLite integration",
-    "evidence": "pro/main/__tests__/entity-action-guardrails.integration.dbtest.ts",
-    "proof": "A production graph rebuild now consumes canonical entity IDs, writes one deduplicated relationship edge, rejects a polluted entity reference, and remains stable after close/reopen.",
-    "remaining": "Integrate the rendered graph search, focus, zoom, reset, rebuild, node selection, and entity-detail navigation with the guarded database seam.",
-    "confidence": "MEDIUM",
+    "layer": "Rendered integration + real SQLite",
+    "evidence": "pro/main/__tests__/entity-graph-renderer.integration.dbtest.ts; pro/main/__tests__/entity-action-guardrails.integration.dbtest.ts",
+    "proof": "The real Entity Graph UI, Pro router, production entity services, and disposable SQLite profile run together. Search and focus use canonical IDs, zoom/reset stay operable, rebuild is idempotent, duplicates and polluted references are rejected, deletion clears stale selection, and Open record navigates to the exact surviving entity.",
+    "remaining": "Repeat the graph journey through the packaged Electron IPC bridge and inspect layout legibility at release-scale data volume.",
+    "confidence": "HIGH",
     "notes": "Actual shipped Pro surface missing from the original CSV."
   },
   {
