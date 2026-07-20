@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { withElectronViteBuildLock } from './electron-vite-build-lock'
 
 const root = path.resolve(import.meta.dirname, '../../..')
 const electronVite = path.join(root, 'node_modules', '.bin', 'electron-vite')
@@ -185,8 +186,10 @@ describe.sequential('release packaging integration', () => {
       coreOut = tempDir('offgrid-core-bundle-')
       proOut = tempDir('offgrid-pro-bundle-')
 
-      await buildArtifact(coreOut, '1')
-      await buildArtifact(proOut, '0')
+      await withElectronViteBuildLock(root, async () => {
+        await buildArtifact(coreOut, '1')
+        await buildArtifact(proOut, '0')
+      })
     },
     BUILD_TIMEOUT_MS * 2 + 10_000
   )

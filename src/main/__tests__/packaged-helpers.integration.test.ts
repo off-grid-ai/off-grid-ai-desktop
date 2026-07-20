@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import asar from '@electron/asar'
 import { configureRuntime, binRoots } from '../runtime-env'
 import { ffmpegBin } from '../transcription/whisper-cli'
+import { withElectronViteBuildLock } from './electron-vite-build-lock'
 
 const root = path.resolve(import.meta.dirname, '../../..')
 const electronVite = path.join(root, 'node_modules', '.bin', 'electron-vite')
@@ -67,12 +68,14 @@ describe.sequential('packaged helper artifact', () => {
     const packageOut = path.join(sandbox, 'package')
     const testConfig = path.join(sandbox, 'electron-builder.test.yml')
 
-    await execFileAsync(electronVite, ['build', '--outDir', bundleOut, '--logLevel', 'error'], {
-      cwd: root,
-      env: { ...process.env, OFFGRID_FORCE_CORE: '1' },
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: PACKAGE_TIMEOUT_MS
-    })
+    await withElectronViteBuildLock(root, () =>
+      execFileAsync(electronVite, ['build', '--outDir', bundleOut, '--logLevel', 'error'], {
+        cwd: root,
+        env: { ...process.env, OFFGRID_FORCE_CORE: '1' },
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: PACKAGE_TIMEOUT_MS
+      }).then(() => undefined)
+    )
 
     // Inherit the same runtime-resource contract as production. Only redirect the
     // already-built app bundle and output into the isolated workspace.
