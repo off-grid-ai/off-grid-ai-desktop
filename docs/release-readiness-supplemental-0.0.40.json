@@ -616,11 +616,11 @@
     "steps": "Using synthetic multi-source evidence, rename/retype, add/remove alias and fact, set photo, hide/unhide, merge, split/reassign an observation, re-synthesize, then relaunch and open every linked source/action.",
     "expected": "One canonical entity owns the right evidence and relationships, rollback/correction is possible, no self/noise duplicate is introduced, and every linked surface follows the surviving ID.",
     "status": "PARTIAL",
-    "layer": "Database integration",
-    "evidence": "pro/main/crm/__tests__/resolve.integration.test.ts; pro/main/__tests__/entity-action-journeys.dbtest.ts; pro/main/__tests__/entity-action-guardrails.integration.dbtest.ts; pro/main/__tests__/identity.test.ts",
-    "proof": "The real DB seam covers admission, self/noise filtering, identifier aliases, rename, retype, alias extension, action and observation continuity, stable canonical IDs across relaunch, merge, reassignment, relationships, and identity filters.",
-    "remaining": "Exercise all rendered correction controls and cross-surface links through production IPC and relaunch.",
-    "confidence": "MEDIUM",
+    "layer": "Rendered integration + real SQLite/filesystem",
+    "evidence": "pro/main/__tests__/entity-corrections-renderer.integration.dbtest.ts; pro/main/__tests__/entity-action-guardrails.integration.dbtest.ts; pro/main/crm/__tests__/resolve.integration.test.ts",
+    "proof": "The real Entities UI, correction services, disposable SQLite profile, and app-owned photo filesystem run together through rename, retype, alias add/remove, photo import and rollback, hide/unhide, merge, observation reassign/unlink, canonical action ID/name repointing, stale-survivor rejection, transaction rollback, and close/reopen persistence.",
+    "remaining": "Add and integrate rendered fact add/remove and observation split controls; neither is invoked by the shipped Entity UI today. Then repeat through packaged Electron IPC.",
+    "confidence": "HIGH",
     "notes": "Entity is a protected cross-product unit; this is a release-significant guardrail."
   },
   {
