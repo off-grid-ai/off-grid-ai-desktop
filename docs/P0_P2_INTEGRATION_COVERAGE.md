@@ -112,6 +112,46 @@ manual claim does not count as complete integration coverage.
     These journeys remain partial because the rendered controls and installed-app relaunch are not
     part of this integration test.
 
+## High-leverage integration wave 2 - 5 of 5 complete
+
+- Connector approval and revocation lifecycle:
+  - `connector-approval-lifecycle.dbtest.ts` joins encrypted connector credentials, real stdio MCP
+    discovery, read execution, write rejection, exactly-once approval execution, audit history,
+    connector deletion, secret deletion, and database reopen.
+  - It exposed and fixed approvals carrying only a display name while execution required a numeric
+    connector identity. New approvals persist `connector_id`; legacy references resolve through the
+    connector repository and deleted connectors fail closed.
+- Complete voice conversation lifecycle:
+  - `memory-chat-tts.ui.integration.dbtest.ts` now drives rendered voice mode through controlled
+    microphone/MediaRecorder boundaries, production transcription IPC and Whisper selection,
+    production RAG chat IPC and LLM transport, real SQLite message persistence, production TTS IPC,
+    worker failure, visible recovery, playback, pause, remount, and text fallback.
+  - It exposed and fixed swallowed speech failures. `VoiceBubble` now presents an actionable alert
+    and clears it before retry.
+- Fresh setup through first use:
+  - `fresh-setup-first-use.integration.dbtest.ts` starts with no profile, runs the production setup
+    planner and model manager, interrupts and range-resumes chat, transcription, and voice model
+    downloads, activates all three, consumes each through its production runtime owner, reloads the
+    profile, and proves selection persistence with no redownload.
+  - It exposed and fixed fresh-profile performance settings being lost before the models directory
+    existed.
+- Meeting intelligence lifecycle:
+  - `meeting-persistence.dbtest.ts` now joins real media persistence, ffmpeg/Whisper selection,
+    local summary transport, entity-backed observation and evidence, meeting-sourced contextual
+    actions, database reopen, and deletion of meeting-owned actions, observations, frames, and
+    media while preserving the shared entity.
+- Complete Core and Pro personal-data erasure:
+  - Core and Pro delete-all integrations exercise real connector, secret, knowledge, encrypted
+    vault, filesystem, registry, SQLite close/reopen, and retained-model/settings behavior.
+  - They exposed and fixed `vault.kdbx` and `vault.recovery` surviving Delete All while decrypted
+    vault state remained live in memory. Root files and pre-delete handle cleanup are now first-class
+    personal-store registry capabilities.
+- Boundary note:
+  - These are integration tests, not Playwright E2E tests. Remote providers, microphone/speaker,
+    heavyweight native runtimes, and network delivery are controlled only at their external
+    boundaries. The strict release counts above remain conservative where a signed installed app,
+    physical hardware, or audible output is still required.
+
 ## Prior evidence inventory
 
 The sections below describe the previously accumulated evidence. Their old `Covered` headings are
