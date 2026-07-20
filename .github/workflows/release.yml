@@ -204,6 +204,11 @@ jobs:
           npx electron-builder --mac \
             -c.dmg.artifactName='OffGrid-${version}.${ext}' \
             --publish never
+      - name: Prove packaged TTS resolves and synthesizes headlessly
+        run: |
+          APP="$(find dist -mindepth 2 -maxdepth 2 -type d -name 'Off Grid AI Desktop.app' -print -quit)"
+          test -n "$APP"
+          node scripts/probe-packaged-tts.mjs "$APP" --synthesize
       - name: Stage verified update assets and publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
