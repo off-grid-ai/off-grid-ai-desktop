@@ -49,6 +49,7 @@ import {
 import { OFF_GRID_MOBILE_URL, openExternal } from './constants/links'
 import { cn } from './lib/utils'
 import { normalizeProNavigationIntent, type ProNavigationIntent } from './lib/pro-navigation'
+import { navigateSearchHit } from './lib/search-navigation'
 import { callHook } from './bootstrap/hookRegistry'
 import {
   NOTIFICATION_METADATA_HOOK,
@@ -538,35 +539,22 @@ function AppContent() {
   // owning entity/memory/meeting, or seek Replay to that captured moment.
   const handleOpenHit = useCallback(
     (hit: SearchHit) => {
-      if (hit.kind === 'entity' || hit.kind === 'fact') {
-        handleSelectEntity(hit.refId)
-        return
-      }
-      if (hit.kind === 'memory') {
-        handleSelectMemory(hit.refId)
-        return
-      }
-      if (hit.kind === 'meeting') {
-        setMeetingTarget(hit.refId || null)
-        setViewMode('meetings')
-        return
-      }
-      // Chat conversation → open that exact chat (its id is carried in `url`).
-      if (hit.kind === 'chat') {
-        setChatTarget(hit.url ? { conversationId: hit.url } : null)
-        setViewMode('memory-chat')
-        return
-      }
-      // Knowledge-base doc → open its project (project_id carried in `url`).
-      if (hit.kind === 'doc') {
-        setChatTarget(hit.url ? { projectId: hit.url } : null)
-        setViewMode('memory-chat')
-        return
-      }
-      // Screen capture → seek Replay to that exact moment (the captured frame is the
-      // point; the source URL may be stale/missing).
-      setReplayTarget(hit.ts || Date.now())
-      setViewMode('replay')
+      navigateSearchHit(hit, {
+        selectEntity: handleSelectEntity,
+        selectMemory: handleSelectMemory,
+        openMeeting: (meetingId) => {
+          setMeetingTarget(meetingId)
+          setViewMode('meetings')
+        },
+        openChat: (target) => {
+          setChatTarget(target)
+          setViewMode('memory-chat')
+        },
+        openReplay: (timestamp) => {
+          setReplayTarget(timestamp)
+          setViewMode('replay')
+        }
+      })
     },
     [handleSelectEntity, handleSelectMemory]
   )

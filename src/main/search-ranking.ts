@@ -7,6 +7,10 @@
 //      thousands of ambient screen captures.
 //   3. "Match" sort — rank by literal term overlap in title/snippet.
 
+import type { SearchKind, SearchResult, SearchSort } from '../shared/search-contract'
+
+export type { SearchKind, SearchResult, SearchSort } from '../shared/search-contract'
+
 /** Recency boost added to a fused score. Tiered + sized to ~one rank of RRF, so a
  *  strong older match can still beat a weak recent one. No timestamp → 0. */
 export function recencyBoost(ts: number, now: number): number {
@@ -94,17 +98,6 @@ export function likeMatch(
 // Reciprocal-rank fusion + result assembly (pure — takes already-fetched hits)
 // ---------------------------------------------------------------------------
 
-export type SearchKind =
-  | 'screen'
-  | 'meeting'
-  | 'memory'
-  | 'entity'
-  | 'fact'
-  | 'artifact'
-  | 'chat'
-  | 'doc'
-export type SearchSort = 'relevance' | 'recency' | 'match'
-
 /** A raw hit fetched from one source (FTS / LIKE / semantic), before fusion. */
 export interface RawHit {
   key: string
@@ -115,20 +108,6 @@ export interface RawHit {
   surface: string
   url: string | null
   ts: number
-}
-
-/** A fused, ranked search result (imagePath filled in later by the I/O layer). */
-export interface SearchResult {
-  key: string
-  kind: SearchKind
-  refId: number
-  title: string
-  snippet: string
-  surface: string
-  url: string | null
-  ts: number // epoch ms
-  imagePath: string | null
-  score: number
 }
 
 const RRF_K = 60

@@ -247,11 +247,13 @@ function keywordHits(query: string, perSource: number): RawHit[][] {
     ),
     // Entity facts
     ftsHits(
-      `SELECT 'fact:'||o.entity_id AS key, 'fact' AS kind, o.entity_id AS refId,
-              (SELECT name FROM entities e WHERE e.id = o.entity_id) AS title,
+      `SELECT 'fact:'||o.id AS key, 'fact' AS kind, o.entity_id AS refId,
+              e.name AS title,
               o.fact AS snippet, 'Fact' AS surface, NULL AS url, 0 AS ts
          FROM entity_fact_fts f JOIN entity_facts o ON o.id = f.rowid
-        WHERE entity_fact_fts MATCH ? ORDER BY bm25(entity_fact_fts) LIMIT ?`,
+         JOIN entities e ON e.id = o.entity_id
+        WHERE entity_fact_fts MATCH ? AND e.hidden = 0
+        ORDER BY bm25(entity_fact_fts) LIMIT ?`,
       m,
       perSource
     ),
@@ -339,10 +341,48 @@ function likeFrameHits(query: string, limit: number): RawHit[] {
     .all(...args, limit) as RawHit[]
 }
 
-async function semanticHits(query: string, limit: number): Promise<RawHit[]> {
-  const vector = await embeddings.generateEmbedding(query)
+function sourceRowExists(sql: string, id: number): boolean {
+  return getDB().prepare(sql).get(id) !== undefined
+}
+
+/** Confirm a cached semantic row still has a visible source-of-truth record. */
+function semanticSourceExists(hit: VecChunk): boolean {
+  const id = Number(hit.key.slice(hit.key.indexOf(':') + 1))
+  if (!Number.isSafeInteger(id) || id <= 0) return false
+  if (hit.key.startsWith('frame:')) {
+    return sourceRowExists('SELECT 1 FROM frames WHERE id = ?', id)
+  }
+  if (hit.key.startsWith('obs:')) {
+    return sourceRowExists('SELECT 1 FROM observations WHERE id = ?', id)
+  }
+  if (hit.key.startsWith('sum:')) {
+    return sourceRowExists('SELECT 1 FROM chat_summaries WHERE rowid = ?', id)
+  }
+  if (hit.key.startsWith('mtg:')) {
+    return sourceRowExists('SELECT 1 FROM meetings WHERE id = ?', id)
+  }
+  if (hit.key.startsWith('mem:')) {
+    return sourceRowExists('SELECT 1 FROM memories WHERE id = ?', id)
+  }
+  if (hit.key.startsWith('ent:')) {
+    return sourceRowExists('SELECT 1 FROM entities WHERE id = ? AND hidden = 0', id)
+  }
+  if (hit.key.startsWith('fact:')) {
+    return sourceRowExists(
+      `SELECT 1 FROM entity_facts f JOIN entities e ON e.id = f.entity_id
+        WHERE f.id = ? AND e.hidden = 0`,
+      id
+    )
+  }
+  return false
+}
+
+/** Query the semantic index while treating SQLite as the source of truth.
+ * Stale vectors are harmless cache entries and never become user-visible hits.
+ */
+export async function searchSemanticSources(vector: number[], limit: number): Promise<RawHit[]> {
   const hits = await searchVectors(vector, limit)
-  return hits.map((h) => ({
+  return hits.filter(semanticSourceExists).map((h) => ({
     key: h.key,
     kind: h.kind as SearchKind,
     refId: h.refId,
@@ -352,6 +392,11 @@ async function semanticHits(query: string, limit: number): Promise<RawHit[]> {
     url: h.url || null,
     ts: h.ts
   }))
+}
+
+async function semanticHits(query: string, limit: number): Promise<RawHit[]> {
+  const vector = await embeddings.generateEmbedding(query)
+  return searchSemanticSources(vector, limit)
 }
 
 // Best thumbnail for a hit: a frame's own image, or an observation's linked frame.
