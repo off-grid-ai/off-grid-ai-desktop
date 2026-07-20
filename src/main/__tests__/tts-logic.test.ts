@@ -48,6 +48,18 @@ describe('toSpeakableText - rendered markdown to local speech', () => {
       'The result is 2 * 3 and the key is release_candidate.'
     )
   })
+
+  it('strips emphasis attached to punctuation (em dash, quotes, brackets), not just spaces', () => {
+    // Reasoning-model prose attaches emphasis to em dashes constantly; the old
+    // boundary only allowed a space/paren before the delimiter, so `—*x*` was read
+    // aloud with literal asterisks.
+    expect(toSpeakableText('asking—*are you really here*, or just... *on screen*.')).toBe(
+      'asking—are you really here, or just... on screen.'
+    )
+    expect(toSpeakableText('(*paren*) and end—*dash*.')).toBe('(paren) and end—dash.')
+    // No stray asterisk survives for the engine to pronounce.
+    expect(toSpeakableText('He said—*really*?')).not.toMatch(/\*/)
+  })
 })
 
 describe('chooseVoice — explicit > valid stored selection > default', () => {

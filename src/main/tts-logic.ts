@@ -16,7 +16,12 @@ export function toSpeakableText(markdown: string): string {
     .replace(/^[ \t]{0,3}(?:[-*_][ \t]*){3,}$/gm, '')
     .replace(/^[ \t]{0,3}(?:#{1,6}|>|[-+*]|\d+[.)])[ \t]+/gm, '')
     .replace(/(\*\*|__|~~)(.*?)\1/g, '$2')
-    .replace(/(^|[\s(])([*_])(?=\S)([^*_\n]*?\S)\2(?=$|[\s).,!?:;])/gm, '$1$3')
+    // Single emphasis: strip the delimiters but keep the word. The boundary is any
+    // non-word char (not just whitespace/paren) so emphasis attached to an em dash,
+    // quote, or bracket — e.g. `asking—*are you here*,` — is caught too. `[^\w*]`
+    // excludes letters/digits/underscore, so `release_candidate` and intraword `*`
+    // (`2 * 3` keeps its spaced operator via the `(?=\S)` guard) are left intact.
+    .replace(/(^|[^\w*])([*_])(?=\S)([^*_\n]*?\S)\2(?=$|[^\w*])/gm, '$1$3')
     .replace(/`([^`\n]+)`/g, '$1')
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
