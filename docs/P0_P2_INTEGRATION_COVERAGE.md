@@ -26,15 +26,15 @@ manual claim does not count as complete integration coverage.
   - P1 open: 0.
   - P1 left: 59.
   - P2: 10 total.
-  - P2 complete: 1.
-  - P2 partial: 9.
+  - P2 complete: 3.
+  - P2 partial: 7.
   - P2 open: 0.
-  - P2 left: 9.
+  - P2 left: 7.
   - Overall: 155 total.
-  - Overall complete: 17.
-  - Overall partial: 136.
+  - Overall complete: 19.
+  - Overall partial: 134.
   - Overall open: 2.
-  - Overall left: 138.
+  - Overall left: 136.
 - Complete P0 journeys:
   - #9 - Fresh onboarding completes.
   - #79 - Gateway models endpoint.
@@ -54,6 +54,8 @@ manual claim does not count as complete integration coverage.
   - #150 - Desktop collections respond at real Electron widths.
   - #151 - Desktop keyboard focus is visible and ordered.
 - Complete P2 journeys:
+  - #44 - Rename conversation.
+  - #46 - Copy assistant reply.
   - #59 - Project desktop layout.
 - Partial P0 journeys left:
   - #3, #4, #5, #6, #7, #10, #13, #15, #17, #25, #26, #27, #28, #32, #33, #34,
@@ -67,7 +69,7 @@ manual claim does not count as complete integration coverage.
     #91, #92, #93, #98, #101, #102, #103, #105, #107, #108, #109, #110, #111, #113,
     #114, #115, #120, #123, #131, #133, #139, #141, #142, #143, #146, #149, #154.
 - Partial P2 journeys left:
-  - #31, #44, #46, #50, #55, #104, #124, #152, #153.
+  - #31, #50, #55, #104, #124, #152, #153.
 - Open journeys:
   - #1 - Core DMG install against the final Developer ID-signed and notarized artifact.
   - #2 - Pro entitlement/installation against that same final production artifact.
@@ -88,6 +90,17 @@ manual claim does not count as complete integration coverage.
     `041f576bdeb82b0332ede5346b1f3353831edcf1fb1035952caf50b8baf179e0`.
   - The application now persists redacted main-process business/runtime diagnostics at
     `~/Library/Application Support/Off Grid AI Desktop/logs/off-grid-ai-desktop.log`.
+- New exact-gate classification notes:
+  - #5 remains partial. The copied-DMG helper probe now executes every exact packaged native helper
+    and rejects missing binaries, loader errors, and build-host dependencies, but it does not open
+    the installed app's System Health surface and reconcile that UI with the same helper run.
+  - #20 and #105 remain partial. The release workflow now performs real non-zero Kokoro synthesis
+    from the exact packaged ASAR worker, but the download-to-speech test and rendered Speak journey
+    still replace the ONNX worker. No test yet joins model download, selection, rendered Speak,
+    packaged worker loading, and audible output in one production journey.
+  - #69 remains partial. The real LLM service now refuses image input without a projector, and Pro
+    capture layout learning skips that optional vision work while OCR continues. The rendered chat
+    guard still substitutes the preload/API seam, so the full user journey is not yet proven.
 
 ## Prior evidence inventory
 
@@ -105,7 +118,9 @@ historical labels, not strict completion claims. Use the strict snapshot above f
 - #5 - Packaged helper binaries exist. `packaged-helpers.integration.test.ts` runs real
   `electron-vite` and `electron-builder` with the production packaging config, then proves the
   artifact contains hydrated executable llama, ffmpeg, and Whisper helpers at the runtime-resolved
-  paths plus every staged dylib as an exact-name regular file.
+  paths plus every staged dylib as an exact-name regular file. `probe-packaged-helpers.mjs` now runs
+  llama-server, ffmpeg, Whisper, and both image helpers from the copied DMG app and rejects missing
+  dependencies. The installed System Health UI is not yet reconciled with that same execution.
 - #6 - Packaged llama dependency closure. `release-packaging.integration.test.ts` invokes the exact
   repository `scripts/build-llama.sh` against a disposable CI-shaped output and proves transitive
   `@rpath` closure, non-symlink staging, exact deployment-target comparison, and rejection of both
@@ -197,7 +212,9 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   renders the returned answer.
 - #69 - Text-only model guards image input. The same integration proves an unavailable vision
   capability produces a visible explanation before image processing or model delivery, then
-  completes a text-only turn normally.
+  completes a text-only turn normally. Real active-model and projector files now drive the LLM
+  service guard for chat and streaming, and Pro layout learning skips optional vision work for a
+  text-only selection. The rendered test still substitutes the preload/API seam.
 - #71 - Connector can be added. `integration-tests/mcp-connector-setup.dbtest.ts` drives the real
   Integrations screen through a native IPC boundary adapter into production connector persistence,
   encrypted SQLite, MCP discovery, and a real stdio child, proving connected appears only after
@@ -361,7 +378,8 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   to return synthetic dictation text.
 - #20 - TTS model downloads. `model-download-tts.integration.dbtest.ts` downloads all voice files,
   activates SQLite-backed speech residency, and drives production synthesis to a valid WAV through
-  only the heavyweight worker boundary.
+  only the heavyweight worker boundary. The release gate separately synthesizes non-zero PCM from
+  the exact packaged ASAR worker, but it does not consume the model through the download journey.
 - #21 - Image model downloads. The model matrix holds a multi-file catalog image runtime unavailable
   until its full file set lands, then proves the production image status and active selection agree.
 - #22 - Multiple downloads queue. Production download ownership enforces three active transfers,
@@ -481,7 +499,9 @@ historical labels, not strict completion claims. Use the strict snapshot above f
 - #105 - Speak assistant reply. `e2e/tts-speak.spec.ts` clicks the real rendered Speak action and
   runs production preload, IPC, TTS normalization, worker spawn, WAV data URL, and Chromium audio;
   only the heavyweight ONNX worker is replaced. It proves markdown becomes the spoken text
-  `A local reply with code` before the UI enters and exits the real Stop state.
+  `A local reply with code` before the UI enters and exits the real Stop state. The release workflow
+  separately requires non-zero PCM from the exact packaged worker before publishing, but that probe
+  does not click the rendered Speak action.
 - #107 - Entities are synthesized. `entity-action-journeys.dbtest.ts` records person, project, and
   company mentions through production observation and entity owners, proving one correctly typed
   record per entity with automatic identifiers and two supporting observations.
@@ -568,15 +588,15 @@ historical labels, not strict completion claims. Use the strict snapshot above f
 
 ## Previously claimed P2 evidence
 
-- #44 - Rename conversation. `conversation-rename.dbtest.ts` renders production chat against real
-  temp SQLite and proves scoped and unscoped rename update the sidebar and tab, survive remount,
-  reject blank or missing rows with retry state, and cancel with Escape.
+- #44 - Rename conversation. `e2e/chat-actions.spec.ts` drives the real Electron UI through rename,
+  production preload/IPC and SQLite, verifies the old title disappears, navigates to another
+  conversation and back, then fully relaunches on the same profile and restores the new title.
 - #50 - Keyboard and navigation shortcuts. `App.navigation.integration.test.tsx` drives the real
   shell through Project Beta to Integrations, then proves Cmd+[ and Cmd+] restore both routes and
   the selected project instead of losing screen state.
-- #46 - Copy assistant reply. `MemoryChat.clipboard-overlay.test.tsx` invokes Copy on an assistant
-  message, proves its exact text reaches the native/browser clipboard boundary, and verifies visible
-  success feedback only after the copy completes.
+- #46 - Copy assistant reply. `e2e/chat-actions.spec.ts` clicks Copy on a rendered assistant reply,
+  crosses production IPC, verifies visible success feedback, and reads the exact expected message
+  from the real macOS clipboard.
 - #55 - Edit project. `rag-ipc-project-create.dbtest.ts` changes every editable field through the
   production project IPC handlers and real SQLite store, reloads the modules, and proves the updated
   project is returned with its exact name, description, prompt, icon, and memory setting.
