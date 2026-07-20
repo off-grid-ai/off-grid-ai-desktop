@@ -873,7 +873,7 @@
     "expected": "Every owned process, listener, timer, shortcut, audio/capture resource, and DMG mount is released; committed data reopens and no feature restarts before entitlement/settings allow.",
     "status": "PARTIAL",
     "layer": "Production composition integration",
-    "evidence": "src/main/__tests__/application-shutdown.integration.test.ts; pro/main/__tests__/system-lifecycle.integration.test.ts; pro/main/__tests__/service-activation.integration.dbtest.ts",
+    "evidence": "integration-tests/application-shutdown.integration.test.ts; pro/main/__tests__/service-shutdown.integration.test.ts; pro/main/__tests__/system-lifecycle.integration.test.ts; pro/main/__tests__/service-activation.integration.dbtest.ts; pro/main/__tests__/clipboard-popup-journey.dbtest.ts",
     "proof": "Core now has one idempotent shutdown owner for runtime engines, TTS, media, gateway, listeners, and Pro activation. Pro has one disposer for capture, meetings, dictation, clipboard, shortcuts, timers, tray, and console resources. Integration coverage proves reverse-order cleanup and failure isolation without skipping later owners.",
     "remaining": "Inspect actual host processes, permission indicators, shortcuts, ports, and mounted images after one full signed-app session.",
     "confidence": "MEDIUM",
