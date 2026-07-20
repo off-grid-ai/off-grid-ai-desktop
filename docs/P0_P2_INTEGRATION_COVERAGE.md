@@ -327,9 +327,10 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   knowledge, connectors, encrypted tokens, profile data, every registered Pro table, and every
   personal-data directory. They run the real delete-all registry, close and reopen the encrypted
   database, and verify personal data stays gone while models and ordinary preferences survive.
-- #137 - Core locked Pro tabs. The free-tier Electron tour discovers every lock-bearing nav item
-  rendered from the production catalog, opens each one, verifies its matching upgrade heading, and
-  confirms the Pro entitlement remains false.
+- #137 - Core locked Pro tabs. `App.locked-pro-tabs.integration.test.tsx` renders the real free App
+  from the production Pro catalog, opens all 11 locked routes, verifies the single UpgradeScreen and
+  canonical purchase URL, and proves renderer registries plus Pro approval/action IPC remain inert.
+  Launching the exact packaged Core artifact remains manual.
 - #138 - Pro license activates. `licensing.integration.test.ts` activates through the production
   IPC/service against a remote license boundary, proves the cached key is encrypted, reloads every
   module, and verifies the synchronous entitlement gate still unlocks Pro. The rendered Upgrade
