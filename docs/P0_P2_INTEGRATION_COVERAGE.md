@@ -55,6 +55,19 @@ manual claim does not count as complete integration coverage.
   - #151 - Desktop keyboard focus is visible and ordered.
 - Complete P2 journeys:
   - #59 - Project desktop layout.
+- Partial P0 journeys left:
+  - #3, #4, #5, #6, #7, #10, #13, #15, #17, #25, #26, #27, #28, #32, #33, #34,
+    #38, #39, #41, #42, #43, #48, #51, #52, #53, #56, #61, #62, #63, #68, #69, #71,
+    #73, #74, #75, #76, #80, #83, #84, #85, #86, #90, #94, #95, #96, #97, #99, #100,
+    #106, #112, #116, #117, #121, #122, #125, #126, #128, #132, #134, #135, #136, #137,
+    #138, #140, #144, #147, #148, #155.
+- Partial P1 journeys left:
+  - #11, #14, #16, #18, #19, #20, #21, #22, #23, #24, #35, #36, #37, #40, #45, #47,
+    #49, #54, #57, #58, #60, #64, #65, #66, #67, #70, #72, #77, #78, #81, #82, #88,
+    #91, #92, #93, #98, #101, #102, #103, #105, #107, #108, #109, #110, #111, #113,
+    #114, #115, #120, #123, #131, #133, #139, #141, #142, #143, #146, #149, #154.
+- Partial P2 journeys left:
+  - #31, #44, #46, #50, #55, #104, #124, #152, #153.
 - Open journeys:
   - #1 - Core DMG install against the final Developer ID-signed and notarized artifact.
   - #2 - Pro entitlement/installation against that same final production artifact.
