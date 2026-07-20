@@ -17,7 +17,6 @@ interface OptionalElectronApp {
   getPath?: (name: 'userData') => string
   getAppPath?: () => string
   isPackaged?: boolean
-  on?: (event: 'before-quit', listener: () => void) => unknown
 }
 
 function optionalElectronApp(): OptionalElectronApp | undefined {
@@ -162,16 +161,6 @@ export function isPackaged(): boolean {
     return optionalElectronApp()?.isPackaged === true
   } catch {
     return false
-  }
-}
-
-/** Register a shutdown callback. In Electron, hooks 'before-quit'; standalone
- *  hosts handle process teardown themselves (no-op here). */
-export function onHostQuit(fn: () => void): void {
-  try {
-    optionalElectronApp()?.on?.('before-quit', fn)
-  } catch {
-    /* standalone: host owns shutdown */
   }
 }
 

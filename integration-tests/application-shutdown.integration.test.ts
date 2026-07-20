@@ -91,7 +91,7 @@ describe('application shutdown integration', () => {
       }
     })
 
-    installApplicationShutdown(source, registry)
+    installApplicationShutdown(source, registry, () => {})
     expect(source.listenerCount).toBe(1)
 
     source.emitBeforeQuit()
@@ -192,7 +192,7 @@ describe('application shutdown integration', () => {
     )
 
     const source = new QuitBoundary()
-    const remove = installApplicationShutdown(source, registry)
+    const remove = installApplicationShutdown(source, registry, () => {})
     remove()
     remove()
     expect(source.listenerCount).toBe(0)
@@ -200,18 +200,20 @@ describe('application shutdown integration', () => {
 
   it('stops every real managed runtime and immediately evicts late async registration', async () => {
     const evicted: string[] = []
-    const runtime = (modality: ManagedRuntime['modality']): ManagedRuntime => ({
+    const failedRuntime = new Error('engine teardown failed')
+    const runtime = (modality: ManagedRuntime['modality'], failure?: Error): ManagedRuntime => ({
       modality,
       evict: () => {
         evicted.push(modality)
+        if (failure) throw failure
       },
       warm: () => {},
       release: () => {}
     })
     registerRuntime(runtime('llm'))
-    registerRuntime(runtime('tts'))
+    registerRuntime(runtime('tts', failedRuntime))
 
-    await shutdownRuntimes()
+    await expect(shutdownRuntimes()).rejects.toBe(failedRuntime)
     registerRuntime(runtime('image'))
     await Promise.resolve()
 

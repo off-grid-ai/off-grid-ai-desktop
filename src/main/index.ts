@@ -101,7 +101,9 @@ writeDiagnosticLog('app', 'bootstrap.started', {
   arch: process.arch
 })
 
-installApplicationShutdown(app, applicationShutdown)
+installApplicationShutdown(app, applicationShutdown, ({ owner, error }) =>
+  console.error(`[shutdown] ${owner} failed`, error)
+)
 registerCoreShutdownOwners(applicationShutdown, {
   stopGateway: stopModelServer,
   stopMediaServer,

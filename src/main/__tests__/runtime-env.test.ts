@@ -15,8 +15,7 @@ import {
   resourceDirs,
   resourceFile,
   resolveApplicationCodeFile,
-  isPackaged,
-  onHostQuit
+  isPackaged
 } from '../runtime-env'
 
 // The module holds a private `cfg` that persists across calls. Reset it before
@@ -178,12 +177,6 @@ describe('runtime-env', () => {
 
     it('returns false when unset and there is no Electron', () => {
       expect(isPackaged()).toBe(false)
-    })
-  })
-
-  describe('onHostQuit', () => {
-    it('is a no-op (does not throw) when there is no Electron host', () => {
-      expect(() => onHostQuit(() => {})).not.toThrow()
     })
   })
 })

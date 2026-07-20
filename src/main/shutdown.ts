@@ -87,8 +87,7 @@ export function registerCoreShutdownOwners(
 export function installApplicationShutdown(
   source: ApplicationQuitSource,
   registry: ShutdownRegistry,
-  reportFailure: (failure: ShutdownFailure) => void = ({ owner, error }) =>
-    console.error(`[shutdown] ${owner} failed`, error)
+  reportFailure: (failure: ShutdownFailure) => void
 ): () => void {
   let installed = true
   const remove = (): void => {
