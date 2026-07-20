@@ -11,11 +11,13 @@
  * source of truth) rather than re-hardcoded here.
  */
 import { describe, it, expect } from 'vitest'
+import { PRO_PURCHASE_URL } from '../../../shared/product-links'
 import {
   isProActive,
   toInfo,
   REVOKED_CODES,
   NEEDS_ACTIVATION,
+  PRO_PAY_PAGE_URL,
   type ProLicense
 } from '../license-service'
 
@@ -135,5 +137,11 @@ describe('validation-code classifiers (single source of truth)', () => {
   it('the two lists are disjoint — no code both revokes and reactivates', () => {
     const overlap = REVOKED_CODES.filter((c) => NEEDS_ACTIVATION.includes(c))
     expect(overlap).toEqual([])
+  })
+})
+
+describe('purchase destination', () => {
+  it('uses the canonical shared Pro purchase URL', () => {
+    expect(PRO_PAY_PAGE_URL).toBe(PRO_PURCHASE_URL)
   })
 })

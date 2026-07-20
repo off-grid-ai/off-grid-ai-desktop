@@ -18,7 +18,7 @@
   <a href="https://github.com/off-grid-ai/desktop/releases/latest">Download (macOS · Windows)</a> ·
   <a href="docs/FEATURES.md">Features</a> ·
   <a href="https://getoffgridai.co">getoffgridai.co</a> ·
-  <a href="https://getoffgridai.co/pay">Get Pro</a>
+  <a href="https://getoffgridai.co/pro/#buy">Get Pro</a>
 </p>
 
 <p align="center">
@@ -200,7 +200,7 @@ explicit opt-in, with a visible recording indicator, and nothing leaves the devi
   as authoritative sources, and a skills framework (trigger → action) — on the roadmap
   toward a proactive secretary and a prospective "Ahead" view of your day.
 
-**Pro is live.** Buy a license at **[getoffgridai.co/pay](https://getoffgridai.co/pay)** — you're
+**Pro is live.** Buy a license at **[getoffgridai.co/pro/#buy](https://getoffgridai.co/pro/#buy)** — you're
 emailed a license key, you install the Pro build, and you activate the key in-app. Licensing runs
 on **[Keygen](https://keygen.sh)**, and one Pro license covers up to **5 devices**. Pro features
 live in a separate **private** package; the open core never imports it — see
@@ -228,7 +228,7 @@ locked until a valid key is activated.
 
 <sub>Pro screens shown with synthetic demo data.</sub>
 
-→ **[Get Pro](https://getoffgridai.co/pay)** — buy a license, install the Pro build, activate your key.
+→ **[Get Pro](https://getoffgridai.co/pro/#buy)** — buy a license, install the Pro build, activate your key.
 
 ## Install
 

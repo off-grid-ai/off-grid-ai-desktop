@@ -14,6 +14,7 @@ import {
 import type { ComponentType } from 'react'
 import { deviceNoun } from '@renderer/lib/device'
 import { isMac, type DevicePlatform } from '@offgrid/core/shared/device'
+import { PRO_PURCHASE_URL } from '@offgrid/core/shared/product-links'
 
 // Static catalogue of the Pro features. This ships in the OPEN build so the free
 // app can advertise everything Pro unlocks — the sidebar shows these as locked
@@ -22,7 +23,7 @@ import { isMac, type DevicePlatform } from '@offgrid/core/shared/device'
 // screenRegistry/navRegistry) take over these same routes.
 
 /** Buy Pro — live now, $49/year or $69 once, one license across up to 5 devices. */
-export const PRO_PAY_URL = 'https://getoffgridai.co/pay'
+export const PRO_PAY_URL = PRO_PURCHASE_URL
 
 export interface ProFeature {
   /** Route name — matches the route a registered pro screen claims when unlocked. */

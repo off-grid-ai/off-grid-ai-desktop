@@ -47,4 +47,4 @@ acts**, on-device:
 Pro launches **July 2026** — already paid? You're first in line when it ships.
 
 → [Join early access](https://getoffgridai.co/early-access/) (free) · or
-[pay now](https://getoffgridai.co/pay) for lifetime free + first access.
+[pay now](https://getoffgridai.co/pro/#buy) for lifetime free + first access.

@@ -4,6 +4,7 @@
 // (the free build renders locked nav items straight from this data, so a malformed
 // entry ships a broken upsell tab).
 import { describe, it, expect } from 'vitest'
+import { PRO_PURCHASE_URL } from '@offgrid/core/shared/product-links'
 import {
   getProFeature,
   proComingSoonHere,
@@ -96,7 +97,7 @@ describe('PRO_FEATURES data integrity', () => {
     }
   })
 
-  it('exposes the pay URL as an https link', () => {
-    expect(PRO_PAY_URL.startsWith('https://')).toBe(true)
+  it('uses the canonical Pro purchase destination', () => {
+    expect(PRO_PAY_URL).toBe(PRO_PURCHASE_URL)
   })
 })

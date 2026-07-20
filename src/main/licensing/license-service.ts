@@ -18,6 +18,7 @@
 import { app, safeStorage } from 'electron'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PRO_PURCHASE_URL } from '../../shared/product-links'
 import {
   validateKey,
   activateMachine,
@@ -33,7 +34,7 @@ const LICENSE_FILE = 'license.json'
 
 // Public web pay page (RevenueCat checkout). "Get Pro" opens this; the buyer is
 // emailed a license key by the issuance Worker and enters it via activateProByKey.
-export const PRO_PAY_PAGE_URL = 'https://getoffgridai.co/pay'
+export const PRO_PAY_PAGE_URL = PRO_PURCHASE_URL
 
 export type ActivateResult = { ok: true } | { ok: false; reason: 'invalid' | 'limit' | 'network' }
 
