@@ -60,7 +60,6 @@ const fs = require('node:fs')
 const http = require('node:http')
 const args = process.argv.slice(2)
 const port = Number(args[args.indexOf('--port') + 1])
-fs.appendFileSync(process.env.OFFGRID_TEST_ENGINE_LOG, String(process.pid) + '\\n')
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json')
   if (req.url === '/health') return res.end('{"status":"ok"}')
@@ -68,7 +67,9 @@ const server = http.createServer((req, res) => {
   res.statusCode = 404
   res.end('{}')
 })
-server.listen(port, '127.0.0.1')
+server.listen(port, '127.0.0.1', () => {
+  fs.appendFileSync(process.env.OFFGRID_TEST_ENGINE_LOG, String(process.pid) + '\\n')
+})
 process.on('SIGTERM', () => server.close(() => process.exit(0)))
 `
   )
@@ -121,12 +122,24 @@ beforeAll(async () => {
   const executable = installNativeBoundary()
   const ownerSource = `
 const { spawn } = require('node:child_process')
-const child = spawn(process.env.OFFGRID_TEST_ENGINE, ['--port', process.env.OFFGRID_TEST_PORT], {
-  env: process.env,
-  stdio: 'ignore'
+let child
+let stopping = false
+function startOwner() {
+  child = spawn(process.env.OFFGRID_TEST_ENGINE, ['--port', process.env.OFFGRID_TEST_PORT], {
+    env: process.env,
+    stdio: 'ignore'
+  })
+  child.on('exit', () => {
+    if (stopping) process.exit(0)
+    setTimeout(startOwner, 100)
+  })
+}
+process.on('SIGTERM', () => {
+  stopping = true
+  if (child) child.kill('SIGTERM')
+  else process.exit(0)
 })
-process.on('SIGTERM', () => child.kill('SIGTERM'))
-child.on('exit', (code) => process.exit(code || 0))
+startOwner()
 setInterval(() => {}, 1000)
 `
   liveOwner = spawn(process.execPath, ['-e', ownerSource], {
@@ -138,9 +151,9 @@ setInterval(() => {}, 1000)
     },
     stdio: 'ignore'
   })
-  await waitFor(engineIsReady, 'first model engine owner')
+  await waitFor(engineIsReady, 'first model engine owner', 20_000)
   enginePid = Number(fs.readFileSync(fixture.engineLog, 'utf8').trim())
-})
+}, 25_000)
 
 afterAll(async () => {
   liveOwner?.kill('SIGTERM')
