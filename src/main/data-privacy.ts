@@ -141,8 +141,11 @@ const MEMORY_TABLES = [
 // subset. Categories keep their own mapping above (clearCategory/getDataSummary);
 // this set is a superset of them plus the stores that have no UI category.
 interface PersonalStore {
-  tables: string[]
-  dirs: string[]
+  tables?: string[]
+  dirs?: string[]
+  files?: string[]
+  /** Drop live handles before their durable files are removed. */
+  beforeDelete?: () => void
 }
 const CORE_PERSONAL: PersonalStore[] = [
   { tables: CHAT_TABLES, dirs: ['uploads'] },
@@ -164,6 +167,16 @@ const personalStores: PersonalStore[] = [...CORE_PERSONAL]
  *  so their names never leak into core source, yet delete-all still wipes them. */
 export function registerPersonalStore(store: PersonalStore): void {
   personalStores.push(store)
+}
+
+function clearFiles(...files: string[]): void {
+  for (const file of files) {
+    try {
+      fs.rmSync(file, { force: true })
+    } catch {
+      /* missing or already removed */
+    }
+  }
 }
 
 /** Summary of what's stored, per category, for the Delete-my-data screen. */
@@ -268,8 +281,10 @@ export async function clearCategory(
  *  personalStores registry so nothing is missed as tables/dirs are added — the fix
  *  for the drift that once let captures/connectors/secrets/RAG docs survive here. */
 export function deleteAllData(): { success: boolean } {
-  clearTables(...personalStores.flatMap((s) => s.tables))
-  clearDirs(...personalStores.flatMap((s) => s.dirs).map((d) => ud(d)), ud('lancedb'))
+  for (const store of personalStores) store.beforeDelete?.()
+  clearTables(...personalStores.flatMap((s) => s.tables ?? []))
+  clearDirs(...personalStores.flatMap((s) => s.dirs ?? []).map((d) => ud(d)), ud('lancedb'))
+  clearFiles(...personalStores.flatMap((s) => s.files ?? []).map((file) => ud(file)))
   resetVectors() // the lancedb dir is gone — drop cached handles so it reopens clean
   pruneDanglingMeetings() // media is gone now → drop all meeting rows (no ghosts)
   return { success: true }
