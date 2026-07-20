@@ -19,7 +19,13 @@ import {
 } from './models-manager'
 import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports'
 import { deviceNoun } from '../shared/device'
+import type {
+  SystemHealthComponentContract,
+  SystemHealthComponentStatusContract,
+  SystemHealthContract
+} from '../shared/ipc-contracts'
 import type { RecMode } from './models/setup-types'
+import { getNativeHelperHealth } from './native-helper-health'
 import {
   normalizeMode,
   recommendBudgetFraction,
@@ -29,23 +35,9 @@ import {
   type SetupItemKind
 } from './models/setup-logic'
 
-export type ComponentStatus = 'ready' | 'starting' | 'down' | 'not_installed'
-
-export interface HealthComponent {
-  id: string
-  label: string
-  status: ComponentStatus
-  detail?: string
-  port?: number
-  /** True if the renderer can offer a "restart" affordance for this component. */
-  canRestart?: boolean
-}
-
-export interface SystemHealth {
-  ramGb: number
-  activeModel: string | null
-  components: HealthComponent[]
-}
+export type ComponentStatus = SystemHealthComponentStatusContract
+export type HealthComponent = SystemHealthComponentContract
+export type SystemHealth = SystemHealthContract
 
 export interface SetupProgress {
   phase: 'select' | 'download' | 'activate' | 'start' | 'verify' | 'done' | 'error'
@@ -166,7 +158,8 @@ export async function getSystemHealth(): Promise<SystemHealth> {
       label: 'Image generation',
       status: image.available ? 'ready' : 'not_installed',
       detail: image.available ? undefined : (image.reason ?? 'No image model installed')
-    }
+    },
+    ...getNativeHelperHealth()
   ]
 
   return { ramGb: ramGb(), activeModel, components }

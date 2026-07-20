@@ -42,13 +42,13 @@ import {
   type ResidencyMode
 } from './runtime-residency'
 import {
-  getPermissionStatus,
   requestAccessibilityPermission,
   requestScreenRecordingPermission,
   openAccessibilitySettings,
   openScreenRecordingSettings,
   openMicrophoneSettings
 } from './permissions'
+import { setupSystemStatusIpc } from './system-status-ipc'
 import { CACHE_CLEANUP_CHANNEL } from '../shared/ipc-contracts'
 import { toResponseGenerationResult, type ResponseGenerationResult } from './llm/response-result'
 import { getAllPromptDefs } from './prompts'
@@ -469,6 +469,7 @@ export async function summarizeSession(sessionId: string): Promise<string | null
 export function setupIPC() {
   const db = getDB()
   setupTtsIpc()
+  setupSystemStatusIpc(ipcMain)
 
   ipcMain.handle('db:get-memories', (_, limit: number = 50, appName?: string) => {
     let query = 'SELECT * FROM memories '
@@ -1108,10 +1109,6 @@ export function setupIPC() {
   })
 
   // Permission handlers
-  ipcMain.handle('permissions:get-status', () => {
-    return getPermissionStatus()
-  })
-
   ipcMain.handle('permissions:request-accessibility', () => {
     return requestAccessibilityPermission()
   })
@@ -1565,7 +1562,6 @@ export function setupIPC() {
   // --- Setup + system health -----------------------------------------------
   // One aggregated snapshot of every local component (chat LLM, gateway, vision,
   // embeddings, STT, TTS, image gen) for the Settings → Health panel.
-  ipcMain.handle('system:health', () => import('./setup').then((m) => m.getSystemHealth()))
   // Preview what "Configure for me" would pick for a mode (no side effects).
   ipcMain.handle('setup:recommendation', (_e, mode?: string) =>
     import('./setup').then((m) =>

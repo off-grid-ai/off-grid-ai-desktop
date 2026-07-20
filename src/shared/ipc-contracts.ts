@@ -47,6 +47,47 @@ export interface PermissionStatusContract {
   allGranted: boolean
 }
 
+/** Status values rendered by Settings -> System health. Process state, installed
+ * one-shot helpers, and TCC grants are intentionally distinct: calling every
+ * usable thing "Running" made the panel claim idle helpers and permissions were
+ * processes. */
+export type SystemHealthComponentStatusContract =
+  | 'ready'
+  | 'starting'
+  | 'down'
+  | 'not_installed'
+  | 'installed'
+  | 'granted'
+  | 'denied'
+
+/** User-facing labels are part of the IPC contract so main and renderer cannot
+ * independently reinterpret the same status record. */
+export const SYSTEM_HEALTH_STATUS_LABELS: Record<SystemHealthComponentStatusContract, string> = {
+  ready: 'Running',
+  starting: 'Starting',
+  down: 'Error',
+  not_installed: 'Not set up',
+  installed: 'Installed',
+  granted: 'Granted',
+  denied: 'Permission needed'
+}
+
+export interface SystemHealthComponentContract {
+  id: string
+  label: string
+  status: SystemHealthComponentStatusContract
+  detail?: string
+  port?: number
+  /** True if the renderer can offer a restart affordance for this component. */
+  canRestart?: boolean
+}
+
+export interface SystemHealthContract {
+  ramGb: number
+  activeModel: string | null
+  components: SystemHealthComponentContract[]
+}
+
 export interface CacheCleanupResultContract {
   success: true
   /** HTTP cache bytes reclaimed when Electron can measure them; null otherwise. */

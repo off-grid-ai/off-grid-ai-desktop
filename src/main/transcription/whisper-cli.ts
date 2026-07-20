@@ -19,8 +19,10 @@ import type { TranscriptionService, Transcript, TranscribeOptions, Seg } from '.
 
 const execFileAsync = promisify(execFile)
 
-/** Resolve the bundled whisper-cli across dev / packaged layouts. */
-function whisperBin(): string | null {
+/** Resolve the bundled whisper-cli across dev / packaged layouts. System Health
+ * reuses this exact runtime resolver so its Installed claim cannot drift from
+ * the executable the transcription service will actually launch. */
+export function whisperBin(): string | null {
   return existing(binRoots().map((r) => path.join(r, 'whisper', exe('whisper-cli'))))
 }
 

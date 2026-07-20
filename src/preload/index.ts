@@ -3,7 +3,8 @@ import {
   CACHE_CLEANUP_CHANNEL,
   type ArtifactKindContract,
   type CacheCleanupResultContract,
-  type RagChatResultContract
+  type RagChatResultContract,
+  type SystemHealthContract
 } from '../shared/ipc-contracts'
 import type { ImageGenerationRequestContract } from '../shared/image-generation-contract'
 
@@ -341,7 +342,7 @@ const offGridApi = {
   },
 
   // Setup + system health
-  systemHealth: () => ipcRenderer.invoke('system:health'),
+  systemHealth: (): Promise<SystemHealthContract> => ipcRenderer.invoke('system:health'),
   setupRecommendation: (mode?: string) => ipcRenderer.invoke('setup:recommendation', mode),
   setupPlan: (mode?: string) => ipcRenderer.invoke('setup:plan', mode),
   chatVisionAvailable: () => ipcRenderer.invoke('model:chat-vision'),
