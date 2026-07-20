@@ -245,6 +245,7 @@ export class LLMService {
    *  restores the pins and a mode preset can't reclobber an explicit KV/ctx choice. */
   private persist(): void {
     try {
+      fs.mkdirSync(path.dirname(this.settingsFile), { recursive: true })
       fs.writeFileSync(
         this.settingsFile,
         JSON.stringify({ ...this.getSettings(), userExplicit: [...this.userExplicit] })
