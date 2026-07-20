@@ -110,8 +110,10 @@ historical labels, not strict completion claims. Use the strict snapshot above f
 
 ## Previously claimed P0 evidence
 
-- #3 - Fresh profile is truly fresh. `e2e/smoke.spec.ts` launches the built Electron app with a
-  new temp `OFFGRID_USER_DATA` directory and verifies first-run onboarding and the preload bridge.
+- #3 - Fresh profile is truly fresh. `fresh-profile.dbtest.ts` opens a brand-new disposable profile
+  through the production repositories and proves chats, projects, memories, entities, summaries,
+  identity, master memory, and dashboard counts are empty before any seeder runs. First-run
+  onboarding and the packaged preload boundary remain manual.
 - #4 - Core and Pro artifact separation. `release-packaging.integration.test.ts` builds both
   resolved source graphs with sourcemaps and proves Core contains no `pro/` implementation while
   retaining the locked shell and entitlement gates; Pro excludes the stub and includes both real
