@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import asar from '@electron/asar'
 import { configureRuntime, binRoots } from '../runtime-env'
 import { ffmpegBin } from '../transcription/whisper-cli'
 
@@ -151,5 +152,16 @@ mac:
         expect(packaged.size, `${helper}/${name}`).toBeGreaterThan(200)
       }
     }
+  })
+
+  it('packages the compiled TTS worker beside its application dependencies', () => {
+    const archive = path.join(resourcesDir, 'app.asar')
+    const entries = asar.listPackage(archive, { isPack: false })
+
+    expect(entries).toContain('/out/main/tts-worker.js')
+    expect(fs.existsSync(path.join(resourcesDir, 'tts-worker.mjs'))).toBe(false)
+    expect(asar.extractFile(archive, 'out/main/tts-worker.js').toString('utf8')).toContain(
+      'kokoro-js'
+    )
   })
 })

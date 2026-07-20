@@ -45,10 +45,16 @@ fi
 # --- static packaging assertions (catch missing/mislocated bundled assets) ------------
 echo "[packaged-smoke] static bundle assertions"
 [ -f "$RES/icon.png" ]                 && ok "icon.png unpacked in Resources (menu-bar icon)" || bad "icon.png MISSING from Resources"
-[ -f "$RES/tts-worker.mjs" ]           && ok "tts-worker.mjs in Resources"                    || bad "tts-worker.mjs MISSING from Resources"
+[ ! -e "$RES/tts-worker.mjs" ]         && ok "raw TTS worker excluded from external Resources" || bad "raw TTS worker leaked into Resources"
+node -e "const a=require('@electron/asar');process.exit(a.listPackage(process.argv[1]).includes('/out/main/tts-worker.js')?0:1)" "$RES/app.asar" \
+  && ok "compiled TTS worker in app.asar" \
+  || bad "compiled TTS worker MISSING from app.asar"
 [ -x "$RES/bin/llama/llama-server" ]   && ok "llama-server bundled"                           || bad "llama-server MISSING"
 [ -x "$RES/bin/sd/sd-server" ]         && ok "sd-server bundled"                              || bad "sd-server MISSING"
 [ "$FAILED" = 0 ] || { echo "[packaged-smoke] static assertions failed - not launching"; exit 1; }
+node scripts/probe-packaged-tts.mjs "$APP" \
+  && ok "packaged TTS worker imports kokoro-js through ASAR" \
+  || { bad "packaged TTS worker cannot import kokoro-js"; exit 1; }
 
 # --- launch the bundle (PRO=0: no screen capture) -------------------------------------
 # Use the given profile if set, else the real userData profile - it has a selected model,

@@ -5,6 +5,7 @@
 // In vitest there is no Electron `app`, so the lazy `require('electron')` probe
 // returns null and the tests observe the configure()/env/cwd branches directly.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import fs from 'node:fs'
 import path from 'path'
 import {
   configureRuntime,
@@ -13,6 +14,7 @@ import {
   binRoots,
   resourceDirs,
   resourceFile,
+  resolveApplicationCodeFile,
   isPackaged,
   onHostQuit
 } from '../runtime-env'
@@ -129,6 +131,37 @@ describe('runtime-env', () => {
       configureRuntime({ resourceDirs: ['/nonexistent-dir-abc', __dirname] })
       const found = resourceFile(path.basename(__filename))
       expect(found).toBe(path.join(__dirname, path.basename(__filename)))
+    })
+  })
+
+  describe('resolveApplicationCodeFile', () => {
+    it('ignores external development directories for a packaged application', () => {
+      const packagedName = path.basename(__filename)
+      const appPath = path.resolve(__dirname, '../../..')
+      const expected = path.join(appPath, 'out', 'main', packagedName)
+      const external = path.join(__dirname, packagedName)
+
+      expect(fs.existsSync(external)).toBe(true)
+      expect(
+        resolveApplicationCodeFile({
+          packagedAppPath: appPath,
+          packagedName,
+          developmentName: packagedName,
+          developmentDirs: [__dirname]
+        })
+      ).toBe(fs.existsSync(expected) ? expected : null)
+    })
+
+    it('uses the configured resource directories for a development host', () => {
+      const name = path.basename(__filename)
+      expect(
+        resolveApplicationCodeFile({
+          packagedAppPath: null,
+          packagedName: 'ignored.js',
+          developmentName: name,
+          developmentDirs: [__dirname]
+        })
+      ).toBe(path.join(__dirname, name))
     })
   })
 

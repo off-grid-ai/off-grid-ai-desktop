@@ -107,6 +107,54 @@ export function resourceFile(name: string): string | null {
   return null
 }
 
+export interface ApplicationCodeLocation {
+  packagedAppPath: string | null
+  packagedName: string
+  developmentName: string
+  developmentDirs: string[]
+}
+
+/** Pure trust rule used by applicationCodeFile and its security regression test. */
+export function resolveApplicationCodeFile(location: ApplicationCodeLocation): string | null {
+  const candidates = location.packagedAppPath
+    ? [path.join(location.packagedAppPath, 'out', 'main', location.packagedName)]
+    : location.developmentDirs.map((dir) => path.join(dir, location.developmentName))
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate
+    } catch {
+      /* keep looking */
+    }
+  }
+  return null
+}
+
+/** Resolve executable application code. A packaged Electron host must never honor
+ * environment/config resource overrides here: that would let external JavaScript
+ * bypass the integrity-checked ASAR. Development and standalone hosts keep the
+ * ordinary resource override seam. */
+export function applicationCodeFile(packagedName: string, developmentName: string): string | null {
+  try {
+    const app = optionalElectronApp()
+    if (app?.isPackaged === true) {
+      return resolveApplicationCodeFile({
+        packagedAppPath: app.getAppPath?.() ?? null,
+        packagedName,
+        developmentName,
+        developmentDirs: []
+      })
+    }
+  } catch {
+    /* development or standalone host */
+  }
+  return resolveApplicationCodeFile({
+    packagedAppPath: null,
+    packagedName,
+    developmentName,
+    developmentDirs: resourceDirs()
+  })
+}
+
 /** Whether running inside a packaged app (affects quarantine handling on macOS). */
 export function isPackaged(): boolean {
   if (process.env.OFFGRID_PACKAGED) return process.env.OFFGRID_PACKAGED === '1'

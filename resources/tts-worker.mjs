@@ -16,6 +16,15 @@ import fs from 'node:fs'
 const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX'
 const DEFAULT_VOICE = 'af_heart'
 
+function log(event, fields = {}) {
+  const details = Object.entries(fields)
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join(' ')
+  process.stderr.write(
+    `${new Date().toISOString()} INFO [tts-worker] ${event}${details ? ` ${details}` : ''}\n`
+  )
+}
+
 // kokoro-js' RawAudio.toWav() emits 32-bit IEEE-float WAV (format 3), which
 // Chromium's <audio>/new Audio() refuses to decode — so playback is silent.
 // Re-encode the float samples to 16-bit PCM, which plays everywhere.
@@ -47,19 +56,40 @@ function encodeWavPcm16(float32, sampleRate) {
 async function synthToFile(tts, text, voice, outPath) {
   const clean = (text || '').trim().slice(0, 2000)
   if (!clean) throw new Error('no text')
+  const started = Date.now()
+  log('synthesis.started', { chars: clean.length })
   const audio = await tts.generate(clean, { voice: voice || DEFAULT_VOICE })
   const samples = audio.audio || audio.data
   const sr = audio.sampling_rate || audio.sampleRate || 24000
-  fs.writeFileSync(outPath, encodeWavPcm16(samples, sr))
+  const wav = encodeWavPcm16(samples, sr)
+  fs.writeFileSync(outPath, wav)
+  log('synthesis.completed', { durationMs: Date.now() - started, wavBytes: wav.length })
 }
 
 async function main() {
   const mode = process.argv[2]
-  const { KokoroTTS } = await import('kokoro-js')
+  log('process.started', { mode, pid: process.pid })
+  const { KokoroTTS, env } = await import('kokoro-js')
+  log('dependency.loaded', { kokoro: typeof KokoroTTS?.from_pretrained === 'function' })
+  if (mode === 'probe') {
+    process.stdout.write(
+      JSON.stringify({ kokoro: typeof KokoroTTS?.from_pretrained === 'function' })
+    )
+    return { persist: false }
+  }
+  if (process.env.OFFGRID_TTS_CACHE_DIR) {
+    fs.mkdirSync(process.env.OFFGRID_TTS_CACHE_DIR, { recursive: true })
+    env.cacheDir = process.env.OFFGRID_TTS_CACHE_DIR
+    log('cache.configured', { writable: true })
+  }
+  const loadStarted = Date.now()
+  log('model.loading', { model: MODEL_ID, dtype: 'q8', device: 'cpu' })
   const tts = await KokoroTTS.from_pretrained(MODEL_ID, { dtype: 'q8', device: 'cpu' })
+  log('model.ready', { durationMs: Date.now() - loadStarted })
 
   if (mode === 'voices') {
     const voices = Object.keys(tts.voices || {})
+    log('voices.completed', { count: voices.length })
     process.stdout.write(JSON.stringify(voices))
     return { persist: false }
   }

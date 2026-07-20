@@ -23,14 +23,19 @@ describe('tts.ts worker spawn never passes a cwd (ENOTDIR guard)', () => {
 
   it('still spawns the worker as Electron-as-Node with an absolute worker path', () => {
     // The fix removed only `cwd` - the rest of the launch contract must stay intact.
-    expect(src).toMatch(/spawn\(process\.execPath,\s*\[workerPath\(\)/)
+    expect(src).toMatch(/const worker = workerPath\(\)/)
+    expect(src).toMatch(/spawn\(process\.execPath,\s*\[worker,/)
     expect(src).toMatch(/ELECTRON_RUN_AS_NODE:\s*'1'/)
+  })
+
+  it('cannot inherit an environment switch that disables ASAR resolution', () => {
+    expect(src).toMatch(/delete env\.ELECTRON_NO_ASAR/)
   })
 })
 
 describe('tts.ts diagnostics do not log user-controlled voice data', () => {
   it('keeps the synthesis-start log free of the requested voice', () => {
-    expect(src).toMatch(/\[tts\] synth start: chars=/)
-    expect(src).not.toMatch(/\[tts\] synth start:[^`]*voice=/)
+    expect(src).toContain("writeDiagnosticLog('tts', 'request.started'")
+    expect(src).not.toMatch(/request\.started[\s\S]{0,180}\bvoice\b/)
   })
 })

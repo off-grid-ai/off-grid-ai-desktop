@@ -28,6 +28,17 @@ const rendererContentSecurityPolicy = createRendererContentSecurityPolicy(render
 export default defineConfig({
   main: {
     define: proDefine,
+    build: {
+      rollupOptions: {
+        // The TTS worker must live inside app.asar beside its JavaScript
+        // dependencies. Copying the raw source into Resources makes ESM resolve
+        // from that external directory, where kokoro-js does not exist.
+        input: {
+          index: resolve('src/main/index.ts'),
+          'tts-worker': resolve('resources/tts-worker.mjs')
+        }
+      }
+    },
     // Deps are externalized by default (resolved from node_modules at runtime).
     // @scure/bip39 + @noble/hashes are ESM-only ("type":"module"); a CJS main
     // process require()-ing them throws ERR_REQUIRE_ESM at runtime. Exclude them
