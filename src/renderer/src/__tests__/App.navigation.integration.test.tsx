@@ -152,12 +152,20 @@ describe('<App/> desktop navigation integration', () => {
     expect(screen.getByRole('button', { name: 'Artifacts' })).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Knowledge & settings' })).not.toBeNull()
 
-    await user.click(screen.getByTitle('Integrations'))
-    expect(await screen.findByRole('heading', { name: 'Integrations' })).not.toBeNull()
-
-    act(() => {
+    let shortcutDispatched = false
+    const observer = new MutationObserver(() => {
+      if (shortcutDispatched || !screen.queryByRole('heading', { name: 'Integrations' })) return
+      shortcutDispatched = true
       window.dispatchEvent(new KeyboardEvent('keydown', { key: '[', metaKey: true, bubbles: true }))
     })
+    observer.observe(document.body, { childList: true, subtree: true })
+    try {
+      await user.click(screen.getByTitle('Integrations'))
+      await waitFor(() => expect(shortcutDispatched).toBe(true))
+    } finally {
+      observer.disconnect()
+    }
+
     await waitFor(() => expect(screen.getAllByText('Project Beta')).toHaveLength(2))
 
     act(() => {

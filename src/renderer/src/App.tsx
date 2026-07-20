@@ -23,7 +23,7 @@ import { NotificationProvider } from './hooks/NotificationProvider'
 import { useNotifications } from './hooks/useNotifications'
 import { ToastProvider } from './hooks/ToastProvider'
 import { ReprocessingProvider, useReprocessing } from './hooks/useReprocessing'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { GridBackdrop } from './components/ui/grid-backdrop'
 import { StarfieldBackdrop } from './components/ui/starfield-backdrop'
 import { Sidebar, SidebarBody } from './components/ui/sidebar'
@@ -365,8 +365,10 @@ function AppContent() {
     }
   }, [viewMode])
 
-  // Track navigation state changes and push to history (except when navigating back/forward)
-  useEffect(() => {
+  // Record the committed destination before paint so an immediate keyboard/back-button action
+  // cannot observe the new screen while history still points at the previous screen. A passive
+  // effect left a real race here under renderer load: Cmd+[ could skip the selected project.
+  useLayoutEffect(() => {
     if (isNavigatingHistory.current) {
       isNavigatingHistory.current = false
       return
