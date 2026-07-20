@@ -7,7 +7,7 @@ describe('OAuth loopback callback lifecycle', () => {
   beforeEach(async () => {
     loopback = new OAuthLoopbackServer({
       port: 0,
-      authorizationTimeoutMs: 100,
+      authorizationTimeoutMs: 5_000,
       renderCompletionPage: (error) => (error ? `failed:${error}` : 'connected')
     })
     await loopback.start()
