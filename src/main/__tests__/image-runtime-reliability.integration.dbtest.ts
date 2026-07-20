@@ -1,9 +1,9 @@
 /**
- * Real image-runtime reliability integration.
+ * Real multimodal-runtime reliability integration.
  *
- * Production LLMService, imagegen, ModalityQueue, runtime-manager, SQLite
- * residency, argument building, process lifecycle, and HTTP transports remain
- * real. Only the bundled native executables and reported host RAM are controlled.
+ * Production LLMService, imagegen, TTS, ModalityQueue, runtime-manager, SQLite
+ * residency, argument building, process lifecycle, and HTTP transports remain real.
+ * Only the bundled native executables and reported host RAM are controlled.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
@@ -22,8 +22,11 @@ const fixture = (() => {
     root,
     dataDir: path.join(root, 'data'),
     binDir: path.join(root, 'bin'),
+    resourceDir: path.join(root, 'resources'),
     llamaLog: path.join(root, 'llama-starts.log'),
-    imageLog: path.join(root, 'image-runs.log')
+    imageLog: path.join(root, 'image-runs.log'),
+    ttsFailureMarker: path.join(root, 'fail-next-tts'),
+    ttsInputLog: path.join(root, 'tts-inputs.log')
   }
 })()
 
@@ -48,6 +51,7 @@ const PNG_BASE64 =
 
 let llm: typeof import('../llm').llm
 let generateImage: typeof import('../imagegen').generateImage
+let synthesize: typeof import('../tts').synthesize
 let startModelServer: typeof import('../model-server').startModelServer
 let stopModelServer: typeof import('../model-server').stopModelServer
 let gatewayPort: number
@@ -115,6 +119,29 @@ fs.writeFileSync(value('-o'), Buffer.from('${PNG_BASE64}', 'base64'))
 `
   )
   fs.chmodSync(executable, 0o755)
+}
+
+function installFakeTtsBoundary(): void {
+  fs.mkdirSync(fixture.resourceDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(fixture.resourceDir, 'tts-worker.mjs'),
+    `import fs from 'node:fs'
+const [, , command, output] = process.argv
+let input = ''
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', chunk => { input += chunk })
+process.stdin.on('end', () => {
+  if (command !== 'speak' || !output) return
+  if (fs.existsSync(process.env.OFFGRID_TEST_TTS_FAILURE_MARKER || '')) {
+    fs.rmSync(process.env.OFFGRID_TEST_TTS_FAILURE_MARKER, { force: true })
+    process.stderr.write('synthetic native TTS failure')
+    return
+  }
+  fs.appendFileSync(process.env.OFFGRID_TEST_TTS_INPUT_LOG, input + '\\n')
+  fs.writeFileSync(output, Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(60, 1)]))
+})
+`
+  )
 }
 
 function createValidGguf(filePath: string): void {
@@ -185,8 +212,11 @@ function processIsAlive(pid: number): boolean {
 beforeAll(async () => {
   process.env.OFFGRID_DATA_DIR = fixture.dataDir
   process.env.OFFGRID_BIN_DIR = fixture.binDir
+  process.env.OFFGRID_RESOURCE_DIR = fixture.resourceDir
   process.env.OFFGRID_TEST_LLAMA_LOG = fixture.llamaLog
   process.env.OFFGRID_TEST_IMAGE_LOG = fixture.imageLog
+  process.env.OFFGRID_TEST_TTS_FAILURE_MARKER = fixture.ttsFailureMarker
+  process.env.OFFGRID_TEST_TTS_INPUT_LOG = fixture.ttsInputLog
 
   const modelsDir = path.join(fixture.dataDir, 'models')
   fs.mkdirSync(modelsDir, { recursive: true })
@@ -198,25 +228,30 @@ beforeAll(async () => {
   )
   installFakeLlamaBoundary()
   installFakeImageBoundary()
+  installFakeTtsBoundary()
   offlineNetwork = createOfflineFetchBoundary(hostFetch)
   vi.stubGlobal('fetch', offlineNetwork.fetch)
 
   const [
     { llm: productionLlm },
     { generateImage: productionGenerateImage },
+    { synthesize: productionSynthesize, ttsRuntime },
     runtimeManager,
     modelServer
   ] = await Promise.all([
     import('../llm'),
     import('../imagegen'),
+    import('../tts'),
     import('../runtime-manager'),
     import('../model-server')
   ])
   llm = productionLlm
   generateImage = productionGenerateImage
+  synthesize = productionSynthesize
   startModelServer = modelServer.startModelServer
   stopModelServer = modelServer.stopModelServer
   runtimeManager.registerRuntime(llm.runtime)
+  runtimeManager.registerRuntime(ttsRuntime)
   await llm.init()
   gatewayPort = await unusedPort()
 })
@@ -237,12 +272,15 @@ afterAll(async () => {
   vi.unstubAllGlobals()
   delete process.env.OFFGRID_DATA_DIR
   delete process.env.OFFGRID_BIN_DIR
+  delete process.env.OFFGRID_RESOURCE_DIR
   delete process.env.OFFGRID_TEST_LLAMA_LOG
   delete process.env.OFFGRID_TEST_IMAGE_LOG
+  delete process.env.OFFGRID_TEST_TTS_FAILURE_MARKER
+  delete process.env.OFFGRID_TEST_TTS_INPUT_LOG
   fs.rmSync(fixture.root, { recursive: true, force: true })
 })
 
-describe('image runtime reliability', () => {
+describe('multimodal runtime reliability', () => {
   it('evicts a resident chat runtime for image generation and reloads it for the next chat', async () => {
     expect(await llm.chat('before image')).toBe('chat recovered')
     expect(lineCount(fixture.llamaLog)).toBe(1)
@@ -333,7 +371,10 @@ describe('image runtime reliability', () => {
     expect(health.status).toBe(200)
   })
 
-  it('recovers after an unexpected native engine crash', async () => {
+  it('recovers chat and TTS after native runtime failures', async () => {
+    const initialAnswer = await llm.chat('Give me a reply that can be spoken')
+    expect(initialAnswer).toBe('chat recovered')
+
     const startsBefore = lineCount(fixture.llamaLog)
     const crash = await fetch(`http://127.0.0.1:${String(LLAMA_SERVER_PORT)}/test/crash`, {
       method: 'POST'
@@ -341,6 +382,15 @@ describe('image runtime reliability', () => {
     expect(crash.status).toBe(200)
 
     await waitFor(() => !llm.isReady(), 'the crashed engine to be marked down')
+
+    fs.writeFileSync(fixture.ttsFailureMarker, 'fail once')
+    await expect(synthesize(initialAnswer)).rejects.toThrow('synthetic native TTS failure')
+    const retriedSpeech = await synthesize(initialAnswer)
+    expect(retriedSpeech.dataUrl).toMatch(/^data:audio\/wav;base64,/)
+    expect(
+      Buffer.from(retriedSpeech.dataUrl.split(',')[1]!, 'base64').subarray(0, 4).toString('ascii')
+    ).toBe('RIFF')
+
     const responsePromise = fetch(`http://127.0.0.1:${String(gatewayPort)}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -357,8 +407,17 @@ describe('image runtime reliability', () => {
 
     const response = await responsePromise
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({
+    const recovered = (await response.json()) as {
+      choices: Array<{ message: { content: string } }>
+    }
+    expect(recovered).toMatchObject({
       choices: [{ message: { content: 'chat recovered' } }]
     })
+    const recoveredSpeech = await synthesize(recovered.choices[0]!.message.content)
+    expect(recoveredSpeech.dataUrl).toMatch(/^data:audio\/wav;base64,/)
+    expect(fs.readFileSync(fixture.ttsInputLog, 'utf8').trim().split(/\r?\n/)).toEqual([
+      'chat recovered',
+      'chat recovered'
+    ])
   }, 10_000)
 })
