@@ -36,6 +36,7 @@ import { PRODUCT_NAME } from '../shared/product-identity'
 import { installMediaPermissionHandler } from './media-permission'
 import { localMediaRoots } from './media-roots'
 import { beginProductIdentityBootstrap } from './product-identity-lifecycle'
+import { installDiagnosticConsoleCapture, writeDiagnosticLog } from './diagnostics-log'
 
 // Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
 // must never crash main via an uncaught EPIPE. See stream-guards.ts.
@@ -81,6 +82,14 @@ const restoreCanonicalProductName = beginProductIdentityBootstrap(app, process.p
     console.error('[userData] unify failed', e)
   }
 })()
+
+installDiagnosticConsoleCapture()
+writeDiagnosticLog('app', 'bootstrap.started', {
+  version: app.getVersion(),
+  packaged: app.isPackaged,
+  platform: process.platform,
+  arch: process.arch
+})
 
 // FORCE UPDATE VERIFICATION: 3 - SHELL OVERWRITE
 console.log('MAIN PROCESS: LOADING CUSTOM ENTRY POINT (SHELL OVERWRITE)')

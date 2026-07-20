@@ -31,6 +31,7 @@ import {
   isChatLoadable,
   type CatalogEntry
 } from './models/catalog-logic'
+import { writeDiagnosticLog } from './diagnostics-log'
 
 export interface DownloadProgress {
   modelId: string
@@ -107,7 +108,9 @@ export function downloadStatus(modelId: string): DownloadProgress | null {
 }
 
 export function cancelDownload(modelId: string): boolean {
-  return downloadQueue.cancel(modelId)
+  const cancelled = downloadQueue.cancel(modelId)
+  writeDiagnosticLog('models.download', 'cancel.requested', { modelId, cancelled })
+  return cancelled
 }
 
 /** Download a catalog entry or any Hugging Face repo id. Progress via callback
@@ -119,7 +122,15 @@ export async function downloadModel(
   const { CATALOG, resolveHuggingFaceModel } = await import('@offgrid/models')
   const inCatalog = CATALOG.find((m) => m.id === modelId)
   const entry = inCatalog ?? (await resolveHuggingFaceModel(modelId))
-  if (!entry) return { success: false, error: 'unknown model' }
+  if (!entry) {
+    writeDiagnosticLog('models.download', 'request.rejected', { modelId, reason: 'unknown_model' })
+    return { success: false, error: 'unknown model' }
+  }
+  writeDiagnosticLog('models.download', 'request.accepted', {
+    modelId,
+    kind: entry.kind,
+    files: entry.files.length
+  })
 
   const dir = llm.getModelsDir()
   fs.mkdirSync(dir, { recursive: true })
@@ -128,11 +139,27 @@ export async function downloadModel(
   // download of the same id would write into the SAME .part (interleaved writes →
   // corrupt file). The queue tracks both waiting and active ids, so double-clicking
   // a queued card cannot enqueue it twice either.
-  if (downloadQueue.has(modelId)) return { success: false, error: 'already downloading' }
+  if (downloadQueue.has(modelId)) {
+    writeDiagnosticLog('models.download', 'request.rejected', {
+      modelId,
+      reason: 'already_downloading'
+    })
+    return { success: false, error: 'already downloading' }
+  }
+  let loggedStatus: DownloadProgress['status'] | undefined
   const send = (data: Partial<DownloadProgress>): void => {
     const p: DownloadProgress = { modelId, ...data }
     lastProgress.set(modelId, p)
     onProgress?.(p)
+    if (p.status && p.status !== loggedStatus) {
+      loggedStatus = p.status
+      writeDiagnosticLog(
+        'models.download',
+        `status.${p.status}`,
+        { modelId, error: p.error, percent: p.percent },
+        p.status === 'failed' ? 'error' : 'info'
+      )
+    }
     // Queue/start persistence happens in the lifecycle callback below. Persist
     // terminal transitions here, but skip high-frequency transfer ticks.
     if (p.status && p.status !== 'queued' && p.status !== 'downloading') persistRegistry()
@@ -159,7 +186,14 @@ export async function downloadModel(
       try {
         for (const file of entry.files) {
           const dest = path.join(dir, file.name)
-          if (fs.existsSync(dest) && fs.statSync(dest).size > 0) continue
+          if (fs.existsSync(dest) && fs.statSync(dest).size > 0) {
+            writeDiagnosticLog('models.download', 'file.skipped', {
+              modelId,
+              file: file.name,
+              reason: 'already_present'
+            })
+            continue
+          }
           const partPath = `${dest}.part`
           activePartPath = partPath
           // Resume from a partial .part if one exists (e.g. download interrupted by a
@@ -170,6 +204,11 @@ export async function downloadModel(
           } catch {
             /* fresh */
           }
+          writeDiagnosticLog('models.download', 'file.started', {
+            modelId,
+            file: file.name,
+            resumeBytes: resumeFrom
+          })
           const res = await fetch(file.url, {
             signal,
             headers: resumeFrom > 0 ? { Range: `bytes=${resumeFrom}-` } : undefined
@@ -205,6 +244,11 @@ export async function downloadModel(
           if (integrityErr) throw new Error(integrityErr)
           fs.renameSync(partPath, dest)
           activePartPath = null
+          writeDiagnosticLog('models.download', 'file.completed', {
+            modelId,
+            file: file.name,
+            bytes: written
+          })
         }
         if (signal.aborted) {
           send({ status: 'cancelled' })
