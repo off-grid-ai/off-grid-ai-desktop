@@ -53,6 +53,7 @@ import { parseMultipart } from './model-server/multipart'
 import { tagLlmEntries, modelEntry, ollamaMirror } from './model-server/models-list'
 import { buildGatewayModalities, type GatewayModalities } from './model-server/health'
 import { safeProxyResponse } from './model-server/proxy-response'
+import { writeDiagnosticLog } from './diagnostics-log'
 
 const UPSTREAM_HOST = '127.0.0.1'
 const UPSTREAM_PORT = LLAMA_SERVER_PORT // bundled llama-server (see llm.ts)
@@ -946,6 +947,31 @@ export function startModelServer(port = GATEWAY_PORT): void {
     // poll id for async work, so any request can be tracked/polled by the same id.
     const rid = randomUUID()
     res.setHeader('X-Request-Id', rid)
+    const requestStarted = Date.now()
+    writeDiagnosticLog('gateway', 'request.started', { requestId: rid, method, path: url })
+    res.once('finish', () => {
+      writeDiagnosticLog(
+        'gateway',
+        'request.completed',
+        {
+          requestId: rid,
+          method,
+          path: url,
+          status: res.statusCode,
+          durationMs: Date.now() - requestStarted
+        },
+        res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info'
+      )
+    })
+    res.once('close', () => {
+      if (res.writableEnded) return
+      writeDiagnosticLog(
+        'gateway',
+        'request.disconnected',
+        { requestId: rid, method, path: url, durationMs: Date.now() - requestStarted },
+        'warn'
+      )
+    })
 
     // RESTful polling: GET the request resource. Canonical /v1/requests/{id}, or
     // the per-collection resource (e.g. /v1/images/{id}, /v1/audio/speech/{id}).
