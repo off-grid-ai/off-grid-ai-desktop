@@ -54,6 +54,9 @@ scripts/dictation-hotkey/dictation-hotkey
 # Local demo profile — synthetic-data run target for `npm run demo` (never real userData)
 .demo-profile/
 
+# Local test/runtime profile — generated dummy models + gateway logs, never real userData
+.offgrid/
+
 # Test coverage output
 coverage/
 swift-tests/**/.build/
