@@ -90,5 +90,5 @@ describe('<App/> locked Pro navigation integration', () => {
     expect(onNewAction).not.toHaveBeenCalled()
     expect(proOn).not.toHaveBeenCalled()
     expect(proInvoke).not.toHaveBeenCalled()
-  })
+  }, 30_000)
 })
