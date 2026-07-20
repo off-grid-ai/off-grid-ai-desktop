@@ -94,14 +94,6 @@ describe('application shutdown integration', () => {
     installApplicationShutdown(source, registry, () => {})
     expect(source.listenerCount).toBe(1)
 
-    source.emitBeforeQuit()
-    const firstResult = await registry.shutdown()
-    source.emitBeforeQuit()
-    const secondResult = await registry.shutdown()
-
-    expect(firstResult).toEqual([])
-    expect(secondResult).toBe(firstResult)
-    expect(source.listenerCount).toBe(0)
     const ownedResources = [
       gateway,
       media,
@@ -118,7 +110,15 @@ describe('application shutdown integration', () => {
       tray,
       recorder
     ]
+    source.emitBeforeQuit()
     expect(ownedResources.every((owned) => !owned.active && owned.stops === 1)).toBe(true)
+    const firstResult = await registry.shutdown()
+    source.emitBeforeQuit()
+    const secondResult = await registry.shutdown()
+
+    expect(firstResult).toEqual([])
+    expect(secondResult).toBe(firstResult)
+    expect(source.listenerCount).toBe(0)
     expect(trace).toEqual([
       'pro:scheduled-work',
       'pro:capture-subscription',

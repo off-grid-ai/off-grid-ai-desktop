@@ -49,17 +49,21 @@ export class ShutdownRegistry {
     // before the Core runtimes and sockets they may still be using.
     const owners = [...this.owners.values()].reverse()
     this.owners.clear()
-    this.shutdownPromise = (async () => {
-      const failures: ShutdownFailure[] = []
-      for (const owner of owners) {
-        try {
-          await owner.shutdown()
-        } catch (error) {
-          failures.push({ owner: owner.name, error })
-        }
+    // Invoke every owner before the first asynchronous yield. Electron does not
+    // wait for before-quit promises, so helper kills, listener removal, and socket
+    // close must all be initiated in the listener's original call stack.
+    const stops = owners.map((owner) => {
+      try {
+        return Promise.resolve(owner.shutdown())
+          .then<ShutdownFailure | null>(() => null)
+          .catch((error): ShutdownFailure => ({ owner: owner.name, error }))
+      } catch (error) {
+        return Promise.resolve<ShutdownFailure | null>({ owner: owner.name, error })
       }
-      return failures
-    })()
+    })
+    this.shutdownPromise = Promise.all(stops).then((results) =>
+      results.filter((failure): failure is ShutdownFailure => failure !== null)
+    )
     return this.shutdownPromise
   }
 }
