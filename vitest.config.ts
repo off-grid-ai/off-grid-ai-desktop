@@ -109,6 +109,7 @@ export default defineConfig({
         // register ipcMain handlers, spawn binaries, bind sockets, or call native/OS/network
         // APIs - not unit-coverable in-process; exercised via e2e / smoke / test:db.
         'src/main/ipc.ts', // ~100 ipcMain.handle registrations (logic → ipc-query-logic.ts)
+        'src/main/tts-ipc.ts', // TTS handler wiring; real renderer → SQLite → worker seam runs in test:db
         'src/main/rag-ipc.ts',
         'src/main/mcp-ipc.ts',
         'src/main/license-ipc.ts',
