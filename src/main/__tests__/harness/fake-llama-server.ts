@@ -35,6 +35,9 @@ interface FakeTurn {
   /** Force a non-200 to exercise the error path (body is surfaced by describeServerError). */
   errorStatus?: number
   errorBody?: string
+  /** Delay the native-engine response after the request is admitted. Lifecycle tests use
+   *  this to exercise cancellation/drain ownership without replacing any Off Grid service. */
+  delayMs?: number
   /** Stream the frames then HANG (never send [DONE] / close) — so a client abort fires
    *  mid-turn. The real engine's socket stays open until the client cancels; this lets a
    *  test hit Stop after a tool_call has streamed but before the turn completes. */
@@ -124,49 +127,56 @@ export async function startFakeLlamaServer(): Promise<FakeLlamaServer> {
           res.end(turn.errorBody ?? JSON.stringify({ error: { message: 'fake error' } }))
           return
         }
-        // Non-streaming path (llm.chat / postCompletionOnce): return ONE OpenAI-shaped
-        // completion. llm.chat reads data.choices[0].message.content.
-        if (parsed.stream !== true) {
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(
-            JSON.stringify({
-              choices: [
-                {
-                  message: {
-                    content: turn.content ?? '',
-                    ...(turn.toolCalls?.length
-                      ? {
-                          tool_calls: turn.toolCalls.map((tc, i) => ({
-                            index: i,
-                            id: tc.id ?? `call_${tc.name}_${i}`,
-                            type: 'function',
-                            function: {
-                              name: tc.name,
-                              arguments: tc.argsRaw ?? JSON.stringify(tc.args ?? {})
-                            }
-                          }))
-                        }
-                      : {})
+        const respond = (): void => {
+          // Non-streaming path (llm.chat / postCompletionOnce): return ONE OpenAI-shaped
+          // completion. llm.chat reads data.choices[0].message.content.
+          if (parsed.stream !== true) {
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: turn.content ?? '',
+                      ...(turn.toolCalls?.length
+                        ? {
+                            tool_calls: turn.toolCalls.map((tc, i) => ({
+                              index: i,
+                              id: tc.id ?? `call_${tc.name}_${i}`,
+                              type: 'function',
+                              function: {
+                                name: tc.name,
+                                arguments: tc.argsRaw ?? JSON.stringify(tc.args ?? {})
+                              }
+                            }))
+                          }
+                        : {})
+                    }
                   }
-                }
-              ],
-              usage: { total_tokens: 0 }
-            })
-          )
-          return
-        }
-        res.writeHead(200, { 'Content-Type': 'text/event-stream' })
-        if (turn.hold) {
-          // Stream everything EXCEPT the terminating [DONE], then hang — the client's
-          // abort (req.destroy) closes it. Lets a test cancel mid-turn.
-          for (const frame of sseFramesFor(turn).filter((f) => !f.includes('[DONE]')))
+                ],
+                usage: { total_tokens: 0 }
+              })
+            )
+            return
+          }
+          res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+          if (turn.hold) {
+            // Stream everything EXCEPT the terminating [DONE], then hang — the client's
+            // abort (req.destroy) closes it. Lets a test cancel mid-turn.
+            for (const frame of sseFramesFor(turn).filter((f) => !f.includes('[DONE]')))
+              res.write(frame)
+            return
+          }
+          for (const frame of sseFramesFor(turn)) {
             res.write(frame)
-          return
+          }
+          res.end()
         }
-        for (const frame of sseFramesFor(turn)) {
-          res.write(frame)
+        if ((turn.delayMs ?? 0) > 0) {
+          setTimeout(respond, turn.delayMs)
+        } else {
+          respond()
         }
-        res.end()
       })
       return
     }

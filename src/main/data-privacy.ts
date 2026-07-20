@@ -164,6 +164,83 @@ const personalStores: PersonalStore[] = [...CORE_PERSONAL]
 type CategoryCleaner = (context: { olderThanDays?: number }) => void | Promise<void>
 const categoryCleaners = new Map<DataCategory['id'], Map<string, CategoryCleaner>>()
 
+export type DataDeletionScope = DataCategory['id'] | 'all'
+export interface DataDeletionContext {
+  scope: DataDeletionScope
+  olderThanDays?: number
+}
+export interface DataDeletionGuard {
+  scopes: readonly DataDeletionScope[]
+  /** Close admission synchronously, then resolve once already-admitted work is idle. */
+  suspend(context: DataDeletionContext): void | Promise<void>
+  /** Restore only state owned by this guard after durable deletion completes. */
+  resume(context: DataDeletionContext): void | Promise<void>
+}
+const deletionGuards = new Map<string, DataDeletionGuard>()
+
+/** Register a live personal-data producer by stable owner. Re-registration replaces the same
+ * owner so module reloads cannot multiply destructive lifecycle hooks. */
+export function registerDataDeletionGuard(owner: string, guard: DataDeletionGuard): () => void {
+  deletionGuards.set(owner, guard)
+  return () => {
+    if (deletionGuards.get(owner) === guard) deletionGuards.delete(owner)
+  }
+}
+
+async function withDeletionGuards<T>(
+  context: DataDeletionContext,
+  operation: () => T | Promise<T>
+): Promise<T> {
+  const active = [...deletionGuards.values()].filter((guard) =>
+    guard.scopes.includes(context.scope)
+  )
+  const suspended: DataDeletionGuard[] = []
+  let outcome: { ok: true; value: T } | { ok: false; error: unknown }
+  try {
+    // Invoke every suspend before the first await. Each owner closes admission synchronously;
+    // their returned promises represent only the drain of work that was already admitted.
+    const drains: Promise<void>[] = []
+    for (const guard of active) {
+      suspended.push(guard)
+      try {
+        drains.push(Promise.resolve(guard.suspend(context)))
+      } catch (error) {
+        drains.push(Promise.reject(error))
+      }
+    }
+    const drainResults = await Promise.allSettled(drains)
+    const drainFailures = drainResults
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason)
+    if (drainFailures.length > 0) {
+      throw new AggregateError(drainFailures, 'One or more data producers failed to suspend')
+    }
+    outcome = { ok: true, value: await operation() }
+  } catch (error) {
+    outcome = { ok: false, error }
+  }
+
+  const resumes = await Promise.allSettled(
+    suspended.reverse().map((guard) => Promise.resolve(guard.resume(context)))
+  )
+  const resumeFailures = resumes
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map((result) => result.reason)
+  if (!outcome.ok) {
+    if (resumeFailures.length > 0) {
+      throw new AggregateError(
+        [outcome.error, ...resumeFailures],
+        'Data deletion failed and one or more producers failed to resume'
+      )
+    }
+    throw outcome.error
+  }
+  if (resumeFailures.length > 0) {
+    throw new AggregateError(resumeFailures, 'One or more data producers failed to resume')
+  }
+  return outcome.value
+}
+
 /** Extend a core privacy category without leaking feature-specific storage names into core.
  * Owners are stable identities, so repeated activation replaces the same registration instead
  * of running destructive cleanup twice. */
@@ -254,54 +331,56 @@ export async function clearCategory(
   olderThanDays?: number
 ): Promise<{ success: boolean }> {
   try {
-    switch (id) {
-      case 'chats':
-        clearTables(...CHAT_TABLES)
-        clearDirs(ud('uploads'))
-        break
-      case 'memories':
-        clearTables(...MEMORY_TABLES)
-        clearDirs(ud('entity-photos'))
-        // Delete ONLY the memory-side vectors (not the shared lancedb dir — that
-        // would wipe capture/meeting/chat vectors and dangle the live handle).
-        await deleteByKinds(['memory', 'entity', 'fact'])
-        break
-      case 'captures':
-        if (olderThanDays && olderThanDays > 0) {
-          clearDirsOlderThan(olderThanDays, ud('captures'))
-          await deleteByKindsOlderThan(['screen'], Date.now() - olderThanDays * 86_400_000) // prune stale capture vectors too
-        } else {
-          clearDirs(ud('captures'))
-          await deleteByKinds(['screen']) // full clear → drop capture vectors too
-          // Registered cleaners below remove the semantic source rows. Drop their indexing
-          // receipts here as well so a future capture can never inherit a stale marker.
-          try {
-            getDB()
-              .prepare("DELETE FROM vec_indexed WHERE key LIKE 'obs:%' OR key LIKE 'frame:%'")
-              .run()
-          } catch {
-            /* search index has not been initialized */
+    return await withDeletionGuards({ scope: id, olderThanDays }, async () => {
+      switch (id) {
+        case 'chats':
+          clearTables(...CHAT_TABLES)
+          clearDirs(ud('uploads'))
+          break
+        case 'memories':
+          clearTables(...MEMORY_TABLES)
+          clearDirs(ud('entity-photos'))
+          // Delete ONLY the memory-side vectors (not the shared lancedb dir — that
+          // would wipe capture/meeting/chat vectors and dangle the live handle).
+          await deleteByKinds(['memory', 'entity', 'fact'])
+          break
+        case 'captures':
+          if (olderThanDays && olderThanDays > 0) {
+            clearDirsOlderThan(olderThanDays, ud('captures'))
+            await deleteByKindsOlderThan(['screen'], Date.now() - olderThanDays * 86_400_000) // prune stale capture vectors too
+          } else {
+            clearDirs(ud('captures'))
+            await deleteByKinds(['screen']) // full clear → drop capture vectors too
+            // Registered cleaners below remove the semantic source rows. Drop their indexing
+            // receipts here as well so a future capture can never inherit a stale marker.
+            try {
+              getDB()
+                .prepare("DELETE FROM vec_indexed WHERE key LIKE 'obs:%' OR key LIKE 'frame:%'")
+                .run()
+            } catch {
+              /* search index has not been initialized */
+            }
           }
-        }
-        break
-      case 'meetings':
-        if (olderThanDays && olderThanDays > 0) {
-          clearDirsOlderThan(olderThanDays, ud('meetings'))
-          await deleteByKindsOlderThan(['meeting'], Date.now() - olderThanDays * 86_400_000) // prune stale meeting vectors too
-        } else {
-          clearDirs(ud('meetings'))
-          await deleteByKinds(['meeting']) // full clear → drop meeting vectors too
-        }
-        pruneDanglingMeetings() // drop rows whose media we just deleted (no ghosts)
-        break
-      case 'images':
-        clearDirs(ud('generated-images'), ud('artifacts-library'), ud('style-thumbs'))
-        break
-    }
-    for (const cleaner of categoryCleaners.get(id)?.values() ?? []) {
-      await cleaner({ olderThanDays })
-    }
-    return { success: true }
+          break
+        case 'meetings':
+          if (olderThanDays && olderThanDays > 0) {
+            clearDirsOlderThan(olderThanDays, ud('meetings'))
+            await deleteByKindsOlderThan(['meeting'], Date.now() - olderThanDays * 86_400_000) // prune stale meeting vectors too
+          } else {
+            clearDirs(ud('meetings'))
+            await deleteByKinds(['meeting']) // full clear → drop meeting vectors too
+          }
+          pruneDanglingMeetings() // drop rows whose media we just deleted (no ghosts)
+          break
+        case 'images':
+          clearDirs(ud('generated-images'), ud('artifacts-library'), ud('style-thumbs'))
+          break
+      }
+      for (const cleaner of categoryCleaners.get(id)?.values() ?? []) {
+        await cleaner({ olderThanDays })
+      }
+      return { success: true }
+    })
   } catch (e) {
     // Surface failure instead of falsely claiming the data (incl. its vectors) was cleared.
     console.error('[data-privacy] clearCategory failed', id, e)
@@ -313,12 +392,19 @@ export async function clearCategory(
  *  installed models, license, and app preferences intact. Iterates the
  *  personalStores registry so nothing is missed as tables/dirs are added — the fix
  *  for the drift that once let captures/connectors/secrets/RAG docs survive here. */
-export function deleteAllData(): { success: boolean } {
-  for (const store of personalStores) store.beforeDelete?.()
-  clearTables(...personalStores.flatMap((s) => s.tables ?? []))
-  clearDirs(...personalStores.flatMap((s) => s.dirs ?? []).map((d) => ud(d)), ud('lancedb'))
-  clearFiles(...personalStores.flatMap((s) => s.files ?? []).map((file) => ud(file)))
-  resetVectors() // the lancedb dir is gone — drop cached handles so it reopens clean
-  pruneDanglingMeetings() // media is gone now → drop all meeting rows (no ghosts)
-  return { success: true }
+export async function deleteAllData(): Promise<{ success: boolean }> {
+  try {
+    return await withDeletionGuards({ scope: 'all' }, () => {
+      for (const store of personalStores) store.beforeDelete?.()
+      clearTables(...personalStores.flatMap((s) => s.tables ?? []))
+      clearDirs(...personalStores.flatMap((s) => s.dirs ?? []).map((d) => ud(d)), ud('lancedb'))
+      clearFiles(...personalStores.flatMap((s) => s.files ?? []).map((file) => ud(file)))
+      resetVectors() // the lancedb dir is gone — drop cached handles so it reopens clean
+      pruneDanglingMeetings() // media is gone now → drop all meeting rows (no ghosts)
+      return { success: true }
+    })
+  } catch (error) {
+    console.error('[data-privacy] deleteAllData failed', error)
+    return { success: false }
+  }
 }

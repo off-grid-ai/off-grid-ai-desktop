@@ -119,7 +119,7 @@ describe('deleteAllData — erases EVERY core personal store (D29/D30)', () => {
     expect(count('memories')).toBeGreaterThan(0)
     expect(count('user_profile')).toBeGreaterThan(0)
 
-    deleteAllData()
+    await deleteAllData()
 
     // Terminal artifact: the user's personal data is GONE.
     expect(count('rag_conversations')).toBe(0) // control — already worked
