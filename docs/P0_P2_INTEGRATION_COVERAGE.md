@@ -94,10 +94,11 @@ manual claim does not count as complete integration coverage.
   - #5 remains partial. The copied-DMG helper probe now executes every exact packaged native helper
     and rejects missing binaries, loader errors, and build-host dependencies, but it does not open
     the installed app's System Health surface and reconcile that UI with the same helper run.
-  - #20 and #105 remain partial. The release workflow now performs real non-zero Kokoro synthesis
-    from the exact packaged ASAR worker, but the download-to-speech test and rendered Speak journey
-    still replace the ONNX worker. No test yet joins model download, selection, rendered Speak,
-    packaged worker loading, and audible output in one production journey.
+  - #20 and #105 remain partial. The release workflow performs real non-zero Kokoro synthesis from
+    the exact packaged ASAR worker, while the rendered integration joins Speak, production TTS IPC,
+    the persisted voice, synthesis, WAV validation, and browser playback with only the heavyweight
+    ONNX worker controlled. No single test yet joins model download, selection, packaged worker
+    loading, rendered Speak, and audible hardware output.
   - #69 remains partial. The real LLM service now refuses image input without a projector, and Pro
     capture layout learning skips that optional vision work while OCR continues. The rendered chat
     guard still substitutes the preload/API seam, so the full user journey is not yet proven.
@@ -503,12 +504,12 @@ historical labels, not strict completion claims. Use the strict snapshot above f
 - #103 - Import media for transcription. The same real IPC/filesystem/SQLite integration imports
   synthetic media into a completed recording, while `VoiceScreen.integration.test.tsx` proves the
   rendered drop gesture refreshes into a searchable transcript card.
-- #105 - Speak assistant reply. `e2e/tts-speak.spec.ts` clicks the real rendered Speak action and
-  runs production preload, IPC, TTS normalization, worker spawn, WAV data URL, and Chromium audio;
-  only the heavyweight ONNX worker is replaced. It proves markdown becomes the spoken text
-  `A local reply with code` before the UI enters and exits the real Stop state. The release workflow
-  separately requires non-zero PCM from the exact packaged worker before publishing, but that probe
-  does not click the rendered Speak action.
+- #105 - Speak assistant reply. `memory-chat-tts.ui.integration.dbtest.ts` clicks the real rendered
+  Speak action and runs production TTS IPC, the persisted SQLite voice setting, synthesis service,
+  subprocess protocol, WAV validation, and browser Audio. Only the heavyweight ONNX worker and
+  browser media boundary are controlled. It proves playback, visible Stop state, actionable worker
+  failure, and stale-cancellation isolation. The release workflow separately requires non-zero PCM
+  from the exact packaged worker before publishing.
 - #107 - Entities are synthesized. `entity-action-journeys.dbtest.ts` records person, project, and
   company mentions through production observation and entity owners, proving one correctly typed
   record per entity with automatic identifiers and two supporting observations.
