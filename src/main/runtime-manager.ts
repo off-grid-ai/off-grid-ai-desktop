@@ -36,6 +36,7 @@ export function warmActionForMode(mode: ResidencyMode): 'warm' | 'release' {
 }
 
 const registry = new Map<Modality, ManagedRuntime>()
+let shuttingDown = false
 
 /** Dependencies of registerRuntime, injectable so the wiring is testable against the
  *  REAL queue with a REAL runtime — the only thing swapped is the persisted-setting
@@ -49,6 +50,10 @@ export interface RegisterDeps {
  *  always calls evict() (idempotent) before a job that displaces this runtime, then
  *  calls the mode-aware re-warm when that job ends. */
 export function registerRuntime(rt: ManagedRuntime, deps: RegisterDeps = {}): void {
+  if (shuttingDown) {
+    void Promise.resolve(rt.evict()).catch(() => {})
+    return
+  }
   const queue = deps.queue ?? modalityQueue
   const readMode = deps.readMode ?? getResidencyMode
   registry.set(rt.modality, rt)
@@ -56,4 +61,15 @@ export function registerRuntime(rt: ManagedRuntime, deps: RegisterDeps = {}): vo
     evict: () => rt.evict(),
     warm: () => (warmActionForMode(readMode(rt.modality)) === 'warm' ? rt.warm() : rt.release())
   })
+}
+
+/** Stop every registered runtime through the same abstraction used for residency.
+ * Late async registrations are immediately evicted once shutdown has begun. */
+export async function shutdownRuntimes(): Promise<void> {
+  shuttingDown = true
+  const runtimes = [...registry.values()].reverse()
+  registry.clear()
+  const results = await Promise.allSettled(runtimes.map((runtime) => runtime.evict()))
+  const failure = results.find((result) => result.status === 'rejected')
+  if (failure?.status === 'rejected') throw failure.reason
 }

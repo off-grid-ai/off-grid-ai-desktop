@@ -13,7 +13,7 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { getActiveModal } from './active-models'
-import { applicationCodeFile, modelsDir, onHostQuit } from './runtime-env'
+import { applicationCodeFile, modelsDir } from './runtime-env'
 import { getResidencyMode } from './runtime-residency'
 import type { ManagedRuntime } from './runtime-manager'
 import {
@@ -203,9 +203,6 @@ function stopServe(): void {
     }
   }
 }
-
-// Never leave the worker running past app quit.
-onHostQuit(() => stopServe())
 
 /** Synthesize on the resident worker (model stays warm across calls). Bounded by a
  *  timeout so a hung worker rejects (and frees `busy`) instead of wedging TTS. */

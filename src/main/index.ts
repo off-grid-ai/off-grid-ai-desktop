@@ -19,8 +19,8 @@ import icon from '../../resources/icon.png?asset'
 import { setupIPC } from './ipc' // IMPORT FROM IPC ONLY
 import { setupRagIPC } from './rag-ipc'
 import { setupMcpIpc } from './mcp-ipc'
-import { startModelServer } from './model-server'
-import { startMediaServer, mediaUrlFor } from './media-server'
+import { startModelServer, stopModelServer } from './model-server'
+import { startMediaServer, stopMediaServer, mediaUrlFor } from './media-server'
 import { serveCaptureFile } from './ogcapture-serve'
 import { serveArtifactPreview } from './artifact-preview'
 import { ipcMain } from 'electron'
@@ -41,6 +41,12 @@ import {
   installIpcDiagnostics,
   writeDiagnosticLog
 } from './diagnostics-log'
+import {
+  applicationShutdown,
+  installApplicationShutdown,
+  registerCoreShutdownOwners
+} from './shutdown'
+import { shutdownRuntimes } from './runtime-manager'
 
 // Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
 // must never crash main via an uncaught EPIPE. See stream-guards.ts.
@@ -93,6 +99,13 @@ writeDiagnosticLog('app', 'bootstrap.started', {
   packaged: app.isPackaged,
   platform: process.platform,
   arch: process.arch
+})
+
+installApplicationShutdown(app, applicationShutdown)
+registerCoreShutdownOwners(applicationShutdown, {
+  stopGateway: stopModelServer,
+  stopMediaServer,
+  stopModelRuntimes: shutdownRuntimes
 })
 
 // FORCE UPDATE VERIFICATION: 3 - SHELL OVERWRITE

@@ -204,3 +204,11 @@ export async function mediaUrlFor(absPath: string): Promise<string | null> {
     return null
   }
 }
+
+/** Stop the production listener and release its port. Safe before start and on
+ * repeated shutdown calls. */
+export async function stopMediaServer(): Promise<void> {
+  const active = productionServer
+  productionServer = null
+  await active?.close()
+}

@@ -19,6 +19,7 @@ export interface ProMainApi {
   llm: typeof llm
   registerHook: typeof registerHook
   registerToolExtension: typeof registerToolExtension
+  registerShutdownOwner(name: string, shutdown: () => void | Promise<void>): () => void
 }
 
 /** Whether pro features should activate. The pro submodule must be present AND
@@ -48,7 +49,15 @@ export async function loadProFeaturesMain(): Promise<void> {
     .activateMain
   if (typeof activateMain !== 'function') return // stub resolved to null
   try {
-    await activateMain({ getDB, runMigration, llm, registerHook, registerToolExtension })
+    const { applicationShutdown } = await import('../shutdown')
+    await activateMain({
+      getDB,
+      runMigration,
+      llm,
+      registerHook,
+      registerToolExtension,
+      registerShutdownOwner: (name, shutdown) => applicationShutdown.register({ name, shutdown })
+    })
     console.log('[pro] main features activated')
   } catch (e) {
     console.error('[pro] activateMain failed', e)

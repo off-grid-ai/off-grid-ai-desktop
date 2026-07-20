@@ -4,7 +4,7 @@ import { Mutex } from 'async-mutex'
 import { callHook } from './bootstrap/hookRegistry'
 import path from 'path'
 import * as fs from 'fs'
-import { modelsDir as getModelsDir, binRoots, isPackaged, onHostQuit, exe } from './runtime-env'
+import { modelsDir as getModelsDir, binRoots, isPackaged, exe } from './runtime-env'
 import { reapOrphanProcessesOnPort, type PortReapResult } from './kill-orphan-port'
 import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from './model-sizing'
 import { resolveMaxTokens } from './llm/gen-params'
@@ -1001,7 +1001,3 @@ export class LLMService {
 }
 
 export const llm = new LLMService()
-
-onHostQuit(() => {
-  llm.stop()
-})
