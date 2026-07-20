@@ -60,6 +60,14 @@ export class LLMService {
   private modelPath = ''
   private mmProjPath = '' // empty for text-only models (no vision projector)
   private initialized = false
+  // A model selection is durable as soon as the manager writes active-model.json, but
+  // replacing llama-server while it is answering destroys the user's in-flight turn.
+  // LLMService owns that process, so it also owns the handoff: admitted generations
+  // finish on the process they started with, while generations arriving after a model
+  // change wait until the pending reload has been applied.
+  private activeGenerations = 0
+  private modelReloadPending = false
+  private readonly modelReloadWaiters: Array<() => void> = []
   // Paused during image generation: on Apple Silicon unified memory the LLM and
   // the image model can't both be resident. While paused we DON'T respawn the
   // server — capture keeps running but its LLM distillation is deferred until
@@ -371,8 +379,7 @@ export class LLMService {
     this.mmProjPath = path.join(modelsDir, 'mmproj-gemma-4-E4B-it-F16.gguf')
   }
 
-  /** Switch the active model and force a reload on next init. */
-  reloadModel(): void {
+  private applyModelReload(): void {
     if (this.server) {
       this.intentionalStop = true // a model swap, not a crash
       this.server.kill()
@@ -381,6 +388,31 @@ export class LLMService {
     this.initialized = false
     this.restartTimes = [] // new model — start its crash budget fresh
     this.resolveModel()
+  }
+
+  /** Switch the active model without terminating a generation already using it. */
+  reloadModel(): void {
+    if (this.activeGenerations > 0) {
+      this.modelReloadPending = true
+      return
+    }
+    this.applyModelReload()
+  }
+
+  private async beginGeneration(): Promise<void> {
+    if (this.modelReloadPending) {
+      await new Promise<void>((resolve) => this.modelReloadWaiters.push(resolve))
+    }
+    this.activeGenerations++
+  }
+
+  private finishGeneration(): void {
+    this.activeGenerations--
+    if (this.activeGenerations !== 0 || !this.modelReloadPending) return
+
+    this.modelReloadPending = false
+    this.applyModelReload()
+    for (const resolve of this.modelReloadWaiters.splice(0)) resolve()
   }
 
   // A model is "ready" once its PRIMARY weights are present. mmproj is optional —
@@ -778,50 +810,55 @@ export class LLMService {
       signal?: AbortSignal
     } = {}
   ): Promise<string> {
-    this.assertImageInputSupported(images)
-    await this.ensureReady()
+    await this.beginGeneration()
+    try {
+      this.assertImageInputSupported(images)
+      await this.ensureReady()
 
-    return this.chatMutex.runExclusive(async () => {
-      try {
-        const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const payload: any = {
-          messages: messages,
-          max_tokens: resolveMaxTokens(maxTokens, this.maxTokens),
-          temperature: opts.temperature ?? this.temperature,
-          ...this.samplingPayload()
-        }
-        // Grammar-constrained output: llama.cpp converts the JSON schema to a
-        // GBNF grammar so the model can ONLY emit valid matching JSON.
-        if (opts.responseFormat) payload.response_format = opts.responseFormat
-        // Turn off the model's reasoning channel for fast, direct output (its
-        // chain-of-thought otherwise eats the token budget and leaves content empty).
-        if (opts.disableThinking) payload.chat_template_kwargs = { enable_thinking: false }
-        const body = JSON.stringify(payload)
-
-        console.log(
-          `[LLMService] Starting LLM request (timeout: ${timeoutMs / 1000}s, body: ${body.length} chars)...`
-        )
-
-        const raw = await this.httpPost(body, timeoutMs, opts.signal)
-        const data = JSON.parse(raw)
-        console.log('[LLMService] LLM request completed')
-        // Best-effort fleet audit: record the local model call if enrolled in a
-        // console. The fleet console is a pro feature — it registers this hook in
-        // its activation; the free build has no hook and this is a no-op.
+      return await this.chatMutex.runExclusive(async () => {
         try {
-          const tokens = data.usage?.total_tokens ?? 0
-          const modelName = path.basename(this.modelPath) || 'local-llm'
-          callHook('console.recordModelCall', modelName, tokens, 'ok', false)
-        } catch {
-          /* audit is never load-bearing */
+          const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const payload: any = {
+            messages: messages,
+            max_tokens: resolveMaxTokens(maxTokens, this.maxTokens),
+            temperature: opts.temperature ?? this.temperature,
+            ...this.samplingPayload()
+          }
+          // Grammar-constrained output: llama.cpp converts the JSON schema to a
+          // GBNF grammar so the model can ONLY emit valid matching JSON.
+          if (opts.responseFormat) payload.response_format = opts.responseFormat
+          // Turn off the model's reasoning channel for fast, direct output (its
+          // chain-of-thought otherwise eats the token budget and leaves content empty).
+          if (opts.disableThinking) payload.chat_template_kwargs = { enable_thinking: false }
+          const body = JSON.stringify(payload)
+
+          console.log(
+            `[LLMService] Starting LLM request (timeout: ${timeoutMs / 1000}s, body: ${body.length} chars)...`
+          )
+
+          const raw = await this.httpPost(body, timeoutMs, opts.signal)
+          const data = JSON.parse(raw)
+          console.log('[LLMService] LLM request completed')
+          // Best-effort fleet audit: record the local model call if enrolled in a
+          // console. The fleet console is a pro feature — it registers this hook in
+          // its activation; the free build has no hook and this is a no-op.
+          try {
+            const tokens = data.usage?.total_tokens ?? 0
+            const modelName = path.basename(this.modelPath) || 'local-llm'
+            callHook('console.recordModelCall', modelName, tokens, 'ok', false)
+          } catch {
+            /* audit is never load-bearing */
+          }
+          return data.choices?.[0]?.message?.content ?? ''
+        } catch (e: any) {
+          console.error('[LLMService] Chat error:', e.message || e)
+          throw e
         }
-        return data.choices?.[0]?.message?.content ?? ''
-      } catch (e: any) {
-        console.error('[LLMService] Chat error:', e.message || e)
-        throw e
-      }
-    })
+      })
+    } finally {
+      this.finishGeneration()
+    }
   }
 
   // Streaming variant of chat(): posts with stream:true and invokes `onDelta`
@@ -837,32 +874,37 @@ export class LLMService {
     maxTokens?: number,
     timeoutMs: number = 300000
   ): Promise<ChatStreamResult> {
-    this.assertImageInputSupported(images)
-    await this.ensureReady()
+    await this.beginGeneration()
+    try {
+      this.assertImageInputSupported(images)
+      await this.ensureReady()
 
-    const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resolvedMaxTokens = resolveMaxTokens(maxTokens, this.maxTokens)
-    const payload: any = {
-      messages,
-      max_tokens: resolvedMaxTokens,
-      temperature: opts.temperature ?? this.temperature,
-      ...this.samplingPayload(),
-      stream: true,
-      // Thinking control: when on, ask the template to emit reasoning and have
-      // llama.cpp split it into reasoning_content (deepseek-style); when off,
-      // suppress it so the token budget goes to the answer.
-      ...thinkingPayload(!!opts.thinking)
+      const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const resolvedMaxTokens = resolveMaxTokens(maxTokens, this.maxTokens)
+      const payload: any = {
+        messages,
+        max_tokens: resolvedMaxTokens,
+        temperature: opts.temperature ?? this.temperature,
+        ...this.samplingPayload(),
+        stream: true,
+        // Thinking control: when on, ask the template to emit reasoning and have
+        // llama.cpp split it into reasoning_content (deepseek-style); when off,
+        // suppress it so the token budget goes to the answer.
+        ...thinkingPayload(!!opts.thinking)
+      }
+      const body = JSON.stringify(payload)
+
+      // Single SSE transport (llm/stream.ts). The plain chat path sends no tools, so
+      // the returned toolCalls are always empty — take only the answer text.
+      const result = await streamCompletion(this.port, body, onDelta, {
+        signal: opts.signal,
+        timeoutMs
+      })
+      return { ...result, maxTokens: resolvedMaxTokens }
+    } finally {
+      this.finishGeneration()
     }
-    const body = JSON.stringify(payload)
-
-    // Single SSE transport (llm/stream.ts). The plain chat path sends no tools, so
-    // the returned toolCalls are always empty — take only the answer text.
-    const result = await streamCompletion(this.port, body, onDelta, {
-      signal: opts.signal,
-      timeoutMs
-    })
-    return { ...result, maxTokens: resolvedMaxTokens }
   }
 
   // Lower-level streaming turn over a RAW messages array with optional tool-calling.
@@ -886,25 +928,33 @@ export class LLMService {
     } = {},
     timeoutMs: number = 300000
   ): Promise<StreamResult> {
-    await this.ensureReady()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const payload: any = {
-      messages,
-      max_tokens: resolveMaxTokens(opts.maxTokens, this.maxTokens),
-      temperature: opts.temperature ?? this.temperature,
-      ...this.samplingPayload(),
-      stream: true,
-      ...thinkingPayload(!!opts.thinking)
-    }
-    if (opts.tools && opts.tools.length) {
-      payload.tools = opts.tools
-      payload.tool_choice = opts.toolChoice ?? 'auto'
-    }
-    const body = JSON.stringify(payload)
+    await this.beginGeneration()
+    try {
+      await this.ensureReady()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const payload: any = {
+        messages,
+        max_tokens: resolveMaxTokens(opts.maxTokens, this.maxTokens),
+        temperature: opts.temperature ?? this.temperature,
+        ...this.samplingPayload(),
+        stream: true,
+        ...thinkingPayload(!!opts.thinking)
+      }
+      if (opts.tools && opts.tools.length) {
+        payload.tools = opts.tools
+        payload.tool_choice = opts.toolChoice ?? 'auto'
+      }
+      const body = JSON.stringify(payload)
 
-    // Single SSE transport (llm/stream.ts) — same path as chatStream, but the
-    // assembled tool calls are surfaced too (this powers the agentic loop).
-    return streamCompletion(this.port, body, onDelta, { signal: opts.signal, timeoutMs })
+      // Single SSE transport (llm/stream.ts) — same path as chatStream, but the
+      // assembled tool calls are surfaced too (this powers the agentic loop).
+      return await streamCompletion(this.port, body, onDelta, {
+        signal: opts.signal,
+        timeoutMs
+      })
+    } finally {
+      this.finishGeneration()
+    }
   }
 
   stop() {

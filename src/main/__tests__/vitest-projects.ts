@@ -6,6 +6,7 @@ export const packagingIntegrationTests = [
 
 export const modelPortIntegrationTests = [
   'src/main/__tests__/model-server-chat.integration.test.ts',
+  'src/main/__tests__/model-switch-ownership.integration.test.ts',
   'src/renderer/src/components/setup/__tests__/HealthPanel.integration.test.tsx'
 ]
 
