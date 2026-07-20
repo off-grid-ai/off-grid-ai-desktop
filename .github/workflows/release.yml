@@ -111,6 +111,13 @@ jobs:
           command -v cmake >/dev/null || brew install cmake
           MACOS_DEPLOYMENT_TARGET=13.0 LLAMA_REF=b9838 bash scripts/build-llama.sh
           otool -l resources/bin/llama/llama-server | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print "[ci] bundled engine minos="$2; exit}'
+      # Rebuild the one-shot Whisper CLI instead of trusting the committed LFS
+      # payload. The production script disables OpenMP/BLAS auto-discovery and
+      # rejects Homebrew paths, missing @rpath names, symlinks, and a newer minos.
+      - name: Build Whisper CLI (pinned deployment target)
+        run: |
+          MACOS_DEPLOYMENT_TARGET=13.0 WHISPER_REF=v1.7.4 bash scripts/build-whisper-cli.sh
+          otool -l resources/bin/whisper/whisper-cli | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print "[ci] bundled Whisper minos="$2; exit}'
       # Compile the native meeting recorder (ScreenCaptureKit + AVFoundation) and stage
       # it into resources/bin so extraResources bundles it at Contents/Resources/bin —
       # the first path recorderBin() resolves in the packaged app (pro meeting-native.ts).

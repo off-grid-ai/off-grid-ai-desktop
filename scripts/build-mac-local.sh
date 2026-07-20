@@ -48,12 +48,30 @@ check_lfs() {
 
 stage_native_helpers() {
   echo "==> Building native helpers through the production staging path…"
+  command -v cmake >/dev/null || {
+    echo "!! cmake is required to rebuild llama-server and Whisper. Install it before continuing."
+    exit 1
+  }
+  MACOS_DEPLOYMENT_TARGET=13.0 LLAMA_REF=b9838 bash scripts/build-llama.sh
+  MACOS_DEPLOYMENT_TARGET=13.0 WHISPER_REF=v1.7.4 bash scripts/build-whisper-cli.sh
   bash scripts/build-meeting-recorder.sh
   bash scripts/build-dictation-hotkey.sh
   mkdir -p resources/bin
   cp scripts/meeting-recorder/meeting-recorder resources/bin/meeting-recorder
   cp scripts/dictation-hotkey/dictation-hotkey resources/bin/dictation-hotkey
   chmod +x resources/bin/meeting-recorder resources/bin/dictation-hotkey
+  bash scripts/fetch-parakeet.sh
+}
+
+verify_packaged_helpers() {
+  local app_dir node_arch
+  node_arch="$(node -p 'process.arch')"
+  case "$node_arch" in
+    arm64) app_dir="dist/mac-arm64/Off Grid AI Desktop.app" ;;
+    x64) app_dir="dist/mac/Off Grid AI Desktop.app" ;;
+    *) echo "!! Unsupported Electron build architecture: $node_arch"; exit 1 ;;
+  esac
+  node scripts/probe-packaged-helpers.mjs "$app_dir"
 }
 
 build_core() {
@@ -66,6 +84,7 @@ build_core() {
     -c.appId="co.getoffgridai.desktop" \
     -c.dmg.artifactName="OffGrid-core-\${version}.dmg" \
     --publish never
+  verify_packaged_helpers
 }
 
 build_pro() {
@@ -78,6 +97,7 @@ build_pro() {
     -c.appId="co.getoffgridai.desktop.pro" \
     -c.dmg.artifactName="OffGrid-pro-\${version}.dmg" \
     --publish never
+  verify_packaged_helpers
 }
 
 check_lfs
