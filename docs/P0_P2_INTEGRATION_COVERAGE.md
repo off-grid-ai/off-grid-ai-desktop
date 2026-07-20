@@ -97,8 +97,10 @@ manual claim does not count as complete integration coverage.
   - #20 and #105 remain partial. The release workflow performs real non-zero Kokoro synthesis from
     the exact packaged ASAR worker, while the rendered integration joins Speak, production TTS IPC,
     the persisted voice, synthesis, WAV validation, and browser playback with only the heavyweight
-    ONNX worker controlled. No single test yet joins model download, selection, packaged worker
-    loading, rendered Speak, and audible hardware output.
+    ONNX worker controlled. The multimodal runtime integration now also joins a real chat answer,
+    unexpected native LLM crash, failed TTS subprocess, immediate speech retry, one replacement LLM
+    process, recovered chat, and a second valid WAV. No single test yet joins model download,
+    selection, packaged worker loading, rendered Speak, and audible hardware output.
   - #69 remains partial. The real LLM service now refuses image input without a projector, and Pro
     capture layout learning skips that optional vision work while OCR continues. The rendered chat
     guard still substitutes the preload/API seam, so the full user journey is not yet proven.
@@ -363,8 +365,9 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   and verifies clean boot, preload availability, usable input, and durable committed chat data.
 - #147 - Engine restart recovers. `image-runtime-reliability.integration.dbtest.ts` crashes the
   native llama executable boundary while a real gateway request waits, proves the production service
-  marks it down, starts exactly one replacement, and returns the recovered chat response. Teardown
-  verifies the gateway/model ports rebind and every owned child process exits.
+  marks it down, runs a failing then successful TTS subprocess without wedging speech, starts exactly
+  one replacement LLM, returns the recovered chat response, and synthesizes that recovered answer to
+  a valid WAV. Teardown verifies the gateway/model ports rebind and every owned child process exits.
 - #148 - Low disk space is handled. Model and artifact integrations constrain only disposable OS
   write boundaries, force mid-stream `ENOSPC`, and prove the active partial is removed, resumable
   network partials are retained, artifact JSON uses atomic promotion, and existing model and
@@ -527,7 +530,9 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   subprocess protocol, WAV validation, and browser Audio. Only the heavyweight ONNX worker and
   browser media boundary are controlled. It proves playback, visible Stop state, actionable worker
   failure, and stale-cancellation isolation. The release workflow separately requires non-zero PCM
-  from the exact packaged worker before publishing.
+  from the exact packaged worker before publishing. The multimodal runtime integration additionally
+  proves a worker failure releases the busy guard immediately, the retry returns RIFF audio, and
+  speech remains usable after the chat engine crashes and recovers.
 - #107 - Entities are synthesized. `entity-action-journeys.dbtest.ts` records person, project, and
   company mentions through production observation and entity owners. The composed
   `entity-context-pipeline.integration.dbtest.ts` then runs the real screen extractor, dictation

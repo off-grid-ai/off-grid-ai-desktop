@@ -808,9 +808,9 @@
     "steps": "Enable voice mode, record a synthetic utterance, stop, inspect transcript, send, hear the reply, interrupt playback, disable voice mode, and relaunch.",
     "expected": "One transcript and one user turn appear, playback uses the selected TTS model, Stop releases mic/audio immediately, text mode remains usable, and mode/settings restore correctly.",
     "status": "PARTIAL",
-    "layer": "Integration + E2E",
-    "evidence": "src/renderer/src/components/__tests__/MemoryChat.microphone-permission.integration.test.tsx; src/renderer/src/components/__tests__/MemoryChat.chat-lifecycle.test.tsx; e2e/tts-speak.spec.ts; src/main/__tests__/audio-engines.integration.test.ts",
-    "proof": "Permission recovery, UI lifecycle, TTS action, and audio engines are covered separately.",
+    "layer": "Rendered + native-process + audio integration",
+    "evidence": "src/renderer/src/components/__tests__/MemoryChat.microphone-permission.integration.test.tsx; src/renderer/src/components/__tests__/MemoryChat.chat-lifecycle.test.tsx; integration-tests/memory-chat-tts.ui.integration.dbtest.ts; src/main/__tests__/image-runtime-reliability.integration.dbtest.ts; src/main/__tests__/audio-engines.integration.test.ts",
+    "proof": "Permission and rendered lifecycle coverage is joined by a real chat answer, unexpected native LLM crash, failed TTS subprocess, immediate retry, one replacement LLM process, recovered chat, and valid WAV synthesis before and after recovery.",
     "remaining": "Join real microphone, STT helper/model, rendered chat, exact TTS worker, and audible output on the installed app.",
     "confidence": "LOW",
     "notes": "Critical full voice journey not represented by TTS-only rows."
