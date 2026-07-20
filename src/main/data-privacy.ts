@@ -161,6 +161,27 @@ const CORE_PERSONAL: PersonalStore[] = [
 ]
 const personalStores: PersonalStore[] = [...CORE_PERSONAL]
 
+type CategoryCleaner = (context: { olderThanDays?: number }) => void | Promise<void>
+const categoryCleaners = new Map<DataCategory['id'], Map<string, CategoryCleaner>>()
+
+/** Extend a core privacy category without leaking feature-specific storage names into core.
+ * Owners are stable identities, so repeated activation replaces the same registration instead
+ * of running destructive cleanup twice. */
+export function registerCategoryCleaner(
+  category: DataCategory['id'],
+  owner: string,
+  cleaner: CategoryCleaner
+): () => void {
+  const cleaners = categoryCleaners.get(category) ?? new Map<string, CategoryCleaner>()
+  cleaners.set(owner, cleaner)
+  categoryCleaners.set(category, cleaners)
+  return () => {
+    const current = categoryCleaners.get(category)
+    current?.delete(owner)
+    if (current?.size === 0) categoryCleaners.delete(category)
+  }
+}
+
 /** Register a personal-data store (tables + userData-relative dirs) so a FULL erase
  *  clears it too. Called from pro's activateMain for pro-only tables (observations,
  *  entity_aliases, secretary_prefs, action_items, clipboard_items, day_journals, …)
@@ -252,6 +273,15 @@ export async function clearCategory(
         } else {
           clearDirs(ud('captures'))
           await deleteByKinds(['screen']) // full clear → drop capture vectors too
+          // Registered cleaners below remove the semantic source rows. Drop their indexing
+          // receipts here as well so a future capture can never inherit a stale marker.
+          try {
+            getDB()
+              .prepare("DELETE FROM vec_indexed WHERE key LIKE 'obs:%' OR key LIKE 'frame:%'")
+              .run()
+          } catch {
+            /* search index has not been initialized */
+          }
         }
         break
       case 'meetings':
@@ -267,6 +297,9 @@ export async function clearCategory(
       case 'images':
         clearDirs(ud('generated-images'), ud('artifacts-library'), ud('style-thumbs'))
         break
+    }
+    for (const cleaner of categoryCleaners.get(id)?.values() ?? []) {
+      await cleaner({ olderThanDays })
     }
     return { success: true }
   } catch (e) {
