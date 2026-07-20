@@ -837,7 +837,7 @@ function AppContent() {
               {/* Brand + a dedicated collapse/expand toggle */}
               {sidebarOpen ? (
                 <div className="flex items-center gap-2 py-2">
-                  <img src={logo} alt="Off Grid" className="h-8 w-8 shrink-0 rounded-lg" />
+                  <img src={logo} alt="Off Grid AI" className="h-8 w-8 shrink-0 rounded-lg" />
                   <span className="flex-1 text-left font-semibold text-white whitespace-pre">
                     Off Grid AI
                   </span>
@@ -857,7 +857,7 @@ function AppContent() {
                   title="Expand"
                   className="group/exp flex w-full flex-col items-center gap-1.5 py-2"
                 >
-                  <img src={logo} alt="Off Grid" className="h-8 w-8 shrink-0 rounded-lg" />
+                  <img src={logo} alt="Off Grid AI" className="h-8 w-8 shrink-0 rounded-lg" />
                   <IconLayoutSidebarLeftExpand className="h-5 w-5 text-neutral-500 transition-colors group-hover/exp:text-white" />
                 </button>
               )}

@@ -2231,7 +2231,7 @@ export function MemoryChat({
           </svg>
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-medium tracking-wide text-neutral-200">OFF GRID</h2>
+          <h2 className="text-sm font-medium tracking-wide text-neutral-200">Off Grid AI</h2>
           <p className="truncate text-xs text-neutral-500">
             Private, on-device — chat, generate, and build
           </p>
@@ -3586,7 +3586,7 @@ export function MemoryChat({
                 !messages.some((m) => m.streaming) ? (
                   <div className="mb-5 flex flex-col items-start">
                     <div className="mb-1 text-[10px] uppercase tracking-wider text-neutral-600">
-                      Off Grid
+                      Off Grid AI
                     </div>
                     {mode === 'image' || generatingImage ? (
                       <div className="rounded-md border border-neutral-800 bg-neutral-900/40 p-3">
