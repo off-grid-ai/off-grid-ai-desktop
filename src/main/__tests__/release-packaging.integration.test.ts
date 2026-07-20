@@ -1,5 +1,6 @@
 import { execFile, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -9,6 +10,8 @@ const root = path.resolve(import.meta.dirname, '../../..')
 const electronVite = path.join(root, 'node_modules', '.bin', 'electron-vite')
 const tempRoots: string[] = []
 const execFileAsync = promisify(execFile)
+const require = createRequire(import.meta.url)
+const { getConfig: getEffectiveBuilderConfig } = require('app-builder-lib/out/util/config/config')
 const BUILD_TIMEOUT_MS = 90_000
 
 function tempDir(prefix: string): string {
@@ -237,10 +240,24 @@ describe.sequential('release packaging integration', () => {
     expect(pro).toContain('vault:status')
   })
 
-  it('keeps the helper payload hydrated and executable before electron-builder copies it', () => {
+  it('keeps the helper payload hydrated and executable before electron-builder copies it', async () => {
     const builder = fs.readFileSync(path.join(root, 'electron-builder.yml'), 'utf8')
     expect(builder).toContain("- '!pro/**'")
-    expect(builder).toMatch(/extraResources:\n\s+- from: resources\n\s+to: \.\n/)
+    expect(builder).toContain('extends: scripts/config/electron-builder-runtime.yml')
+
+    const effectiveConfig = (await getEffectiveBuilderConfig(
+      root,
+      path.join(root, 'electron-builder.yml'),
+      null
+    )) as {
+      extraResources?: Array<{ from?: string; filter?: string[] }>
+    }
+    expect(effectiveConfig.extraResources).toEqual([
+      {
+        from: 'resources',
+        filter: ['**/*', '!models/**', '!tts-worker.mjs']
+      }
+    ])
 
     const helpers = [
       'bin/llama/llama-server',
