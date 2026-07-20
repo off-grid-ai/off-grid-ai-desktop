@@ -16,6 +16,7 @@ export default defineConfig({
   test: {
     include: [
       'integration-tests/*.dbtest.ts',
+      'integration-tests/*.dbtest.tsx',
       'src/main/__tests__/*.dbtest.ts',
       'pro/main/__tests__/*.dbtest.ts'
     ],

@@ -320,9 +320,16 @@ historical labels, not strict completion claims. Use the strict snapshot above f
 - #28 - Active text model survives relaunch. `model-integrity.integration.test.ts` installs and
   activates a real catalog text fixture through the production model manager, reloads every module,
   and proves the same installed model remains the active chat selection.
+  `model-switch-ownership.integration.test.ts` additionally imports and activates two real local
+  GGUF fixtures, starts the production native-process and SSE path, changes selection while Model A
+  is streaming, proves that admitted turn completes on A, then proves the next turn starts Model B.
 - #32 - First local message replies. `MemoryChat.chat-lifecycle.test.tsx` sends through the real
   rendered composer, routes a streamed token through production ownership, resolves the local-model
   boundary, and proves one assistant bubble with the exact answer is persisted once.
+  `workspace-production-bridge.ui.integration.dbtest.tsx` removes the substituted Off Grid preload
+  API: the rendered composer uses the production preload mapping and IPC registrations, streams from
+  only a controlled native-model socket, and persists the exact visible user and assistant turns in
+  real SQLite.
 - #33 - No memory scope works. The same rendered integration keeps No memory visibly selected,
   sends a turn through the production chat path with retrieval disabled and no project scope, then
   renders the conversation-only answer normally.
@@ -347,8 +354,10 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   and assistant messages with exact scope, attachment, and finish context through the production
   repository, closes the real SQLite profile, reopens it, and verifies the conversation, message
   count, order, content, and context. The composed memory/RAG lifecycle also reloads the application
-  modules and runs another scoped chat against the reopened profile. Reloading the visible
-  conversation list remains manual.
+  modules and runs another scoped chat against the reopened profile.
+  `workspace-production-bridge.ui.integration.dbtest.tsx` closes and reopens that real database,
+  then renders the production Projects and Chat surfaces through production preload/IPC. The project,
+  chat count, ordered messages, and project-scoped artifact all reappear visibly from durable state.
 - #48 - Error clears busy state. `MemoryChat.chat-lifecycle.test.tsx` rejects a live turn at the
   native-model boundary, proves the rendered error is useful and Stop clears, then sends and renders
   a successful second turn through the same production composer.
