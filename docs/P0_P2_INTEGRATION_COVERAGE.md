@@ -112,12 +112,12 @@ manual claim does not count as complete integration coverage.
     These journeys remain partial because the rendered controls and installed-app relaunch are not
     part of this integration test.
 
-## High-leverage integration wave 4 - 1 of 5 complete
+## High-leverage integration wave 4 - 5 of 5 complete
 
 - Status:
   - Commissioned journeys: 5 total.
-  - Commissioned journeys complete: 1.
-  - Commissioned journeys left: 4.
+  - Commissioned journeys complete: 5.
+  - Commissioned journeys left: 0.
 - Complete - every model from download to real consumption:
   - `fresh-setup-first-use.integration.dbtest.ts` now derives the five required modality kinds from
     the production catalog, interrupts every representative download after durable partial bytes,
@@ -130,15 +130,47 @@ manual claim does not count as complete integration coverage.
   - Only HTTP delivery and the native llama.cpp, stable-diffusion.cpp, whisper.cpp, and Kokoro
     processes are controlled boundaries. No Off Grid service, store, router, or runtime owner is
     mocked.
-- Remaining:
-  - Active-service privacy deletion with no late-write resurrection.
-  - Concurrent workload ownership, cancellation, crash recovery, and clean relaunch.
-  - Mid-operation permission revocation and recovery.
-  - Atomic cross-store recovery from disk and database failures.
+- Complete - active-service privacy deletion with no late-write resurrection:
+  - `capture-deletion-race.integration.dbtest.ts` starts the real focus scheduler, native capture
+    wrapper, extractor, local-model client, CRM repositories, privacy registry, SQLite profile, and
+    capture filesystem, then invokes the production full-delete path while distillation is active.
+  - Core now owns an owner-keyed suspend, drain, delete, and reverse-resume protocol. Pro supplies
+    the capture lifecycle through the composition root, closes admission synchronously, waits for
+    the admitted tick, erases its late output, restores only its own pause, and stays empty after
+    profile relaunch.
+  - Electron/TCC, focused-window discovery, LanceDB, and llama-server are the only controlled
+    boundaries. No Off Grid module is mocked.
+- Complete - concurrent workload ownership, cancellation, crash recovery, and clean relaunch:
+  - `concurrent-workload-recovery.integration.dbtest.ts` starts four production catalog downloads
+    against controlled HTTP streams: three active transfers and one queued transfer.
+  - The production shutdown registry closes queue admission, interrupts and settles every owned
+    promise, preserves resumable partial files, and never starts the queued transfer. A cloned crash
+    profile then reloads the real registry and SQLite chat state, resumes with HTTP Range to the
+    exact GGUF bytes, and accepts new persisted work after relaunch.
+  - HTTP streams and Electron host-path/encryption APIs are the only controlled boundaries. The
+    model manager, queue, shutdown registry, catalog, filesystem, and SQLite repositories stay real.
+- Complete - mid-operation permission revocation and recovery:
+  - `capture-disabled.integration.test.ts` admits a production scheduler tick, revokes Screen
+    Recording while focused-window discovery is unresolved, and proves the denied screenshot is
+    dropped with actionable production health state and no additional native work.
+  - Restoring only the TCC boundary lets the same interval and real SQLite `SettingsStore` capture
+    again without restarting the app or scheduler.
+  - Electron/TCC and `get-windows` are the only controlled boundaries. No Off Grid module is mocked.
+- Complete - atomic cross-store recovery from disk and database failures:
+  - `meeting-atomic-recovery.integration.dbtest.ts` exercises production meeting persistence and
+    recovery over real SQLite, files, CRM observations/actions, and the local-model HTTP client.
+  - Partial `ENOSPC` writes leave no final media or database row. A complete atomic media write
+    followed by SQLite insert failure remains recoverable, is adopted and enriched exactly once on
+    relaunch, and stays idempotent across a second relaunch.
+  - Electron, native media executables, the local model process, and the injected filesystem
+    capacity failure are the only controlled boundaries. No Off Grid service is mocked.
 - Verification:
-  - Focused DB integration: 1 file passed, 1 test passed.
+  - All five commissioned journey cases passed in focused runs.
+  - Download queue and application-shutdown checks: 9 tests passed.
+  - Capture lifecycle and projection checks: 7 tests passed.
+  - Adjacent meeting persistence and entity-context checks: 3 tests passed.
   - Node and web TypeScript: passed.
-  - ESLint, Prettier, and diff checks: passed.
+  - Scoped ESLint completed with zero errors; Prettier and diff checks passed.
   - No Playwright or Electron E2E test was added or run.
 
 ## High-leverage integration wave 3 - 5 of 5 complete
