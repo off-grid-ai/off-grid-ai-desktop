@@ -112,6 +112,35 @@ manual claim does not count as complete integration coverage.
     These journeys remain partial because the rendered controls and installed-app relaunch are not
     part of this integration test.
 
+## High-leverage integration wave 4 - 1 of 5 complete
+
+- Status:
+  - Commissioned journeys: 5 total.
+  - Commissioned journeys complete: 1.
+  - Commissioned journeys left: 4.
+- Complete - every model from download to real consumption:
+  - `fresh-setup-first-use.integration.dbtest.ts` now derives the five required modality kinds from
+    the production catalog, interrupts every representative download after durable partial bytes,
+    reloads the module graph, and range-resumes text, vision, image, transcription, and voice.
+  - Every model is activated through the generic production model-manager seam and consumed by its
+    real owner: text and image-bearing chat through `LLMService`, PNG generation through imagegen and
+    the modality queue, transcription through the selected STT service, and speech through TTS.
+  - The journey closes and reopens its disposable SQLite profile, reloads all modules, consumes all
+    five modalities again without another remote request, and verifies their persisted selections.
+  - Only HTTP delivery and the native llama.cpp, stable-diffusion.cpp, whisper.cpp, and Kokoro
+    processes are controlled boundaries. No Off Grid service, store, router, or runtime owner is
+    mocked.
+- Remaining:
+  - Active-service privacy deletion with no late-write resurrection.
+  - Concurrent workload ownership, cancellation, crash recovery, and clean relaunch.
+  - Mid-operation permission revocation and recovery.
+  - Atomic cross-store recovery from disk and database failures.
+- Verification:
+  - Focused DB integration: 1 file passed, 1 test passed.
+  - Node and web TypeScript: passed.
+  - ESLint, Prettier, and diff checks: passed.
+  - No Playwright or Electron E2E test was added or run.
+
 ## High-leverage integration wave 3 - 5 of 5 complete
 
 - Capture privacy, memory, Replay, search, and lifecycle recovery:

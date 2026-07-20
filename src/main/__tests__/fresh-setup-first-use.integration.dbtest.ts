@@ -1,11 +1,12 @@
 /**
  * Fresh-install release journey through the production setup planner, catalog,
- * model manager, persisted selections, and the three baseline runtime owners.
+ * model manager, persisted selections, and every supported modality runtime.
  *
  * Only boundaries outside Off Grid are controlled: HTTP serves deterministic
- * model bytes and tiny executables stand in for llama.cpp, whisper.cpp, and
- * Kokoro. The interrupted-download registry, Range resume, filesystem promotion,
- * activation, runtime selection, first use, and relaunch behavior stay real.
+ * model bytes and tiny executables stand in for llama.cpp, stable-diffusion.cpp,
+ * whisper.cpp, and Kokoro. The interrupted-download registry, Range resume,
+ * filesystem promotion, generic activation, runtime selection, first use, and
+ * relaunch behavior stay real.
  */
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
@@ -43,12 +44,14 @@ interface CatalogFile {
   url: string
 }
 
-interface BaselineModel {
+interface JourneyModel {
   id: string
-  kind: 'chat' | 'transcription' | 'voice'
+  kind: 'text' | 'vision' | 'image' | 'transcription' | 'voice'
   files: CatalogFile[]
 }
 
+const PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 const delivery = new Map<string, Buffer>()
 const interrupted = new Set<string>()
 const resumedRanges = new Map<string, string>()
@@ -87,7 +90,8 @@ function installRuntimeBoundaries(): void {
       "    req.on('end', () => {",
       '      JSON.parse(body)',
       "      res.writeHead(200, { 'content-type': 'application/json', connection: 'close' })",
-      "      res.end(JSON.stringify({ choices: [{ message: { content: 'fresh setup chat ready' } }], usage: { total_tokens: 4 } }))",
+      "      const content = body.includes('image_url') ? 'fresh setup vision ready' : 'fresh setup chat ready'",
+      '      res.end(JSON.stringify({ choices: [{ message: { content } }], usage: { total_tokens: 4 } }))',
       '    })',
       '    return',
       '  }',
@@ -102,6 +106,17 @@ function installRuntimeBoundaries(): void {
   executable(
     path.join(binDir, 'whisper', 'whisper-cli'),
     "#!/bin/sh\nprintf '%s\\n' 'fresh setup transcription ready'\n"
+  )
+  executable(
+    path.join(binDir, 'sd', 'sd-cli'),
+    [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs')",
+      'const args = process.argv.slice(2)',
+      "const outputIndex = args.indexOf('-o')",
+      'if (outputIndex < 0) process.exit(64)',
+      `fs.writeFileSync(args[outputIndex + 1], Buffer.from('${PNG_BASE64}', 'base64'))`
+    ].join('\n')
   )
   fs.mkdirSync(resourceDir, { recursive: true })
   fs.writeFileSync(
@@ -129,7 +144,7 @@ function fixtureBytes(fileName: string, seed: number): Buffer {
   return Buffer.concat([Buffer.from(`off-grid-${fileName}-`), Buffer.alloc(2_048, seed)])
 }
 
-function installDownloadBoundary(models: BaselineModel[]): void {
+function installDownloadBoundary(models: JourneyModel[]): void {
   models.forEach((model, modelIndex) => {
     model.files.forEach((file, fileIndex) => {
       delivery.set(file.url, fixtureBytes(file.name, modelIndex * 10 + fileIndex + 1))
@@ -247,18 +262,39 @@ describe('fresh setup to first use', () => {
     expect(plan.items.map((item) => item.kind)).toEqual(['chat', 'transcription', 'voice'])
     expect(plan.items.every((item) => item.installed === false)).toBe(true)
 
-    const models: BaselineModel[] = plan.items.map((item) => {
+    const baselineModels: JourneyModel[] = plan.items.map((item) => {
       const catalogEntry = CATALOG.find((entry) => entry.id === item.id)
       if (!catalogEntry) throw new Error(`Setup selected a model outside the catalog: ${item.id}`)
       return {
         id: item.id,
-        kind: item.kind as BaselineModel['kind'],
+        kind: catalogEntry.kind,
         files: catalogEntry.files.map((file) => ({ name: file.name, url: file.url }))
       }
     })
+    const requiredKinds: JourneyModel['kind'][] = [
+      'text',
+      'vision',
+      'image',
+      'transcription',
+      'voice'
+    ]
+    const baselineKinds = new Set(baselineModels.map((model) => model.kind))
+    const additionalModels: JourneyModel[] = requiredKinds
+      .filter((kind) => !baselineKinds.has(kind))
+      .map((kind) => {
+        const catalogEntry = CATALOG.find((entry) => entry.kind === kind)
+        if (!catalogEntry) throw new Error(`Catalog has no ${kind} model for first use`)
+        return {
+          id: catalogEntry.id,
+          kind,
+          files: catalogEntry.files.map((file) => ({ name: file.name, url: file.url }))
+        }
+      })
+    const models = [...baselineModels, ...additionalModels]
+    expect(new Set(models.map((model) => model.kind))).toEqual(new Set(requiredKinds))
     installDownloadBoundary(models)
 
-    // Each representative baseline download loses its connection after writing a
+    // Each representative modality download loses its connection after writing a
     // real .part prefix. No model is installed or selectable from partial bytes.
     for (const model of models) {
       await expect(manager.downloadModel(model.id)).resolves.toEqual({
@@ -271,7 +307,8 @@ describe('fresh setup to first use', () => {
     }
 
     // Relaunch the module graph like a newly started main process. The production
-    // registry restores every interrupted row, then Configure for me resumes them.
+    // registry restores every interrupted row. Configure for me resumes its baseline,
+    // then the same download owner resumes the remaining catalog modalities.
     vi.resetModules()
     interruptDownloads = false
     const [{ llm: resumedLlm }, resumedSetup, resumedManager] = await Promise.all([
@@ -294,8 +331,15 @@ describe('fresh setup to first use', () => {
     const progress: import('../setup').SetupProgress[] = []
     await expect(
       resumedSetup.autoConfigure((event) => progress.push(event))
-    ).resolves.toMatchObject({ success: true, modelId: models[0]!.id })
-    expect(progress.at(-1)).toMatchObject({ phase: 'done', modelId: models[0]!.id })
+    ).resolves.toMatchObject({ success: true, modelId: baselineModels[0]!.id })
+    expect(progress.at(-1)).toMatchObject({
+      phase: 'done',
+      modelId: baselineModels[0]!.id
+    })
+    for (const model of additionalModels) {
+      await expect(resumedManager.retryDownload(model.id)).resolves.toEqual({ success: true })
+      await expect(resumedManager.activateModel(model.id)).resolves.toEqual({ success: true })
+    }
     expect(await resumedManager.listInstalled()).toEqual(
       expect.arrayContaining(models.map((model) => model.id))
     )
@@ -305,14 +349,22 @@ describe('fresh setup to first use', () => {
       expect(fs.existsSync(path.join(dataDir, 'models', `${firstFile.name}.part`))).toBe(false)
     }
 
-    const active = resumedManager.getActiveModalities()
-    expect(active).toEqual({
-      text: models.find((model) => model.kind === 'chat')!.id,
-      image: null,
-      transcription: models.find((model) => model.kind === 'transcription')!.id,
-      speech: models.find((model) => model.kind === 'voice')!.id
-    })
+    const textModel = models.find((model) => model.kind === 'text')!
+    const visionModel = models.find((model) => model.kind === 'vision')!
+    const imageModel = models.find((model) => model.kind === 'image')!
+    const transcriptionModel = models.find((model) => model.kind === 'transcription')!
+    const voiceModel = models.find((model) => model.kind === 'voice')!
 
+    const { registerRuntime } = await import('../runtime-manager')
+    const { generateImage, imageRuntime } = await import('../imagegen')
+    const { ttsRuntime } = await import('../tts')
+    const { sttRuntime } = await import('../transcription/select')
+    registerRuntime(resumedLlm.runtime)
+    registerRuntime(imageRuntime)
+    registerRuntime(sttRuntime)
+    registerRuntime(ttsRuntime)
+
+    await expect(resumedManager.activateModel(textModel.id)).resolves.toEqual({ success: true })
     expect(await resumedLlm.chat('Prove the fresh chat model can answer')).toBe(
       'fresh setup chat ready'
     )
@@ -325,6 +377,37 @@ describe('fresh setup to first use', () => {
     const { synthesize } = await import('../tts')
     expectWav((await synthesize('Fresh setup speech is ready')).dataUrl)
 
+    const visionInput = path.join(root, 'vision-input.png')
+    fs.writeFileSync(visionInput, Buffer.from(PNG_BASE64, 'base64'))
+    await expect(resumedManager.activateModel(visionModel.id)).resolves.toEqual({ success: true })
+    expect(resumedLlm.hasVision()).toBe(true)
+    await expect(resumedLlm.chat('Describe this image', [visionInput])).resolves.toBe(
+      'fresh setup vision ready'
+    )
+
+    await expect(resumedManager.activateModel(imageModel.id)).resolves.toEqual({ success: true })
+    const generated = await generateImage({
+      prompt: 'A green cabin under stars',
+      seed: 314,
+      width: 512,
+      height: 512,
+      steps: 4
+    })
+    expect(generated.dataUrl).toBe(`data:image/png;base64,${PNG_BASE64}`)
+    expect(fs.readFileSync(generated.path).toString('base64')).toBe(PNG_BASE64)
+
+    const active = resumedManager.getActiveModalities()
+    expect(active).toEqual({
+      text: visionModel.id,
+      image: expect.any(String),
+      transcription: transcriptionModel.id,
+      speech: voiceModel.id
+    })
+    expect(await resumedManager.getActiveModelIds()).toEqual(
+      expect.arrayContaining([visionModel.id, imageModel.id, transcriptionModel.id, voiceModel.id])
+    )
+    expect(await resumedManager.getActiveModelIds()).not.toContain(textModel.id)
+
     const requestsAfterFirstUse = remoteRequests
     resumedLlm.stop()
     const database = await import('../database')
@@ -334,21 +417,47 @@ describe('fresh setup to first use', () => {
     // A second relaunch must consume the exact persisted install and selections.
     // It must not repair or redownload anything to make first use work again.
     vi.resetModules()
-    const [{ llm: relaunchedLlm }, relaunchedSetup, relaunchedManager] = await Promise.all([
+    const [
+      { llm: relaunchedLlm },
+      relaunchedSetup,
+      relaunchedManager,
+      relaunchedRuntimeManager,
+      relaunchedImage,
+      relaunchedTts,
+      relaunchedTranscription
+    ] = await Promise.all([
       import('../llm'),
       import('../setup'),
-      import('../models-manager')
+      import('../models-manager'),
+      import('../runtime-manager'),
+      import('../imagegen'),
+      import('../tts'),
+      import('../transcription/select')
     ])
+    relaunchedRuntimeManager.registerRuntime(relaunchedLlm.runtime)
+    relaunchedRuntimeManager.registerRuntime(relaunchedImage.imageRuntime)
+    relaunchedRuntimeManager.registerRuntime(relaunchedTranscription.sttRuntime)
+    relaunchedRuntimeManager.registerRuntime(relaunchedTts.ttsRuntime)
     const relaunchedPlan = await relaunchedSetup.getSetupPlan()
     expect(relaunchedPlan.items.every((item) => item.installed)).toBe(true)
     expect(relaunchedPlan.totalDownloadGb).toBe(0)
-    expect(relaunchedManager.getActiveModalities()).toEqual(active)
-    expect(await relaunchedManager.getActiveModelIds()).toEqual(
+    expect(await relaunchedManager.listInstalled()).toEqual(
       expect.arrayContaining(models.map((model) => model.id))
     )
-    expect(await relaunchedLlm.chat('Prove the persisted chat model can answer')).toBe(
+    expect(relaunchedManager.getActiveModalities()).toEqual(active)
+    expect(await relaunchedManager.getActiveModelIds()).toEqual(
+      expect.arrayContaining([visionModel.id, imageModel.id, transcriptionModel.id, voiceModel.id])
+    )
+    await expect(relaunchedLlm.chat('Describe this persisted image', [visionInput])).resolves.toBe(
+      'fresh setup vision ready'
+    )
+    await expect(relaunchedManager.activateModel(textModel.id)).resolves.toEqual({ success: true })
+    expect(await relaunchedLlm.chat('Prove the persisted text model can answer')).toBe(
       'fresh setup chat ready'
     )
+    await expect(relaunchedManager.activateModel(visionModel.id)).resolves.toEqual({
+      success: true
+    })
     const { getActiveTranscription: getRelaunchedTranscription } =
       await import('../transcription/select')
     await expect(
@@ -356,11 +465,19 @@ describe('fresh setup to first use', () => {
     ).resolves.toEqual({ text: 'fresh setup transcription ready', language: undefined })
     const { synthesize: synthesizeAfterRelaunch } = await import('../tts')
     expectWav((await synthesizeAfterRelaunch('Persisted speech is ready')).dataUrl)
+    const regenerated = await relaunchedImage.generateImage({
+      prompt: 'A persisted green cabin under stars',
+      seed: 315,
+      width: 512,
+      height: 512,
+      steps: 4
+    })
+    expect(regenerated.dataUrl).toBe(`data:image/png;base64,${PNG_BASE64}`)
     expect(remoteRequests).toBe(requestsAfterFirstUse)
 
     relaunchedLlm.stop()
     await waitForPortRelease(8439)
     const relaunchedDatabase = await import('../database')
     relaunchedDatabase.getDB().close()
-  })
+  }, 30_000)
 })
