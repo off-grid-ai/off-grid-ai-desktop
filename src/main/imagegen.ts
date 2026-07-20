@@ -103,10 +103,7 @@ export function listImageModels(): string[] {
 }
 
 /** All generated images on disk, newest first (excludes step-preview files). */
-export function listGeneratedImages(scope?: {
-  conversationId?: string
-  projectId?: string | null
-}): {
+export function listGeneratedImages(scope?: GeneratedImageScope): {
   path: string
   name: string
   mtime: number
@@ -151,6 +148,7 @@ export function deleteGeneratedImage(p: string): boolean {
     const ownedImage = resolveExistingOwnedPath(dir, p)
     if (!ownedImage || !/\.png$/i.test(ownedImage)) return false
     fs.unlinkSync(ownedImage)
+    fs.rmSync(`${ownedImage}.json`, { force: true })
     return true
   } catch {
     return false
@@ -406,6 +404,64 @@ export interface ImageGenProgress {
   // the VAE-tiling decode. Tag which one so the UI shows "Decoding" instead of a
   // confusing second 0→N count.
   phase?: 'sampling' | 'decoding'
+}
+
+export interface GeneratedImageScope {
+  conversationId?: string
+  projectId?: string | null
+}
+
+/** Persist the chat/project owner beside a generated image.
+ *
+ * The image service owns this metadata because listing, filtering, deletion, and
+ * export all depend on the same file boundary. Callers should not manufacture
+ * sidecars themselves.
+ */
+export function saveGeneratedImageScope(imagePath: string, scope: GeneratedImageScope): void {
+  const dir = path.join(dataDir(), 'generated-images')
+  const ownedImage = resolveExistingOwnedPath(dir, imagePath)
+  if (!ownedImage || !/\.png$/i.test(ownedImage)) {
+    throw new Error('Generated image is outside the app image library.')
+  }
+
+  const sidecar = `${ownedImage}.json`
+  const temporarySidecar = `${sidecar}.tmp`
+  try {
+    fs.writeFileSync(
+      temporarySidecar,
+      JSON.stringify({
+        conversationId: scope.conversationId,
+        projectId: scope.projectId ?? null
+      })
+    )
+    fs.renameSync(temporarySidecar, sidecar)
+  } finally {
+    fs.rmSync(temporarySidecar, { force: true })
+  }
+}
+
+/** Copy one app-owned generated image to a user-selected destination.
+ *
+ * The copy is promoted atomically so a full destination volume cannot replace
+ * an existing export with truncated bytes.
+ */
+export async function exportGeneratedImage(imagePath: string, destination: string): Promise<void> {
+  const dir = path.join(dataDir(), 'generated-images')
+  const ownedImage = resolveExistingOwnedPath(dir, imagePath)
+  if (!ownedImage || !/\.png$/i.test(ownedImage)) {
+    throw new Error('Generated image is outside the app image library.')
+  }
+
+  const temporaryDestination = path.join(
+    path.dirname(destination),
+    `.${path.basename(destination)}.${String(process.pid)}.${String(Date.now())}.tmp`
+  )
+  try {
+    await fs.promises.copyFile(ownedImage, temporaryDestination)
+    await fs.promises.rename(temporaryDestination, destination)
+  } finally {
+    await fs.promises.rm(temporaryDestination, { force: true })
+  }
 }
 
 let currentChild: ChildProcess | null = null

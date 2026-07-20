@@ -1664,20 +1664,9 @@ export function setupIPC() {
           /* window gone */
         }
       })
-      // Write a scope sidecar so the gallery can filter images by chat/project.
-      try {
-        if (result.path && (params.conversationId || params.projectId)) {
-          const fsp = await import('fs')
-          fsp.writeFileSync(
-            `${result.path}.json`,
-            JSON.stringify({
-              conversationId: params.conversationId,
-              projectId: params.projectId ?? null
-            })
-          )
-        }
-      } catch {
-        /* best effort */
+      if (result.path && (params.conversationId || params.projectId)) {
+        const { saveGeneratedImageScope } = await import('./imagegen')
+        saveGeneratedImageScope(result.path, params)
       }
       return result
     }
@@ -1733,7 +1722,6 @@ export function setupIPC() {
 
   ipcMain.handle('imagegen:export', async (e, srcPath: string, suggestedName?: string) => {
     const { dialog } = await import('electron')
-    const fs = await import('fs')
     const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
     const res = await dialog.showSaveDialog(win!, {
       title: 'Save image',
@@ -1741,7 +1729,8 @@ export function setupIPC() {
       filters: [{ name: 'PNG', extensions: ['png'] }]
     })
     if (res.canceled || !res.filePath) return false
-    await fs.promises.copyFile(srcPath, res.filePath)
+    const { exportGeneratedImage } = await import('./imagegen')
+    await exportGeneratedImage(srcPath, res.filePath)
     return true
   })
 

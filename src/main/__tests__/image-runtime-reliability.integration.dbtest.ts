@@ -491,4 +491,67 @@ describe('multimodal runtime reliability', () => {
       'chat recovered'
     ])
   }, 10_000)
+
+  it('persists, scopes, exports, reopens, and fully deletes a generated image artifact', async () => {
+    const image = await generateImage({
+      prompt: 'An emerald release map',
+      model: IMAGE_MODEL,
+      seed: 405,
+      width: 512,
+      height: 512,
+      steps: 4
+    })
+    const imageBytes = Buffer.from(PNG_BASE64, 'base64')
+    const exportPath = path.join(fixture.root, 'exports', 'release-map.png')
+    fs.mkdirSync(path.dirname(exportPath), { recursive: true })
+    fs.writeFileSync(exportPath, 'older export that must only be replaced after a complete copy')
+
+    const imageLibrary = await import('../imagegen')
+    const artifacts = await import('../artifacts')
+    imageLibrary.saveGeneratedImageScope(image.path, {
+      conversationId: 'image-release-chat',
+      projectId: 'image-release-project'
+    })
+    const savedArtifact = artifacts.saveArtifact({
+      kind: 'image',
+      code: image.path,
+      title: 'Emerald release map',
+      conversationId: 'image-release-chat',
+      projectId: 'image-release-project'
+    })
+
+    expect(imageLibrary.listGeneratedImages({ conversationId: 'image-release-chat' })).toEqual([
+      expect.objectContaining({
+        path: image.path,
+        conversationId: 'image-release-chat',
+        projectId: 'image-release-project'
+      })
+    ])
+    expect(imageLibrary.listGeneratedImages({ projectId: 'another-project' })).toEqual([])
+    expect(artifacts.listArtifacts({ projectId: 'image-release-project' })).toEqual([savedArtifact])
+
+    await imageLibrary.exportGeneratedImage(image.path, exportPath)
+    expect(fs.readFileSync(exportPath)).toEqual(imageBytes)
+    await expect(
+      imageLibrary.exportGeneratedImage(path.join(fixture.root, 'private-notes.txt'), exportPath)
+    ).rejects.toThrow('Generated image is outside the app image library.')
+
+    vi.resetModules()
+    const reopenedImages = await import('../imagegen')
+    const reopenedArtifacts = await import('../artifacts')
+    expect(reopenedImages.listGeneratedImages({ projectId: 'image-release-project' })).toEqual([
+      expect.objectContaining({ path: image.path, conversationId: 'image-release-chat' })
+    ])
+    expect(reopenedArtifacts.listArtifacts({ conversationId: 'image-release-chat' })).toEqual([
+      expect.objectContaining({ id: savedArtifact.id, kind: 'image', code: image.path })
+    ])
+
+    expect(reopenedArtifacts.deleteArtifact(savedArtifact.id)).toBe(true)
+    expect(reopenedImages.deleteGeneratedImage(image.path)).toBe(true)
+    expect(fs.existsSync(image.path)).toBe(false)
+    expect(fs.existsSync(`${image.path}.json`)).toBe(false)
+    expect(reopenedImages.listGeneratedImages({ projectId: 'image-release-project' })).toEqual([])
+    expect(reopenedArtifacts.listArtifacts({ projectId: 'image-release-project' })).toEqual([])
+    expect(fs.readFileSync(exportPath)).toEqual(imageBytes)
+  }, 20_000)
 })
