@@ -12,6 +12,33 @@ const REPO_ROOT = path.resolve(__dirname, '../../..')
 const VERIFIER = path.join(REPO_ROOT, 'scripts', 'smoke-dmg-install.sh')
 const CAN_MOUNT_DMG = process.platform === 'darwin' && fs.existsSync('/usr/bin/hdiutil')
 const DMG_TEST_TIMEOUT_MS = 120_000
+const HELPER_PROBE = path.join(REPO_ROOT, 'scripts', 'probe-packaged-helpers.mjs')
+
+const installHelperFixtures = (app: string): void => {
+  const script = `#!/usr/bin/env bash
+set -euo pipefail
+case "$(basename "$0")" in
+  llama-server) printf 'usage: llama-server [options]\\n' ;;
+  ffmpeg) printf 'ffmpeg version 6.0-fixture\\n' ;;
+  whisper-cli) printf 'usage: whisper-cli [options] file\\noptions:\\n' ;;
+  sd-server) printf 'stable-diffusion.cpp version fixture\\nUsage: sd-server [options]\\n' ;;
+  sd-cli) printf 'stable-diffusion.cpp version fixture\\nUsage: sd-cli [options]\\n' ;;
+  *) exit 64 ;;
+esac
+`
+  for (const relative of [
+    'bin/llama/llama-server',
+    'bin/ffmpeg',
+    'bin/whisper/whisper-cli',
+    'bin/sd/sd-server',
+    'bin/sd/sd-cli'
+  ]) {
+    const target = path.join(app, 'Contents', 'Resources', relative)
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, script)
+    fs.chmodSync(target, 0o755)
+  }
+}
 
 const makeFakeDmgBoundary = (root: string): string => {
   const boundary = path.join(root, 'fake-hdiutil.sh')
@@ -97,6 +124,7 @@ const createAppBundle = (root: string, appName = 'Off Grid AI Desktop.app'): str
   fs.writeFileSync(executable, '#!/usr/bin/env bash\nexit 0\n')
   fs.chmodSync(executable, 0o755)
   fs.writeFileSync(path.join(contents, 'fixture-marker.txt'), 'copied-from-mounted-dmg')
+  installHelperFixtures(app)
   return app
 }
 
@@ -115,7 +143,15 @@ const makeReleaseShapedBundle = (root: string): string => {
   const nativeFixture = path.join(path.dirname(root), 'native-fixture')
   const compile = spawnSync('/usr/bin/clang', ['-x', 'c', '-', '-o', nativeFixture], {
     encoding: 'utf8',
-    input: 'int main(void) { return 0; }\n'
+    input: `#include <stdio.h>
+#include <string.h>
+int main(int argc, char **argv) {
+  if (argc > 0 && strstr(argv[0], "llama-server")) {
+    puts("usage: llama-server [options]");
+  }
+  return 0;
+}
+`
   })
   if (compile.status !== 0) throw new Error(compile.stderr)
 
@@ -253,6 +289,9 @@ if [ "$1" = "$TIMEOUT_RUNNER" ]; then
   exec "$REAL_NODE" "$TIMEOUT_RUNNER" "$@"
 fi
 case "$1" in
+  "$EXPECTED_HELPER_PROBE")
+    exec "$REAL_NODE" "$EXPECTED_HELPER_PROBE" "\${@:2}"
+    ;;
   "$EXPECTED_SMOKE_TEST")
     : "\${APP_BIN:?missing copied executable path}"
     : "\${OFFGRID_DMG_MOUNT_POINT:?missing mount point}"
@@ -278,6 +317,7 @@ esac
         PATH: `${binDir}:${process.env.PATH ?? ''}`,
         REAL_NODE: process.execPath,
         TIMEOUT_RUNNER: path.join(REPO_ROOT, 'scripts', 'exec-with-timeout.mjs'),
+        EXPECTED_HELPER_PROBE: HELPER_PROBE,
         EXPECTED_SMOKE_TEST: path.join(REPO_ROOT, 'scripts', 'smoke-test.mjs'),
         EXPECTED_LICENSE_SMOKE: path.join(REPO_ROOT, 'scripts', 'smoke-license-gate.mjs'),
         DMG_SMOKE_CAPTURE: capture

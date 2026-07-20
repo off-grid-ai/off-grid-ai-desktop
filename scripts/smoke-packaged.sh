@@ -49,9 +49,10 @@ echo "[packaged-smoke] static bundle assertions"
 node -e "const a=require('@electron/asar');process.exit(a.listPackage(process.argv[1]).includes('/out/main/tts-worker.js')?0:1)" "$RES/app.asar" \
   && ok "compiled TTS worker in app.asar" \
   || bad "compiled TTS worker MISSING from app.asar"
-[ -x "$RES/bin/llama/llama-server" ]   && ok "llama-server bundled"                           || bad "llama-server MISSING"
-[ -x "$RES/bin/sd/sd-server" ]         && ok "sd-server bundled"                              || bad "sd-server MISSING"
 [ "$FAILED" = 0 ] || { echo "[packaged-smoke] static assertions failed - not launching"; exit 1; }
+node scripts/probe-packaged-helpers.mjs "$APP" \
+  && ok "packaged native helpers execute and resolve their dependencies" \
+  || { bad "packaged native helper execution failed"; exit 1; }
 node scripts/probe-packaged-tts.mjs "$APP" \
   && ok "packaged TTS worker imports kokoro-js through ASAR" \
   || { bad "packaged TTS worker cannot import kokoro-js"; exit 1; }

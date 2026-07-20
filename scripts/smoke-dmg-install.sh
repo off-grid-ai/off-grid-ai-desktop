@@ -122,7 +122,9 @@ fi
 run_hdiutil detach "$MOUNT_POINT" >/dev/null
 ATTACH_ATTEMPTED=0
 
-echo "[dmg-smoke] detached source; running packaged UI smoke against copied app"
+echo "[dmg-smoke] detached source; running packaged helper and UI smoke against copied app"
+node "$REPO_ROOT/scripts/probe-packaged-helpers.mjs" "$INSTALLED_APP"
+echo "[dmg-smoke] packaged native helper probes passed"
 if [ -n "$SMOKE_RUNNER" ]; then
   APP="$INSTALLED_APP" OFFGRID_DMG_MOUNT_POINT="$MOUNT_POINT" bash "$SMOKE_RUNNER"
 else
