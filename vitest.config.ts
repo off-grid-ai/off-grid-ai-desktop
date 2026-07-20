@@ -1,16 +1,13 @@
 import { resolve } from 'path'
 import { existsSync } from 'fs'
 import { defineConfig } from 'vitest/config'
+import { createVitestProjects } from './src/main/__tests__/vitest-projects'
 
 // The pro/ submodule is present in the working tree when you have access, absent
 // otherwise (and in a fork CI without the cross-repo token). Only enforce the
 // pro-specific threshold group when pro is actually checked out, so a core-only
 // run measures + gates core alone instead of erroring on an empty pro/** glob.
 const hasPro = existsSync(resolve(__dirname, 'pro/tsconfig.json'))
-const packagingIntegrationTests = [
-  'src/main/__tests__/packaged-helpers.integration.test.ts',
-  'src/main/__tests__/release-packaging.integration.test.ts'
-]
 const productTestFiles = [
   'integration-tests/*.test.ts',
   'src/**/*.test.ts',
@@ -56,32 +53,16 @@ export default defineConfig({
     // .ts = pure/main unit + integration tests (node env, the default). .tsx = renderer
     // component render tests, which opt into jsdom per-file via `// @vitest-environment jsdom`
     // so the default suite stays node-fast. (React render harness: jsdom + @testing-library/react.)
-    // Packaging tests invoke electron-vite, which materializes one temporary config
+    // Two integration suites intentionally own the production llama port (:8439):
+    // the gateway's real upstream seam and System Health's real managed-engine seam.
+    // Keep them in one sequential project so ownership can never overlap across
+    // Vitest workers. Packaging tests invoke electron-vite, which materializes one
+    // temporary config
     // beside electron.vite.config.ts and needs the same CPU/memory as the application
     // build. Run them in a second project only after ordinary product tests finish;
     // otherwise coverage workers can starve the build past its timeout even when the
     // cross-process filesystem lock prevents config-file races.
-    projects: [
-      {
-        extends: true,
-        test: {
-          name: 'product-integration',
-          include: productTestFiles,
-          exclude: [...commonExcludes, ...packagingIntegrationTests],
-          sequence: { groupOrder: 0 }
-        }
-      },
-      {
-        extends: true,
-        test: {
-          name: 'packaging-integration',
-          include: packagingIntegrationTests,
-          exclude: commonExcludes,
-          fileParallelism: false,
-          sequence: { groupOrder: 1 }
-        }
-      }
-    ],
+    projects: createVitestProjects(productTestFiles, commonExcludes),
     coverage: {
       provider: 'v8',
       // all:true + an `include` of the LOGIC surface (.ts, both core src AND the pro
