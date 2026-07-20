@@ -568,11 +568,11 @@
     "steps": "Start the production app on a fresh unentitled profile and watch processes, global shortcuts, clipboard, notifications, capture, meetings, tray, media ports, and Pro database writes; then activate and restart.",
     "expected": "Before entitlement no Pro service, shortcut, watcher, capture, or write activates; after entitlement each service starts once under its owning lifecycle.",
     "status": "PARTIAL",
-    "layer": "Integration",
+    "layer": "Production composition + real SQLite integration",
     "evidence": "pro/main/__tests__/service-activation.integration.dbtest.ts; src/main/__tests__/release-packaging.integration.test.ts",
-    "proof": "Service activation and source separation are covered at application seams.",
+    "proof": "A fresh packaged-mode profile starts no Pro service. A real Keygen-boundary activation persists an encrypted entitlement; after every Off Grid module reloads, the production Core loader invokes actual Pro activateMain, migrates real SQLite, starts the owned focus/shortcut/tray services, and application shutdown tears them down. Clearing entitlement and reloading stays locked with no service start.",
     "remaining": "Observe the exact installed locked and entitled artifact against real OS services.",
-    "confidence": "LOW",
+    "confidence": "MEDIUM",
     "notes": "Privacy and open-core release blocker."
   },
   {

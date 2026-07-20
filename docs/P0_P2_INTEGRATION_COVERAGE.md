@@ -352,6 +352,10 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   IPC/service against a remote license boundary, proves the cached key is encrypted, reloads every
   module, and verifies the synchronous entitlement gate still unlocks Pro. The rendered Upgrade
   screen proves the user sees activation and the required restart action.
+  `service-activation.integration.dbtest.ts` now continues that same persisted entitlement through
+  the production Core loader and actual Pro `activateMain`: an unentitled boot starts nothing, the
+  entitled relaunch migrates Pro SQLite and starts owned services once, application shutdown removes
+  shortcut/tray/service resources, and a cleared-license relaunch stays locked.
 - #140 - Offline entitlement behavior. The licensing integration activates a lifetime entitlement,
   reloads with its network boundary unavailable, and proves the OS-protected encrypted cache remains
   entitled while a fresh profile, a forged plaintext cache, and an expired entitlement stay locked.
