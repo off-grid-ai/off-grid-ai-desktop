@@ -127,6 +127,7 @@ export const VoiceBubble: React.FC<VoiceBubbleProps> = ({
   const [loadedDuration, setLoadedDuration] = useState(0)
   const [speed, setSpeed] = useState(1.0)
   const [showTranscript, setShowTranscript] = useState(false)
+  const [playbackError, setPlaybackError] = useState<string | null>(null)
 
   // Stable waveform: real decoded envelope for a recording, else transcript-derived.
   const [fileWave, setFileWave] = useState<number[]>([])
@@ -209,6 +210,7 @@ export const VoiceBubble: React.FC<VoiceBubbleProps> = ({
       return
     }
     // idle → resolve a source (cached synth / recording), then play.
+    setPlaybackError(null)
     setStatus('loading')
     try {
       let src = audioUrl || srcRef.current
@@ -227,6 +229,11 @@ export const VoiceBubble: React.FC<VoiceBubbleProps> = ({
     } catch (e) {
       console.error('[voice] playback failed', e)
       setStatus('idle')
+      setPlaybackError(
+        audioUrl
+          ? 'Voice note could not be played. Check your audio output, then try again.'
+          : 'Speech could not be generated. Check that Text-to-speech is installed in Settings, then try again.'
+      )
     }
   }, [status, audioUrl, transcript, synthesize, wire, messageId])
 
@@ -368,6 +375,14 @@ export const VoiceBubble: React.FC<VoiceBubbleProps> = ({
       {showTranscript && transcript ? (
         <div className="max-h-40 overflow-y-auto whitespace-pre-wrap border-t border-neutral-800 pt-2 text-xs leading-relaxed text-neutral-300">
           {transcript}
+        </div>
+      ) : null}
+      {playbackError ? (
+        <div
+          role="alert"
+          className="border-t border-red-500/30 pt-2 text-[11px] leading-relaxed text-red-300"
+        >
+          {playbackError}
         </div>
       ) : null}
     </div>
