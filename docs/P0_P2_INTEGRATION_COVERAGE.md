@@ -516,8 +516,10 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   failure, and stale-cancellation isolation. The release workflow separately requires non-zero PCM
   from the exact packaged worker before publishing.
 - #107 - Entities are synthesized. `entity-action-journeys.dbtest.ts` records person, project, and
-  company mentions through production observation and entity owners, proving one correctly typed
-  record per entity with automatic identifiers and two supporting observations.
+  company mentions through production observation and entity owners. The composed
+  `entity-context-pipeline.integration.dbtest.ts` then runs the real screen extractor, dictation
+  memory sink, meeting processor, and SQLite owners against one profile, proving their Maya and
+  Starling evidence converges on two guarded canonical entities without source-specific copies.
 - #108 - Self mentions are filtered. The same real-DB integration stores the user's name and aliases,
   passes mixed mentions through production identity filtering, and proves only the external person
   becomes an entity.
@@ -526,9 +528,14 @@ historical labels, not strict completion claims. Use the strict snapshot above f
   both evidence rows remain consistent across entry points.
 - #110 - Entity merge preserves evidence. `resolve.integration.test.ts` exercises real entity,
   aliases, observations, relationships, action reassignment, split, and merge persistence.
+  `entity-context-pipeline.integration.dbtest.ts` additionally proves a post-ingest rename updates
+  every linked action's canonical name in the same correction transaction and survives relaunch
+  without rewriting immutable source evidence.
 - #111 - Action items are extracted. `entity-action-journeys.dbtest.ts` sends a synthetic commitment
-  through the production extractor over a loopback native-model boundary and proves exactly one
-  imperative action persists with its due date and source evidence.
+  through the production extractor over a loopback native-model boundary. The composed
+  `entity-context-pipeline.integration.dbtest.ts` proves screen, voice, and manual producers create
+  three separately sourced contextual actions, all linked to the same canonical entity with their
+  exact evidence intact after correction and relaunch.
 - #113 - Action status survives persistence. `approval-relaunch.dbtest.ts` approves, rejects, and
   dismisses separate synthetic items through production encrypted SQLite and a real stdio MCP
   child, closes and reopens the profile, proves every status remains, and verifies stale or
