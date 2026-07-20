@@ -2,6 +2,7 @@
 // Change a port here and every site follows; do not re-hardcode these literals.
 //
 //   LLAMA_SERVER_PORT - bundled llama-server (chat/vision/embeddings upstream)
+//   GATEWAY_HOST      - IPv4 loopback boundary for the unauthenticated gateway
 //   GATEWAY_PORT      - OpenAI-compatible gateway (proxies to llama-server)
 //   MEDIA_PORT        - loopback media server (meeting recordings, uploads)
 //
@@ -9,5 +10,6 @@
 // import this without pulling in Electron/Node.
 
 export const LLAMA_SERVER_PORT = 8439
+export const GATEWAY_HOST = '127.0.0.1'
 export const GATEWAY_PORT = 7878
 export const MEDIA_PORT = 7879

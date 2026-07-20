@@ -8,8 +8,10 @@
 // Scalar loads from a CDN at view time (the docs page only, never the API path).
 // The playground calls the live gateway directly — CORS is open on the server.
 
+import { GATEWAY_HOST } from '../shared/ports'
+
 export function docsText(port: number): string {
-  const b = `http://127.0.0.1:${port}`
+  const b = `http://${GATEWAY_HOST}:${port}`
   return `Off Grid AI — Local Model Gateway
 OpenAI-compatible. Base URL: ${b}/v1  (no API key required)
 
@@ -29,7 +31,7 @@ Open ${b}/docs in a browser for the interactive playground. Repo: docs/API.md.
 
 /** Interactive docs shell (Scalar API Reference) pointed at /openapi.json. */
 export function docsHtml(port: number): string {
-  const b = `http://127.0.0.1:${port}`
+  const b = `http://${GATEWAY_HOST}:${port}`
   return `<!doctype html>
 <html lang="en"><head>
   <meta charset="utf-8"/>
@@ -774,5 +776,5 @@ Models swap in/out (Apple Silicon unified memory): image generation pauses the L
 }
 
 function b(port: number): string {
-  return `http://127.0.0.1:${port}`
+  return `http://${GATEWAY_HOST}:${port}`
 }

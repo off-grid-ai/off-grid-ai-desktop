@@ -1,7 +1,7 @@
-import { GATEWAY_PORT, MEDIA_PORT } from './ports'
+import { GATEWAY_HOST, GATEWAY_PORT, MEDIA_PORT } from './ports'
 
 export function createRendererContentSecurityPolicy(styleNonce: string): string {
-  const gatewayOrigin = `http://127.0.0.1:${GATEWAY_PORT}`
+  const gatewayOrigin = `http://${GATEWAY_HOST}:${GATEWAY_PORT}`
   const mediaOrigin = `http://127.0.0.1:${MEDIA_PORT}`
   return [
     "default-src 'self'",

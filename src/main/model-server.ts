@@ -1,6 +1,6 @@
 // Off Grid local inference gateway — ONE OpenAI-compatible endpoint for every
-// modality, on 127.0.0.1:7878. Any local tool (IDE, app, script — or a paired
-// device later) points here and gets the on-device models. No cloud, no keys.
+// modality, on 127.0.0.1:7878. Any local tool (IDE, app, script) points here
+// and gets the on-device models. No cloud, no keys, no LAN listener.
 //
 //   GET  /                       -> gateway info + live modality status
 //   GET  /v1/models              -> the ACTIVE model per modality (text/vision +
@@ -34,7 +34,7 @@ import { embeddings } from './embeddings'
 import { docsText, docsHtml, openApiSpec } from './api-docs'
 import { handleMcpRequest } from './mcp-server'
 import { llm, type LlmSettings } from './llm'
-import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports'
+import { LLAMA_SERVER_PORT, GATEWAY_HOST, GATEWAY_PORT } from '../shared/ports'
 import { retryWithDeadline } from './lib/retry'
 import { resolveDims } from './model-server/dimensions'
 import { guardProxyStreams } from './stream-guards'
@@ -987,9 +987,9 @@ export function startModelServer(port = GATEWAY_PORT): void {
       json(res, 200, {
         name: 'Off Grid AI — local model gateway',
         openai_compatible: true,
-        base_url: `http://127.0.0.1:${port}/v1`,
-        docs: `http://127.0.0.1:${port}/docs`,
-        mcp: `http://127.0.0.1:${port}/mcp`,
+        base_url: `http://${GATEWAY_HOST}:${port}/v1`,
+        docs: `http://${GATEWAY_HOST}:${port}/docs`,
+        mcp: `http://${GATEWAY_HOST}:${port}/mcp`,
         modalities,
         image_models: img.models,
         image_reason: img.available ? undefined : img.reason
@@ -1033,7 +1033,7 @@ export function startModelServer(port = GATEWAY_PORT): void {
           'POST /v1/images/generations',
           'POST /v1/images/edits'
         ],
-        docs: `http://127.0.0.1:${port}/docs`
+        docs: `http://${GATEWAY_HOST}:${port}/docs`
       })
       return
     }
@@ -1085,8 +1085,8 @@ export function startModelServer(port = GATEWAY_PORT): void {
     // llama-server when launch-time args change.
     if (url === '/v1/settings' && method === 'GET') return json(res, 200, llm.getSettings())
     if (url === '/v1/settings' && method === 'POST') {
-      // Mutating launch-time LLM args triggers a llama-server respawn — restrict
-      // to loopback so a LAN peer (e.g. the mobile app) can't cause a respawn loop.
+      // Mutating launch-time LLM args triggers a llama-server respawn. Keep the
+      // route-level check as defense in depth behind the loopback-only listener.
       const remote = req.socket.remoteAddress
       const isLocalhost =
         remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1'
@@ -1206,12 +1206,10 @@ export function startModelServer(port = GATEWAY_PORT): void {
   server.keepAliveTimeout = 60_000
 
   server.on('error', (e) => console.error('[model-server]', e))
-  // Bind 0.0.0.0 (all interfaces) so other devices on the LAN — e.g. the Off Grid
-  // mobile app — can reach the gateway, not just localhost.
-  server.listen(port, '0.0.0.0', () => {
-    console.log(
-      `[model-server] multimodal gateway at http://0.0.0.0:${port}/v1 (reachable on your LAN)`
-    )
+  // The gateway has no authentication. Bind the socket itself to loopback so no
+  // route can become LAN-accessible through a missing per-handler authorization check.
+  server.listen(port, GATEWAY_HOST, () => {
+    console.log(`[model-server] multimodal gateway at http://${GATEWAY_HOST}:${port}/v1`)
   })
 }
 
