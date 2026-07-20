@@ -148,7 +148,12 @@ describe('McpConnectorToolExtension with real connector state', () => {
 
     expect(output).toContain('Queued for the user')
     expect(boundary.approvals).toEqual([
-      expect.objectContaining({ tool: 'send_message', connector: 'Slack', args: { text: 'hi' } })
+      expect.objectContaining({
+        connectorId,
+        tool: 'send_message',
+        connector: 'Slack',
+        args: { text: 'hi' }
+      })
     ])
     expect(boundary.executions).toEqual([])
   })

@@ -323,6 +323,23 @@ export function getConnectorMeta(
 }
 
 /**
+ * Resolve a persisted connector reference through the connector repository.
+ *
+ * New approval rows store connector_id directly. This resolver keeps approvals created by older
+ * builds executable when their `connector` field contains either the former numeric string or the
+ * human-facing connector name. Callers do not need to know how connectors are persisted.
+ */
+export function resolveConnectorId(reference: string | null | undefined): number | undefined {
+  if (!reference) return undefined
+  const numericId = Number(reference)
+  if (Number.isSafeInteger(numericId) && numericId > 0 && getConnector(numericId)) return numericId
+  return listConnectors().find(
+    (connector) =>
+      connector.name.localeCompare(reference, undefined, { sensitivity: 'accent' }) === 0
+  )?.id
+}
+
+/**
  * Open ONE connection (one stdio process / one HTTP session) and run multiple
  * tool calls over it. Essential for multi-step adapters (e.g. Slack: users →
  * channels → history) — otherwise each call would cold-spawn npx and hang.

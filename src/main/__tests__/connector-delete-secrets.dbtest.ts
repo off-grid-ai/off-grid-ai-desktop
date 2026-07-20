@@ -36,6 +36,8 @@ describe('connector removal', () => {
       transport: 'http',
       url: 'https://kept.example'
     })
+    expect(mcp.resolveConnectorId(String(removedId))).toBe(removedId)
+    expect(mcp.resolveConnectorId('removed')).toBe(removedId)
 
     const removedKeys = [
       `connector:${removedId}:oauth:tokens`,
@@ -50,6 +52,7 @@ describe('connector removal', () => {
     mcp.removeConnector(removedId)
 
     expect(mcp.listConnectors().map((connector) => connector.id)).toEqual([keptId])
+    expect(mcp.resolveConnectorId('Removed')).toBeUndefined()
     expect(secrets.listSecretKeys()).toEqual([
       `connector:${keptId}:oauth:tokens`,
       'unrelated:secret'

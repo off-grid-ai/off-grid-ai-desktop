@@ -95,6 +95,7 @@ export class McpConnectorToolExtension implements ToolExtension {
       const queued = this.boundary.proposeApproval({
         title: `${meta.tool} via ${meta.connector}`,
         detail: `Requested from chat. Arguments: ${JSON.stringify(args)}`,
+        connectorId: meta.id,
         connector: meta.connector,
         tool: meta.tool,
         args,
