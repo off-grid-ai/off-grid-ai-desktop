@@ -38,6 +38,21 @@ The generated CSV is UTF-8 with RFC-style quote escaping and no multiline record
 Sheets, use **File > Import > Upload**, select the CSV, choose comma as the separator, and import it
 as a new sheet. Do not enable automatic conversion of IDs such as `NR-01`, `PR-01`, or `CR-01`.
 
+## Status snapshot after the P0 integration hardening pass
+
+- Total: 210 journeys - 21 `COMPLETE`, 178 `PARTIAL`, 11 `OPEN`.
+- P0: 93 journeys - 59.5% automation coverage, 41.7% initial readiness before manual results.
+- P1: 93 journeys - 62.7% automation coverage, 43.9% initial readiness before manual results.
+- P2: 21 journeys - 71.2% automation coverage, 49.9% initial readiness before manual results.
+- P3: 3 journeys - 45.0% automation coverage, 31.3% initial readiness before manual results.
+- Overall: 61.9% automation coverage, 43.4% initial readiness before manual results.
+- This pass closed the gateway and OAuth P0 automation gaps, and moved interrupted migration plus
+  lock/sleep/wake ownership from `OPEN` to real integration-backed `PARTIAL` coverage.
+
+Initial readiness is lower than automation coverage because every newly generated row starts with
+`Manual result = NOT RUN`. Passing release-device evidence raises the manual component; a manual
+`FAIL` or `BLOCKED` forces the row to 0% readiness.
+
 The percentage columns use one deterministic policy:
 
 - `Automation coverage %` is `100` for strict `COMPLETE`, `0` for `OPEN`, and `25-85` for
@@ -83,13 +98,15 @@ date, evidence, and the exact artifact/profile/device identity.
 
 ## Known release-significant audit findings
 
-The 0.0.40 audit identified these code/release issues. Their checklist rows remain `OPEN` until the
-implementation and adversarial evidence are fixed:
-
-- `NR-12`: the gateway implementation binds `0.0.0.0` while product documentation describes a
-  loopback-only service; LAN reachability/authentication has no adversarial test.
-- `NR-13`: the OAuth callback can fall back to the sole pending flow when `state` is absent or wrong;
-  exact state/CSRF binding has no lifecycle test.
+- `NR-12` is fixed: the gateway binds to canonical `127.0.0.1`, and a real TCP integration test
+  rejects the Mac's non-loopback interface. A second-device installed-app probe remains manual.
+- `NR-13` is fixed: OAuth callbacks require exact, live, single-use state through a persistent
+  loopback owner, with twelve real HTTP lifecycle cases. A real-provider installed-app pass remains
+  manual.
+- `NR-08` is integration-backed: the CRM migration is transactional and recovers from a real
+  SQLite storage interruption across repeated reopen. Literal process termination remains manual.
+- `NR-10` is integration-backed: lock and sleep reasons cannot resume capture early, dictation is
+  suspended, meetings stop, and user pause survives. Real macOS power/session events remain manual.
 - `NR-01`: release sources historically disagreed about one production Pro-capable artifact versus
   separate production Core and Pro artifacts. The intended topology is one production artifact
   that starts locked; local Core/Pro variants are diagnostic only.
