@@ -55,6 +55,7 @@ Two process rules, learned from the same incident — they matter as much as the
 - Verify changes with `npx tsc --noEmit` (main: `tsconfig.node.json`, web: `tsconfig.web.json`) before declaring done.
 - Main-process changes need an app restart; renderer changes hot-reload.
 - Don't over-restart — it interrupts capture.
+- **Local packaged builds:** commands for building the `.app` on a dev Mac (signing, unsigned, fresh-profile) live in `local-build.local.md` (gitignored, machine-specific). Check it before running `build:unpack`/`build:mac` locally — keychain cert setup varies per machine. Real release signing is CI-only (`release.yml`).
 
 ## Commit incrementally — never batch a session's work into one commit
 
