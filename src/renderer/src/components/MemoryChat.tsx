@@ -4,6 +4,7 @@ import { buildSendHistory } from '@renderer/lib/chat-history'
 import { waitingLabel } from '@renderer/lib/chat-labels'
 import { timeAgo } from '@renderer/lib/time'
 import { writeClipboardWithFallback } from '@renderer/lib/clipboard-write'
+import { motion, AnimatePresence } from 'motion/react'
 import { toSpeakableText } from '@renderer/lib/speakable'
 import { isAgenticTurn } from '@renderer/lib/agentic-active'
 import { applyStreamEvent } from '@renderer/lib/stream-reducer'
@@ -4647,45 +4648,59 @@ export function MemoryChat({
       {modelPickerOpen && <ModelPicker onClose={() => setModelPickerOpen(false)} />}
 
       {/* Attachment viewer — same full-screen overlay layout as the image lightbox
-          (floating Download/Close top-right, content centered), for text/PDF/docs. */}
-      {viewer && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-10 font-mono"
-          role="dialog"
-          aria-modal="true"
-          aria-label={viewer.title}
-          tabIndex={-1}
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setViewer(null)
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') setViewer(null)
-          }}
-        >
-          <div className="absolute right-4 top-4 flex items-center gap-2">
-            <span className="mr-2 max-w-[40vw] truncate self-center text-xs text-neutral-400">
-              {viewer.title}
-            </span>
-            {viewer.path && (
+          (floating Download/Close top-right, content centered), for text/PDF/docs.
+          Backdrop fades + blurs in; the panel springs up (aceternity modal pattern). */}
+      <AnimatePresence>
+        {viewer && (
+          <motion.div
+            key="viewer"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-10 font-mono"
+            role="dialog"
+            aria-modal="true"
+            aria-label={viewer.title}
+            tabIndex={-1}
+            initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
+            animate={{ opacity: 1, backdropFilter: 'blur(8px)' }}
+            exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
+            transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setViewer(null)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setViewer(null)
+            }}
+          >
+            <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+              <span className="mr-2 max-w-[40vw] truncate self-center text-xs text-neutral-400">
+                {viewer.title}
+              </span>
+              {viewer.path && (
+                <button
+                  onClick={() => downloadImage(viewer.path, viewer.title)}
+                  className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:border-green-500 hover:text-green-500"
+                >
+                  Download
+                </button>
+              )}
               <button
-                onClick={() => downloadImage(viewer.path, viewer.title)}
-                className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:border-green-500 hover:text-green-500"
+                onClick={() => setViewer(null)}
+                className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:text-white"
               >
-                Download
+                Close
               </button>
-            )}
-            <button
-              onClick={() => setViewer(null)}
-              className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:text-white"
+            </div>
+            <motion.pre
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 4 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+              className="max-h-full w-full max-w-3xl overflow-auto whitespace-pre-wrap break-words rounded-md border border-neutral-800 bg-neutral-950 p-5 text-sm leading-relaxed text-neutral-200"
             >
-              Close
-            </button>
-          </div>
-          <pre className="max-h-full w-full max-w-3xl overflow-auto whitespace-pre-wrap break-words rounded-md border border-neutral-800 bg-neutral-950 p-5 text-sm leading-relaxed text-neutral-200">
-            {viewer.text}
-          </pre>
-        </div>
-      )}
+              {viewer.text}
+            </motion.pre>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Lightbox — click a generated image to enlarge, download, or delete */}
       {lightbox && (
