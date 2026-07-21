@@ -1214,7 +1214,9 @@ export function setupIPC() {
   // the same evict() seam as residency/shutdown; the engine reloads on next use.
   ipcMain.handle('runtime:unload', async (_e, modality: Modality) => {
     const { unloadRuntime } = await import('./runtime-manager')
-    return unloadRuntime(modality)
+    const freed = await unloadRuntime(modality)
+    console.log(`[runtime] unload ${modality}: ${freed ? 'freed' : 'nothing registered'}`)
+    return freed
   })
 
   // Fleet console IPC (console:*) is a pro feature — registered by pro's

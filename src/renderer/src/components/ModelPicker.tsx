@@ -48,6 +48,8 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
   const [active, setActive] = useState<Record<string, string | null>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [unloading, setUnloading] = useState<string | null>(null)
+  const [unloaded, setUnloaded] = useState<string | null>(null)
+  const [unloadError, setUnloadError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const cat = await api.getModelCatalog?.()
@@ -84,9 +86,23 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
 
   // Unload this modality's model from memory now (frees RAM; reloads on next use).
   const unload = async (mode: keyof typeof MODE_TO_MODALITY): Promise<void> => {
+    if (typeof api.unloadRuntime !== 'function') {
+      // Preload method missing — the app must be restarted after the preload changed.
+      // Surface it instead of a silent no-op (there'd be no IPC call and no log).
+      setUnloadError(mode)
+      console.error('[models] unloadRuntime is unavailable — restart the app')
+      return
+    }
     setUnloading(mode)
+    setUnloadError(null)
     try {
-      await api.unloadRuntime?.(MODE_TO_MODALITY[mode])
+      const freed = await api.unloadRuntime(MODE_TO_MODALITY[mode])
+      console.log(`[models] unload ${mode} (${MODE_TO_MODALITY[mode]}):`, freed ? 'freed' : 'nothing loaded')
+      setUnloaded(mode)
+      window.setTimeout(() => setUnloaded((u) => (u === mode ? null : u)), 2000)
+    } catch (e) {
+      console.error('[models] unload failed', e)
+      setUnloadError(mode)
     } finally {
       setUnloading(null)
     }
@@ -117,15 +133,27 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
                     type="button"
                     onClick={() => void unload(mode)}
                     disabled={unloading === mode}
-                    title="Unload from memory now — frees RAM; reloads on next use"
-                    className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-neutral-500 transition-colors hover:text-red-400 disabled:opacity-50"
+                    title={
+                      unloadError === mode
+                        ? 'Unload unavailable — restart the app'
+                        : 'Unload from memory now — frees RAM; reloads on next use'
+                    }
+                    className={`flex items-center gap-1 text-[10px] uppercase tracking-wide transition-colors disabled:opacity-50 ${
+                      unloadError === mode
+                        ? 'text-amber-400'
+                        : unloaded === mode
+                          ? 'text-green-500'
+                          : 'text-neutral-500 hover:text-red-400'
+                    }`}
                   >
                     {unloading === mode ? (
                       <IconLoader2 className="h-3 w-3 animate-spin" />
+                    ) : unloaded === mode ? (
+                      <IconCheck className="h-3 w-3" />
                     ) : (
                       <IconPower className="h-3 w-3" />
                     )}
-                    Unload
+                    {unloadError === mode ? 'Restart to unload' : unloaded === mode ? 'Unloaded' : 'Unload'}
                   </button>
                 )}
               </div>
