@@ -46,6 +46,8 @@ export function DictationOverlay(): React.JSX.Element | null {
 
   async function startCapture(): Promise<void> {
     const v = voice()
+    // eslint-disable-next-line no-console
+    console.log(`[dict] startCapture hasApi=${!!v} hasStream=${!!streamRef.current}`)
     if (!v || streamRef.current) return
     try {
       const stream = await navigator.mediaDevices.getUserMedia({

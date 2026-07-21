@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { existsSync } from 'fs'
 import { join } from 'path'
 
 // Single source of truth for the shared preload bundle path, used by EVERY window
@@ -20,7 +21,12 @@ export function resolvePreloadPath(appPath: string): string {
   return join(appPath, 'out', 'preload', 'index.js')
 }
 
-/** Absolute path to the shared preload bundle, anchored on the app root. */
+/** Absolute path to the shared preload bundle, anchored on the app root. Logs the
+ *  resolved path + whether it exists on disk, so a "window opened but has no
+ *  window.api" report can be diagnosed from the terminal instead of guessed. */
 export function preloadPath(): string {
-  return resolvePreloadPath(app.getAppPath())
+  const appPath = app.getAppPath()
+  const p = resolvePreloadPath(appPath)
+  console.log(`[preload] appPath=${appPath} → ${p} exists=${existsSync(p)}`)
+  return p
 }
