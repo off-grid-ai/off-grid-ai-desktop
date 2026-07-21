@@ -19,6 +19,7 @@ import {
 import { StoragePanel } from './setup/StoragePanel'
 import { deviceNoun } from '@renderer/lib/device'
 import { modelKindLabel } from '@renderer/lib/model-kind-labels'
+import { collectTags, matchesAllTags, toggleTag } from '@renderer/lib/model-tag-filter'
 import {
   filterAndSort,
   parseParamCount,
@@ -221,6 +222,12 @@ export function ModelsScreen(): React.JSX.Element {
   const [ramGb, setRamGb] = useState<number | null>(null)
   const [importing, setImporting] = useState(false)
   const [useCase, setUseCase] = useState('all')
+  // Capability-tag filter (Light / Photoreal / Fast / Anime …). A model must carry
+  // every selected tag. Reset when the tab changes so stale tags don't hide the list.
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  useEffect(() => {
+    setSelectedTags([])
+  }, [activeKind])
   const [detail, setDetail] = useState<ModelEntry | null>(null)
   const [detailVisible, setDetailVisible] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -394,6 +401,9 @@ export function ModelsScreen(): React.JSX.Element {
     filterState
   )
 
+  // Tags offered as filter chips — every tag present in this tab's models.
+  const availableTags = collectTags(list)
+
   const displayedCatalog = filterAndSort(
     list.map((m) => ({
       ...m,
@@ -407,6 +417,7 @@ export function ModelsScreen(): React.JSX.Element {
     .filter(
       (m) => activeKind !== 'text' || (USE_CASES.find((u) => u.id === useCase)?.match(m) ?? true)
     )
+    .filter((m) => matchesAllTags(m.tags, selectedTags))
     .sort((a, b) => {
       // Active first, then other installed, then available — within each tier keep feature rank.
       const rank = (x: { id: string }): number =>
@@ -762,6 +773,34 @@ export function ModelsScreen(): React.JSX.Element {
                 <span className="ml-2 text-[9px] text-neutral-600">
                   {USE_CASES.find((u) => u.id === useCase)?.blurb}
                 </span>
+              )}
+            </div>
+          )}
+
+          {/* Capability-tag chips (all tabs, browse mode) — Light / Photoreal / Fast /
+              Anime … A chip narrows the list to models carrying every selected tag. */}
+          {!searchingMode && availableTags.length > 0 && (
+            <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-neutral-800/40 px-6 py-1.5">
+              {availableTags.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setSelectedTags((cur) => toggleTag(cur, t))}
+                  className={`rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-wide transition-all duration-150 active:scale-95 ${
+                    selectedTags.includes(t)
+                      ? 'border-green-500 text-green-500'
+                      : 'border-neutral-800 text-neutral-600 hover:border-neutral-700 hover:text-neutral-400'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+              {selectedTags.length > 0 && (
+                <button
+                  onClick={() => setSelectedTags([])}
+                  className="ml-2 text-[9px] text-neutral-600 transition-colors hover:text-neutral-400"
+                >
+                  clear
+                </button>
               )}
             </div>
           )}
