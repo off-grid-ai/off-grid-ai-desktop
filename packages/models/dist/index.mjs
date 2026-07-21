@@ -42,6 +42,12 @@ var RAW_CATALOG = [
         url: resolve("unsloth/Qwen3.5-0.8B-GGUF", "Qwen3.5-0.8B-Q4_K_M.gguf"),
         sizeBytes: 53e7,
         role: "primary"
+      },
+      {
+        name: "mmproj-Qwen3.5-0.8B-BF16.gguf",
+        url: resolve("unsloth/Qwen3.5-0.8B-GGUF", "mmproj-BF16.gguf"),
+        sizeBytes: 207346528,
+        role: "mmproj"
       }
     ]
   },
@@ -61,6 +67,12 @@ var RAW_CATALOG = [
         url: resolve("unsloth/Qwen3.5-2B-GGUF", "Qwen3.5-2B-Q4_K_M.gguf"),
         sizeBytes: 128e7,
         role: "primary"
+      },
+      {
+        name: "mmproj-Qwen3.5-2B-BF16.gguf",
+        url: resolve("unsloth/Qwen3.5-2B-GGUF", "mmproj-BF16.gguf"),
+        sizeBytes: 671372992,
+        role: "mmproj"
       }
     ]
   },
@@ -81,6 +93,12 @@ var RAW_CATALOG = [
         url: resolve("unsloth/Qwen3.5-4B-GGUF", "Qwen3.5-4B-Q4_K_M.gguf"),
         sizeBytes: 274e7,
         role: "primary"
+      },
+      {
+        name: "mmproj-Qwen3.5-4B-BF16.gguf",
+        url: resolve("unsloth/Qwen3.5-4B-GGUF", "mmproj-BF16.gguf"),
+        sizeBytes: 675569344,
+        role: "mmproj"
       }
     ]
   },
@@ -101,6 +119,12 @@ var RAW_CATALOG = [
         url: resolve("unsloth/Qwen3.5-9B-GGUF", "Qwen3.5-9B-Q4_K_M.gguf"),
         sizeBytes: 568e7,
         role: "primary"
+      },
+      {
+        name: "mmproj-Qwen3.5-9B-BF16.gguf",
+        url: resolve("unsloth/Qwen3.5-9B-GGUF", "mmproj-BF16.gguf"),
+        sizeBytes: 921705024,
+        role: "mmproj"
       }
     ]
   },
@@ -120,6 +144,12 @@ var RAW_CATALOG = [
         url: resolve("unsloth/Qwen3.5-27B-GGUF", "Qwen3.5-27B-Q4_K_M.gguf"),
         sizeBytes: 1674e7,
         role: "primary"
+      },
+      {
+        name: "mmproj-Qwen3.5-27B-BF16.gguf",
+        url: resolve("unsloth/Qwen3.5-27B-GGUF", "mmproj-BF16.gguf"),
+        sizeBytes: 931145984,
+        role: "mmproj"
       }
     ]
   },
@@ -165,6 +195,12 @@ var RAW_CATALOG = [
         url: resolve("unsloth/gemma-4-12b-it-GGUF", "gemma-4-12b-it-Q4_K_M.gguf"),
         sizeBytes: 712e7,
         role: "primary"
+      },
+      {
+        name: "mmproj-gemma-4-12b-it-BF16.gguf",
+        url: resolve("unsloth/gemma-4-12b-it-GGUF", "mmproj-BF16.gguf"),
+        sizeBytes: 175115840,
+        role: "mmproj"
       }
     ]
   },
@@ -185,6 +221,12 @@ var RAW_CATALOG = [
         url: resolve("unsloth/gemma-4-26B-A4B-it-GGUF", "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"),
         sizeBytes: 1695e7,
         role: "primary"
+      },
+      {
+        name: "mmproj-gemma-4-26B-A4B-it-BF16.gguf",
+        url: resolve("unsloth/gemma-4-26B-A4B-it-GGUF", "mmproj-BF16.gguf"),
+        sizeBytes: 1194828256,
+        role: "mmproj"
       }
     ]
   },
@@ -204,6 +246,12 @@ var RAW_CATALOG = [
         url: resolve("unsloth/gemma-4-31B-it-GGUF", "gemma-4-31B-it-Q4_K_M.gguf"),
         sizeBytes: 1832e7,
         role: "primary"
+      },
+      {
+        name: "mmproj-gemma-4-31B-it-BF16.gguf",
+        url: resolve("unsloth/gemma-4-31B-it-GGUF", "mmproj-BF16.gguf"),
+        sizeBytes: 1200726496,
+        role: "mmproj"
       }
     ]
   },

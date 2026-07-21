@@ -45,6 +45,12 @@ const RAW_CATALOG: ModelEntry[] = [
         url: resolve('unsloth/Qwen3.5-0.8B-GGUF', 'Qwen3.5-0.8B-Q4_K_M.gguf'),
         sizeBytes: 530000000,
         role: 'primary'
+      },
+      {
+        name: 'mmproj-Qwen3.5-0.8B-BF16.gguf',
+        url: resolve('unsloth/Qwen3.5-0.8B-GGUF', 'mmproj-BF16.gguf'),
+        sizeBytes: 207346528,
+        role: 'mmproj'
       }
     ]
   },
@@ -64,6 +70,12 @@ const RAW_CATALOG: ModelEntry[] = [
         url: resolve('unsloth/Qwen3.5-2B-GGUF', 'Qwen3.5-2B-Q4_K_M.gguf'),
         sizeBytes: 1280000000,
         role: 'primary'
+      },
+      {
+        name: 'mmproj-Qwen3.5-2B-BF16.gguf',
+        url: resolve('unsloth/Qwen3.5-2B-GGUF', 'mmproj-BF16.gguf'),
+        sizeBytes: 671372992,
+        role: 'mmproj'
       }
     ]
   },
@@ -84,6 +96,12 @@ const RAW_CATALOG: ModelEntry[] = [
         url: resolve('unsloth/Qwen3.5-4B-GGUF', 'Qwen3.5-4B-Q4_K_M.gguf'),
         sizeBytes: 2740000000,
         role: 'primary'
+      },
+      {
+        name: 'mmproj-Qwen3.5-4B-BF16.gguf',
+        url: resolve('unsloth/Qwen3.5-4B-GGUF', 'mmproj-BF16.gguf'),
+        sizeBytes: 675569344,
+        role: 'mmproj'
       }
     ]
   },
@@ -104,6 +122,12 @@ const RAW_CATALOG: ModelEntry[] = [
         url: resolve('unsloth/Qwen3.5-9B-GGUF', 'Qwen3.5-9B-Q4_K_M.gguf'),
         sizeBytes: 5680000000,
         role: 'primary'
+      },
+      {
+        name: 'mmproj-Qwen3.5-9B-BF16.gguf',
+        url: resolve('unsloth/Qwen3.5-9B-GGUF', 'mmproj-BF16.gguf'),
+        sizeBytes: 921705024,
+        role: 'mmproj'
       }
     ]
   },
@@ -123,6 +147,12 @@ const RAW_CATALOG: ModelEntry[] = [
         url: resolve('unsloth/Qwen3.5-27B-GGUF', 'Qwen3.5-27B-Q4_K_M.gguf'),
         sizeBytes: 16740000000,
         role: 'primary'
+      },
+      {
+        name: 'mmproj-Qwen3.5-27B-BF16.gguf',
+        url: resolve('unsloth/Qwen3.5-27B-GGUF', 'mmproj-BF16.gguf'),
+        sizeBytes: 931145984,
+        role: 'mmproj'
       }
     ]
   },
@@ -168,6 +198,12 @@ const RAW_CATALOG: ModelEntry[] = [
         url: resolve('unsloth/gemma-4-12b-it-GGUF', 'gemma-4-12b-it-Q4_K_M.gguf'),
         sizeBytes: 7120000000,
         role: 'primary'
+      },
+      {
+        name: 'mmproj-gemma-4-12b-it-BF16.gguf',
+        url: resolve('unsloth/gemma-4-12b-it-GGUF', 'mmproj-BF16.gguf'),
+        sizeBytes: 175115840,
+        role: 'mmproj'
       }
     ]
   },
@@ -188,6 +224,12 @@ const RAW_CATALOG: ModelEntry[] = [
         url: resolve('unsloth/gemma-4-26B-A4B-it-GGUF', 'gemma-4-26B-A4B-it-UD-Q4_K_M.gguf'),
         sizeBytes: 16950000000,
         role: 'primary'
+      },
+      {
+        name: 'mmproj-gemma-4-26B-A4B-it-BF16.gguf',
+        url: resolve('unsloth/gemma-4-26B-A4B-it-GGUF', 'mmproj-BF16.gguf'),
+        sizeBytes: 1194828256,
+        role: 'mmproj'
       }
     ]
   },
@@ -207,6 +249,12 @@ const RAW_CATALOG: ModelEntry[] = [
         url: resolve('unsloth/gemma-4-31B-it-GGUF', 'gemma-4-31B-it-Q4_K_M.gguf'),
         sizeBytes: 18320000000,
         role: 'primary'
+      },
+      {
+        name: 'mmproj-gemma-4-31B-it-BF16.gguf',
+        url: resolve('unsloth/gemma-4-31B-it-GGUF', 'mmproj-BF16.gguf'),
+        sizeBytes: 1200726496,
+        role: 'mmproj'
       }
     ]
   },
