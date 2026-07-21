@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { createContext, useContext, useState } from 'react'
 import { motion } from 'motion/react'
-import { LockKey, CaretDown, Clock } from '@phosphor-icons/react'
+import { LockKey, CaretDown, CaretLeft, Clock } from '@phosphor-icons/react'
 import { cn } from '@renderer/lib/utils'
 
 // Reusable Settings chrome, extracted from the Settings screen so both core and the
@@ -8,9 +8,29 @@ import { cn } from '@renderer/lib/utils'
 // card without importing the 2,600-line Settings.tsx (which drags SetupPanel/etc. and
 // their window.api typings into the pro typecheck). Light deps only.
 
-// Collapsible Settings card: the body is hidden until the user expands it (closed by
-// default). The header shows the title always and a one-line summary while collapsed,
-// with a chevron that flips when open. Keeps the long Settings sections scannable.
+// Optional accordion-group context. When a <SettingsCardsGroup> wraps the cards, they
+// behave as one grid that drills into a detail: only ONE card is open at a time, the
+// open card takes over the full grid width (the L2 detail), and every other card (and
+// Pro placeholder) hides. Without a provider each card keeps its own local open state,
+// so any other usage is unchanged. ONE seam → core and pro sections both get this for
+// free, since both render through SettingsCard.
+interface AccordionGroup {
+  openId: string | null
+  setOpenId: (id: string | null) => void
+}
+const GroupContext = createContext<AccordionGroup | null>(null)
+
+export function SettingsCardsGroup({
+  children
+}: {
+  children: React.ReactNode
+}): React.ReactElement {
+  const [openId, setOpenId] = useState<string | null>(null)
+  return <GroupContext.Provider value={{ openId, setOpenId }}>{children}</GroupContext.Provider>
+}
+
+// Collapsed by default: a grid card showing the title + one-line summary. Click to
+// open — in a group it becomes the full-width L2 detail and the others hide.
 export function SettingsCard({
   title,
   summary,
@@ -23,22 +43,43 @@ export function SettingsCard({
   defaultOpen?: boolean
   children: React.ReactNode
   delay?: number
-}): React.ReactElement {
-  const [open, setOpen] = useState(defaultOpen)
+}): React.ReactElement | null {
+  const group = useContext(GroupContext)
+  const [localOpen, setLocalOpen] = useState(defaultOpen)
+  const open = group ? group.openId === title : localOpen
+  const toggle = (): void => {
+    if (group) {
+      group.setOpenId(open ? null : title)
+    } else {
+      setLocalOpen((o) => !o)
+    }
+  }
+  // In a group, a different card is the open detail — hide this one.
+  if (group && group.openId !== null && !open) {
+    return null
+  }
   return (
     <motion.div
-      className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-sm"
+      className={cn(
+        'overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-sm',
+        open && group && 'col-span-full' // take over the grid width as the L2 detail
+      )}
       initial={{ opacity: 0, filter: 'blur(10px)' }}
       animate={{ opacity: 1, filter: 'blur(0px)' }}
       transition={{ duration: 0.6, delay }}
     >
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         aria-expanded={open}
         className="flex w-full items-center gap-3 p-6 text-left"
       >
         <div className="min-w-0 flex-1">
+          {open && group ? (
+            <span className="mb-1 flex items-center gap-1 text-[11px] uppercase tracking-wide text-neutral-500">
+              <CaretLeft className="h-3 w-3" /> All settings
+            </span>
+          ) : null}
           <h3 className="text-base font-medium text-white">{title}</h3>
           {!open && <p className="mt-1 text-sm text-neutral-500">{summary}</p>}
         </div>
@@ -55,7 +96,7 @@ export function SettingsCard({
 }
 
 // A Pro section shown (disabled) in the free build: title + description + a "Pro"
-// badge, dimmed and non-interactive.
+// badge, dimmed and non-interactive. Hidden while another card is the open detail.
 export function ProPlaceholder({
   title,
   description,
@@ -66,7 +107,11 @@ export function ProPlaceholder({
   description: string
   delay?: number
   variant?: 'pro' | 'coming-soon'
-}): React.ReactElement {
+}): React.ReactElement | null {
+  const group = useContext(GroupContext)
+  if (group && group.openId !== null) {
+    return null
+  }
   return (
     <motion.div
       className="relative rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6"

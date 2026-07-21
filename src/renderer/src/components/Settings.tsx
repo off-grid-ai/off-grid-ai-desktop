@@ -9,7 +9,7 @@ import { getRegisteredSettingsSections } from '../bootstrap/sectionRegistry'
 import { PRO_SETTINGS_SLOTS } from './pro/proSettingsCatalog'
 // Shared card chrome, in its own light module so the pro package can reuse it without
 // importing this whole god-file (which pulls SetupPanel/etc. + their window.api types).
-import { SettingsCard, ProPlaceholder } from './SettingsCard'
+import { SettingsCard, ProPlaceholder, SettingsCardsGroup } from './SettingsCard'
 import { KeyboardShortcuts } from './KeyboardShortcuts'
 import { currentPlatform } from '@renderer/lib/device'
 import { proComingSoonHere } from './pro/proCatalog'
@@ -284,86 +284,90 @@ export function Settings() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
         >
-          {/* Each section is a collapsed-by-default accordion (SettingsCard). */}
-          <SettingsCard
-            title="Setup & health"
-            summary="Set up your local AI, manage storage, and see live component health."
-            delay={0.13}
-          >
-            <SetupPanel />
-            <div className="mt-4">
-              <StoragePanel />
-            </div>
-          </SettingsCard>
+          {/* Grid of section cards; clicking one opens it as a full-width L2 detail
+              (single-open) and hides the rest — one seam via SettingsCardsGroup. */}
+          <SettingsCardsGroup>
+            {/* Each section is a collapsed-by-default accordion (SettingsCard). */}
+            <SettingsCard
+              title="Setup & health"
+              summary="Set up your local AI, manage storage, and see live component health."
+              delay={0.13}
+            >
+              <SetupPanel />
+              <div className="mt-4">
+                <StoragePanel />
+              </div>
+            </SettingsCard>
 
-          {/* Pro Settings sections (You / Proactive delivery / What Off Grid has
+            {/* Pro Settings sections (You / Proactive delivery / What Off Grid has
               learned / Your Pro plan). The pro package registers the real section
               components via the section registry; the free build shows the catalogued
               placeholders. Slot list, order, and placeholder copy live in
               proSettingsCatalog — core owns the inert shell, pro owns the logic. */}
-          {PRO_SETTINGS_SLOTS.map((slot) => {
-            const section = registeredSections.find((s) => s.id === slot.id)
-            if (section && proComingSoon && slot.macOnly) {
+            {PRO_SETTINGS_SLOTS.map((slot) => {
+              const section = registeredSections.find((s) => s.id === slot.id)
+              if (section && proComingSoon && slot.macOnly) {
+                return (
+                  <ProPlaceholder
+                    key={slot.id}
+                    delay={slot.delay}
+                    title={slot.placeholder?.title ?? slot.id}
+                    description={slot.comingSoonDescription ?? 'Support is coming soon.'}
+                    variant="coming-soon"
+                  />
+                )
+              }
+              if (section) {
+                const Section = section.component
+                return <Section key={slot.id} />
+              }
+              if (!slot.placeholder) return null
               return (
                 <ProPlaceholder
                   key={slot.id}
                   delay={slot.delay}
-                  title={slot.placeholder?.title ?? slot.id}
-                  description={slot.comingSoonDescription ?? 'Support is coming soon.'}
-                  variant="coming-soon"
+                  title={slot.placeholder.title}
+                  description={slot.placeholder.description}
                 />
               )
-            }
-            if (section) {
-              const Section = section.component
-              return <Section key={slot.id} />
-            }
-            if (!slot.placeholder) return null
-            return (
-              <ProPlaceholder
-                key={slot.id}
-                delay={slot.delay}
-                title={slot.placeholder.title}
-                description={slot.placeholder.description}
-              />
-            )
-          })}
+            })}
 
-          {/* Data & privacy — one place to delete on-device data. */}
-          <SettingsCard
-            title="Data & privacy"
-            summary="See and delete on-device data, per category or all at once."
-            delay={0.42}
-          >
-            <DataPrivacyPanel />
-          </SettingsCard>
+            {/* Data & privacy — one place to delete on-device data. */}
+            <SettingsCard
+              title="Data & privacy"
+              summary="See and delete on-device data, per category or all at once."
+              delay={0.42}
+            >
+              <DataPrivacyPanel />
+            </SettingsCard>
 
-          {/* Runtime residency — per-engine in-memory vs on-demand (core infra). */}
-          <SettingsCard
-            title="Model memory"
-            summary="Keep each engine warm for speed, or load on demand to free RAM."
-            delay={0.44}
-          >
-            <RuntimeResidencySection />
-          </SettingsCard>
+            {/* Runtime residency — per-engine in-memory vs on-demand (core infra). */}
+            <SettingsCard
+              title="Model memory"
+              summary="Keep each engine warm for speed, or load on demand to free RAM."
+              delay={0.44}
+            >
+              <RuntimeResidencySection />
+            </SettingsCard>
 
-          {/* Keyboard shortcuts — one reference for every hotkey (core + pro rows). */}
-          <SettingsCard
-            title="Keyboard shortcuts"
-            summary="Every hotkey in one place — command palette, navigation, clipboard, dictation."
-            delay={0.45}
-          >
-            <KeyboardShortcuts />
-          </SettingsCard>
+            {/* Keyboard shortcuts — one reference for every hotkey (core + pro rows). */}
+            <SettingsCard
+              title="Keyboard shortcuts"
+              summary="Every hotkey in one place — command palette, navigation, clipboard, dictation."
+              delay={0.45}
+            >
+              <KeyboardShortcuts />
+            </SettingsCard>
 
-          {/* Software update — check for updates + automatic-update control (core). */}
-          <SettingsCard
-            title="Software update"
-            summary="Check for updates and choose whether they install automatically."
-            delay={0.46}
-          >
-            <SoftwareUpdateSection />
-          </SettingsCard>
+            {/* Software update — check for updates + automatic-update control (core). */}
+            <SettingsCard
+              title="Software update"
+              summary="Check for updates and choose whether they install automatically."
+              delay={0.46}
+            >
+              <SoftwareUpdateSection />
+            </SettingsCard>
+          </SettingsCardsGroup>
 
           {/* Version footer — so you always know which build you're on. */}
           <div className="flex items-center justify-center gap-2 pt-2 text-xs text-neutral-600">
