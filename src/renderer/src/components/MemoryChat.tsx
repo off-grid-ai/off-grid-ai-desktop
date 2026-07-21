@@ -6,6 +6,7 @@ import { timeAgo } from '@renderer/lib/time'
 import { writeClipboardWithFallback } from '@renderer/lib/clipboard-write'
 import { toSpeakableText } from '@renderer/lib/speakable'
 import { isAgenticTurn } from '@renderer/lib/agentic-active'
+import { applyStreamEvent } from '@renderer/lib/stream-reducer'
 import { useActiveModelSummary } from '@renderer/hooks/useActiveModelSummary'
 import { createUiId } from '@renderer/lib/ui-id'
 import ReactMarkdown, { Components } from 'react-markdown'
@@ -2050,15 +2051,9 @@ export function MemoryChat({
           (reasoningByStream.current[data.streamId] || '') + (data.text || '')
       }
       setConvMessages(cid, (prev) =>
-        prev.map((m) => {
-          if (m.id !== data.streamId || !m.streaming) return m
-          if (data.type === 'content')
-            return { ...m, content: (m.content || '') + (data.text || ''), activity: undefined }
-          if (data.type === 'reasoning')
-            return { ...m, reasoning: (m.reasoning || '') + (data.text || '') }
-          // type is exhaustively 'content' | 'reasoning' | 'step' — this is the 'step' arm.
-          return { ...m, activity: data.step as ChatMessage['activity'] }
-        })
+        prev.map((m) =>
+          m.id === data.streamId && m.streaming ? (applyStreamEvent(m, data) as ChatMessage) : m
+        )
       )
     })
     return () => off()
@@ -2828,14 +2823,23 @@ export function MemoryChat({
                         return chips.length > 0 ? (
                           <div className="mb-1.5 flex max-w-[85%] flex-wrap gap-1">
                             {chips.map((tc, i) => (
-                              <span
+                              <button
                                 key={i}
-                                className="rounded-sm border border-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500"
-                                title={tc.result}
+                                type="button"
+                                onClick={() => {
+                                  closePanels()
+                                  setViewer({
+                                    title: `${tc.name} — tool result`,
+                                    text: tc.result,
+                                    kind: 'tool'
+                                  })
+                                }}
+                                title="Click to view the full result"
+                                className="cursor-pointer rounded-sm border border-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500 transition-colors hover:border-green-500/60 hover:text-neutral-300 active:scale-95"
                               >
                                 {tc.name} →{' '}
                                 {tc.result.length > 32 ? tc.result.slice(0, 32) + '…' : tc.result}
-                              </span>
+                              </button>
                             ))}
                           </div>
                         ) : null

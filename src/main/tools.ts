@@ -405,6 +405,7 @@ export async function toolChat(
     signal?: AbortSignal
     onDelta?: (text: string, kind: 'content' | 'reasoning') => void
     onStep?: (call: { name: string; args: Record<string, unknown> }) => void
+    onToolResult?: (call: { name: string; result: string }) => void
   } = {}
 ): Promise<{
   answer: string
@@ -560,6 +561,9 @@ export async function toolChat(
         }
         if (res.imageRequest) imageRequest = res.imageRequest
         toolCalls.push({ name: c.name, args, result: res.text })
+        // Surface the COMPLETED call (with its result) live, so the UI can show each
+        // tool call + result as it lands, not only in the final batch.
+        opts.onToolResult?.({ name: c.name, result: res.text })
         messages.push({ role: 'tool', tool_call_id: c.id, content: res.text })
       }
       continue // let the model use the results

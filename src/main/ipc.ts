@@ -1804,6 +1804,13 @@ export function setupIPC() {
               } catch {
                 /* window gone */
               }
+            },
+            onToolResult: (call) => {
+              try {
+                sender.send('rag:stream', { streamId, type: 'tool_result', call })
+              } catch {
+                /* window gone */
+              }
             }
           })
         )

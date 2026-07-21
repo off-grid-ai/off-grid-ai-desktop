@@ -109,18 +109,20 @@ const offGridApi = {
   onRagStream: (
     callback: (data: {
       streamId: string
-      type: 'content' | 'reasoning' | 'step'
+      type: 'content' | 'reasoning' | 'step' | 'tool_result'
       text?: string
       step?: unknown
+      call?: { name: string; result: string }
     }) => void
   ) => {
     const sub = (
       _: unknown,
       data: {
         streamId: string
-        type: 'content' | 'reasoning' | 'step'
+        type: 'content' | 'reasoning' | 'step' | 'tool_result'
         text?: string
         step?: unknown
+        call?: { name: string; result: string }
       }
     ): void => callback(data)
     ipcRenderer.on('rag:stream', sub)
