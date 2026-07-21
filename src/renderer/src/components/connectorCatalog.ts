@@ -69,7 +69,7 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     url: 'https://gmailmcp.googleapis.com/mcp/v1',
     auth: 'oauth',
     docsUrl: 'https://developers.google.com/workspace/guides/configure-mcp-servers',
-    ready: false
+    ready: true
   },
   {
     id: 'google-calendar',
@@ -82,7 +82,7 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     url: 'https://calendarmcp.googleapis.com/mcp/v1',
     auth: 'oauth',
     docsUrl: 'https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server',
-    ready: false
+    ready: true
   },
   {
     id: 'outlook',

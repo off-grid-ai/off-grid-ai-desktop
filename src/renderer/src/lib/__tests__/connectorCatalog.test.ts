@@ -73,6 +73,21 @@ describe('CONNECTOR_CATALOG', () => {
       expect(['oauth', 'token', 'none']).toContain(a)
     }
   })
+
+  // The Gmail + Google Calendar connectors are enabled (`ready: true`) so a user
+  // can actually run the OAuth flow — a preview/`ready:false` entry renders
+  // "disabled · preview" and blocks Connect. The token that flow stores is what
+  // the REST-backed Calendar/Gmail ingest reads (pro/main/google-rest.ts), so
+  // "ready" is the switch that turns the whole integration on for a user.
+  it('Gmail and Google Calendar are connectable (ready) via their googleapis OAuth URLs', () => {
+    for (const id of ['gmail', 'google-calendar']) {
+      const c = CONNECTOR_CATALOG.find((e) => e.id === id)!
+      expect(c, `${id} is in the catalog`).toBeTruthy()
+      expect(c.ready, `${id} is connectable, not preview-gated`).toBe(true)
+      expect(c.auth, `${id} authorizes over OAuth`).toBe('oauth')
+      expect(c.url, `${id} points at a Google endpoint`).toContain('googleapis.com')
+    }
+  })
 })
 
 describe('CONNECTOR_SETUP_HINTS — catalog data, out of the view', () => {
