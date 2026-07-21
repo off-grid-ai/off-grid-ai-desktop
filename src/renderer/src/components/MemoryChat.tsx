@@ -5,6 +5,7 @@ import { waitingLabel } from '@renderer/lib/chat-labels'
 import { timeAgo } from '@renderer/lib/time'
 import { writeClipboardWithFallback } from '@renderer/lib/clipboard-write'
 import { toSpeakableText } from '@renderer/lib/speakable'
+import { useActiveModelSummary } from '@renderer/hooks/useActiveModelSummary'
 import { createUiId } from '@renderer/lib/ui-id'
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -56,6 +57,7 @@ import {
   Plug,
   SlidersHorizontal,
   Brain,
+  Cpu,
   Prohibit,
   Check,
   X,
@@ -602,6 +604,9 @@ export function MemoryChat({
   const [speakError, setSpeakError] = useState<{ id: string; message: string } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
+  // Active text model + running context window, shown in the composer. Refreshes when
+  // the model picker closes (the selection may have changed).
+  const modelSummary = useActiveModelSummary(modelPickerOpen)
   const [canvasWidth, setCanvasWidth] = useState<number | null>(null) // px; null = default 30vw
   const [dragOver, setDragOver] = useState(false)
   // Safety net so the "Drop files to attach" overlay never gets stuck: a drag that
@@ -4346,6 +4351,32 @@ export function MemoryChat({
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    {/* Active model + context window — click to change (opens the same
+                        ModelPicker as the header). Mirrors what the Active-models panel shows. */}
+                    {modelSummary.name && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setModelPickerOpen(true)}
+                            className="h-8 max-w-[14rem] gap-1.5 rounded-full text-neutral-400"
+                          >
+                            <Cpu className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{modelSummary.name}</span>
+                            {modelSummary.ctx && (
+                              <span className="shrink-0 text-neutral-600">· {modelSummary.ctx}</span>
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {`Active model: ${modelSummary.name}${
+                            modelSummary.ctx ? ` · ${modelSummary.ctx} context window` : ''
+                          }. Click to change.`}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
