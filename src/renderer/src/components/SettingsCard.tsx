@@ -54,27 +54,39 @@ export function SettingsCard({
       setLocalOpen((o) => !o)
     }
   }
-  // In a group, a different card is the open detail — hide this one.
-  if (group && group.openId !== null && !open) {
-    return null
-  }
+  // In a group, a different card is the open detail — hide this one. Instead of
+  // unmounting instantly (which pops the sibling out with no transition), we keep it
+  // in AnimatePresence and let it exit-animate out of the grid while the opening card
+  // morphs to full width — the two happen together, so drilling in feels finished.
+  const hidden = !!group && group.openId !== null && !open
   return (
-    <motion.div
-      layout
-      className={cn(
-        'overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-sm',
-        open && group && 'col-span-full' // take over the grid width as the L2 detail
-      )}
-      initial={{ opacity: 0, filter: 'blur(10px)' }}
-      animate={{ opacity: 1, filter: 'blur(0px)' }}
-      transition={{
-        duration: 0.6,
-        delay,
-        // The expand-into-detail / collapse-back morph — spring so it feels physical.
-        layout: { type: 'spring', stiffness: 420, damping: 36 }
-      }}
-    >
-      <button
+    <AnimatePresence mode="popLayout">
+      {!hidden && (
+        <motion.div
+          key={title}
+          layout
+          className={cn(
+            'overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-sm',
+            open && group && 'col-span-full' // take over the grid width as the L2 detail
+          )}
+          initial={{ opacity: 0, filter: 'blur(10px)' }}
+          animate={{ opacity: 1, filter: 'blur(0px)' }}
+          // popLayout pulls the exiting card out of flow so the rest reflow smoothly;
+          // it fades + blurs + eases back rather than vanishing.
+          exit={{
+            opacity: 0,
+            filter: 'blur(8px)',
+            scale: 0.97,
+            transition: { duration: 0.22, ease: [0.4, 0, 0.2, 1] }
+          }}
+          transition={{
+            duration: 0.6,
+            delay,
+            // The expand-into-detail / collapse-back morph — spring so it feels physical.
+            layout: { type: 'spring', stiffness: 420, damping: 36 }
+          }}
+        >
+          <button
         type="button"
         onClick={toggle}
         aria-expanded={open}
@@ -110,7 +122,9 @@ export function SettingsCard({
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -128,17 +142,26 @@ export function ProPlaceholder({
   variant?: 'pro' | 'coming-soon'
 }): React.ReactElement | null {
   const group = useContext(GroupContext)
-  if (group && group.openId !== null) {
-    return null
-  }
+  // Hidden while another card is the open detail — exit-animate out with the siblings
+  // (same treatment as SettingsCard) instead of popping.
+  const hidden = !!group && group.openId !== null
   return (
-    <motion.div
-      className="relative rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6"
-      initial={{ opacity: 0, filter: 'blur(10px)' }}
-      animate={{ opacity: 1, filter: 'blur(0px)' }}
-      transition={{ duration: 0.6, delay }}
-    >
-      {variant === 'coming-soon' ? (
+    <AnimatePresence mode="popLayout">
+      {!hidden && (
+        <motion.div
+          layout
+          className="relative rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6"
+          initial={{ opacity: 0, filter: 'blur(10px)' }}
+          animate={{ opacity: 1, filter: 'blur(0px)' }}
+          exit={{
+            opacity: 0,
+            filter: 'blur(8px)',
+            scale: 0.97,
+            transition: { duration: 0.22, ease: [0.4, 0, 0.2, 1] }
+          }}
+          transition={{ duration: 0.6, delay }}
+        >
+          {variant === 'coming-soon' ? (
         <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-800/50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-300">
           <Clock weight="bold" className="h-3 w-3" /> Coming soon
         </span>
@@ -147,8 +170,10 @@ export function ProPlaceholder({
           <LockKey weight="bold" className="h-3 w-3" /> Pro
         </span>
       )}
-      <h3 className="mb-1 pr-28 text-base font-medium text-neutral-300">{title}</h3>
-      <p className="text-sm text-neutral-600">{description}</p>
-    </motion.div>
+          <h3 className="mb-1 pr-28 text-base font-medium text-neutral-300">{title}</h3>
+          <p className="text-sm text-neutral-600">{description}</p>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
