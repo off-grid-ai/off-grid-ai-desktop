@@ -1,0 +1,60 @@
+import React from 'react'
+
+// One reference catalog for every keyboard shortcut in the app. Each row notes where
+// the shortcut is actually registered — keep this in sync with that site. Pro rows
+// render only in Pro builds (the shortcuts don't exist without the pro package).
+interface Shortcut {
+  keys: string[]
+  action: string
+  pro?: boolean
+  note?: string
+}
+
+const SHORTCUTS: Shortcut[] = [
+  { keys: ['⌘', 'K'], action: 'Open command palette' }, // CommandPalette.tsx
+  { keys: ['⌘', '['], action: 'Back' }, // App.tsx
+  { keys: ['⌘', ']'], action: 'Forward' }, // App.tsx
+  { keys: ['⌘', '⇧', 'C'], action: 'Clipboard quick-paste popup', pro: true }, // pro/main/clipboard.ts
+  {
+    keys: ['⌥', 'Space'],
+    action: 'Dictation — hold or toggle',
+    pro: true,
+    note: 'Customizable in Voice'
+  } // pro/main/dictation/controller.ts
+]
+
+export function KeyboardShortcuts(): React.ReactElement {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const isPro = !!(window as any).api?.isPro
+  const rows = SHORTCUTS.filter((s) => !s.pro || isPro)
+  return (
+    <div className="flex flex-col gap-1.5">
+      {rows.map((s) => (
+        <div
+          key={s.action}
+          className="flex items-center justify-between gap-3 rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2"
+        >
+          <span className="text-xs text-neutral-300">
+            {s.action}
+            {s.note ? <span className="ml-2 text-[10px] text-neutral-600">· {s.note}</span> : null}
+          </span>
+          <span className="flex shrink-0 items-center gap-1">
+            {s.keys.map((k) => (
+              <kbd
+                key={k}
+                className="rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[11px] leading-none text-neutral-300"
+              >
+                {k}
+              </kbd>
+            ))}
+          </span>
+        </div>
+      ))}
+      {!isPro ? (
+        <p className="px-1 pt-1 text-[10px] text-neutral-600">
+          Clipboard and dictation shortcuts unlock with Pro.
+        </p>
+      ) : null}
+    </div>
+  )
+}

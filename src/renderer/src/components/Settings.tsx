@@ -10,6 +10,7 @@ import { PRO_SETTINGS_SLOTS } from './pro/proSettingsCatalog'
 // Shared card chrome, in its own light module so the pro package can reuse it without
 // importing this whole god-file (which pulls SetupPanel/etc. + their window.api types).
 import { SettingsCard, ProPlaceholder } from './SettingsCard'
+import { KeyboardShortcuts } from './KeyboardShortcuts'
 import { currentPlatform } from '@renderer/lib/device'
 import { proComingSoonHere } from './pro/proCatalog'
 
@@ -344,6 +345,15 @@ export function Settings() {
             delay={0.44}
           >
             <RuntimeResidencySection />
+          </SettingsCard>
+
+          {/* Keyboard shortcuts — one reference for every hotkey (core + pro rows). */}
+          <SettingsCard
+            title="Keyboard shortcuts"
+            summary="Every hotkey in one place — command palette, navigation, clipboard, dictation."
+            delay={0.45}
+          >
+            <KeyboardShortcuts />
           </SettingsCard>
 
           {/* Software update — check for updates + automatic-update control (core). */}
