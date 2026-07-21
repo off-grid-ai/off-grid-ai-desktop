@@ -20,6 +20,7 @@ import { StoragePanel } from './setup/StoragePanel'
 import { deviceNoun } from '@renderer/lib/device'
 import { modelKindLabel } from '@renderer/lib/model-kind-labels'
 import { collectTags, matchesAllTags, toggleTag } from '@renderer/lib/model-tag-filter'
+import { companionDownloadLabel } from '@renderer/lib/download-label'
 import {
   filterAndSort,
   parseParamCount,
@@ -193,9 +194,9 @@ function featureRank(
 const MODE_LABELS: Record<string, string> = { txt2img: 'Text→Image', img2img: 'Image→Image' }
 
 function withoutProgressEntry(
-  progress: Record<string, { percent: number; status?: string }>,
+  progress: Record<string, { percent: number; status?: string; currentFile?: string }>,
   modelId: string
-): Record<string, { percent: number; status?: string }> {
+): Record<string, { percent: number; status?: string; currentFile?: string }> {
   const next = { ...progress }
   delete next[modelId]
   return next
@@ -218,7 +219,7 @@ export function ModelsScreen(): React.JSX.Element {
     void api.getModelVisionStatus?.().then((s) => setVisionSt(s ?? {}))
   }
   const [activeKind, setActiveKind] = useState<string>('text')
-  const [progress, setProgress] = useState<Record<string, { percent: number; status?: string }>>({})
+  const [progress, setProgress] = useState<Record<string, { percent: number; status?: string; currentFile?: string }>>({})
   // Active model ids across ALL modalities (chat + image/voice/transcription) —
   // one truth from the backend; the UI never re-derives "active" per kind.
   const [activeIds, setActiveIds] = useState<Set<string>>(new Set())
@@ -311,14 +312,18 @@ export function ModelsScreen(): React.JSX.Element {
     refreshVision()
     refreshActive()
     const off = api.onModelProgress?.(
-      (d: { modelId: string; percent?: number; status?: string }) => {
+      (d: { modelId: string; percent?: number; status?: string; currentFile?: string }) => {
         if (d.status === 'cancelled') {
           setProgress((p) => withoutProgressEntry(p, d.modelId))
           return
         }
         setProgress((p) => ({
           ...p,
-          [d.modelId]: { percent: d.percent ?? p[d.modelId]?.percent ?? 0, status: d.status }
+          [d.modelId]: {
+            percent: d.percent ?? p[d.modelId]?.percent ?? 0,
+            status: d.status,
+            currentFile: d.currentFile ?? p[d.modelId]?.currentFile
+          }
         }))
         if (d.status === 'completed') {
           api.getInstalledModels?.().then(setInstalled)
@@ -644,14 +649,23 @@ export function ModelsScreen(): React.JSX.Element {
           </button>
         )}
 
-        {/* Download progress */}
+        {/* Download progress. Name the companion when that's all that's downloading
+            (e.g. adding a vision projector to a model already on disk) so it doesn't
+            read as a full re-download. */}
         {downloading && (
-          <div className="h-0.5 w-full overflow-hidden rounded-full bg-neutral-800">
-            <div
-              className="h-full bg-green-500 transition-all"
-              style={{ width: `${prog.percent}%` }}
-            />
-          </div>
+          <>
+            {companionDownloadLabel(prog.currentFile) && (
+              <div className="text-[9px] uppercase tracking-wide text-emerald-300">
+                Adding {companionDownloadLabel(prog.currentFile)} · {prog.percent}%
+              </div>
+            )}
+            <div className="h-0.5 w-full overflow-hidden rounded-full bg-neutral-800">
+              <div
+                className="h-full bg-green-500 transition-all"
+                style={{ width: `${prog.percent}%` }}
+              />
+            </div>
+          </>
         )}
       </div>
     )
@@ -1042,7 +1056,11 @@ export function ModelsScreen(): React.JSX.Element {
                     </>
                   ) : downloading ? (
                     <span className="text-xs text-neutral-400">
-                      {prog.status === 'queued' ? 'Queued' : `Downloading ${prog.percent}%…`}
+                      {prog.status === 'queued'
+                        ? 'Queued'
+                        : companionDownloadLabel(prog.currentFile)
+                          ? `Adding ${companionDownloadLabel(prog.currentFile)} ${prog.percent}%…`
+                          : `Downloading ${prog.percent}%…`}
                     </span>
                   ) : (
                     <button

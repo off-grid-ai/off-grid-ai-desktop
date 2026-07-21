@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { HardDrives, Trash, ArrowsClockwise, X, Broom } from '@phosphor-icons/react'
 import { cn } from '@renderer/lib/utils'
 import { modelKindLabel } from '@renderer/lib/model-kind-labels'
+import { companionDownloadLabel } from '@renderer/lib/download-label'
 import { CacheCleanupControl } from './CacheCleanupControl'
 import { formatStorageBytes } from './storage-format'
 
@@ -23,6 +24,7 @@ interface DownloadEntry {
   modelId: string
   percent?: number
   status?: 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled'
+  currentFile?: string
   downloadedMB?: string
   totalMB?: string
   error?: string
@@ -196,7 +198,16 @@ export function StoragePanel(): React.ReactElement {
           {active.map((d) => (
             <div key={d.modelId} className="flex items-center gap-3 py-1.5">
               <div className="min-w-0 flex-1">
-                <div className="truncate font-mono text-[11px] text-neutral-300">{d.modelId}</div>
+                <div className="truncate font-mono text-[11px] text-neutral-300">
+                  {d.modelId}
+                  {companionDownloadLabel(d.currentFile) && (
+                    // A companion-only fetch (e.g. adding a vision projector to a model
+                    // already on disk) — say so, or it reads as a full re-download.
+                    <span className="ml-1.5 rounded-sm border border-emerald-300/40 px-1 py-px text-[9px] uppercase tracking-wide text-emerald-300">
+                      {companionDownloadLabel(d.currentFile)} only
+                    </span>
+                  )}
+                </div>
                 {d.status === 'queued' ? (
                   <div className="mt-0.5 text-[10px] text-neutral-500">Queued</div>
                 ) : (
