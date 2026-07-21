@@ -675,6 +675,8 @@ const offGridApi = {
   meetingExport: (id: number, unit: 'transcript' | 'audio' | 'video') =>
     ipcRenderer.invoke('meeting:export', id, unit),
   meetingActivity: (id: number) => ipcRenderer.invoke('meeting:activity', id),
+  meetingGetAutostop: () => ipcRenderer.invoke('meeting:get-autostop'),
+  meetingSetAutostop: (on: boolean) => ipcRenderer.invoke('meeting:set-autostop', on),
   meetingPlayablePath: (p: string) => ipcRenderer.invoke('meeting:playable-path', p),
   // The controller broadcasts its full state here; the renderer just reflects it.
   onMeetingState: (cb: (s: unknown) => void) => {
