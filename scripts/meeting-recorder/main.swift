@@ -129,6 +129,14 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
         // AVAssetWriter: H.264 video + AAC audio into screen.mov
         let w = try AVAssetWriter(outputURL: screenURL, fileType: .mov)
+        // CRASH-SAFETY (never lose data): without this, the moov atom is written ONLY at
+        // finishWriting(), so a SIGKILL (app force-quit mid-recording) leaves an unreadable
+        // file and the whole recording is lost. A movie-fragment interval makes AVFoundation
+        // write the header up front + flush periodic fragments (moof/mdat), so a killed file
+        // stays playable up to the last flushed fragment. We lose at most ~2s of tail, never
+        // the whole session — and startup recovery (recoverOrphanedMeetings) can then mux it.
+        w.movieFragmentInterval = CMTime(value: 2, timescale: 1)
+        w.shouldOptimizeForNetworkUse = true
         let vSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: outW,
