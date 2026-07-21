@@ -11,6 +11,7 @@ export {
   recommendForRam,
   modelsByKind
 } from './catalog'
+export { hasVisionProjector, deriveKind } from './capabilities'
 export { ModelDownloader } from './download'
 export { searchHuggingFace, resolveHuggingFaceModel, getModelFiles } from './hf'
 export type { HFSearchResult, ModelFileVariant } from './hf'

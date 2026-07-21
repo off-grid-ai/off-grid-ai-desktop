@@ -4,6 +4,7 @@
 // the HF browser (hf.ts) lets users find anything else.
 
 import type { ModelEntry, ModelKind, ModelRecommendationTier } from './types'
+import { deriveKind } from './capabilities'
 
 const HF = 'https://huggingface.co'
 const resolve = (repo: string, file: string): string => `${HF}/${repo}/resolve/main/${file}`
@@ -25,7 +26,7 @@ export function recommendForRam(ramGb: number): ModelRecommendationTier {
   )
 }
 
-export const CATALOG: ModelEntry[] = [
+const RAW_CATALOG: ModelEntry[] = [
   // --- text (SLMs) — post-Jan-2026 only; the latest small-model challengers,
   // quantized for desktop. Dates are the source repo's HF createdAt. ---
   {
@@ -933,6 +934,15 @@ export const CATALOG: ModelEntry[] = [
     ]
   }
 ]
+
+// Normalize every entry through the data-derived capability rule: an entry that lists
+// a projector is vision, whatever its hand-typed `kind` said. So a future entry can't
+// ship a projector while mislabeled text-only (the Gemma 4 E2B bug), and `kind` is
+// always consistent with the files for every consumer.
+export const CATALOG: ModelEntry[] = RAW_CATALOG.map((e) => ({
+  ...e,
+  kind: deriveKind(e.files, e.kind)
+}))
 
 export function modelsByKind(kind: ModelKind): ModelEntry[] {
   return CATALOG.filter((m) => m.kind === kind)

@@ -1,11 +1,19 @@
-import { M as ModelEntry, a as ModelKind, b as ModelRecommendationTier, D as DownloadBridge, c as ModelStore, d as DownloadProgress } from './types-CQDbinZH.js';
-export { i as DownloadStatus, I as ImageGenMode, g as ImageGenProvider, e as ImageGenRequest, f as ImageGenResult, h as ModelFile, s as supportsMode, v as validateImageGenRequest } from './types-CQDbinZH.js';
+import { M as ModelEntry, a as ModelKind, b as ModelRecommendationTier, c as ModelFile, D as DownloadBridge, d as ModelStore, e as DownloadProgress } from './types-CZMZpuKL.js';
+export { f as DownloadStatus, I as ImageGenMode, g as ImageGenProvider, h as ImageGenRequest, i as ImageGenResult, s as supportsMode, v as validateImageGenRequest } from './types-CZMZpuKL.js';
 
 declare const RECOMMENDATION_TIERS: ModelRecommendationTier[];
 declare function recommendForRam(ramGb: number): ModelRecommendationTier;
 declare const CATALOG: ModelEntry[];
 declare function modelsByKind(kind: ModelKind): ModelEntry[];
 declare const MODEL_KINDS: ModelKind[];
+
+/** True iff the file set includes a vision projector (mmproj). This is what actually
+ *  gives a chat model image input at load time. */
+declare function hasVisionProjector(files: readonly ModelFile[]): boolean;
+/** Derive a model's kind from its files: a projector upgrades a chat model to vision.
+ *  Non-chat kinds (image/voice/transcription) are returned unchanged — an mmproj is a
+ *  chat/VLM concept and never reclassifies them. */
+declare function deriveKind(files: readonly ModelFile[], declared: ModelKind): ModelKind;
 
 declare class ModelDownloader {
     private readonly bridge;
@@ -298,4 +306,4 @@ declare const LIGHT_MODEL_RAM_CEILING_GB = 16;
  */
 declare function recommendedImageModelId(models: RecommendableModel[], ramGb: number | null | undefined): string | null;
 
-export { CATALOG, CREDIBILITY_LABELS, CREDIBILITY_OPTIONS, type ChatMessage, type ChatOptions, type ChatRole, type Credibility, type CredibilityFilter, DownloadBridge, DownloadProgress, type FetchLike, type FilterState, type FilterableModel, type HFSearchResult, type InferenceProvider, LIGHT_MODEL_RAM_CEILING_GB, MODEL_KINDS, MODEL_TYPE_OPTIONS, ModelDownloader, ModelEntry, type ModelFileVariant, ModelKind, ModelRecommendationTier, ModelStore, type ModelTypeFilter, OFFICIAL_MODEL_AUTHORS, type ProviderModel, ProviderRegistry, QUANTIZATION_INFO, type QuantInfo, RECOMMENDATION_TIERS, type RecommendableModel, type RemoteServerConfig, type RemoteServerKind, SIZE_OPTIONS, SORT_OPTIONS, type SizeFilter, type SortOption, VERIFIED_QUANTIZERS, applyFilters, applySort, bestFitScore, createProvider, determineCredibility, extractQuantization, filterAndSort, formatFileSize, getModelFiles, getModelType, hasActiveFilters, initialFilterState, isMMProjFile, modelsByKind, ollamaProvider, openAICompatibleProvider, parseParamCount, recommendForRam, recommendedImageModelId, resolveHuggingFaceModel, searchHuggingFace };
+export { CATALOG, CREDIBILITY_LABELS, CREDIBILITY_OPTIONS, type ChatMessage, type ChatOptions, type ChatRole, type Credibility, type CredibilityFilter, DownloadBridge, DownloadProgress, type FetchLike, type FilterState, type FilterableModel, type HFSearchResult, type InferenceProvider, LIGHT_MODEL_RAM_CEILING_GB, MODEL_KINDS, MODEL_TYPE_OPTIONS, ModelDownloader, ModelEntry, ModelFile, type ModelFileVariant, ModelKind, ModelRecommendationTier, ModelStore, type ModelTypeFilter, OFFICIAL_MODEL_AUTHORS, type ProviderModel, ProviderRegistry, QUANTIZATION_INFO, type QuantInfo, RECOMMENDATION_TIERS, type RecommendableModel, type RemoteServerConfig, type RemoteServerKind, SIZE_OPTIONS, SORT_OPTIONS, type SizeFilter, type SortOption, VERIFIED_QUANTIZERS, applyFilters, applySort, bestFitScore, createProvider, deriveKind, determineCredibility, extractQuantization, filterAndSort, formatFileSize, getModelFiles, getModelType, hasActiveFilters, hasVisionProjector, initialFilterState, isMMProjFile, modelsByKind, ollamaProvider, openAICompatibleProvider, parseParamCount, recommendForRam, recommendedImageModelId, resolveHuggingFaceModel, searchHuggingFace };

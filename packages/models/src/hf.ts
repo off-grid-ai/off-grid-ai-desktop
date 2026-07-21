@@ -4,6 +4,7 @@
 
 import type { ModelEntry, ModelFile, ModelKind } from './types'
 import { QUANTIZATION_INFO, extractQuantization, isMMProjFile } from './quant'
+import { deriveKind } from './capabilities'
 import { determineCredibility, type Credibility } from './credibility'
 import { getModelType } from './filters'
 
@@ -262,7 +263,8 @@ export async function resolveHuggingFaceModel(
   return {
     id: repoId,
     name: baseName(repoId),
-    kind: mmprojFiles.length ? 'vision' : (opts.kind ?? 'text'),
+    // Same data-derived rule as the curated catalog: a projector ⇒ vision.
+    kind: deriveKind(files, opts.kind ?? 'text'),
     org,
     files
   }

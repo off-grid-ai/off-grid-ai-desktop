@@ -1,4 +1,4 @@
-import { D as DownloadBridge } from '../types-CQDbinZH.mjs';
+import { D as DownloadBridge } from '../types-CZMZpuKL.mjs';
 
 declare class NodeDownloadBridge implements DownloadBridge {
     private readonly modelsDir;

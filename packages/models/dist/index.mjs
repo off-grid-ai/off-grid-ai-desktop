@@ -1,3 +1,14 @@
+// src/capabilities.ts
+function hasVisionProjector(files) {
+  return files.some((f) => f.role === "mmproj");
+}
+function deriveKind(files, declared) {
+  if ((declared === "text" || declared === "vision") && hasVisionProjector(files)) {
+    return "vision";
+  }
+  return declared;
+}
+
 // src/catalog.ts
 var HF = "https://huggingface.co";
 var resolve = (repo, file) => `${HF}/${repo}/resolve/main/${file}`;
@@ -12,7 +23,7 @@ var RECOMMENDATION_TIERS = [
 function recommendForRam(ramGb) {
   return RECOMMENDATION_TIERS.find((t) => ramGb >= t.minRamGb && ramGb < t.maxRamGb) ?? RECOMMENDATION_TIERS[RECOMMENDATION_TIERS.length - 1];
 }
-var CATALOG = [
+var RAW_CATALOG = [
   // --- text (SLMs) — post-Jan-2026 only; the latest small-model challengers,
   // quantized for desktop. Dates are the source repo's HF createdAt. ---
   {
@@ -904,6 +915,10 @@ var CATALOG = [
     ]
   }
 ];
+var CATALOG = RAW_CATALOG.map((e) => ({
+  ...e,
+  kind: deriveKind(e.files, e.kind)
+}));
 function modelsByKind(kind) {
   return CATALOG.filter((m) => m.kind === kind);
 }
@@ -1398,7 +1413,8 @@ async function resolveHuggingFaceModel(repoId, opts = {}) {
   return {
     id: repoId,
     name: baseName(repoId),
-    kind: mmprojFiles.length ? "vision" : opts.kind ?? "text",
+    // Same data-derived rule as the curated catalog: a projector ⇒ vision.
+    kind: deriveKind(files, opts.kind ?? "text"),
     org,
     files
   };
@@ -1584,6 +1600,7 @@ export {
   applySort,
   bestFitScore,
   createProvider,
+  deriveKind,
   determineCredibility,
   extractQuantization,
   filterAndSort,
@@ -1591,6 +1608,7 @@ export {
   getModelFiles,
   getModelType,
   hasActiveFilters,
+  hasVisionProjector,
   initialFilterState,
   isMMProjFile,
   modelsByKind,
