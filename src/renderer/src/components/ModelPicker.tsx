@@ -134,28 +134,24 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
                   <button
                     type="button"
                     onClick={() => void unload(mode)}
-                    disabled={unloading === mode}
+                    disabled={unloading === mode || unloaded === mode}
                     title={
                       unloadError === mode
                         ? 'Unload unavailable — restart the app'
-                        : 'Unload from memory now — frees RAM; reloads on next use'
-                    }
-                    className={`flex items-center gap-1 text-[10px] uppercase tracking-wide transition-colors disabled:opacity-50 ${
-                      unloadError === mode
-                        ? 'text-amber-400'
                         : unloaded === mode
-                          ? 'text-green-500'
-                          : 'text-neutral-500 hover:text-red-400'
+                          ? 'Already unloaded — reloads on next use'
+                          : 'Unload from memory now — frees RAM; reloads on next use'
+                    }
+                    className={`flex items-center gap-1 text-[10px] uppercase tracking-wide transition-colors disabled:opacity-40 ${
+                      unloadError === mode ? 'text-amber-400' : 'text-neutral-500 hover:text-red-400'
                     }`}
                   >
                     {unloading === mode ? (
                       <IconLoader2 className="h-3 w-3 animate-spin" />
-                    ) : unloaded === mode ? (
-                      <IconCheck className="h-3 w-3" />
                     ) : (
                       <IconPower className="h-3 w-3" />
                     )}
-                    {unloadError === mode ? 'Restart to unload' : unloaded === mode ? 'Unloaded' : 'Unload'}
+                    {unloadError === mode ? 'Restart to unload' : 'Unload'}
                   </button>
                 )}
               </div>
@@ -178,6 +174,12 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
                       <span className="truncate">{m.name}</span>
                       {busy === m.id ? (
                         <IconLoader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-neutral-500" />
+                      ) : isActive(m) && unloaded === mode ? (
+                        // Still the active selection, but freed from memory — one
+                        // coherent state, not a green check next to an "unloaded" label.
+                        <span className="flex shrink-0 items-center gap-1 text-[10px] uppercase tracking-wide text-neutral-500">
+                          <IconPower className="h-3 w-3" /> Unloaded
+                        </span>
                       ) : isActive(m) ? (
                         <IconCheck className="h-3.5 w-3.5 shrink-0 text-green-500" />
                       ) : null}
