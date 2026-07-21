@@ -2239,13 +2239,15 @@ export function MemoryChat({
     <div
       className="flex h-full flex-col font-mono bg-neutral-950 transition-[padding] duration-200"
       style={{
+        // Only the code/artifact canvas reflows content beside it (a deliberate
+        // side-by-side edit surface). The drawers (settings, models, skills, gallery,
+        // lightbox) are fixed overlays with their own opaque backdrop — they draw ON
+        // TOP, so reserving width here just squeezed the chat to one word per line.
         paddingRight: canvasArtifact
           ? canvasWidth
             ? `${canvasWidth}px` // canvas open + resized → reflow content to its width
             : 'max(360px, 30vw)'
-          : skillsOpen || settingsOpen || viewer || showGallery || modelPickerOpen
-            ? 'max(420px, 30vw)'
-            : undefined
+          : undefined
       }}
     >
       {/* Header */}
