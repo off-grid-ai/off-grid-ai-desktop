@@ -19,6 +19,7 @@ import icon from '../../resources/icon.png?asset'
 import { setupIPC } from './ipc' // IMPORT FROM IPC ONLY
 import { setupRagIPC } from './rag-ipc'
 import { setupMcpIpc } from './mcp-ipc'
+import { preloadPath } from './preload-path'
 import { startModelServer, stopModelServer } from './model-server'
 import { startMediaServer, stopMediaServer, mediaUrlFor } from './media-server'
 import { serveCaptureFile } from './ogcapture-serve'
@@ -125,7 +126,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     ...(process.platform === 'linux' || process.platform === 'win32' ? { icon } : {}),
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: preloadPath(),
       sandbox: false, // REQUIRED for IPC
       contextIsolation: true,
       plugins: true, // Chromium's built-in PDF viewer (chat attachment viewer) needs this
