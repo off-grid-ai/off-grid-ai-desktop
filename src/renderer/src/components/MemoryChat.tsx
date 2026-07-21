@@ -4702,52 +4702,64 @@ export function MemoryChat({
         )}
       </AnimatePresence>
 
-      {/* Lightbox — click a generated image to enlarge, download, or delete */}
-      {lightbox && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-10"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Generated image preview"
-          tabIndex={-1}
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setLightbox(null)
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') setLightbox(null)
-          }}
-        >
-          <div className="absolute right-4 top-4 flex items-center gap-2">
-            {lightbox.path && (
-              <>
-                <button
-                  onClick={() => downloadImage(lightbox.path, lightbox.path?.split('/').pop())}
-                  className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:border-green-500 hover:text-green-500"
-                >
-                  Download
-                </button>
-                <button
-                  onClick={() => deleteImage(lightbox.path)}
-                  className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:border-red-500 hover:text-red-400"
-                >
-                  Delete
-                </button>
-              </>
-            )}
-            <button
-              onClick={() => setLightbox(null)}
-              className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:text-white"
-            >
-              Close
-            </button>
-          </div>
-          <img
-            src={lightbox.url}
-            alt="Generated preview"
-            className="max-h-full max-w-full rounded-md object-contain"
-          />
-        </div>
-      )}
+      {/* Lightbox — click a generated image to enlarge, download, or delete. Same
+          animated backdrop + spring-in as the viewer (shared modal feel). */}
+      <AnimatePresence>
+        {lightbox && (
+          <motion.div
+            key="lightbox"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-10"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Generated image preview"
+            tabIndex={-1}
+            initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
+            animate={{ opacity: 1, backdropFilter: 'blur(8px)' }}
+            exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
+            transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setLightbox(null)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setLightbox(null)
+            }}
+          >
+            <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+              {lightbox.path && (
+                <>
+                  <button
+                    onClick={() => downloadImage(lightbox.path, lightbox.path?.split('/').pop())}
+                    className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:border-green-500 hover:text-green-500"
+                  >
+                    Download
+                  </button>
+                  <button
+                    onClick={() => deleteImage(lightbox.path)}
+                    className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:border-red-500 hover:text-red-400"
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setLightbox(null)}
+                className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            <motion.img
+              src={lightbox.url}
+              alt="Generated preview"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+              className="max-h-full max-w-full rounded-md object-contain"
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Gallery — everything generated on-device: images + artifacts */}
       {showGallery && (
