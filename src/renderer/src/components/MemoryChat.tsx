@@ -1418,6 +1418,10 @@ export function MemoryChat({
         const tr = await window.api.toolChat(modelQuery, history, {
           connectors: connectorsOn,
           conversationId: convId,
+          // Memory scope drives which memory tools the model gets: a project offers its
+          // knowledge base; "All memory" offers search_memory; "No memory" offers neither.
+          projectId: projectId ?? undefined,
+          allMemory: !projectId && !noMemory,
           images: imagePaths,
           imageAvailable,
           streamId: toolStreamId,

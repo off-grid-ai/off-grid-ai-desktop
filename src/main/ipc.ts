@@ -1763,6 +1763,8 @@ export function setupIPC() {
       opts?: {
         connectors?: boolean
         conversationId?: string
+        projectId?: string
+        allMemory?: boolean
         images?: string[]
         imageAvailable?: boolean
         streamId?: string

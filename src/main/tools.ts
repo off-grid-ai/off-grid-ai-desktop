@@ -8,6 +8,8 @@
 
 import fs from 'fs'
 import { llm } from './llm'
+import { SEARCH_KB_TOOL, makeSearchKnowledgeBaseHandler } from '@offgrid/rag'
+import { isMemoryToolAllowed } from './tools/memory-scope'
 import { getSetting, saveSetting } from './database'
 import { buildUserContent } from './tool-content'
 import { stripTags, htmlToText, decodeDdgHref } from './tools-parsers'
@@ -34,6 +36,9 @@ export function setToolEnabled(name: string, enabled: boolean): void {
 // excludes the current conversation so it can't cite itself).
 interface ToolContext {
   conversationId?: string
+  /** The active project (if the chat is in one), so search_knowledge_base can query
+   *  that project's uploaded docs + captured memory. */
+  projectId?: string
 }
 
 // A tool's structured result. Most tools just return text (a bare string, which the
@@ -276,6 +281,26 @@ const TOOLS: ToolDef[] = [
     }
   },
   {
+    // Only OFFERED in a project chat (gated in schemas() by projectId). Lets the model
+    // pull from the current project's uploaded docs + captured memory on demand — the
+    // general search_memory doesn't reach a project's separate RAG store.
+    name: SEARCH_KB_TOOL.function.name,
+    description: SEARCH_KB_TOOL.function.description,
+    parameters: SEARCH_KB_TOOL.function.parameters,
+    run: async (a, ctx): Promise<ToolResult> => {
+      if (!ctx.projectId) {
+        return { text: 'No active project — the knowledge base needs an open project.' }
+      }
+      try {
+        const { ragService } = await import('./rag')
+        const handler = makeSearchKnowledgeBaseHandler(ragService)
+        return { text: await handler({ query: String(a.query ?? '') }, ctx.projectId) }
+      } catch (e) {
+        return { text: 'Error searching the knowledge base: ' + (e as Error).message }
+      }
+    }
+  },
+  {
     name: 'get_datetime',
     description: 'Get the current local date and time.',
     parameters: { type: 'object', properties: {} },
@@ -310,10 +335,15 @@ const TOOLS: ToolDef[] = [
 
 // generate_image is gated on an image model being available and is never offered
 // otherwise; every other built-in obeys only the disabled-set.
-function schemas(imageAvailable: boolean): unknown[] {
+function schemas(
+  imageAvailable: boolean,
+  scope: { projectActive: boolean; allMemory: boolean }
+): unknown[] {
   const off = disabledSet()
   return TOOLS.filter((t) => !off.has(t.name))
     .filter((t) => t.name !== 'generate_image' || imageAvailable)
+    // Memory tools (search_knowledge_base / search_memory) follow the chat's memory scope.
+    .filter((t) => isMemoryToolAllowed(t.name, scope))
     .map((t) => ({
       type: 'function',
       function: { name: t.name, description: t.description, parameters: t.parameters }
@@ -399,6 +429,10 @@ export async function toolChat(
   opts: {
     connectors?: boolean
     conversationId?: string
+    /** Active project — offers search_knowledge_base + scopes it to this project. */
+    projectId?: string
+    /** Chat is in "All memory" scope — offers search_memory over everything. */
+    allMemory?: boolean
     images?: string[]
     imageAvailable?: boolean
     thinking?: boolean
@@ -447,7 +481,10 @@ export async function toolChat(
       console.error('[tools] extension schemas', e.id, err)
     }
   }
-  const builtins = schemas(imageAvailable)
+  const builtins = schemas(imageAvailable, {
+    projectActive: !!opts.projectId,
+    allMemory: !!opts.allMemory
+  })
   const rawTools = extSchemas.length ? [...builtins, ...extSchemas] : builtins
   // Keep the tool payload within the model's context. llama-server inlines every
   // tool schema into the prompt AND compiles it to a grammar, so a big connector
@@ -553,7 +590,12 @@ export async function toolChat(
         // Uniform dispatch — every tool owns its own result. Merge any structured
         // side channels: sources are deduped into `unified` across rounds; the last
         // non-empty imageRequest wins (deferred generation after the turn).
-        const res = await runTool(c.name, args, { conversationId: opts.conversationId }, exts)
+        const res = await runTool(
+          c.name,
+          args,
+          { conversationId: opts.conversationId, projectId: opts.projectId },
+          exts
+        )
         for (const s of res.sources ?? []) {
           if (unifiedKeys.has(s.key)) continue
           unifiedKeys.add(s.key)
