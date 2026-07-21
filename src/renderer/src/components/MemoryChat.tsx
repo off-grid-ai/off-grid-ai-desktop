@@ -530,6 +530,9 @@ export function MemoryChat({
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
   const [microphoneDenied, setMicrophoneDenied] = useState(false)
+  // Surfaced when a recording can't become a message (no audio, empty transcript, or a
+  // transcription-engine failure) — never fail silently (the "nothing happened" bug).
+  const [transcribeError, setTranscribeError] = useState<string | null>(null)
   const [toolsOn, setToolsOn] = useState(false)
   const [connectorsOn, setConnectorsOn] = useState(false)
   const [thinkingEnabled, setThinkingEnabled] = useState(false)
@@ -1792,6 +1795,7 @@ export function MemoryChat({
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       setMicrophoneDenied(false)
+      setTranscribeError(null)
       if (!voiceMountedRef.current) {
         stream.getTracks().forEach((track) => track.stop())
         return
@@ -1807,25 +1811,36 @@ export function MemoryChat({
         stream.getTracks().forEach((t) => t.stop())
         if (micStreamRef.current === stream) micStreamRef.current = null
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-        if (blob.size === 0) return
+        if (blob.size === 0) {
+          setTranscribeError("Didn't record any audio — try again.")
+          return
+        }
         setTranscribing(true)
         try {
           const bytes = new Uint8Array(await blob.arrayBuffer())
           const text = await window.api.transcribeAudio(bytes, 'webm')
           const clean = (text || '').trim()
+          if (!clean) {
+            // Empty transcript: surface it instead of dropping the recording silently
+            // (the old code returned here with no feedback — the "nothing happened" bug).
+            setTranscribeError("Didn't catch that — try recording again.")
+            return
+          }
           if (voiceMode) {
             // Voice mode: send the spoken note straight away, keeping the recording
             // so the user's bubble plays back their own audio.
-            if (!clean) return
             const url = URL.createObjectURL(blob)
             void sendMessage(clean, {
               voiceClip: { url, duration: (Date.now() - startedAt) / 1000 }
             })
-          } else if (clean) {
+          } else {
             setInput((prev) => (prev ? prev + ' ' : '') + clean)
           }
         } catch (err) {
           console.error('Transcription failed', err)
+          setTranscribeError(
+            'Transcription failed. Check the voice model in Settings > Setup & health.'
+          )
         } finally {
           setTranscribing(false)
         }
@@ -4080,6 +4095,14 @@ export function MemoryChat({
                     >
                       Open System Settings
                     </button>
+                  </div>
+                )}
+                {transcribeError && (
+                  <div
+                    role="alert"
+                    className="mx-2 mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100"
+                  >
+                    {transcribeError}
                   </div>
                 )}
                 {voiceMode ? (
