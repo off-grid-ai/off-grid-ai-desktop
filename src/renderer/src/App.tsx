@@ -70,7 +70,6 @@ type ViewMode =
   | 'chats'
   | 'memories'
   | 'entities'
-  | 'graph'
   | 'memory-chat'
   | 'models'
   | 'gateway'
@@ -303,7 +302,6 @@ function AppContent() {
       '/chats': 'chats',
       '/memories': 'memories',
       '/entities': 'entities',
-      '/graph': 'graph',
       '/models': 'models',
       '/gateway': 'gateway',
       '/projects': 'projects',
@@ -348,7 +346,6 @@ function AppContent() {
       chats: '/chats',
       memories: '/memories',
       entities: '/entities',
-      graph: '/graph',
       models: '/models',
       gateway: '/gateway',
       projects: '/projects',
