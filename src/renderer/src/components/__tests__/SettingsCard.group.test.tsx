@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import { SettingsCard, SettingsCardsGroup } from '../SettingsCard'
 
 describe('SettingsCardsGroup — grid drills into one L2 detail', () => {
   afterEach(cleanup)
 
-  it('opens one card as the detail and hides the others; header goes back', () => {
+  it('opens one card as the detail and hides the others; header goes back', async () => {
     render(
       <SettingsCardsGroup>
         <SettingsCard title="Setup & health" summary="s1">
@@ -28,10 +28,10 @@ describe('SettingsCardsGroup — grid drills into one L2 detail', () => {
     expect(screen.queryByText('Data & privacy')).toBeNull()
     expect(screen.getByText('All settings')).toBeTruthy()
 
-    // Click the open header again → back to the grid.
+    // Click the open header again → back to the grid (body exit-animates out).
     fireEvent.click(screen.getByText('Setup & health'))
     expect(screen.getByText('Data & privacy')).toBeTruthy()
-    expect(screen.queryByText('SETUP_BODY')).toBeNull()
+    await waitFor(() => expect(screen.queryByText('SETUP_BODY')).toBeNull())
   })
 
   it('without a group, each card keeps independent local open state', () => {

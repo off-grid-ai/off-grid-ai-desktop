@@ -1,5 +1,5 @@
 import { createContext, useContext, useState } from 'react'
-import { motion } from 'motion/react'
+import { motion, AnimatePresence } from 'motion/react'
 import { LockKey, CaretDown, CaretLeft, Clock } from '@phosphor-icons/react'
 import { cn } from '@renderer/lib/utils'
 
@@ -60,13 +60,19 @@ export function SettingsCard({
   }
   return (
     <motion.div
+      layout
       className={cn(
         'overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-sm',
         open && group && 'col-span-full' // take over the grid width as the L2 detail
       )}
       initial={{ opacity: 0, filter: 'blur(10px)' }}
       animate={{ opacity: 1, filter: 'blur(0px)' }}
-      transition={{ duration: 0.6, delay }}
+      transition={{
+        duration: 0.6,
+        delay,
+        // The expand-into-detail / collapse-back morph — spring so it feels physical.
+        layout: { type: 'spring', stiffness: 420, damping: 36 }
+      }}
     >
       <button
         type="button"
@@ -90,7 +96,20 @@ export function SettingsCard({
           )}
         />
       </button>
-      {open && <div className="px-6 pb-6">{children}</div>}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="overflow-hidden"
+          >
+            <div className="px-6 pb-6">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }

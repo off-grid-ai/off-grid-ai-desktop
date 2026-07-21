@@ -370,7 +370,7 @@ export function Settings() {
           </SettingsCardsGroup>
 
           {/* Version footer — so you always know which build you're on. */}
-          <div className="flex items-center justify-center gap-2 pt-2 text-xs text-neutral-600">
+          <div className="col-span-full flex items-center justify-center gap-2 pt-2 text-xs text-neutral-600">
             <span className="font-medium text-neutral-500">Off Grid AI</span>
             {appVersion && <span>v{appVersion}</span>}
           </div>
