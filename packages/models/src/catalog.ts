@@ -128,9 +128,9 @@ export const CATALOG: ModelEntry[] = [
   {
     id: 'unsloth/gemma-4-E2B-it-GGUF',
     name: 'Gemma 4 E2B',
-    kind: 'text',
+    kind: 'vision',
     org: 'google',
-    description: 'Google’s small efficient model — fast, capable',
+    description: 'Google’s small efficient model — fast, capable, reads images',
     params: 2,
     minRamGb: 5,
     quant: 'Q4_K_M',
@@ -141,6 +141,12 @@ export const CATALOG: ModelEntry[] = [
         url: resolve('unsloth/gemma-4-E2B-it-GGUF', 'gemma-4-E2B-it-Q4_K_M.gguf'),
         sizeBytes: 3110000000,
         role: 'primary'
+      },
+      {
+        name: 'mmproj-gemma-4-E2B-it-F16.gguf',
+        url: resolve('unsloth/gemma-4-E2B-it-GGUF', 'mmproj-F16.gguf'),
+        sizeBytes: 985654080,
+        role: 'mmproj'
       }
     ]
   },
