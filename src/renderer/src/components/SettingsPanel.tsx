@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { persistToggle } from '@renderer/lib/persist-toggle'
+import { useEscapeToClose } from '@renderer/lib/use-escape-to-close'
 import { DEFAULT_CTX_SIZE } from '@offgrid/core/shared/llm-defaults'
 
 // Right-side Settings panel (same pattern as SkillsPanel/ArtifactCanvas).
@@ -74,6 +75,7 @@ function Row({
 }
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
+  useEscapeToClose(onClose)
   const [tab, setTab] = useState<Tab>('model')
   const [s, setS] = useState<LlmSettings>({})
   const [voices, setVoices] = useState<string[]>([])
@@ -164,8 +166,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed right-0 top-0 bottom-0 z-50 flex w-[30vw] min-w-[420px] flex-col border-l border-neutral-800 bg-neutral-950 font-mono shadow-2xl">
-      <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-2.5">
+    <>
+      {/* Click-outside scrim: any click off the panel closes it (paired with Escape). */}
+      <div
+        className="fixed inset-0 z-40 bg-black/30 transition-opacity duration-150"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="fixed right-0 top-0 bottom-0 z-50 flex w-[30vw] min-w-[420px] flex-col border-l border-neutral-800 bg-neutral-950 font-mono shadow-2xl">
+        <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-2.5">
         <div className="flex items-center gap-2 text-sm text-neutral-200">
           <span className="rounded-sm bg-neutral-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-green-500">
             Settings
@@ -553,6 +562,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </>
         )}
       </div>
-    </div>
+      </div>
+    </>
   )
 }
