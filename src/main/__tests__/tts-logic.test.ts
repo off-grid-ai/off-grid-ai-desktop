@@ -4,63 +4,12 @@
  * No child_process/electron — pure import-and-assert.
  */
 import { describe, it, expect } from 'vitest'
-import {
-  chooseVoice,
-  isTeardownNoise,
-  parseServeLine,
-  toSpeakableText,
-  DEFAULT_VOICE
-} from '../tts-logic'
+import { chooseVoice, isTeardownNoise, parseServeLine, DEFAULT_VOICE } from '../tts-logic'
 
-describe('toSpeakableText - rendered markdown to local speech', () => {
-  it('keeps human-readable content without pronouncing markdown syntax or link destinations', () => {
-    expect(
-      toSpeakableText(
-        [
-          '# **Release notes**',
-          '',
-          '- Open the [local guide](https://example.invalid/private?q=1).',
-          '- Run `npm test` and ~~skip~~ keep the result.',
-          '',
-          '```ts',
-          'const ready = true',
-          '```'
-        ].join('\n')
-      )
-    ).toBe(
-      [
-        'Release notes',
-        '',
-        'Open the local guide.',
-        'Run npm test and skip keep the result.',
-        '',
-        'const ready = true'
-      ].join('\n')
-    )
-  })
-
-  it('returns empty for formatting-only input', () => {
-    expect(toSpeakableText('***\n` `')).toBe('')
-  })
-
-  it('preserves literal multiplication and identifier underscores', () => {
-    expect(toSpeakableText('The result is 2 * 3 and the key is release_candidate.')).toBe(
-      'The result is 2 * 3 and the key is release_candidate.'
-    )
-  })
-
-  it('strips emphasis attached to punctuation (em dash, quotes, brackets), not just spaces', () => {
-    // Reasoning-model prose attaches emphasis to em dashes constantly; the old
-    // boundary only allowed a space/paren before the delimiter, so `—*x*` was read
-    // aloud with literal asterisks.
-    expect(toSpeakableText('asking—*are you really here*, or just... *on screen*.')).toBe(
-      'asking—are you really here, or just... on screen.'
-    )
-    expect(toSpeakableText('(*paren*) and end—*dash*.')).toBe('(paren) and end—dash.')
-    // No stray asterisk survives for the engine to pronounce.
-    expect(toSpeakableText('He said—*really*?')).not.toMatch(/\*/)
-  })
-})
+// Note: markdown -> speakable text moved to the renderer (src/renderer/.../speakable.ts),
+// which parses with the chat UI's real markdown AST. Its tests live beside it. This
+// service no longer parses markdown (SRP: it synthesizes plain text), so there is no
+// toSpeakableText here to test.
 
 describe('chooseVoice — explicit > valid stored selection > default', () => {
   it("caller's explicit voice always wins", () => {

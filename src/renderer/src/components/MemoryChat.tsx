@@ -144,6 +144,17 @@ const ASK_FENCE = /```ask\s*\n[\s\S]*?```/i
 // Artifact code (html/svg/mermaid/react/image) is rendered on the side canvas, not
 // dumped inline — strip the fenced block from the chat bubble and show a card instead.
 const ARTIFACT_FENCE = /```(?:html|svg|mermaid|jsx|tsx|react|image)\s*\n[\s\S]*?```/gi
+const CITATION = /\[S(\d+)\]/g
+
+/** Turn a raw message into clean, speakable/readable text: drop app-only fenced blocks
+ *  and citation markers, then strip markdown via the shared parser. The single entry
+ *  point for EVERY message->speech/transcript path (Speak button + voice-mode bubble)
+ *  so none can leak raw markdown to the engine or the transcript. */
+function messageToSpeakable(raw: string): string {
+  return toSpeakableText(
+    (raw || '').replace(ASK_FENCE, '').replace(ARTIFACT_FENCE, '').replace(CITATION, '').trim()
+  )
+}
 
 // Human label for a live retrieval/activity step shown while the model works.
 function activityLabel(a?: {
@@ -1855,7 +1866,7 @@ export function MemoryChat({
       setSpeakError(null)
       setSpeakLoadingId(id) // generating on-device — show a loading state
       try {
-        const { dataUrl } = await window.api.speak(toSpeakableText(text))
+        const { dataUrl } = await window.api.speak(messageToSpeakable(text))
         if (!voiceMountedRef.current || speechRequestRef.current !== request) return
         if (!dataUrl) throw new Error('empty dataUrl')
         const audio = new Audio(dataUrl)
@@ -2654,7 +2665,7 @@ export function MemoryChat({
                             <VoiceBubble
                               messageId={message.id}
                               isUser
-                              transcript={message.content}
+                              transcript={messageToSpeakable(message.content)}
                               audioUrl={message.audioUrl}
                               durationSeconds={message.audioDuration}
                               synthesize={(t) => window.api.speak(t)}
@@ -2681,15 +2692,11 @@ export function MemoryChat({
                             </div>
                           )
                         }
-                        const transcript = (
+                        const transcript = messageToSpeakable(
                           message.variants && message.variantIndex != null
                             ? message.variants[message.variantIndex]!
                             : message.content
                         )
-                          .replace(ASK_FENCE, '')
-                          .replace(ARTIFACT_FENCE, '')
-                          .replace(/\[S(\d+)\]/g, '')
-                          .trim()
                         return (
                           <VoiceBubble
                             messageId={message.id}

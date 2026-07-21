@@ -20,8 +20,7 @@ import {
   DEFAULT_VOICE,
   chooseVoice,
   isTeardownNoise,
-  parseServeLine,
-  toSpeakableText
+  parseServeLine
 } from './tts-logic'
 import { writeDiagnosticLog } from './diagnostics-log'
 
@@ -262,7 +261,9 @@ export async function synthesize(text: string, voice?: string): Promise<{ dataUr
   // model in the UI can never feed the engine an invalid voice.
   const sel = getActiveModal('speech')
   voice = chooseVoice(voice, sel)
-  const t = toSpeakableText(text)
+  // Markdown -> speakable text is owned by the renderer (src/renderer/.../speakable.ts,
+  // which reuses the chat UI's markdown AST). This service synthesizes PLAIN text only.
+  const t = (text || '').trim()
   if (!t) throw new Error('Nothing to speak.')
   if (busy) throw new Error('Already generating speech — please wait.')
   busy = true
