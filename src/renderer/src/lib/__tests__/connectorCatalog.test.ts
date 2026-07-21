@@ -88,6 +88,20 @@ describe('CONNECTOR_CATALOG', () => {
       expect(c.url, `${id} points at a Google endpoint`).toContain('googleapis.com')
     }
   })
+
+  // The Google connectors are bring-your-own: nothing is bundled, so they carry
+  // oauthClient:'byo', which is what makes the core screen render the registered
+  // credential-setup slot (pro's GoogleClientSetup form) inside the card.
+  it('Gmail and Google Calendar require a bring-your-own OAuth client', () => {
+    for (const id of ['gmail', 'google-calendar']) {
+      expect(CONNECTOR_CATALOG.find((e) => e.id === id)!.oauthClient).toBe('byo')
+    }
+  })
+
+  it('no other connector claims BYO OAuth (only the Google pair, for now)', () => {
+    const byo = CONNECTOR_CATALOG.filter((e) => e.oauthClient === 'byo').map((e) => e.id)
+    expect(byo.sort()).toEqual(['gmail', 'google-calendar'])
+  })
 })
 
 describe('CONNECTOR_SETUP_HINTS — catalog data, out of the view', () => {

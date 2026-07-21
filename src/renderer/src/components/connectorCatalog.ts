@@ -42,6 +42,9 @@ export interface CatalogEntry {
   secrets?: CatalogSecret[]
   docsUrl?: string
   ready: boolean
+  /** 'byo' = the user must supply their OWN OAuth client (client_id/secret) before
+   *  connecting — nothing is bundled. A registered setup slot renders the form. */
+  oauthClient?: 'byo'
 }
 
 export const CATEGORY_ORDER: CatalogCategory[] = [
@@ -68,6 +71,7 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     transport: 'http',
     url: 'https://gmailmcp.googleapis.com/mcp/v1',
     auth: 'oauth',
+    oauthClient: 'byo',
     docsUrl: 'https://developers.google.com/workspace/guides/configure-mcp-servers',
     ready: true
   },
@@ -81,6 +85,7 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     transport: 'http',
     url: 'https://calendarmcp.googleapis.com/mcp/v1',
     auth: 'oauth',
+    oauthClient: 'byo',
     docsUrl: 'https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server',
     ready: true
   },

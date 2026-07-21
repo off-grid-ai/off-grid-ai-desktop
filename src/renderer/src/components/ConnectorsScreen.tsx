@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, type ReactElement } from 'react'
 import {
   IconLoader2,
   IconPlug,
@@ -18,9 +18,18 @@ import {
   type CatalogEntry
 } from './connectorCatalog'
 import slackLogo from '@/assets/logos/slack.svg'
+import { getSlot, SLOTS } from '@/bootstrap/slotRegistry'
 
 // Brands Simple Icons dropped (trademark) → bundled local logos, keyed by catalog id.
 const LOGO_OVERRIDE: Record<string, string> = { slack: slackLogo }
+
+// BYO-OAuth setup form (e.g. Google client_id/secret) injected by pro. In the
+// free build the slot is empty and this renders nothing.
+function ConnectorSetup({ entry }: { entry: CatalogEntry }): ReactElement | null {
+  const Slot = getSlot(SLOTS.connectorSetup)
+  if (entry.oauthClient !== 'byo' || !Slot) return null
+  return <Slot entry={entry} />
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const api = (window as any).api
@@ -595,6 +604,7 @@ export function ConnectorsScreen() {
                                 <p className="truncate text-[11px] text-neutral-500">{e.blurb}</p>
                               </div>
                             </div>
+                            {e.ready && <ConnectorSetup entry={e} />}
                             {!e.ready ? (
                               <div className="rounded-md border border-neutral-800 py-1.5 text-center text-xs text-neutral-600">
                                 Not enabled yet

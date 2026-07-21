@@ -23,5 +23,8 @@ export const SLOTS = {
   /** Extra row(s) in the chat composer tool menu (e.g. the Connectors toggle). */
   composerToolMenu: 'composer.toolMenu',
   /** Always-mounted root component(s) near the app root (e.g. capture indicator). */
-  appRoot: 'app.root'
+  appRoot: 'app.root',
+  /** Per-connector credential setup UI for `oauthClient: 'byo'` entries (e.g. the
+   *  Google client_id/secret form). Receives the catalog entry as a prop. */
+  connectorSetup: 'connectors.setup'
 } as const
