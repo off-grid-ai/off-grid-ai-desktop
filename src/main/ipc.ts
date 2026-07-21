@@ -1488,6 +1488,9 @@ export function setupIPC() {
   // the headless gateway HTTP admin endpoints). These IPC handlers are thin
   // wrappers; the download one adds a renderer progress broadcast.
   ipcMain.handle('models:catalog', () => import('./models-manager').then((m) => m.getCatalog()))
+  ipcMain.handle('models:vision-status', () =>
+    import('./models-manager').then((m) => m.getVisionStatuses())
+  )
   ipcMain.handle('models:installed', () =>
     import('./models-manager').then((m) => m.listInstalled())
   )

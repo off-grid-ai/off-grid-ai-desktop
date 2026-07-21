@@ -208,6 +208,15 @@ export function ModelsScreen(): React.JSX.Element {
   const [kinds, setKinds] = useState<string[]>([])
   const [models, setModels] = useState<ModelEntry[]>([])
   const [installed, setInstalled] = useState<string[]>([])
+  // Per-model vision readiness from the backend (derived from files + disk): which
+  // vision-capable models have their projector downloaded. Drives the "add vision
+  // support" affordance for a model installed before it gained a projector.
+  const [visionSt, setVisionSt] = useState<
+    Record<string, { supportsVision: boolean; projectorInstalled: boolean }>
+  >({})
+  const refreshVision = (): void => {
+    void api.getModelVisionStatus?.().then((s) => setVisionSt(s ?? {}))
+  }
   const [activeKind, setActiveKind] = useState<string>('text')
   const [progress, setProgress] = useState<Record<string, { percent: number; status?: string }>>({})
   // Active model ids across ALL modalities (chat + image/voice/transcription) —
@@ -299,6 +308,7 @@ export function ModelsScreen(): React.JSX.Element {
       if (c.kinds[0]) setActiveKind(c.kinds[0])
     })
     api.getInstalledModels?.().then(setInstalled)
+    refreshVision()
     refreshActive()
     const off = api.onModelProgress?.(
       (d: { modelId: string; percent?: number; status?: string }) => {
@@ -310,7 +320,16 @@ export function ModelsScreen(): React.JSX.Element {
           ...p,
           [d.modelId]: { percent: d.percent ?? p[d.modelId]?.percent ?? 0, status: d.status }
         }))
-        if (d.status === 'completed') api.getInstalledModels?.().then(setInstalled)
+        if (d.status === 'completed') {
+          api.getInstalledModels?.().then(setInstalled)
+          refreshVision()
+          // If this download just added the projector for the ACTIVE chat model, reload
+          // it so it can actually see — without this the model stays text-only until a
+          // manual re-activate. Skip the fit-check wrapper (it's already loaded).
+          void api.getActiveModelIds?.().then((ids) => {
+            if (ids?.includes(d.modelId)) void api.activateModel?.(d.modelId).then(refreshActive)
+          })
+        }
       }
     )
     return off
@@ -453,6 +472,11 @@ export function ModelsScreen(): React.JSX.Element {
     const active = isActive(m.id)
     const prog = progress[m.id]
     const downloading = prog && prog.status !== 'completed' && prog.status !== 'failed'
+    // Installed, vision-capable, but the projector isn't on disk (e.g. downloaded before
+    // the model gained vision) → offer to fetch just the projector. downloadModel skips
+    // files already present, so this pulls only the mmproj.
+    const vs = visionSt[m.id]
+    const projectorMissing = isInstalled && !!vs?.supportsVision && !vs.projectorInstalled
     const bytes = totalBytes(m)
     const size = bytes > 0 ? `${(bytes / 1e9).toFixed(1)}GB` : null
     const meta = [m.org, m.params ? `${m.params}B` : null, size, fmtReleaseDate(m.releaseDate)]
@@ -607,6 +631,18 @@ export function ModelsScreen(): React.JSX.Element {
             </button>
           )}
         </div>
+
+        {/* Vision-capable but projector not downloaded — offer to add it. Hidden while a
+            download is in flight (the progress UI covers that). */}
+        {projectorMissing && !downloading && (
+          <button
+            onClick={() => download(m.id)}
+            title="Download the vision projector so this model can read images"
+            className="flex items-center gap-1 rounded border border-amber-400/50 px-2 py-1 text-[10px] text-amber-300 transition-all duration-150 hover:border-amber-400 hover:bg-amber-400/10 active:scale-95"
+          >
+            <IconEye className="h-3 w-3" /> Add vision support
+          </button>
+        )}
 
         {/* Download progress */}
         {downloading && (

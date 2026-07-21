@@ -304,6 +304,7 @@ const offGridApi = {
   // Off Grid model catalog (text, vision, image, voice, transcription)
   getModelCatalog: () => ipcRenderer.invoke('models:catalog'),
   getInstalledModels: () => ipcRenderer.invoke('models:installed'),
+  getModelVisionStatus: () => ipcRenderer.invoke('models:vision-status'),
   searchModels: (query: string, kind?: string) => ipcRenderer.invoke('models:search', query, kind),
   downloadModel: (modelId: string) => ipcRenderer.invoke('models:download', modelId),
   cancelModelDownload: (modelId: string) => ipcRenderer.invoke('models:cancel-download', modelId),

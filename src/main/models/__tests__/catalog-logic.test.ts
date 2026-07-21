@@ -19,6 +19,8 @@ import {
   isModalKind,
   modalSelectionMatches,
   isChatLoadable,
+  projectorFileName,
+  visionStatus,
   type CatalogEntry,
   type LocalModelLike,
   type DownloadedModelLike
@@ -437,5 +439,39 @@ describe('dispatch predicates', () => {
     expect(isChatLoadable('image')).toBe(false)
     expect(isChatLoadable('voice')).toBe(false)
     expect(isChatLoadable('transcription')).toBe(false)
+  })
+
+  describe('vision status (derived capability + projector readiness)', () => {
+    const primary = { name: 'w.gguf', role: 'primary' }
+    const proj = { name: 'mmproj.gguf', role: 'mmproj' }
+
+    it('projectorFileName returns the mmproj file name, else undefined', () => {
+      expect(projectorFileName({ files: [primary, proj] })).toBe('mmproj.gguf')
+      expect(projectorFileName({ files: [primary] })).toBeUndefined()
+    })
+
+    it('a text-only model neither supports vision nor has a projector', () => {
+      expect(visionStatus({ files: [primary] }, () => true)).toEqual({
+        supportsVision: false,
+        projectorInstalled: false
+      })
+    })
+
+    it('a vision model with its projector on disk is ready', () => {
+      const present = (n: string): boolean => n === 'mmproj.gguf'
+      expect(visionStatus({ files: [primary, proj] }, present)).toEqual({
+        supportsVision: true,
+        projectorInstalled: true
+      })
+    })
+
+    it('a vision model whose projector is MISSING supports vision but is not ready', () => {
+      // The exact "download vision support" case: installed model, can see, projector
+      // not yet fetched.
+      expect(visionStatus({ files: [primary, proj] }, () => false)).toEqual({
+        supportsVision: true,
+        projectorInstalled: false
+      })
+    })
   })
 })

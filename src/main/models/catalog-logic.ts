@@ -137,6 +137,28 @@ export function primaryFileName(entry: Pick<CatalogEntry, 'files'>): string | un
   return (entry.files.find((f) => f.role === 'primary') ?? entry.files[0])?.name
 }
 
+/** The vision-projector (mmproj) filename for an entry, if it ships one. */
+export function projectorFileName(entry: Pick<CatalogEntry, 'files'>): string | undefined {
+  return entry.files.find((f) => f.role === 'mmproj')?.name
+}
+
+export interface VisionStatus {
+  /** The model ships a vision projector — it CAN read images (once the projector is
+   *  present). Derived from files, never a hand-typed flag. */
+  supportsVision: boolean
+  /** The projector file is present on disk. A vision model with this false is the
+   *  "installed but can't see yet — offer to download the projector" case. */
+  projectorInstalled: boolean
+}
+
+/** Per-model vision capability + readiness, derived from files (does it ship a
+ *  projector?) and disk presence (is that projector downloaded?). Pure: presence comes
+ *  from the injected predicate, so it unit-tests with no fs. */
+export function visionStatus(entry: Pick<CatalogEntry, 'files'>, present: FilePresent): VisionStatus {
+  const projector = projectorFileName(entry)
+  return { supportsVision: !!projector, projectorInstalled: !!projector && present(projector) }
+}
+
 /** Build the per-installed-model disk entry (id, name, kind, bytes, active) for one
  *  id, resolving the source (imported local / free-form HF download / catalog) the
  *  same way getStorageInfo does. Pure: sizes come from the injected `sizeOf`.

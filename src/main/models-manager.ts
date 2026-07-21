@@ -33,7 +33,9 @@ import {
   modalityForModel,
   modalSelectionMatches,
   isChatLoadable,
-  type CatalogEntry
+  visionStatus,
+  type CatalogEntry,
+  type VisionStatus
 } from './models/catalog-logic'
 import { writeDiagnosticLog } from './diagnostics-log'
 
@@ -83,6 +85,32 @@ export async function getCatalog(): Promise<{ kinds: readonly string[]; models: 
     present
   })
   return { kinds: MODEL_KINDS, models }
+}
+
+/** Per-model vision status for every vision-CAPABLE model, keyed by id. supportsVision
+ *  is derived from files (a projector), projectorInstalled from disk. The renderer uses
+ *  this to offer "download vision support" for an installed vision model whose projector
+ *  isn't present yet (the Gemma 4 E2B case, where the entry gained a projector after the
+ *  user had already downloaded the weights). */
+export async function getVisionStatuses(): Promise<Record<string, VisionStatus>> {
+  const { CATALOG } = await import('@offgrid/models')
+  const dir = llm.getModelsDir()
+  const present = (name: string): boolean => fileSizeOf(dir, name) > 0
+  const merged = mergeCatalog({
+    locals: getLocalModels(),
+    downloaded: readDownloaded(dir),
+    installedDownloadedIds: installedDownloadedIds(dir),
+    catalog: CATALOG as unknown as CatalogEntry[],
+    present
+  }) as CatalogEntry[]
+  const out: Record<string, VisionStatus> = {}
+  for (const m of merged) {
+    const st = visionStatus(m, present)
+    if (st.supportsVision) {
+      out[m.id] = st
+    }
+  }
+  return out
 }
 
 /** Catalog ids (plus imported local ids) whose files are fully present on disk. */
