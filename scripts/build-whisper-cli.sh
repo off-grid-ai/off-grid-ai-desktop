@@ -69,6 +69,28 @@ cp "$BIN" "$DEST/"
 # cp follows them into real files so signed app bundles never depend on symlinks.
 find build \( -name 'libwhisper*.dylib' -o -name 'libggml*.dylib' \) -exec cp -f {} "$DEST/" \;
 chmod +x "$DEST/whisper-cli"
+
+# The staged dylibs sit NEXT TO whisper-cli, but a cmake build only records the
+# build-tree rpaths (temp dirs that don't exist on a user's Mac), so dyld fails
+# "Library not loaded: @rpath/libwhisper.1.dylib" even though it's right there. Add
+# @loader_path so @rpath/<name> resolves the staged sibling, and strip every foreign
+# (absolute) rpath so nothing leaks the build machine or dangles.
+install_name_tool -add_rpath @loader_path "$DEST/whisper-cli" 2>/dev/null || true
+while IFS= read -r rp; do
+  case "$rp" in
+  @loader_path | @executable_path) : ;;
+  *) install_name_tool -delete_rpath "$rp" "$DEST/whisper-cli" 2>/dev/null || true ;;
+  esac
+done < <(otool -l "$DEST/whisper-cli" | awk '/LC_RPATH/{getline;getline;print $2}')
+
+# Gate: without a @loader_path/@executable_path rpath the staged dylibs are unreachable
+# (this is the voice-note "nothing happened" bug — transcription failed on dyld load).
+if ! otool -l "$DEST/whisper-cli" | awk '/LC_RPATH/{getline;getline;print $2}' |
+  grep -qE '^@(loader|executable)_path'; then
+  echo "[build-whisper-cli] FATAL: whisper-cli has no @loader_path rpath - cannot load its staged dylibs"
+  exit 1
+fi
+
 echo "[build-whisper-cli] staged into $DEST:"
 ls -1 "$DEST"
 
