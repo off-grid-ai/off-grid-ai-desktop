@@ -133,9 +133,11 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
         // finishWriting(), so a SIGKILL (app force-quit mid-recording) leaves an unreadable
         // file and the whole recording is lost. A movie-fragment interval makes AVFoundation
         // write the header up front + flush periodic fragments (moof/mdat), so a killed file
-        // stays playable up to the last flushed fragment. We lose at most ~2s of tail, never
-        // the whole session — and startup recovery (recoverOrphanedMeetings) can then mux it.
-        w.movieFragmentInterval = CMTime(value: 2, timescale: 1)
+        // stays playable up to the last flushed fragment. At a 1s interval the on-disk file is
+        // effectively real-time: a hard kill loses at most ~1s of tail, never the session —
+        // and startup recovery (recoverOrphanedMeetings) can then mux it. A graceful quit
+        // finalizes fully via stopProServices -> requestStop.
+        w.movieFragmentInterval = CMTime(value: 1, timescale: 1)
         w.shouldOptimizeForNetworkUse = true
         let vSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
