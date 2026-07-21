@@ -17,8 +17,10 @@ import path from 'path'
 
 const UPDATER = path.resolve(process.cwd(), 'src/main/updater.ts')
 const PRELOAD = path.resolve(process.cwd(), 'src/preload/index.ts')
+const INDEX = path.resolve(process.cwd(), 'src/main/index.ts')
 const updaterSrc = fs.readFileSync(UPDATER, 'utf-8')
 const preloadSrc = fs.readFileSync(PRELOAD, 'utf-8')
+const indexSrc = fs.readFileSync(INDEX, 'utf-8')
 
 describe('auto-update: explicit install path', () => {
   it('registers an update:install IPC handler', () => {
@@ -78,6 +80,20 @@ describe('software-update settings flow: manual check + auto toggle', () => {
     // app.isPackaged so the manual check surfaces the real reason (not a timeout).
     expect(updaterSrc).toMatch(/if\s*\(\s*!app\.isPackaged\s*\)/)
     expect(updaterSrc).toMatch(/Updates only work in the installed app/)
+  })
+
+  it('registers the update IPC in EVERY build, engine only in production', () => {
+    // Regression: the whole updater was set up behind `if (!is.dev)`, so a dev run had
+    // no handler and the renderer's startup query threw "No handler registered for
+    // 'update:staged-version'". The read-safe IPC surface must register unconditionally;
+    // only the auto-download engine (feed + polling) is production-only.
+    expect(updaterSrc).toMatch(/export function registerUpdateIpc\(\)/)
+    // staged-version handler lives in the always-registered surface, not the engine.
+    const ipcFn = updaterSrc.slice(updaterSrc.indexOf('export function registerUpdateIpc'))
+    expect(ipcFn).toMatch(/ipcMain\.handle\(\s*['"]update:staged-version['"]/)
+    // index calls registerUpdateIpc unconditionally, and guards ONLY startAutoUpdates.
+    expect(indexSrc).toMatch(/m\.registerUpdateIpc\(\)/)
+    expect(indexSrc).toMatch(/if\s*\(\s*!is\.dev\s*\)\s*m\.startAutoUpdates\(\)/)
   })
 
   it('preload bridges the check + prefs controls', () => {

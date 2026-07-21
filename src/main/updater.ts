@@ -44,10 +44,14 @@ function applyChannel(): void {
   autoUpdater.allowDowngrade = true
 }
 
-export function startAutoUpdates(): void {
-  applyAutoPref()
-  applyChannel()
-
+// Register the update IPC surface. Split OUT of startAutoUpdates so it can run in
+// EVERY build, including dev: the renderer queries update:staged-version on startup
+// regardless of environment, and gating registration behind !is.dev left it with no
+// handler ("No handler registered for 'update:staged-version'"). Every handler here is
+// safe in dev — reads return the running version / null, and checkForUpdates() itself
+// short-circuits on !app.isPackaged. The auto-download ENGINE (feed, listeners,
+// background cadence) stays in startAutoUpdates and remains production-only.
+export function registerUpdateIpc(): void {
   // Apply a staged update on demand. autoInstallOnAppQuit only swaps the bundle
   // on a GRACEFUL quit — a force-kill (Activity Monitor, kill -9, killall) skips
   // it, so a fully-downloaded update can sit unapplied forever. quitAndInstall
@@ -95,6 +99,11 @@ export function startAutoUpdates(): void {
   // If an update exists and auto-download is OFF, we still fetch it so the user's
   // "Restart to update" banner can install it (the explicit-check implies intent).
   ipcMain.handle('update:check', () => checkForUpdates())
+}
+
+export function startAutoUpdates(): void {
+  applyAutoPref()
+  applyChannel()
 
   autoUpdater.on('error', (e) => console.error('[update] error', e))
   autoUpdater.on('checking-for-update', () => console.log('[update] checking…'))
