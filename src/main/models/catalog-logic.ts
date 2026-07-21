@@ -159,6 +159,23 @@ export function visionStatus(entry: Pick<CatalogEntry, 'files'>, present: FilePr
   return { supportsVision: !!projector, projectorInstalled: !!projector && present(projector) }
 }
 
+/** The projector filename to heal a stale active-model config with, or undefined for
+ *  "leave it alone". A config that already records a projector, or has none in its
+ *  catalog entry, or whose projector isn't on disk yet, is left untouched — only the
+ *  stale case (null projector + a catalog projector now present) returns a name to
+ *  write. Pure decision behind reconcileActiveModelProjector. */
+export function projectorToHeal(
+  cfg: { id?: string; mmproj?: string | null } | null,
+  entry: Pick<CatalogEntry, 'files'> | undefined,
+  present: FilePresent
+): string | undefined {
+  if (!cfg?.id || cfg.mmproj) {
+    return undefined
+  }
+  const projector = entry ? projectorFileName(entry) : undefined
+  return projector && present(projector) ? projector : undefined
+}
+
 /** Build the per-installed-model disk entry (id, name, kind, bytes, active) for one
  *  id, resolving the source (imported local / free-form HF download / catalog) the
  *  same way getStorageInfo does. Pure: sizes come from the injected `sizeOf`.

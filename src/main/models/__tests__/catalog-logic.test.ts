@@ -21,6 +21,7 @@ import {
   isChatLoadable,
   projectorFileName,
   visionStatus,
+  projectorToHeal,
   type CatalogEntry,
   type LocalModelLike,
   type DownloadedModelLike
@@ -472,6 +473,33 @@ describe('dispatch predicates', () => {
         supportsVision: true,
         projectorInstalled: false
       })
+    })
+  })
+
+  describe('projectorToHeal (stale active-model.json recovery)', () => {
+    const primary = { name: 'w.gguf', role: 'primary' }
+    const proj = { name: 'mmproj.gguf', role: 'mmproj' }
+    const entry = { files: [primary, proj] }
+    const onDisk = (n: string): boolean => n === 'mmproj.gguf'
+
+    it('heals a null-projector config once the projector is on disk', () => {
+      // Gemma 4 E2B: activated with mmproj:null before the catalog had a projector;
+      // once downloaded, hasVision must flip on without a manual re-activate.
+      expect(projectorToHeal({ id: 'e2b', mmproj: null }, entry, onDisk)).toBe('mmproj.gguf')
+    })
+
+    it('leaves a config that already records a projector', () => {
+      expect(projectorToHeal({ id: 'e2b', mmproj: 'mmproj.gguf' }, entry, onDisk)).toBeUndefined()
+    })
+
+    it('does nothing until the projector is actually downloaded', () => {
+      expect(projectorToHeal({ id: 'e2b', mmproj: null }, entry, () => false)).toBeUndefined()
+    })
+
+    it('does nothing for a text-only model or when there is no active model', () => {
+      expect(projectorToHeal({ id: 't', mmproj: null }, { files: [primary] }, onDisk)).toBeUndefined()
+      expect(projectorToHeal(null, entry, onDisk)).toBeUndefined()
+      expect(projectorToHeal({ mmproj: null }, entry, onDisk)).toBeUndefined()
     })
   })
 })

@@ -34,6 +34,7 @@ import {
   modalSelectionMatches,
   isChatLoadable,
   visionStatus,
+  projectorToHeal,
   type CatalogEntry,
   type VisionStatus
 } from './models/catalog-logic'
@@ -312,6 +313,9 @@ export async function downloadModel(
             files: entry.files.map((f) => f.name)
           })
         }
+        // If this download added the projector for the active chat model, turn its
+        // vision on now (main-side, so it works even when no Models screen is open).
+        await reconcileActiveModelProjector().catch(() => false)
         send({ percent: 100, status: 'completed' })
         return { success: true }
       } catch (err) {
@@ -460,6 +464,33 @@ export function getActiveModel(): string | null {
   } catch {
     return null
   }
+}
+
+/** Heal a stale active-model.json that predates its model gaining a vision projector.
+ *  A model activated BEFORE its catalog entry had an mmproj (e.g. Gemma 4 E2B) stored
+ *  `mmproj: null`; once the projector is downloaded, hasVision() still reads that null
+ *  and the model stays text-only forever. This re-derives the projector from the
+ *  catalog and, if the file is now present on disk, writes it into active-model.json and
+ *  reloads — so vision turns on without a manual re-activate. Runs at startup and after
+ *  every download completes, independent of which screen (if any) is open. Returns true
+ *  when it healed something. */
+export async function reconcileActiveModelProjector(): Promise<boolean> {
+  let cfg: { id?: string; primary?: string; mmproj?: string | null } | null = null
+  try {
+    cfg = JSON.parse(fs.readFileSync(activeModelFile(), 'utf-8'))
+  } catch {
+    return false // no active selection yet
+  }
+  const { CATALOG } = await import('@offgrid/models')
+  const dir = llm.getModelsDir()
+  const entry = (CATALOG as unknown as CatalogEntry[]).find((m) => m.id === cfg!.id)
+  const projector = projectorToHeal(cfg, entry, (name) => fileSizeOf(dir, name) > 0)
+  if (!projector) {
+    return false // already has one / no projector / not downloaded yet — leave as is
+  }
+  fs.writeFileSync(activeModelFile(), JSON.stringify({ ...cfg, mmproj: projector }, null, 2))
+  llm.reloadModel()
+  return true
 }
 
 /**

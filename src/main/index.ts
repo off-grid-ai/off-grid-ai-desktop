@@ -329,6 +329,12 @@ app.whenReady().then(() => {
     setupMcpIpc() // basic MCP connectors (management + chat tool extension)
     startModelServer() // one OpenAI-compatible local gateway on :7878 (LLM + STT)
     startMediaServer() // loopback HTTP for seekable local media (meeting videos)
+    // Heal a stale active-model.json whose model gained a vision projector after it was
+    // activated (e.g. Gemma 4 E2B) — turns vision on at launch if the projector is now
+    // on disk, without waiting for a re-activate.
+    void import('./models-manager')
+      .then((m) => m.reconcileActiveModelProjector())
+      .catch(() => {})
     ipcMain.handle('media:url', (_e, absPath: string) => mediaUrlFor(absPath))
     // (clipboard is now a pro feature — setupClipboard runs in pro's activateMain)
     // Pro features (capture, CRM, meetings, connectors, secretary, proactive,

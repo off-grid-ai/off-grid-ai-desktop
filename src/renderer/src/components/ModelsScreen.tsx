@@ -328,12 +328,10 @@ export function ModelsScreen(): React.JSX.Element {
         if (d.status === 'completed') {
           api.getInstalledModels?.().then(setInstalled)
           refreshVision()
-          // If this download just added the projector for the ACTIVE chat model, reload
-          // it so it can actually see — without this the model stays text-only until a
-          // manual re-activate. Skip the fit-check wrapper (it's already loaded).
-          void api.getActiveModelIds?.().then((ids) => {
-            if (ids?.includes(d.modelId)) void api.activateModel?.(d.modelId).then(refreshActive)
-          })
+          // Adding a projector for the active model turns its vision on in MAIN
+          // (reconcileActiveModelProjector, runs regardless of which screen is open);
+          // just refresh active state so this screen reflects it.
+          refreshActive()
         }
       }
     )
