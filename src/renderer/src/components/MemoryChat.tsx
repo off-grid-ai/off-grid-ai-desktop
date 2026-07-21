@@ -2842,7 +2842,12 @@ export function MemoryChat({
                           message.streaming &&
                           !message.content.trim()
                             ? 'hidden'
-                            : `max-w-[85%] rounded-md px-3.5 py-2.5 text-sm leading-relaxed ${
+                            : `rounded-md px-3.5 py-2.5 text-sm leading-relaxed ${
+                                // While editing, expand to a full, usable width instead
+                                // of hugging the (often short) message — otherwise the
+                                // textarea + buttons are crammed into a narrow bubble.
+                                editingId === message.id ? 'w-full max-w-2xl' : 'max-w-[85%]'
+                              } ${
                                 message.role === 'user'
                                   ? 'bg-neutral-800 text-neutral-100'
                                   : 'border border-neutral-800 bg-neutral-900/40 text-neutral-200'
