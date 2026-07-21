@@ -1210,6 +1210,12 @@ export function setupIPC() {
   ipcMain.handle('runtime:residency:set', (_e, modality: Modality, mode: ResidencyMode) =>
     setResidencyMode(modality, mode)
   )
+  // Unload one modality's model from memory now (the "free RAM" button). Goes through
+  // the same evict() seam as residency/shutdown; the engine reloads on next use.
+  ipcMain.handle('runtime:unload', async (_e, modality: Modality) => {
+    const { unloadRuntime } = await import('./runtime-manager')
+    return unloadRuntime(modality)
+  })
 
   // Fleet console IPC (console:*) is a pro feature — registered by pro's
   // activateMain, not here, so the open build doesn't ship it.

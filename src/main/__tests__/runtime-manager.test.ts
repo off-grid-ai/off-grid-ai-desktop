@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { warmActionForMode, registerRuntime, type ManagedRuntime } from '../runtime-manager'
+import {
+  warmActionForMode,
+  registerRuntime,
+  unloadRuntime,
+  registeredModalities,
+  type ManagedRuntime
+} from '../runtime-manager'
 import { ModalityQueue } from '../modality-queue/queue'
 import type { Modality, ResidencyMode } from '../runtime-residency'
 
@@ -70,5 +76,27 @@ describe('registerRuntime (single mode-aware seam, real queue)', () => {
       })
       expect(log).toEqual(['evict', 'job', modes[modality] === 'resident' ? 'warm' : 'release'])
     }
+  })
+})
+
+describe('unloadRuntime (free one modality now — the Unload button)', () => {
+  it('evicts the registered runtime, returns true, and is idempotent', async () => {
+    const log: string[] = []
+    registerRuntime(recordingRuntime('tts', log), {
+      queue: new ModalityQueue(),
+      readMode: () => 'on-demand'
+    })
+    expect(await unloadRuntime('tts')).toBe(true)
+    expect(log).toEqual(['evict'])
+    // Safe to call again when already down (evict is idempotent).
+    expect(await unloadRuntime('tts')).toBe(true)
+    expect(log).toEqual(['evict', 'evict'])
+    expect(registeredModalities()).toContain('tts')
+  })
+
+  it('returns false when no runtime is registered for that modality', async () => {
+    // A modality with nothing registered (bogus id is deterministic vs the shared
+    // module registry other tests populate).
+    expect(await unloadRuntime('nonexistent' as unknown as Modality)).toBe(false)
   })
 })

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { IconLoader2, IconCheck, IconCpu, IconX } from '@tabler/icons-react'
+import { IconLoader2, IconCheck, IconCpu, IconX, IconPower } from '@tabler/icons-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const api = (window as any).api
@@ -28,6 +28,15 @@ const MODALITIES: {
   { label: 'Transcription', kinds: ['transcription'], mode: 'transcription' }
 ]
 
+// Picker mode -> runtime Modality (the id the unload/residency seam uses). One map,
+// so the composer chip / panel / any future surface all resolve unload the same way.
+const MODE_TO_MODALITY: Record<(typeof MODALITIES)[number]['mode'], string> = {
+  text: 'llm',
+  image: 'image',
+  speech: 'tts',
+  transcription: 'stt'
+}
+
 function primaryFile(m: ModelEntry): string {
   return m.files?.find((f) => f.role === 'primary')?.name ?? m.files?.[0]?.name ?? m.id
 }
@@ -38,6 +47,7 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
   // The active selection per modality: id for text, filename for image/STT.
   const [active, setActive] = useState<Record<string, string | null>>({})
   const [busy, setBusy] = useState<string | null>(null)
+  const [unloading, setUnloading] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const cat = await api.getModelCatalog?.()
@@ -72,6 +82,16 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
     }
   }
 
+  // Unload this modality's model from memory now (frees RAM; reloads on next use).
+  const unload = async (mode: keyof typeof MODE_TO_MODALITY): Promise<void> => {
+    setUnloading(mode)
+    try {
+      await api.unloadRuntime?.(MODE_TO_MODALITY[mode])
+    } finally {
+      setUnloading(null)
+    }
+  }
+
   return (
     <div className="fixed right-0 top-0 bottom-0 z-50 flex w-[30vw] min-w-[420px] flex-col border-l border-neutral-800 bg-neutral-950 font-mono shadow-2xl">
       <div className="flex items-center justify-between border-b border-neutral-900 px-4 py-3">
@@ -90,8 +110,24 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
             mode === 'text' ? cur === m.id : cur === primaryFile(m)
           return (
             <div key={mode}>
-              <div className="mb-1.5 text-[10px] uppercase tracking-wide text-neutral-600">
-                {label}
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-wide text-neutral-600">{label}</span>
+                {cur && (
+                  <button
+                    type="button"
+                    onClick={() => void unload(mode)}
+                    disabled={unloading === mode}
+                    title="Unload from memory now — frees RAM; reloads on next use"
+                    className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-neutral-500 transition-colors hover:text-red-400 disabled:opacity-50"
+                  >
+                    {unloading === mode ? (
+                      <IconLoader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <IconPower className="h-3 w-3" />
+                    )}
+                    Unload
+                  </button>
+                )}
               </div>
               {list.length === 0 ? (
                 <p className="px-2 py-1.5 text-xs text-neutral-600">

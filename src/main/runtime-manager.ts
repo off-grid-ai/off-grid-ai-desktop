@@ -63,6 +63,25 @@ export function registerRuntime(rt: ManagedRuntime, deps: RegisterDeps = {}): vo
   })
 }
 
+/** Free ONE modality's resident memory now — the user-facing "unload" button. Goes
+ *  through the same idempotent evict() every engine already implements (DRY: no
+ *  per-engine unload path), so it works for any modality and is safe if already down.
+ *  The engine lazily reloads on its next use. Returns false if nothing is registered. */
+export async function unloadRuntime(modality: Modality): Promise<boolean> {
+  const rt = registry.get(modality)
+  if (!rt) {
+    return false
+  }
+  await Promise.resolve(rt.evict())
+  return true
+}
+
+/** Modalities that currently have a registered runtime (so the UI can offer Unload
+ *  only where there is something to free). */
+export function registeredModalities(): Modality[] {
+  return [...registry.keys()]
+}
+
 /** Stop every registered runtime through the same abstraction used for residency.
  * Late async registrations are immediately evicted once shutdown has begun. */
 export async function shutdownRuntimes(): Promise<void> {

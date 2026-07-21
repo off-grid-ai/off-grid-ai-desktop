@@ -216,6 +216,8 @@ const offGridApi = {
   residencyGet: () => ipcRenderer.invoke('runtime:residency:get'),
   residencySet: (modality: string, mode: string) =>
     ipcRenderer.invoke('runtime:residency:set', modality, mode),
+  // Unload a modality's model from memory now (free RAM); reloads on next use.
+  unloadRuntime: (modality: string) => ipcRenderer.invoke('runtime:unload', modality),
   // and a manual "check for updates" that resolves with a definite status.
   updateGetPrefs: () => ipcRenderer.invoke('update:get-prefs'),
   updateSetAuto: (on: boolean) => ipcRenderer.invoke('update:set-auto', on),
