@@ -87,8 +87,13 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private let q = DispatchQueue(label: "ai.offgrid.meeting.rec")
     private var micRecorder: AVAudioRecorder?
     private var finished = false
+    private var screenFrames = 0 // diagnostic: how many complete frames we actually wrote
 
     func start() async throws {
+        // DECISIVE for a black recording: ScreenCaptureKit hands back BLACK frames (no
+        // error) when THIS process isn't authorized for screen recording. Since we're a
+        // separate spawned binary, our authorization is independent of the parent app's.
+        errLog("[rec] screen-capture preauthorized=\(CGPreflightScreenCaptureAccess())")
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
 
         // Capture the FULL display the call is on — the product records the SCREEN, and a
@@ -190,6 +195,10 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
             }
             if started, let vIn = videoInput, vIn.isReadyForMoreMediaData {
                 vIn.append(sampleBuffer)
+                screenFrames += 1
+                if screenFrames == 1 || screenFrames % 150 == 0 {
+                    errLog("[rec] wrote \(screenFrames) screen frame(s)")
+                }
             }
         } else if type == .audio {
             // Only write audio once the session has started (video drives the clock).
