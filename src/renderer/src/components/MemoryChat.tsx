@@ -5,6 +5,7 @@ import { waitingLabel } from '@renderer/lib/chat-labels'
 import { timeAgo } from '@renderer/lib/time'
 import { writeClipboardWithFallback } from '@renderer/lib/clipboard-write'
 import { toSpeakableText } from '@renderer/lib/speakable'
+import { isAgenticTurn } from '@renderer/lib/agentic-active'
 import { useActiveModelSummary } from '@renderer/hooks/useActiveModelSummary'
 import { createUiId } from '@renderer/lib/ui-id'
 import ReactMarkdown, { Components } from 'react-markdown'
@@ -1298,7 +1299,10 @@ export function MemoryChat({
     // route is SUPPRESSED when the agentic tools/connectors path owns the turn:
     // there, image generation is a tool the model calls, so the renderer must not
     // pre-decide (that double decision hijacked "draw ..." away from the tool loop).
-    const agenticActive = (toolsOn || connectorsOn) && !projectId
+    // Agentic tools run everywhere the user turns them on — including project chats.
+    // (Projects used to force the RAG-only path, which silently ignored Tools/Connectors
+    // and left the model to hallucinate "searches" instead of calling web_search etc.)
+    const agenticActive = isAgenticTurn({ toolsOn, connectorsOn })
     const autoImage = shouldAutoRouteImage({ mode, imageAvailable, agenticActive, text: trimmed })
     if (opts?.imageRequest || mode === 'image' || autoImage) {
       setImgProgress(null)
