@@ -70,6 +70,7 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
 
   const choose = async (mode: string, m: ModelEntry): Promise<void> => {
     setBusy(m.id)
+    setUnloaded((u) => (u === mode ? null : u)) // re-selecting reloads this modality
     try {
       if (mode === 'text') {
         await api.setActiveModel?.(m.id)
@@ -98,8 +99,9 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
     try {
       const freed = await api.unloadRuntime(MODE_TO_MODALITY[mode])
       console.log(`[models] unload ${mode} (${MODE_TO_MODALITY[mode]}):`, freed ? 'freed' : 'nothing loaded')
+      // Persist the unloaded state (not a flash) so the feedback lasts; cleared when
+      // the user re-selects this modality (which reloads on next use).
       setUnloaded(mode)
-      window.setTimeout(() => setUnloaded((u) => (u === mode ? null : u)), 2000)
     } catch (e) {
       console.error('[models] unload failed', e)
       setUnloadError(mode)
