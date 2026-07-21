@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { IconLoader2, IconCheck, IconCpu, IconX, IconPower } from '@tabler/icons-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const api = (window as any).api
+const api = (): any => (window as any).api
 
 interface ModelFile {
   name: string
@@ -27,15 +27,20 @@ const MODALITIES: {
   { label: 'Voice', kinds: ['voice'], mode: 'speech' },
   { label: 'Transcription', kinds: ['transcription'], mode: 'transcription' }
 ]
+type PickerMode = (typeof MODALITIES)[number]['mode']
 
 // Picker mode -> runtime Modality (the id the unload/residency seam uses). One map,
 // so the composer chip / panel / any future surface all resolve unload the same way.
-const MODE_TO_MODALITY: Record<(typeof MODALITIES)[number]['mode'], string> = {
+const MODE_TO_MODALITY: Record<PickerMode, string> = {
   text: 'llm',
   image: 'image',
   speech: 'tts',
   transcription: 'stt'
 }
+
+// Per-modality unload status. Absent = loaded/idle. Kept as a map keyed by mode so each
+// modality is independent — unloading one must NOT reset another's state.
+type UnloadStatus = 'unloading' | 'unloaded' | 'error'
 
 function primaryFile(m: ModelEntry): string {
   return m.files?.find((f) => f.role === 'primary')?.name ?? m.files?.[0]?.name ?? m.id
@@ -47,16 +52,14 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
   // The active selection per modality: id for text, filename for image/STT.
   const [active, setActive] = useState<Record<string, string | null>>({})
   const [busy, setBusy] = useState<string | null>(null)
-  const [unloading, setUnloading] = useState<string | null>(null)
-  const [unloaded, setUnloaded] = useState<string | null>(null)
-  const [unloadError, setUnloadError] = useState<string | null>(null)
+  const [unload, setUnload] = useState<Record<string, UnloadStatus>>({})
 
   const load = useCallback(async () => {
-    const cat = await api.getModelCatalog?.()
+    const cat = await api().getModelCatalog?.()
     setModels(cat?.models ?? [])
-    setInstalled((await api.getInstalledModels?.()) ?? [])
-    const text = await api.getActiveModel?.()
-    const modal = (await api.getActiveModalities?.()) ?? {}
+    setInstalled((await api().getInstalledModels?.()) ?? [])
+    const text = await api().getActiveModel?.()
+    const modal = (await api().getActiveModalities?.()) ?? {}
     setActive({
       text: text ?? modal.text ?? null,
       image: modal.image ?? null,
@@ -68,16 +71,28 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
     void load()
   }, [load])
 
-  const choose = async (mode: string, m: ModelEntry): Promise<void> => {
+  const setUnloadStatus = (mode: string, status: UnloadStatus): void =>
+    setUnload((s) => ({ ...s, [mode]: status }))
+  const clearUnloadStatus = (mode: string): void =>
+    setUnload((s) => {
+      if (!(mode in s)) {
+        return s
+      }
+      const next = { ...s }
+      delete next[mode]
+      return next
+    })
+
+  const choose = async (mode: PickerMode, m: ModelEntry): Promise<void> => {
     setBusy(m.id)
-    setUnloaded((u) => (u === mode ? null : u)) // re-selecting reloads this modality
+    clearUnloadStatus(mode) // re-selecting reloads this modality on next use
     try {
       if (mode === 'text') {
-        await api.setActiveModel?.(m.id)
+        await api().setActiveModel?.(m.id)
         setActive((a) => ({ ...a, text: m.id }))
       } else {
         const fname = primaryFile(m)
-        await api.setActiveModalModel?.(mode, fname)
+        await api().setActiveModalModel?.(mode, fname)
         setActive((a) => ({ ...a, [mode]: fname }))
       }
     } finally {
@@ -85,28 +100,25 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
     }
   }
 
-  // Unload this modality's model from memory now (frees RAM; reloads on next use).
-  const unload = async (mode: keyof typeof MODE_TO_MODALITY): Promise<void> => {
-    if (typeof api.unloadRuntime !== 'function') {
-      // Preload method missing — the app must be restarted after the preload changed.
-      // Surface it instead of a silent no-op (there'd be no IPC call and no log).
-      setUnloadError(mode)
+  // Unload one modality's model from memory now (frees RAM; reloads on next use).
+  // Independent per modality — writes only this mode's status.
+  const unloadModel = async (mode: PickerMode): Promise<void> => {
+    const bridge = api()
+    if (typeof bridge?.unloadRuntime !== 'function') {
+      // Preload method missing — surface it instead of a silent no-op (there'd be no
+      // IPC call and no log). Happens until the app is restarted after preload changed.
+      setUnloadStatus(mode, 'error')
       console.error('[models] unloadRuntime is unavailable — restart the app')
       return
     }
-    setUnloading(mode)
-    setUnloadError(null)
+    setUnloadStatus(mode, 'unloading')
     try {
-      const freed = await api.unloadRuntime(MODE_TO_MODALITY[mode])
+      const freed = await bridge.unloadRuntime(MODE_TO_MODALITY[mode])
       console.log(`[models] unload ${mode} (${MODE_TO_MODALITY[mode]}):`, freed ? 'freed' : 'nothing loaded')
-      // Persist the unloaded state (not a flash) so the feedback lasts; cleared when
-      // the user re-selects this modality (which reloads on next use).
-      setUnloaded(mode)
+      setUnloadStatus(mode, 'unloaded')
     } catch (e) {
       console.error('[models] unload failed', e)
-      setUnloadError(mode)
-    } finally {
-      setUnloading(null)
+      setUnloadStatus(mode, 'error')
     }
   }
 
@@ -124,6 +136,7 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
         {MODALITIES.map(({ label, kinds, mode }) => {
           const list = models.filter((m) => kinds.includes(m.kind) && installed.includes(m.id))
           const cur = active[mode]
+          const status = unload[mode]
           const isActive = (m: ModelEntry): boolean =>
             mode === 'text' ? cur === m.id : cur === primaryFile(m)
           return (
@@ -133,25 +146,25 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
                 {cur && (
                   <button
                     type="button"
-                    onClick={() => void unload(mode)}
-                    disabled={unloading === mode || unloaded === mode}
+                    onClick={() => void unloadModel(mode)}
+                    disabled={status === 'unloading' || status === 'unloaded'}
                     title={
-                      unloadError === mode
+                      status === 'error'
                         ? 'Unload unavailable — restart the app'
-                        : unloaded === mode
+                        : status === 'unloaded'
                           ? 'Already unloaded — reloads on next use'
                           : 'Unload from memory now — frees RAM; reloads on next use'
                     }
                     className={`flex items-center gap-1 text-[10px] uppercase tracking-wide transition-colors disabled:opacity-40 ${
-                      unloadError === mode ? 'text-amber-400' : 'text-neutral-500 hover:text-red-400'
+                      status === 'error' ? 'text-amber-400' : 'text-neutral-500 hover:text-red-400'
                     }`}
                   >
-                    {unloading === mode ? (
+                    {status === 'unloading' ? (
                       <IconLoader2 className="h-3 w-3 animate-spin" />
                     ) : (
                       <IconPower className="h-3 w-3" />
                     )}
-                    {unloadError === mode ? 'Restart to unload' : 'Unload'}
+                    {status === 'error' ? 'Restart to unload' : 'Unload'}
                   </button>
                 )}
               </div>
@@ -174,9 +187,9 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
                       <span className="truncate">{m.name}</span>
                       {busy === m.id ? (
                         <IconLoader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-neutral-500" />
-                      ) : isActive(m) && unloaded === mode ? (
-                        // Still the active selection, but freed from memory — one
-                        // coherent state, not a green check next to an "unloaded" label.
+                      ) : isActive(m) && status === 'unloaded' ? (
+                        // Still the active selection, but freed from memory — one coherent
+                        // state, not a green check next to an "unloaded" label.
                         <span className="flex shrink-0 items-center gap-1 text-[10px] uppercase tracking-wide text-neutral-500">
                           <IconPower className="h-3 w-3" /> Unloaded
                         </span>
