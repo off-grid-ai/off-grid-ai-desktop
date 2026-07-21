@@ -620,8 +620,9 @@ const offGridApi = {
 
   // Identity
   idGet: () => ipcRenderer.invoke('id:get'),
-  idSet: (id: { name?: string; email?: string; emails?: string[] }) =>
+  idSet: (id: { name?: string; email?: string; emails?: string[]; aliases?: string[] }) =>
     ipcRenderer.invoke('id:set', id),
+  idDetect: () => ipcRenderer.invoke('id:detect'),
 
   // Secrets (values never returned to renderer — only key names)
   secretsAvailable: () => ipcRenderer.invoke('secrets:available'),
