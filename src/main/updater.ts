@@ -8,6 +8,7 @@
 import { autoUpdater } from 'electron-updater'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { getSetting, saveSetting } from './database'
+import { resolveChannelConfig, type UpdateChannel } from './update-channel'
 
 // Version of an update that finished downloading and is staged for install
 // (null = none). Held in main so a window created AFTER the download finished
@@ -20,7 +21,6 @@ function autoEnabled(): boolean {
   return getSetting<boolean>('updates:auto', true) // default ON
 }
 
-type UpdateChannel = 'stable' | 'beta'
 function channelPref(): UpdateChannel {
   return getSetting<UpdateChannel>('updates:channel', 'stable') // default stable
 }
@@ -33,15 +33,17 @@ function applyAutoPref(): void {
   autoUpdater.autoInstallOnAppQuit = on
 }
 
-// Point the updater at the chosen feed: 'beta' reads beta-mac.yml (the nightly,
-// pre-release channel — opt-in only); 'stable' reads latest-mac.yml. allowDowngrade
-// lets a user who switches beta → stable move back to the latest STABLE build even
-// though its version is "older" than the beta they were running.
-function applyChannel(): void {
-  const beta = channelPref() === 'beta'
-  autoUpdater.channel = beta ? 'beta' : 'latest'
-  autoUpdater.allowPrerelease = beta
-  autoUpdater.allowDowngrade = true
+// Apply the updater's channel knobs from the user's preference. Decision logic is the
+// pure, Electron-free resolveChannelConfig (unit-tested in update-channel.test.ts): one
+// published feed (latest-mac.yml) for both channels, beta only flips allowPrerelease,
+// and a downgrade is permitted ONLY on an explicit channel switch — never on the routine
+// launch/interval checks, so a beta build (e.g. 0.0.41-beta.69) is never auto-offered an
+// OLDER stable (0.0.38) as an "update".
+function applyChannel(explicitChannelSwitch = false): void {
+  const cfg = resolveChannelConfig(channelPref(), explicitChannelSwitch)
+  autoUpdater.channel = cfg.channel
+  autoUpdater.allowPrerelease = cfg.allowPrerelease
+  autoUpdater.allowDowngrade = cfg.allowDowngrade
 }
 
 // Register the update IPC surface. Split OUT of startAutoUpdates so it can run in
@@ -86,7 +88,9 @@ export function registerUpdateIpc(): void {
   ipcMain.handle('update:set-channel', (_e, channel: UpdateChannel) => {
     const next: UpdateChannel = channel === 'beta' ? 'beta' : 'stable'
     saveSetting('updates:channel', next)
-    applyChannel()
+    // Explicit switch: permit a cross-channel downgrade (e.g. beta → the latest,
+    // numerically-lower stable) since the user chose it. Routine checks never do.
+    applyChannel(true)
     // Always check after a channel switch so the user gets immediate feedback
     // on what's available — even if auto-updates are off.
     autoUpdater

@@ -96,6 +96,16 @@ describe('software-update settings flow: manual check + auto toggle', () => {
     expect(indexSrc).toMatch(/if\s*\(\s*!is\.dev\s*\)\s*m\.startAutoUpdates\(\)/)
   })
 
+  it('never sets allowDowngrade=true unconditionally (would offer an older stable to a beta)', () => {
+    // Regression: `autoUpdater.allowDowngrade = true` on every launch made a
+    // 0.0.41-beta.69 app accept "Update 0.0.38". The knob must come from the pure
+    // resolveChannelConfig, which only allows a downgrade on an explicit switch.
+    expect(updaterSrc).not.toMatch(/allowDowngrade\s*=\s*true/)
+    expect(updaterSrc).toMatch(/resolveChannelConfig/)
+    // Explicit channel switch is the only caller allowed to permit a downgrade.
+    expect(updaterSrc).toMatch(/applyChannel\(true\)/)
+  })
+
   it('preload bridges the check + prefs controls', () => {
     expect(preloadSrc).toMatch(
       /checkForUpdates:\s*\(\)\s*=>\s*ipcRenderer\.invoke\(\s*['"]update:check['"]/
