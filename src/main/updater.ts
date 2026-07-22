@@ -34,11 +34,10 @@ function applyAutoPref(): void {
 }
 
 // Apply the updater's channel knobs from the user's preference. Decision logic is the
-// pure, Electron-free resolveChannelConfig (unit-tested in update-channel.test.ts): one
-// published feed (latest-mac.yml) for both channels, beta only flips allowPrerelease,
-// and a downgrade is permitted ONLY on an explicit channel switch — never on the routine
-// launch/interval checks, so a beta build (e.g. 0.0.41-beta.69) is never auto-offered an
-// OLDER stable (0.0.38) as an "update".
+// pure, Electron-free resolveChannelConfig. Beta uses the `beta` discovery channel so
+// electron-updater selects prereleases, then its GitHub provider falls back from the
+// absent beta feed to the one published latest feed. A downgrade is permitted only on
+// an explicit channel switch, never on routine launch or interval checks.
 function applyChannel(explicitChannelSwitch = false): void {
   const cfg = resolveChannelConfig(channelPref(), explicitChannelSwitch)
   autoUpdater.channel = cfg.channel

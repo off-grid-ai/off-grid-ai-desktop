@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { resolveChannelConfig } from '../update-channel'
 
-// Regression guard for the "beta app offered an OLDER stable as an update" bug: a
-// running 0.0.41-beta.69 was shown "Update 0.0.38 is ready" because applyChannel set
-// allowDowngrade=true unconditionally (and pointed beta at a beta-mac.yml we never
-// publish). The channel decision is now pure — assert its real output.
+// Two regressions guarded here:
+//  1. A beta build (0.0.41-beta.69) was offered an OLDER stable (0.0.38) as an "update"
+//     because applyChannel set allowDowngrade=true unconditionally.
+//  2. Forcing channel='latest' for beta then broke discovery entirely — electron-updater's
+//     GitHubProvider only matches a prerelease when updater.channel is null/'alpha'/'beta',
+//     so 'latest' skipped every '-beta.N' release → "No published versions on GitHub".
 describe('resolveChannelConfig', () => {
-  it('stable: single latest feed, no prerelease, no downgrade on routine checks', () => {
+  it('stable: latest feed, no prerelease, no downgrade on routine checks', () => {
     expect(resolveChannelConfig('stable')).toEqual({
       channel: 'latest',
       allowPrerelease: false,
@@ -14,25 +16,23 @@ describe('resolveChannelConfig', () => {
     })
   })
 
-  it('beta: same latest feed + prerelease, but STILL no downgrade on routine checks', () => {
-    // The core fix: a beta build must never be auto-"updated" to an older stable.
+  it('beta: channel MUST be "beta" (not "latest") so prerelease discovery works', () => {
+    // channel='beta' is required for GitHubProvider to match '-beta.N' releases; it then
+    // falls back from the (absent) beta-mac.yml to latest-mac.yml for the actual feed.
     expect(resolveChannelConfig('beta')).toEqual({
-      channel: 'latest',
+      channel: 'beta',
       allowPrerelease: true,
       allowDowngrade: false
     })
   })
 
-  it('never targets a beta-mac.yml feed — we publish only latest-mac.yml', () => {
-    expect(resolveChannelConfig('beta').channel).toBe('latest')
-    expect(resolveChannelConfig('stable').channel).toBe('latest')
-  })
-
   it('permits a downgrade ONLY on an explicit channel switch (beta → stable graduation)', () => {
     expect(resolveChannelConfig('stable', true).allowDowngrade).toBe(true)
     expect(resolveChannelConfig('beta', true).allowDowngrade).toBe(true)
-    // The prerelease/feed knobs are unchanged by the explicit-switch flag.
+    // The channel + prerelease knobs are unchanged by the explicit-switch flag.
+    expect(resolveChannelConfig('beta', true).channel).toBe('beta')
     expect(resolveChannelConfig('beta', true).allowPrerelease).toBe(true)
+    expect(resolveChannelConfig('stable', true).channel).toBe('latest')
     expect(resolveChannelConfig('stable', true).allowPrerelease).toBe(false)
   })
 })
