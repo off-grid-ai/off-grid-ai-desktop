@@ -122,8 +122,8 @@
 
 /* Theme-independent tokens */
 :root {
-  --og-font-mono: 'Menlo', ui-monospace, SFMono-Regular, 'SF Mono', Consolas,
-    'Liberation Mono', monospace;
+  --og-font-mono:
+    'Menlo', ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', monospace;
 
   --og-radius-sm: 2px;
   --og-radius-md: 8px;

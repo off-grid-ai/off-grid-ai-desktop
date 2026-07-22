@@ -18,7 +18,7 @@
   <a href="https://github.com/off-grid-ai/desktop/releases/latest">Download (macOS · Windows)</a> ·
   <a href="docs/FEATURES.md">Features</a> ·
   <a href="https://getoffgridai.co">getoffgridai.co</a> ·
-  <a href="https://getoffgridai.co/pay">Get Pro</a>
+  <a href="https://getoffgridai.co/pro/#buy">Get Pro</a>
 </p>
 
 <p align="center">
@@ -27,6 +27,17 @@
   <img alt="license" src="https://img.shields.io/badge/license-AGPL--3.0-blue" />
   <img alt="local" src="https://img.shields.io/badge/100%25-on--device-34D399" />
 </p>
+
+<p align="center">
+  <img alt="coverage statements 97%" src="https://img.shields.io/badge/coverage%3A%20statements-97%25-34D399" />
+  <img alt="coverage branches 92%" src="https://img.shields.io/badge/branches-92%25-34D399" />
+  <img alt="coverage functions 96%" src="https://img.shields.io/badge/functions-96%25-34D399" />
+  <img alt="coverage lines 98%" src="https://img.shields.io/badge/lines-98%25-34D399" />
+</p>
+
+<!-- Coverage measured by `npm run test:coverage` over the testable surface; the ratchet
+     floor (95/90/93/96) is enforced on pre-push AND in CI (.github/workflows/ci.yml).
+     Refresh these when the floor rises — coverage only ever climbs. -->
 
 <p align="center">
   <strong><a href="https://github.com/off-grid-ai/mobile">Off Grid AI Mobile</a></strong> — the same on-device AI, on your phone &nbsp;·&nbsp;
@@ -51,8 +62,8 @@ Three things in one app:
    Claude/LM-Studio/Ollama with everything on-device.
 2. **A gateway** — one local OpenAI-compatible API (`http://127.0.0.1:7878/v1`, no key)
    for chat, vision, image, audio, and embeddings. Run it headless as just the gateway.
-3. **Off Grid Pro** — an always-on private layer that *sees* your work (screen → OCR),
-   *remembers* it, helps you *reflect*, and *acts* with your approval. On-device, opt-in.
+3. **Off Grid Pro** — an always-on private layer that _sees_ your work (screen → OCR),
+   _remembers_ it, helps you _reflect_, and _acts_ with your approval. On-device, opt-in.
 
 ## A look inside
 
@@ -107,14 +118,14 @@ A full breakdown is in [docs/FEATURES.md](docs/FEATURES.md).
 
 One local server (`http://127.0.0.1:7878`) speaks the OpenAI API:
 
-| Capability | Endpoint |
-|---|---|
-| Chat (text + vision) | `POST /v1/chat/completions` |
-| Text → Image | `POST /v1/images` (`/generations`, `/edits`) |
-| Speech → Text | `POST /v1/audio/transcriptions` |
-| Text → Speech | `POST /v1/audio/speech` |
-| Embeddings | `POST /v1/embeddings` |
-| Models | `GET /v1/models` |
+| Capability           | Endpoint                                     |
+| -------------------- | -------------------------------------------- |
+| Chat (text + vision) | `POST /v1/chat/completions`                  |
+| Text → Image         | `POST /v1/images` (`/generations`, `/edits`) |
+| Speech → Text        | `POST /v1/audio/transcriptions`              |
+| Text → Speech        | `POST /v1/audio/speech`                      |
+| Embeddings           | `POST /v1/embeddings`                        |
+| Models               | `GET /v1/models`                             |
 
 ```bash
 curl http://127.0.0.1:7878/v1/chat/completions \
@@ -146,14 +157,14 @@ OFFGRID_SERVER_ONLY=1 npm run gateway
 
 It's **self-sufficient** — manage models over HTTP, no UI required:
 
-| Action | Endpoint |
-|---|---|
-| List the catalog | `GET /v1/models/catalog` |
-| List installed | `GET /v1/models/installed` |
-| Active model per modality | `GET /v1/models/active` |
-| **Pull** a model | `POST /v1/models/pull` `{ "id": "…" }` → poll `GET /v1/models/pull/status?id=…` |
-| **Activate** a model | `POST /v1/models/activate` `{ "id": "…", "kind"?: "image\|speech\|transcription" }` |
-| **Delete** a model | `POST /v1/models/delete` `{ "id": "…" }` |
+| Action                    | Endpoint                                                                            |
+| ------------------------- | ----------------------------------------------------------------------------------- |
+| List the catalog          | `GET /v1/models/catalog`                                                            |
+| List installed            | `GET /v1/models/installed`                                                          |
+| Active model per modality | `GET /v1/models/active`                                                             |
+| **Pull** a model          | `POST /v1/models/pull` `{ "id": "…" }` → poll `GET /v1/models/pull/status?id=…`     |
+| **Activate** a model      | `POST /v1/models/activate` `{ "id": "…", "kind"?: "image\|speech\|transcription" }` |
+| **Delete** a model        | `POST /v1/models/delete` `{ "id": "…" }`                                            |
 
 ```bash
 # pull a model into a headless gateway, then chat
@@ -189,7 +200,7 @@ explicit opt-in, with a visible recording indicator, and nothing leaves the devi
   as authoritative sources, and a skills framework (trigger → action) — on the roadmap
   toward a proactive secretary and a prospective "Ahead" view of your day.
 
-**Pro is live.** Buy a license at **[getoffgridai.co/pay](https://getoffgridai.co/pay)** — you're
+**Pro is live.** Buy a license at **[getoffgridai.co/pro/#buy](https://getoffgridai.co/pro/#buy)** — you're
 emailed a license key, you install the Pro build, and you activate the key in-app. Licensing runs
 on **[Keygen](https://keygen.sh)**, and one Pro license covers up to **5 devices**. Pro features
 live in a separate **private** package; the open core never imports it — see
@@ -217,7 +228,7 @@ locked until a valid key is activated.
 
 <sub>Pro screens shown with synthetic demo data.</sub>
 
-→ **[Get Pro](https://getoffgridai.co/pay)** — buy a license, install the Pro build, activate your key.
+→ **[Get Pro](https://getoffgridai.co/pro/#buy)** — buy a license, install the Pro build, activate your key.
 
 ## Install
 

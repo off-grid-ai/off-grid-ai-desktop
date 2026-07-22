@@ -1,0 +1,15 @@
+# Shared by the production build and the packaged-helper integration test. Keep the
+# runtime resource contract here so the test exercises the same staging rules without
+# inheriting production's multi-gigabyte application dependency payload.
+extraResources:
+  - from: resources
+    to: .
+    filter:
+      - '**/*'
+      - '!models/**'
+      # Built into app.asar/out/main so Node resolves kokoro-js from the packaged
+      # dependency tree instead of the external Resources directory.
+      - '!tts-worker.mjs'
+
+# Native modules are installed for Electron by postinstall/CI before packaging.
+npmRebuild: false

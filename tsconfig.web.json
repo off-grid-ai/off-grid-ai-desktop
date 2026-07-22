@@ -4,13 +4,19 @@
     "src/renderer/src/env.d.ts",
     "src/renderer/src/**/*",
     "src/renderer/src/**/*.tsx",
-    "src/preload/*.d.ts",
+    "src/preload/index.ts",
     "src/bootstrap/**/*",
     "src/shared/**/*"
   ],
   "compilerOptions": {
     "composite": true,
     "jsx": "react-jsx",
+    // Dead-code gates at type-check time (see tsconfig.node.json).
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    // Guard every array/record access (see tsconfig.node.json).
+    "noUncheckedIndexedAccess": true,
     "baseUrl": ".",
     "paths": {
       "@renderer/*": [

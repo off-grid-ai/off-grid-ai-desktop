@@ -5,7 +5,7 @@
 // imports the CLIs), the CLIs importing them back would form a load-time cycle and
 // select's `const ALL = { whisper, ... }` would read a not-yet-initialized singleton
 // (a temporal-dead-zone crash on boot). Keeping them here breaks that cycle.
-import { modelsByKind } from '@offgrid/models';
+import { modelsByKind } from '@offgrid/models'
 
 /**
  * The catalog `engine` field for a transcription model. Only Parakeet models carry an
@@ -13,16 +13,18 @@ import { modelsByKind } from '@offgrid/models';
  * model. Never a runtime-only value (whisper-resident is a residency mode, not a catalog
  * model). Single source of truth for classifying a catalog entry by engine.
  */
-export type CatalogTranscriptionEngine = 'whisper' | 'parakeet';
+export type CatalogTranscriptionEngine = 'whisper' | 'parakeet'
 
 /** A transcription catalog entry, narrowed to what engine classification needs. */
-export type TranscriptionEntry = { id: string; engine?: string; files: Array<{ name: string }> };
+export type TranscriptionEntry = { id: string; engine?: string; files: Array<{ name: string }> }
 
 /** The engine a catalog transcription entry belongs to. The catalog only tags Parakeet
  *  entries; anything without that tag is a whisper ggml model. Single source of truth so
  *  no caller re-does the `engine === 'parakeet'` classification. Pure. */
-export function catalogEngine(entry: { engine?: string } | undefined | null): CatalogTranscriptionEngine {
-  return entry?.engine === 'parakeet' ? 'parakeet' : 'whisper';
+export function catalogEngine(
+  entry: { engine?: string } | undefined | null
+): CatalogTranscriptionEngine {
+  return entry?.engine === 'parakeet' ? 'parakeet' : 'whisper'
 }
 
 /**
@@ -33,7 +35,7 @@ export function catalogEngine(entry: { engine?: string } | undefined | null): Ca
  */
 export function modelsByEngine(
   engine: CatalogTranscriptionEngine,
-  entries: readonly TranscriptionEntry[] = modelsByKind('transcription'),
+  entries: readonly TranscriptionEntry[] = modelsByKind('transcription')
 ): TranscriptionEntry[] {
-  return entries.filter((e) => catalogEngine(e) === engine);
+  return entries.filter((e) => catalogEngine(e) === engine)
 }

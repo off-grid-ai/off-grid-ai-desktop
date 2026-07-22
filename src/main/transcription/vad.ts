@@ -6,19 +6,19 @@
 
 /** Root-mean-square amplitude of a Float32 PCM block (range ~[0, 1]). */
 export function rms(samples: Float32Array): number {
-  if (samples.length === 0) return 0;
-  let sum = 0;
-  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
-  return Math.sqrt(sum / samples.length);
+  if (samples.length === 0) return 0
+  let sum = 0
+  for (const v of samples) sum += v * v
+  return Math.sqrt(sum / samples.length)
 }
 
 /** Default RMS gate. Below this, treat the block as silence. Hand-tuned for
  *  16 kHz mic input; quiet speech still clears it, room tone does not. */
-export const DEFAULT_SPEECH_RMS = 0.008;
+export const DEFAULT_SPEECH_RMS = 0.008
 
 /** True when the block carries enough energy to be worth transcribing. */
 export function isSpeech(samples: Float32Array, threshold: number = DEFAULT_SPEECH_RMS): boolean {
-  return rms(samples) >= threshold;
+  return rms(samples) >= threshold
 }
 
 /** Fraction of frames (of `frameSize` samples) that clear the speech gate.
@@ -28,13 +28,13 @@ export function speechRatio(
   threshold: number = DEFAULT_SPEECH_RMS,
   frameSize = 1600 // 100 ms at 16 kHz
 ): number {
-  if (samples.length === 0) return 0;
-  let speechFrames = 0;
-  let total = 0;
+  if (samples.length === 0) return 0
+  let speechFrames = 0
+  let total = 0
   for (let i = 0; i < samples.length; i += frameSize) {
-    const frame = samples.subarray(i, Math.min(i + frameSize, samples.length));
-    if (isSpeech(frame, threshold)) speechFrames++;
-    total++;
+    const frame = samples.subarray(i, Math.min(i + frameSize, samples.length))
+    if (isSpeech(frame, threshold)) speechFrames++
+    total++
   }
-  return total === 0 ? 0 : speechFrames / total;
+  return total === 0 ? 0 : speechFrames / total
 }

@@ -14,28 +14,28 @@
  * the cross-platform contract: the same asar is read-only on macOS, so the cache dir
  * must be the writable userData path on BOTH platforms, never inside the package.
  */
-import { describe, it, expect } from 'vitest';
-import path from 'path';
-import os from 'os';
+import { describe, it, expect } from 'vitest'
+import path from 'path'
+import os from 'os'
 
 describe('embeddings on-disk cache is a writable dir (not inside app.asar / the package)', () => {
   it('points transformers cacheDir at the userData models dir', async () => {
     // runtime-env resolves the data dir from OFFGRID_DATA_DIR; set it BEFORE the
     // module import, since embeddings.ts reads modelsDir() at load time.
-    const dataDir = path.join(os.tmpdir(), 'offgrid-embed-cachedir-test');
-    process.env.OFFGRID_DATA_DIR = dataDir;
+    const dataDir = path.join(os.tmpdir(), 'offgrid-embed-cachedir-test')
+    process.env.OFFGRID_DATA_DIR = dataDir
 
-    const { env } = await import('@xenova/transformers');
-    await import('../embeddings'); // sets env.localModelPath / cacheDir / allowRemoteModels on load
+    const { env } = await import('@xenova/transformers')
+    await import('../embeddings') // sets env.localModelPath / cacheDir / allowRemoteModels on load
 
-    const modelsDir = path.join(dataDir, 'models');
-    expect(env.cacheDir).toBe(path.join(modelsDir, '.cache'));
+    const modelsDir = path.join(dataDir, 'models')
+    expect(env.cacheDir).toBe(path.join(modelsDir, '.cache'))
     // The download target and the local-model lookup must share the writable dir.
-    expect(env.localModelPath).toBe(modelsDir);
+    expect(env.localModelPath).toBe(modelsDir)
     // Must NOT be the library default, which lives inside the (read-only-when-packaged)
     // @xenova/transformers package folder.
-    expect(env.cacheDir).not.toMatch(/@xenova[\\/]transformers/);
+    expect(env.cacheDir).not.toMatch(/@xenova[\\/]transformers/)
     // Still allow the first-run download (offline bundling is a separate decision).
-    expect(env.allowRemoteModels).toBe(true);
-  });
-});
+    expect(env.allowRemoteModels).toBe(true)
+  })
+})

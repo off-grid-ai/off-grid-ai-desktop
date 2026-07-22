@@ -13,30 +13,30 @@
  * `og()` is exported so apps can remap legacy color names (neutral, green, ...)
  * onto the same channel variables for a zero-edit migration.
  */
-const og = (name) => `rgb(var(--og-rgb-${name}) / <alpha-value>)`;
+const og = (name) => `rgb(var(--og-rgb-${name}) / <alpha-value>)`
 
 const colors = {
   primary: {
     DEFAULT: og('primary'),
     dark: og('primary-dark'),
-    light: og('primary-light'),
+    light: og('primary-light')
   },
   background: og('background'),
   surface: {
     DEFAULT: og('surface'),
     light: og('surface-light'),
-    hover: og('surface-hover'),
+    hover: og('surface-hover')
   },
   text: {
     DEFAULT: og('text'),
     secondary: og('text-secondary'),
     muted: og('text-muted'),
-    disabled: og('text-disabled'),
+    disabled: og('text-disabled')
   },
   border: {
     DEFAULT: og('border'),
     light: og('border-light'),
-    focus: og('border-focus'),
+    focus: og('border-focus')
   },
   success: og('success'),
   warning: og('warning'),
@@ -44,10 +44,18 @@ const colors = {
   trending: og('trending'),
   info: og('info'),
   overlay: 'var(--og-overlay)',
-  divider: 'var(--og-divider)',
-};
+  divider: 'var(--og-divider)'
+}
 
-const fontMono = ['Menlo', 'ui-monospace', 'SFMono-Regular', 'SF Mono', 'Consolas', 'Liberation Mono', 'monospace'];
+const fontMono = [
+  'Menlo',
+  'ui-monospace',
+  'SFMono-Regular',
+  'SF Mono',
+  'Consolas',
+  'Liberation Mono',
+  'monospace'
+]
 
 const preset = {
   theme: {
@@ -55,7 +63,7 @@ const preset = {
       colors,
       fontFamily: {
         mono: fontMono,
-        sans: fontMono,
+        sans: fontMono
       },
       fontSize: {
         display: ['22px', { lineHeight: '1.2', letterSpacing: '-0.5px', fontWeight: '200' }],
@@ -67,7 +75,7 @@ const preset = {
         label: ['10px', { lineHeight: '1.4', letterSpacing: '0.3px', fontWeight: '400' }],
         labelSmall: ['9px', { lineHeight: '1.4', letterSpacing: '0.3px', fontWeight: '400' }],
         meta: ['10px', { lineHeight: '1.4', fontWeight: '300' }],
-        metaSmall: ['9px', { lineHeight: '1.4', fontWeight: '300' }],
+        metaSmall: ['9px', { lineHeight: '1.4', fontWeight: '300' }]
       },
       spacing: {
         xs: '4px',
@@ -75,17 +83,17 @@ const preset = {
         md: '12px',
         lg: '16px',
         xl: '24px',
-        xxl: '32px',
+        xxl: '32px'
       },
       borderRadius: {
         sm: '2px',
         DEFAULT: '8px',
-        md: '8px',
-      },
-    },
-  },
-};
+        md: '8px'
+      }
+    }
+  }
+}
 
-module.exports = preset;
-module.exports.og = og;
-module.exports.colors = colors;
+module.exports = preset
+module.exports.og = og
+module.exports.colors = colors

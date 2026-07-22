@@ -1,34 +1,34 @@
-
-import { ChatList } from './components/ChatList';
-import { ChatDetail } from './components/ChatDetail';
-import { CommandPalette } from './components/CommandPalette';
-import logo from './assets/logo.png';
-import { useMeetingRecorder } from './useMeetingRecorder';
-import { MemoryChat } from './components/MemoryChat';
-import { Settings } from './components/Settings';
-import { ModelsScreen } from './components/ModelsScreen';
-import { ProjectsScreen } from './components/ProjectsScreen';
-import { ConnectorsScreen } from './components/ConnectorsScreen';
-import { GatewayScreen } from './components/GatewayScreen';
-import { Onboarding } from './components/Onboarding';
-import { PermissionGate } from './components/PermissionGate';
-import type { SearchHit } from './types';
+import { ChatList } from './components/ChatList'
+import { ChatDetail } from './components/ChatDetail'
+import { CommandPalette } from './components/CommandPalette'
+import logo from './assets/logo.png'
+import { useMeetingRecorder } from './useMeetingRecorder'
+import { MemoryChat } from './components/MemoryChat'
+import { Settings } from './components/Settings'
+import { ModelsScreen } from './components/ModelsScreen'
+import { ProjectsScreen } from './components/ProjectsScreen'
+import { ConnectorsScreen } from './components/ConnectorsScreen'
+import { GatewayScreen } from './components/GatewayScreen'
+import { Onboarding } from './components/Onboarding'
+import { PermissionGate } from './components/PermissionGate'
+import type { SearchHit } from './types'
 // Open-core: pro screens live in the private pro package and render through the
 // pro view-router; the free build shows the UpgradeScreen for those tabs.
-import { loadProFeaturesRenderer } from './bootstrap/loadProFeaturesRenderer';
-import { renderProView, type ProViewContext } from './bootstrap/proView';
-import { UpgradeScreen } from './components/pro/UpgradeScreen';
-import { getProFeature, proFeatureComingSoon } from './components/pro/proCatalog';
-import { currentPlatform, isMac } from './lib/device';
-import { NotificationProvider, useNotifications } from './hooks/useNotifications';
-import { ToastProvider } from './hooks/useToast';
-import { ReprocessingProvider, useReprocessing } from './hooks/useReprocessing';
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { GridBackdrop } from './components/ui/grid-backdrop';
-import { StarfieldBackdrop } from './components/ui/starfield-backdrop';
-import { Sidebar, SidebarBody } from './components/ui/sidebar';
-import { NavThemeToggle } from './components/ThemeToggle';
-import { motion, AnimatePresence } from 'motion/react';
+import { loadProFeaturesRenderer } from './bootstrap/loadProFeaturesRenderer'
+import { renderProView, type ProViewContext } from './bootstrap/proView'
+import { UpgradeScreen } from './components/pro/UpgradeScreen'
+import { getProFeature, proFeatureComingSoon } from './components/pro/proCatalog'
+import { currentPlatform, isMac } from './lib/device'
+import { NotificationProvider } from './hooks/NotificationProvider'
+import { useNotifications } from './hooks/useNotifications'
+import { ToastProvider } from './hooks/ToastProvider'
+import { ReprocessingProvider, useReprocessing } from './hooks/useReprocessing'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
+import { GridBackdrop } from './components/ui/grid-backdrop'
+import { StarfieldBackdrop } from './components/ui/starfield-backdrop'
+import { Sidebar, SidebarBody } from './components/ui/sidebar'
+import { NavThemeToggle } from './components/ThemeToggle'
+import { motion, AnimatePresence } from 'motion/react'
 import {
   IconMessageCircle,
   IconSettings,
@@ -45,27 +45,57 @@ import {
   IconActivityHeartbeat,
   IconDeviceMobile,
   IconExternalLink
-} from '@tabler/icons-react';
-import { OFF_GRID_MOBILE_URL, openExternal } from './constants/links';
-import { cn } from './lib/utils';
+} from '@tabler/icons-react'
+import { OFF_GRID_MOBILE_URL, openExternal } from './constants/links'
+import { cn } from './lib/utils'
+import { normalizeProNavigationIntent, type ProNavigationIntent } from './lib/pro-navigation'
+import { navigateSearchHit } from './lib/search-navigation'
+import { callHook } from './bootstrap/hookRegistry'
+import {
+  NOTIFICATION_METADATA_HOOK,
+  NOTIFICATION_OPEN_TARGET_CHANNEL,
+  NOTIFICATION_RESOLVE_TARGET_HOOK,
+  type NotificationRoutingMetadata,
+  type NotificationSourceRecord
+} from './lib/notification-hooks'
 
-type ViewMode = 'dashboard' | 'day' | 'replay' | 'reflect' | 'actions' | 'connectors' | 'meetings' | 'chats' | 'memories' | 'entities' | 'graph' | 'memory-chat' | 'models' | 'gateway' | 'projects' | 'notifications' | 'settings' | 'search' | 'clipboard' | 'voice' | 'vault';
+type ViewMode =
+  | 'dashboard'
+  | 'day'
+  | 'replay'
+  | 'reflect'
+  | 'actions'
+  | 'connectors'
+  | 'meetings'
+  | 'chats'
+  | 'memories'
+  | 'entities'
+  | 'memory-chat'
+  | 'models'
+  | 'gateway'
+  | 'projects'
+  | 'notifications'
+  | 'settings'
+  | 'search'
+  | 'clipboard'
+  | 'voice'
+  | 'vault'
 
 // Navigation state type for history tracking
 interface NavigationState {
-  viewMode: ViewMode;
-  selectedSessionId: string | null;
-  selectedMemoryId: number | null;
-  selectedEntityId: number | null;
+  viewMode: ViewMode
+  selectedSessionId: string | null
+  selectedMemoryId: number | null
+  selectedEntityId: number | null
+  selectedProjectId: string | null
 }
 
 function ReprocessingBanner() {
-  const { reprocessing, progress } = useReprocessing();
-  if (!reprocessing) return null;
+  const { reprocessing, progress } = useReprocessing()
+  if (!reprocessing) return null
 
-  const pct = progress && progress.total > 0
-    ? Math.round((progress.processed / progress.total) * 100)
-    : 0;
+  const pct =
+    progress && progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0
 
   return (
     <motion.div
@@ -100,97 +130,138 @@ function ReprocessingBanner() {
         <span className="text-xs text-neutral-600 shrink-0">{pct}%</span>
       )}
     </motion.div>
-  );
+  )
 }
 
 // Model-server health dot for the sidebar. Uses the SAME live probe as the System
 // Health panel (system:health → real /health check), not llm.isReady() (an internal
 // flag that lags). Green = running, amber = starting, red = stopped (e.g. a SIGKILL
 // we can't auto-recover) → click goes to Settings to restart.
-type ChatHealth = 'ready' | 'starting' | 'down' | null;
-function ModelStatusDot({ open, onClick }: { open: boolean; onClick: () => void }): React.ReactElement {
-  const [status, setStatus] = useState<ChatHealth>(null);
+type ChatHealth = 'ready' | 'starting' | 'down' | null
+function ModelStatusDot({
+  open,
+  onClick
+}: {
+  open: boolean
+  onClick: () => void
+}): React.ReactElement {
+  const [status, setStatus] = useState<ChatHealth>(null)
   useEffect(() => {
-    let live = true;
+    let live = true
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = (window as any).api;
+    const api = (window as any).api
     const poll = async (): Promise<void> => {
       try {
-        const h = await api?.systemHealth?.();
+        const h = await api?.systemHealth?.()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const chat = h?.components?.find((c: any) => c.id === 'chat');
-        const s: ChatHealth = chat?.status === 'ready' ? 'ready' : chat?.status === 'starting' ? 'starting' : 'down';
-        if (live) setStatus(s);
-      } catch { if (live) setStatus('down'); }
-    };
-    void poll();
-    const id = setInterval(poll, 5000);
-    return () => { live = false; clearInterval(id); };
-  }, []);
-  const color = status == null ? 'text-neutral-500' : status === 'ready' ? 'text-green-500' : status === 'starting' ? 'text-amber-500' : 'text-red-500';
-  const text = status == null ? 'Checking…' : status === 'ready' ? 'Model running' : status === 'starting' ? 'Model starting' : 'Model stopped';
+        const chat = h?.components?.find((c: any) => c.id === 'chat')
+        const s: ChatHealth =
+          chat?.status === 'ready' ? 'ready' : chat?.status === 'starting' ? 'starting' : 'down'
+        if (live) setStatus(s)
+      } catch {
+        if (live) setStatus('down')
+      }
+    }
+    void poll()
+    const id = setInterval(poll, 5000)
+    return () => {
+      live = false
+      clearInterval(id)
+    }
+  }, [])
+  const color =
+    status == null
+      ? 'text-neutral-500'
+      : status === 'ready'
+        ? 'text-green-500'
+        : status === 'starting'
+          ? 'text-amber-500'
+          : 'text-red-500'
+  const text =
+    status == null
+      ? 'Checking…'
+      : status === 'ready'
+        ? 'Model running'
+        : status === 'starting'
+          ? 'Model starting'
+          : 'Model stopped'
   // Collapsed: clicking opens the sidebar (the label/restart action lives there).
   // Expanded: clicking goes to Settings to restart.
   const label = open
-    ? (status === 'down' ? 'Model server stopped. Open Settings to restart.' : `Model server: ${text.toLowerCase()}`)
-    : `${text} - expand for details`;
+    ? status === 'down'
+      ? 'Model server stopped. Open Settings to restart.'
+      : `Model server: ${text.toLowerCase()}`
+    : `${text} - expand for details`
   return (
     <button
       onClick={onClick}
       title={label}
       aria-label={label}
-      className={cn('flex items-center gap-3 rounded-lg py-2 text-sm text-neutral-500 transition-colors hover:bg-neutral-500/10 hover:text-neutral-300', open ? 'px-3' : 'justify-center px-0')}
+      className={cn(
+        'flex items-center gap-3 rounded-lg py-2 text-sm text-neutral-500 transition-colors hover:bg-neutral-500/10 hover:text-neutral-300',
+        open ? 'px-3' : 'justify-center px-0'
+      )}
     >
       <IconActivityHeartbeat className={cn('h-5 w-5 shrink-0', color)} />
       {open && <span className="flex-1 text-left text-xs">{text}</span>}
     </button>
-  );
+  )
 }
 
 function AppContent() {
-  const { addNotification } = useNotifications();
+  const { addNotification } = useNotifications()
 
   // Pro entitlement (preload reads OFFGRID_PRO; absent submodule => false at runtime).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const isPro = !!(window as any).api?.isPro;
+  const isPro = !!(window as any).api?.isPro
   // Re-render once pro renderer features have activated (registers the view-router).
-  const [, setProReady] = useState(false);
+  const [proReady, setProReady] = useState(false)
   useEffect(() => {
-    let mounted = true;
-    void loadProFeaturesRenderer().finally(() => { if (mounted) setProReady(true); });
-    return () => { mounted = false; };
-  }, []);
+    let mounted = true
+    void loadProFeaturesRenderer().finally(() => {
+      if (mounted) setProReady(true)
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   // Free users land on Models (download a model first, with the sidebar to
-  // explore); pro lands on Day. Never a locked Pro tab — and never a coming-soon
-  // Pro tab either, so Pro on a non-Mac platform also starts on Models.
-  const [viewMode, setViewMode] = useState<ViewMode>(isPro && isMac() ? 'day' : 'models');
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [selectedMemoryId, setSelectedMemoryId] = useState<number | null>(null);
+  // explore); Mac Pro users land on Day. Never land on a locked or unavailable tab.
+  const [viewMode, setViewMode] = useState<ViewMode>(isPro && isMac() ? 'day' : 'models')
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
+  const [selectedMemoryId, setSelectedMemoryId] = useState<number | null>(null)
   // Version of a downloaded-and-staged update (null = none). Surfaced as a banner
   // with a "Restart to update" button — Squirrel only applies on a clean quit, so
   // we drive the install explicitly instead of waiting for one.
-  const [updateReady, setUpdateReady] = useState<string | null>(null);
-  const [installing, setInstalling] = useState(false);
-  const [selectedEntityId, setSelectedEntityId] = useState<number | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [updateReady, setUpdateReady] = useState<string | null>(null)
+  const [installing, setInstalling] = useState(false)
+  const [selectedEntityId, setSelectedEntityId] = useState<number | null>(null)
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   // Search filter + sort live here (not in the screen) so they survive navigating
   // to a result and back.
-  const [searchSources, setSearchSources] = useState<string[]>([]);
-  const [searchSort, setSearchSort] = useState<'relevance' | 'recency' | 'match'>('relevance');
-  const [replayTarget, setReplayTarget] = useState<number | null>(null);
+  const [searchSources, setSearchSources] = useState<string[]>([])
+  const [searchSort, setSearchSort] = useState<'relevance' | 'recency' | 'match'>('relevance')
+  const [replayTarget, setReplayTarget] = useState<number | null>(null)
   // A search hit can deep-link to a specific meeting; cleared on leaving Meetings.
-  const [meetingTarget, setMeetingTarget] = useState<number | null>(null);
+  const [meetingTarget, setMeetingTarget] = useState<number | null>(null)
   // Which tab the Actions screen opens on when reached via a Day "View all" link.
-  const [actionsMode, setActionsMode] = useState<'todo' | 'approvals' | null>(null);
+  const [actionsMode, setActionsMode] = useState<'todo' | 'approvals' | null>(null)
+  const [actionTarget, setActionTarget] = useState<number | null>(null)
+  const [approvalTarget, setApprovalTarget] = useState<number | null>(null)
+  const [calendarEventTarget, setCalendarEventTarget] = useState<number | null>(null)
   // When set, the Actions to-do list opens filtered to this entity (from clicking
   // a person chip on a to-do — "all to-dos for Ali").
-  const [actionsEntity, setActionsEntity] = useState<{ id: number; name: string } | null>(null);
+  const [actionsEntity, setActionsEntity] = useState<{ id: number; name: string } | null>(null)
   // Target chat to open in the main Chat screen (from the Projects tab): an
   // existing conversation, or a request to start a new chat scoped to a project.
-  const [chatTarget, setChatTarget] = useState<{ conversationId?: string; projectId?: string } | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const rec = useMeetingRecorder();
+  const [chatTarget, setChatTarget] = useState<{
+    conversationId?: string
+    projectId?: string
+  } | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const rec = useMeetingRecorder()
 
   // The meeting recording lifecycle (detect → record → warn → stop → finalize) is
   // owned by the main-process MeetingController. This view just reflects rec.* and
@@ -200,26 +271,25 @@ function AppContent() {
   // memory-mirror views (Day/Replay/Entities/…) and avoid looping the graph.
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window.api as any)?.reportSelfView?.(viewMode);
-  }, [viewMode]);
+    ;(window.api as any)?.reportSelfView?.(viewMode)
+  }, [viewMode])
 
   // Navigation history stacks (back and forward)
-  const navigationHistory = useRef<NavigationState[]>([]);
-  const forwardHistory = useRef<NavigationState[]>([]);
-  const isNavigatingHistory = useRef(false);
+  const navigationHistory = useRef<NavigationState[]>([])
+  const forwardHistory = useRef<NavigationState[]>([])
+  const isNavigatingHistory = useRef(false)
   // Reactive mirrors of the stacks so the in-app back/forward buttons can
   // enable/disable (refs alone don't trigger a re-render).
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [canGoForward, setCanGoForward] = useState(false);
+  const [canGoBack, setCanGoBack] = useState(false)
+  const [canGoForward, setCanGoForward] = useState(false)
   const syncNavFlags = useCallback(() => {
-    setCanGoBack(navigationHistory.current.length > 1);
-    setCanGoForward(forwardHistory.current.length > 0);
-  }, []);
-
+    setCanGoBack(navigationHistory.current.length > 1)
+    setCanGoForward(forwardHistory.current.length > 0)
+  }, [])
 
   // Handle browser URL changes
   useEffect(() => {
-    const path = window.location.pathname;
+    const path = window.location.pathname
     const viewMap: Record<string, ViewMode> = {
       '/': 'day',
       '/day': 'day',
@@ -232,7 +302,6 @@ function AppContent() {
       '/chats': 'chats',
       '/memories': 'memories',
       '/entities': 'entities',
-      '/graph': 'graph',
       '/models': 'models',
       '/gateway': 'gateway',
       '/projects': 'projects',
@@ -240,66 +309,67 @@ function AppContent() {
       '/search': 'search',
       '/settings': 'settings',
       '/voice': 'voice'
-    };
+    }
 
     if (viewMap[path]) {
-      setViewMode(viewMap[path]);
+      setViewMode(viewMap[path])
     }
-  }, []);
+  }, [])
 
   // Programmatic navigation from outside the shell (e.g. the first-run gate's
   // "pick a model yourself" CTA) — switch the active view without a remount.
   useEffect(() => {
     const onNav = (e: Event): void => {
-      const v = (e as CustomEvent).detail as ViewMode | undefined;
-      if (v) setViewMode(v);
-    };
-    window.addEventListener('og:navigate', onNav);
+      const v = (e as CustomEvent).detail as ViewMode | undefined
+      if (v) setViewMode(v)
+    }
+    window.addEventListener('og:navigate', onNav)
     // Main-driven navigation (tray → a screen).
-    const offNav = window.api.onNavigate?.((v: string) => setViewMode(v as ViewMode));
+    const offNav = window.api.onNavigate?.((v: string) => setViewMode(v as ViewMode))
     return () => {
-      window.removeEventListener('og:navigate', onNav);
-      offNav?.();
-    };
-  }, []);
+      window.removeEventListener('og:navigate', onNav)
+      offNav?.()
+    }
+  }, [])
 
   // Update browser URL when view mode changes
   useEffect(() => {
     const urlMap: Record<ViewMode, string> = {
-      'day': '/day',
-      'replay': '/replay',
-      'reflect': '/reflect',
-      'actions': '/actions',
-      'connectors': '/connectors',
-      'meetings': '/meetings',
-      'dashboard': '/dashboard',
+      day: '/day',
+      replay: '/replay',
+      reflect: '/reflect',
+      actions: '/actions',
+      connectors: '/connectors',
+      meetings: '/meetings',
+      dashboard: '/dashboard',
       'memory-chat': '/chat',
-      'chats': '/chats',
-      'memories': '/memories',
-      'entities': '/entities',
-      'graph': '/graph',
-      'models': '/models',
-      'gateway': '/gateway',
-      'projects': '/projects',
-      'notifications': '/notifications',
-      'search': '/search',
-      'settings': '/settings',
-      'clipboard': '/clipboard',
-      'voice': '/voice',
-      'vault': '/vault'
-    };
-
-    const newPath = urlMap[viewMode];
-    if (window.location.pathname !== newPath) {
-      window.history.replaceState(null, '', newPath);
+      chats: '/chats',
+      memories: '/memories',
+      entities: '/entities',
+      models: '/models',
+      gateway: '/gateway',
+      projects: '/projects',
+      notifications: '/notifications',
+      search: '/search',
+      settings: '/settings',
+      clipboard: '/clipboard',
+      voice: '/voice',
+      vault: '/vault'
     }
-  }, [viewMode]);
 
-  // Track navigation state changes and push to history (except when navigating back/forward)
-  useEffect(() => {
+    const newPath = urlMap[viewMode]
+    if (window.location.pathname !== newPath) {
+      window.history.replaceState(null, '', newPath)
+    }
+  }, [viewMode])
+
+  // Record the committed destination before paint so an immediate keyboard/back-button action
+  // cannot observe the new screen while history still points at the previous screen. A passive
+  // effect left a real race here under renderer load: Cmd+[ could skip the selected project.
+  useLayoutEffect(() => {
     if (isNavigatingHistory.current) {
-      isNavigatingHistory.current = false;
-      return;
+      isNavigatingHistory.current = false
+      return
     }
 
     // Avoid duplicating the same state
@@ -307,189 +377,261 @@ function AppContent() {
       viewMode,
       selectedSessionId,
       selectedMemoryId,
-      selectedEntityId
-    };
+      selectedEntityId,
+      selectedProjectId
+    }
 
-    const lastState = navigationHistory.current[navigationHistory.current.length - 1];
-    const isSameState = lastState &&
+    const lastState = navigationHistory.current[navigationHistory.current.length - 1]
+    const isSameState =
+      lastState &&
       lastState.viewMode === currentState.viewMode &&
       lastState.selectedSessionId === currentState.selectedSessionId &&
       lastState.selectedMemoryId === currentState.selectedMemoryId &&
-      lastState.selectedEntityId === currentState.selectedEntityId;
+      lastState.selectedEntityId === currentState.selectedEntityId &&
+      lastState.selectedProjectId === currentState.selectedProjectId
 
     if (!isSameState) {
-      navigationHistory.current.push(currentState);
+      navigationHistory.current.push(currentState)
       // Clear forward history when navigating to a new state
-      forwardHistory.current = [];
+      forwardHistory.current = []
       // Limit history size to prevent memory issues
       if (navigationHistory.current.length > 50) {
-        navigationHistory.current = navigationHistory.current.slice(-50);
+        navigationHistory.current = navigationHistory.current.slice(-50)
       }
     }
-    syncNavFlags();
-  }, [viewMode, selectedSessionId, selectedMemoryId, selectedEntityId, syncNavFlags]);
+    syncNavFlags()
+  }, [
+    viewMode,
+    selectedSessionId,
+    selectedMemoryId,
+    selectedEntityId,
+    selectedProjectId,
+    syncNavFlags
+  ])
 
   // Subscribe to notification events from the main process
   useEffect(() => {
-    const unsubscribers: (() => void)[] = [];
+    if (!proReady || !isPro) return
+    const unsubscribers: (() => void)[] = []
 
     // Proactive approval queued — needs the user's decision
-    if (window.api?.onNewApproval) {
-      const unsubscribe = window.api.onNewApproval((data) => {
+    unsubscribers.push(
+      window.api.onNewApproval((data) => {
+        const routing = callHook<NotificationRoutingMetadata>(NOTIFICATION_METADATA_HOOK, {
+          source: 'approval',
+          recordId: data.approvalId
+        } satisfies NotificationSourceRecord)
         addNotification({
           type: 'approval',
           title: data.entityName ? `Approval — ${data.entityName}` : 'Approval needed',
           message: data.detail ? `${data.title} — ${data.detail}` : data.title,
           approvalId: data.approvalId,
-        });
-      });
-      unsubscribers.push(unsubscribe);
-    }
+          ...routing
+        })
+      })
+    )
 
     // New to-do extracted from your activity
-    if (window.api?.onNewAction) {
-      const unsubscribe = window.api.onNewAction((data) => {
-        const where = [data.entityName, data.sourceApp].filter(Boolean).join(' · ');
+    unsubscribers.push(
+      window.api.onNewAction((data) => {
+        const routing = callHook<NotificationRoutingMetadata>(NOTIFICATION_METADATA_HOOK, {
+          source: 'action',
+          recordId: data.actionId
+        } satisfies NotificationSourceRecord)
+        const where = [data.entityName, data.sourceApp].filter(Boolean).join(' · ')
         addNotification({
           type: 'todo',
           title: data.due ? `New to-do — due ${data.due}` : 'New to-do',
           message: where ? `${data.text} (${where})` : data.text,
           actionId: data.actionId,
-        });
-      });
-      unsubscribers.push(unsubscribe);
-    }
+          ...routing
+        })
+      })
+    )
 
     // A new version finished downloading and is staged — show the restart banner.
     // Seed from main too: on macOS the app can keep running with no windows, so a
     // download that finished before this window existed would otherwise be missed
     // (the event only reaches windows open at download time).
-    if (window.api?.onUpdateDownloaded) {
-      window.api.getStagedUpdateVersion?.().then((v) => { if (v) setUpdateReady(v); }).catch(() => {});
-      const unsubscribe = window.api.onUpdateDownloaded((data) => {
-        setUpdateReady(data.version);
-      });
-      unsubscribers.push(unsubscribe);
-    }
+    window.api
+      .getStagedUpdateVersion()
+      .then((v) => {
+        if (v) setUpdateReady(v)
+      })
+      .catch(() => {})
+    unsubscribers.push(
+      window.api.onUpdateDownloaded((data) => {
+        setUpdateReady(data.version)
+      })
+    )
 
     return () => {
-      unsubscribers.forEach(unsub => unsub());
-    };
-  }, [addNotification]);
+      unsubscribers.forEach((unsub) => unsub())
+    }
+  }, [addNotification, isPro, proReady])
 
   // Navigate back using history stack
   const navigateBack = useCallback(() => {
     if (navigationHistory.current.length > 1) {
-      isNavigatingHistory.current = true;
+      isNavigatingHistory.current = true
       // Pop current state and push to forward history
-      const currentState = navigationHistory.current.pop();
+      const currentState = navigationHistory.current.pop()
       if (currentState) {
-        forwardHistory.current.push(currentState);
+        forwardHistory.current.push(currentState)
       }
       // Get previous state
-      const previousState = navigationHistory.current[navigationHistory.current.length - 1];
+      const previousState = navigationHistory.current[navigationHistory.current.length - 1]
       if (previousState) {
-        setViewMode(previousState.viewMode);
-        setSelectedSessionId(previousState.selectedSessionId);
-        setSelectedMemoryId(previousState.selectedMemoryId);
-        setSelectedEntityId(previousState.selectedEntityId);
+        setViewMode(previousState.viewMode)
+        setSelectedSessionId(previousState.selectedSessionId)
+        setSelectedMemoryId(previousState.selectedMemoryId)
+        setSelectedEntityId(previousState.selectedEntityId)
+        setSelectedProjectId(previousState.selectedProjectId)
       }
-      syncNavFlags();
+      syncNavFlags()
     }
-  }, [syncNavFlags]);
+  }, [syncNavFlags])
 
   // Navigate forward using forward history stack
   const navigateForward = useCallback(() => {
     if (forwardHistory.current.length > 0) {
-      isNavigatingHistory.current = true;
+      isNavigatingHistory.current = true
       // Pop from forward history
-      const nextState = forwardHistory.current.pop();
+      const nextState = forwardHistory.current.pop()
       if (nextState) {
         // Push to back history
-        navigationHistory.current.push(nextState);
+        navigationHistory.current.push(nextState)
         // Apply the state
-        setViewMode(nextState.viewMode);
-        setSelectedSessionId(nextState.selectedSessionId);
-        setSelectedMemoryId(nextState.selectedMemoryId);
-        setSelectedEntityId(nextState.selectedEntityId);
+        setViewMode(nextState.viewMode)
+        setSelectedSessionId(nextState.selectedSessionId)
+        setSelectedMemoryId(nextState.selectedMemoryId)
+        setSelectedEntityId(nextState.selectedEntityId)
+        setSelectedProjectId(nextState.selectedProjectId)
       }
-      syncNavFlags();
+      syncNavFlags()
     }
-  }, [syncNavFlags]);
+  }, [syncNavFlags])
 
   const handleBack = useCallback(() => {
-    navigateBack();
-  }, [navigateBack]);
+    navigateBack()
+  }, [navigateBack])
 
   // Navigation handlers for Dashboard and MemoryChat
   const handleSelectChat = useCallback((sessionId: string) => {
-    setViewMode('chats');
-    setSelectedSessionId(sessionId);
-  }, []);
+    setViewMode('chats')
+    setSelectedSessionId(sessionId)
+  }, [])
 
   const handleSelectMemory = useCallback((memoryId: number) => {
-    setViewMode('memories');
-    setSelectedMemoryId(memoryId);
-  }, []);
+    setViewMode('memories')
+    setSelectedMemoryId(memoryId)
+  }, [])
 
   const handleSelectEntity = useCallback((entityId: number) => {
-    setViewMode('entities');
-    setSelectedEntityId(entityId);
-  }, []);
+    setViewMode('entities')
+    setSelectedEntityId(entityId)
+  }, [])
 
   // Universal-search result → jump to the exact thing: open its source URL, the
   // owning entity/memory/meeting, or seek Replay to that captured moment.
-  const handleOpenHit = useCallback((hit: SearchHit) => {
-    if (hit.kind === 'entity' || hit.kind === 'fact') { handleSelectEntity(hit.refId); return; }
-    if (hit.kind === 'memory') { handleSelectMemory(hit.refId); return; }
-    if (hit.kind === 'meeting') { setMeetingTarget(hit.refId || null); setViewMode('meetings'); return; }
-    // Chat conversation → open that exact chat (its id is carried in `url`).
-    if (hit.kind === 'chat') { setChatTarget(hit.url ? { conversationId: hit.url } : null); setViewMode('memory-chat'); return; }
-    // Knowledge-base doc → open its project (project_id carried in `url`).
-    if (hit.kind === 'doc') { setChatTarget(hit.url ? { projectId: hit.url } : null); setViewMode('memory-chat'); return; }
-    // Screen capture → seek Replay to that exact moment (the captured frame is the
-    // point; the source URL may be stale/missing).
-    setReplayTarget(hit.ts || Date.now());
-    setViewMode('replay');
-  }, [handleSelectEntity, handleSelectMemory]);
+  const handleOpenHit = useCallback(
+    (hit: SearchHit) => {
+      navigateSearchHit(hit, {
+        selectEntity: handleSelectEntity,
+        selectMemory: handleSelectMemory,
+        openMeeting: (meetingId) => {
+          setMeetingTarget(meetingId)
+          setViewMode('meetings')
+        },
+        openChat: (target) => {
+          setChatTarget(target)
+          setViewMode('memory-chat')
+        },
+        openReplay: (timestamp) => {
+          setReplayTarget(timestamp)
+          setViewMode('replay')
+        }
+      })
+    },
+    [handleSelectEntity, handleSelectMemory]
+  )
 
-  const openSearch = useCallback((q: string) => { setSearchQuery(q); setViewMode('search'); }, []);
+  const openSearch = useCallback((q: string) => {
+    setSearchQuery(q)
+    setViewMode('search')
+  }, [])
+
+  const handleProNavigate = useCallback((rawIntent: ProNavigationIntent): void => {
+    const intent = normalizeProNavigationIntent(rawIntent)
+    if (!intent) return
+
+    if (intent.view === 'actions') {
+      setActionTarget(intent.actionId ?? null)
+      setApprovalTarget(intent.approvalId ?? null)
+      setActionsMode(intent.mode ?? (intent.approvalId ? 'approvals' : 'todo'))
+      setActionsEntity(intent.entity ?? null)
+    } else if (intent.view === 'day') {
+      setCalendarEventTarget(intent.calendarEventId ?? null)
+    } else if (intent.view === 'replay') {
+      setReplayTarget(intent.seekMs ?? null)
+    } else {
+      setMeetingTarget(intent.meetingId ?? null)
+    }
+    setViewMode(intent.view)
+  }, [])
+
+  useEffect(() => {
+    if (!proReady || !isPro) return
+    return window.api.proOn?.(NOTIFICATION_OPEN_TARGET_CHANNEL, (rawTarget) => {
+      const destination = callHook<ProNavigationIntent>(NOTIFICATION_RESOLVE_TARGET_HOOK, rawTarget)
+      if (destination) handleProNavigate(destination)
+    })
+  }, [handleProNavigate, isPro, proReady])
 
   // Deep-link targets (Replay moment, specific meeting) are one-shot: clear them
   // only when we ACTUALLY LEAVE the screen that consumes them — tracked against the
   // previous view. Clearing via a viewMode+target dependency raced the navigation
   // (the target was wiped on the same transition that set it, so Replay opened on
   // "today"); keying off the transition out fixes that.
-  const prevViewRef = useRef(viewMode);
+  const prevViewRef = useRef(viewMode)
   useEffect(() => {
-    const prev = prevViewRef.current;
-    prevViewRef.current = viewMode;
-    if (prev === viewMode) return;
-    if (prev === 'replay' && viewMode !== 'replay') setReplayTarget(null);
-    if (prev === 'meetings' && viewMode !== 'meetings') setMeetingTarget(null);
-    if (prev === 'actions' && viewMode !== 'actions') { setActionsMode(null); setActionsEntity(null); }
-  }, [viewMode]);
+    const prev = prevViewRef.current
+    prevViewRef.current = viewMode
+    if (prev === viewMode) return
+    if (prev === 'replay' && viewMode !== 'replay') setReplayTarget(null)
+    if (prev === 'meetings' && viewMode !== 'meetings') setMeetingTarget(null)
+    if (prev === 'day' && viewMode !== 'day') setCalendarEventTarget(null)
+    if (prev === 'actions' && viewMode !== 'actions') {
+      setActionTarget(null)
+      setApprovalTarget(null)
+      setActionsMode(null)
+      setActionsEntity(null)
+    }
+  }, [viewMode])
 
   // Open a project chat in the main Chat screen (existing convo or new-in-project).
-  const handleOpenProjectChat = useCallback((target: { conversationId?: string; projectId?: string }) => {
-    setChatTarget(target);
-    setViewMode('memory-chat');
-  }, []);
+  const handleOpenProjectChat = useCallback(
+    (target: { conversationId?: string; projectId?: string }) => {
+      setChatTarget(target)
+      setViewMode('memory-chat')
+    },
+    []
+  )
 
   // Global keyboard shortcuts for back/forward navigation (Cmd+[ and Cmd+])
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === '[') {
-        e.preventDefault();
-        navigateBack();
+        e.preventDefault()
+        navigateBack()
       } else if ((e.metaKey || e.ctrlKey) && e.key === ']') {
-        e.preventDefault();
-        navigateForward();
+        e.preventDefault()
+        navigateForward()
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigateBack, navigateForward]);
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [navigateBack, navigateForward])
 
   // Original sidebar order preserved. Pro tabs pull their icon/label from the
   // static catalogue and are marked locked in the free build (open the
@@ -499,19 +641,21 @@ function AppContent() {
   // wraps the nav, so a TypeError here white-screens every user on boot (0.0.34).
   // If a route has no ProFeature, skip that item and warn; a dropped tab is
   // recoverable, a render-time throw is not.
-  const proItem = (route: string): { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } | null => {
-    const f = getProFeature(route);
+  const proItem = (
+    route: string
+  ): { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } | null => {
+    const f = getProFeature(route)
     if (!f) {
-      console.warn(`[nav] no pro catalog entry for "${route}" — skipping nav item`);
-      return null;
+      console.warn(`[nav] no pro catalog entry for "${route}" — skipping nav item`)
+      return null
     }
     return {
       label: f.label,
       icon: <f.icon className="h-5 w-5 shrink-0 text-neutral-400" weight="regular" />,
       view: f.route as ViewMode,
-      locked: !isPro,
-    };
-  };
+      locked: !isPro
+    }
+  }
   // Icons take no color — the nav button drives it (emerald when active).
   const mainNav: { label: string; icon: React.ReactNode; view: ViewMode; locked?: boolean }[] = [
     proItem('search'),
@@ -521,26 +665,62 @@ function AppContent() {
     proItem('meetings'),
     proItem('actions'),
     proItem('entities'),
-    { label: 'Projects', icon: <IconFolders className="h-5 w-5 shrink-0" />, view: 'projects' as ViewMode },
-    { label: 'Chat', icon: <IconMessageCircle className="h-5 w-5 shrink-0" />, view: 'memory-chat' as ViewMode },
+    {
+      label: 'Projects',
+      icon: <IconFolders className="h-5 w-5 shrink-0" />,
+      view: 'projects' as ViewMode
+    },
+    {
+      label: 'Chat',
+      icon: <IconMessageCircle className="h-5 w-5 shrink-0" />,
+      view: 'memory-chat' as ViewMode
+    },
     proItem('voice'),
     proItem('vault'),
     proItem('clipboard'),
-    { label: 'Integrations', icon: <IconPlug className="h-5 w-5 shrink-0" />, view: 'connectors' as ViewMode },
-    { label: 'Models', icon: <IconDownload className="h-5 w-5 shrink-0" />, view: 'models' as ViewMode },
-    { label: 'Gateway', icon: <IconServer2 className="h-5 w-5 shrink-0" />, view: 'gateway' as ViewMode },
-    proItem('notifications'),
-  ].filter((i): i is { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } => i !== null);
+    {
+      label: 'Integrations',
+      icon: <IconPlug className="h-5 w-5 shrink-0" />,
+      view: 'connectors' as ViewMode
+    },
+    {
+      label: 'Models',
+      icon: <IconDownload className="h-5 w-5 shrink-0" />,
+      view: 'models' as ViewMode
+    },
+    {
+      label: 'Gateway',
+      icon: <IconServer2 className="h-5 w-5 shrink-0" />,
+      view: 'gateway' as ViewMode
+    },
+    proItem('notifications')
+  ].filter(
+    (i): i is { label: string; icon: React.ReactNode; view: ViewMode; locked: boolean } =>
+      i !== null
+  )
   const bottomNav: { label: string; icon: React.ReactNode; view: ViewMode; locked?: boolean }[] = [
-    { label: 'Settings', icon: <IconSettings className="h-5 w-5 shrink-0" />, view: 'settings' as ViewMode },
-  ];
-  const renderNavItem = (item: { label: string; icon: React.ReactNode; view: ViewMode; locked?: boolean }): React.ReactElement => {
-    const active = viewMode === item.view;
+    {
+      label: 'Settings',
+      icon: <IconSettings className="h-5 w-5 shrink-0" />,
+      view: 'settings' as ViewMode
+    }
+  ]
+  const renderNavItem = (item: {
+    label: string
+    icon: React.ReactNode
+    view: ViewMode
+    locked?: boolean
+  }): React.ReactElement => {
+    const active = viewMode === item.view
     return (
       <button
         key={item.view}
         onClick={() => {
-          setViewMode(item.view); setSelectedSessionId(null); setSelectedMemoryId(null); setSelectedEntityId(null); setReplayTarget(null);
+          setViewMode(item.view)
+          setSelectedSessionId(null)
+          setSelectedMemoryId(null)
+          setSelectedEntityId(null)
+          setReplayTarget(null)
         }}
         title={!sidebarOpen ? item.label : undefined}
         className={cn(
@@ -551,13 +731,17 @@ function AppContent() {
             : 'text-neutral-500 hover:bg-neutral-500/10 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
         )}
       >
-        {active && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-green-500" />}
+        {active && (
+          <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-green-500" />
+        )}
         {item.icon}
         {sidebarOpen && <span className="flex-1 text-left whitespace-pre">{item.label}</span>}
-        {sidebarOpen && item.locked && <IconLock className="h-3.5 w-3.5 shrink-0 text-neutral-400/60" title="Pro" />}
+        {sidebarOpen && item.locked && (
+          <IconLock className="h-3.5 w-3.5 shrink-0 text-neutral-400/60" title="Pro" />
+        )}
       </button>
-    );
-  };
+    )
+  }
 
   return (
     <div className="h-screen w-full overflow-hidden bg-neutral-950 relative">
@@ -565,11 +749,16 @@ function AppContent() {
       {/* Recording indicator — auto-records detected meetings; always visible. */}
       {(rec.recording || rec.busy) && (
         <button
-          onClick={() => (rec.warningSecondsLeft > 0 ? rec.keepAlive() : rec.recording && rec.stop())}
+          onClick={() =>
+            rec.warningSecondsLeft > 0 ? rec.keepAlive() : rec.recording && rec.stop()
+          }
           className="absolute left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-red-500/40 bg-neutral-900/95 px-3.5 py-1.5 font-mono text-xs text-neutral-200 shadow-xl backdrop-blur hover:border-red-500"
         >
           {rec.busy ? (
-            <><IconLoader2 className="h-3.5 w-3.5 animate-spin text-neutral-400" /> Transcribing meeting…</>
+            <>
+              <IconLoader2 className="h-3.5 w-3.5 animate-spin text-neutral-400" /> Transcribing
+              meeting…
+            </>
           ) : rec.warningSecondsLeft > 0 ? (
             <>
               <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
@@ -578,7 +767,16 @@ function AppContent() {
           ) : (
             <>
               <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-              Recording {rec.platform === 'zoom' ? 'Zoom' : rec.platform === 'teams' ? 'Teams' : rec.platform === 'meet' ? 'Meet' : 'meeting'} · {Math.floor(rec.elapsed / 60)}:{String(rec.elapsed % 60).padStart(2, '0')} · click to stop
+              Recording{' '}
+              {rec.platform === 'zoom'
+                ? 'Zoom'
+                : rec.platform === 'teams'
+                  ? 'Teams'
+                  : rec.platform === 'meet'
+                    ? 'Meet'
+                    : 'meeting'}{' '}
+              · {Math.floor(rec.elapsed / 60)}:{String(rec.elapsed % 60).padStart(2, '0')} · click
+              to stop
             </>
           )}
         </button>
@@ -592,21 +790,30 @@ function AppContent() {
           <span>Update {updateReady} is ready</span>
           <button
             onClick={async () => {
-              if (!window.api?.installUpdate) return;
-              setInstalling(true);
+              setInstalling(true)
               try {
-                await window.api.installUpdate();
+                await window.api.installUpdate()
               } catch {
                 // quitAndInstall normally never returns (the app exits). If it
                 // rejects, unlock the button so the user can retry.
-                setInstalling(false);
-                addNotification({ type: 'info', title: 'Update restart failed', message: 'Try again from the update banner.' });
+                setInstalling(false)
+                addNotification({
+                  type: 'info',
+                  title: 'Update restart failed',
+                  message: 'Try again from the update banner.'
+                })
               }
             }}
             disabled={installing}
             className="flex items-center gap-1.5 rounded-sm border border-green-500/50 bg-green-500/10 px-2.5 py-1 text-green-400 hover:bg-green-500/20 disabled:opacity-60"
           >
-            {installing ? <><IconLoader2 className="h-3.5 w-3.5 animate-spin" /> Restarting…</> : 'Restart to update'}
+            {installing ? (
+              <>
+                <IconLoader2 className="h-3.5 w-3.5 animate-spin" /> Restarting…
+              </>
+            ) : (
+              'Restart to update'
+            )}
           </button>
         </div>
       )}
@@ -618,13 +825,19 @@ function AppContent() {
       <div className="flex h-full relative z-10">
         {/* Aceternity Sidebar */}
         <Sidebar open={sidebarOpen} setOpen={setSidebarOpen}>
-          <SidebarBody className="justify-between gap-3 bg-neutral-900/80 backdrop-blur-xl border-r border-neutral-800">
+          <SidebarBody
+            role="navigation"
+            aria-label="Primary navigation"
+            className="justify-between gap-3 bg-neutral-900/80 backdrop-blur-xl border-r border-neutral-800"
+          >
             <div className="flex min-h-0 flex-1 flex-col">
               {/* Brand + a dedicated collapse/expand toggle */}
               {sidebarOpen ? (
                 <div className="flex items-center gap-2 py-2">
-                  <img src={logo} alt="Off Grid" className="h-8 w-8 shrink-0 rounded-lg" />
-                  <span className="flex-1 text-left font-semibold text-white whitespace-pre">Off Grid AI</span>
+                  <img src={logo} alt="Off Grid AI" className="h-8 w-8 shrink-0 rounded-lg" />
+                  <span className="flex-1 text-left font-semibold text-white whitespace-pre">
+                    Off Grid AI
+                  </span>
                   <button
                     onClick={() => setSidebarOpen(false)}
                     aria-label="Collapse sidebar"
@@ -641,7 +854,7 @@ function AppContent() {
                   title="Expand"
                   className="group/exp flex w-full flex-col items-center gap-1.5 py-2"
                 >
-                  <img src={logo} alt="Off Grid" className="h-8 w-8 shrink-0 rounded-lg" />
+                  <img src={logo} alt="Off Grid AI" className="h-8 w-8 shrink-0 rounded-lg" />
                   <IconLayoutSidebarLeftExpand className="h-5 w-5 text-neutral-500 transition-colors group-hover/exp:text-white" />
                 </button>
               )}
@@ -682,7 +895,10 @@ function AppContent() {
 
             {/* Pinned bottom */}
             <div className="flex flex-col gap-1 border-t border-neutral-200 pt-2 dark:border-neutral-800">
-              <ModelStatusDot open={sidebarOpen} onClick={() => (sidebarOpen ? setViewMode('settings') : setSidebarOpen(true))} />
+              <ModelStatusDot
+                open={sidebarOpen}
+                onClick={() => (sidebarOpen ? setViewMode('settings') : setSidebarOpen(true))}
+              />
               <NavThemeToggle expanded={sidebarOpen} />
               {bottomNav.map(renderNavItem)}
               {/* Cross-sell to the companion phone app — opens the /mobile page
@@ -698,7 +914,9 @@ function AppContent() {
               >
                 <IconDeviceMobile className="h-5 w-5 shrink-0" />
                 {sidebarOpen && <span className="flex-1 text-left whitespace-pre">Mobile app</span>}
-                {sidebarOpen && <IconExternalLink className="h-3.5 w-3.5 shrink-0 text-neutral-400/60" />}
+                {sidebarOpen && (
+                  <IconExternalLink className="h-3.5 w-3.5 shrink-0 text-neutral-400/60" />
+                )}
               </button>
             </div>
           </SidebarBody>
@@ -726,14 +944,14 @@ function AppContent() {
                     sessionId={selectedSessionId}
                     onBack={handleBack}
                     onSelectEntity={(entityId) => {
-                      setSelectedEntityId(entityId);
-                      setViewMode('entities');
-                      setSelectedSessionId(null);
+                      setSelectedEntityId(entityId)
+                      setViewMode('entities')
+                      setSelectedSessionId(null)
                     }}
                     onSelectMemory={(memoryId) => {
-                      setSelectedMemoryId(memoryId);
-                      setViewMode('memories');
-                      setSelectedSessionId(null);
+                      setSelectedMemoryId(memoryId)
+                      setViewMode('memories')
+                      setSelectedSessionId(null)
                     }}
                   />
                 </motion.div>
@@ -751,7 +969,14 @@ function AppContent() {
                       onNavigateToMemory={handleSelectMemory}
                       onNavigateToChat={handleSelectChat}
                       onNavigateToEntity={handleSelectEntity}
-                      onSeekReplay={(ts) => { setReplayTarget(ts || Date.now()); setViewMode('replay'); }}
+                      onOpenProject={(id) => {
+                        setSelectedProjectId(id)
+                        setViewMode('projects')
+                      }}
+                      onSeekReplay={(ts) => {
+                        setReplayTarget(ts || Date.now())
+                        setViewMode('replay')
+                      }}
                       openTarget={chatTarget}
                       onTargetConsumed={() => setChatTarget(null)}
                     />
@@ -760,7 +985,11 @@ function AppContent() {
                   ) : viewMode === 'models' ? (
                     <ModelsScreen />
                   ) : viewMode === 'projects' ? (
-                    <ProjectsScreen onOpenChat={handleOpenProjectChat} />
+                    <ProjectsScreen
+                      onOpenChat={handleOpenProjectChat}
+                      selectedProjectId={selectedProjectId}
+                      onSelectProject={setSelectedProjectId}
+                    />
                   ) : viewMode === 'connectors' ? (
                     <ConnectorsScreen />
                   ) : viewMode === 'gateway' ? (
@@ -768,22 +997,20 @@ function AppContent() {
                   ) : viewMode === 'settings' ? (
                     <Settings />
                   ) : proFeatureComingSoon(viewMode, currentPlatform(), isPro) ? (
-                    // Pro is macOS-tested only for now: a Pro subscriber on a
-                    // non-Mac platform gets the coming-soon screen, never the
-                    // untested feature. (Free users still get the upsell below.)
                     <UpgradeScreen variant="coming-soon" feature={getProFeature(viewMode)} />
                   ) : (
                     // Pro tabs: render through the pro view-router when active,
                     // otherwise show the upgrade writeup for that feature.
-                    renderProView(viewMode, {
+                    (renderProView(viewMode, {
                       setView: (v) => setViewMode(v as ViewMode),
+                      onNavigate: handleProNavigate,
                       replayTarget,
-                      setReplayTarget,
                       meetingTarget,
+                      actionTarget,
+                      approvalTarget,
+                      calendarEventTarget,
                       actionsMode,
-                      setActionsMode,
                       actionsEntity,
-                      setActionsEntity,
                       searchQuery,
                       onSearchQueryChange: setSearchQuery,
                       searchSources,
@@ -796,8 +1023,10 @@ function AppContent() {
                       rec,
                       onSelectEntity: handleSelectEntity,
                       onSelectMemory: handleSelectMemory,
-                      onOpenHit: handleOpenHit,
-                    } satisfies ProViewContext) ?? <UpgradeScreen feature={getProFeature(viewMode)} />
+                      onOpenHit: handleOpenHit
+                    } satisfies ProViewContext) ?? (
+                      <UpgradeScreen feature={getProFeature(viewMode)} />
+                    ))
                   )}
                 </motion.div>
               )}
@@ -806,19 +1035,19 @@ function AppContent() {
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 function App() {
   // Onboarding runs FIRST — before the model/permission gate — so a new user sees
   // the intro, then goes straight to model selection (handled by PermissionGate).
-  const [onboarded, setOnboarded] = useState<boolean | null>(null);
+  const [onboarded, setOnboarded] = useState<boolean | null>(null)
   useEffect(() => {
-    setOnboarded(localStorage.getItem('onboarding_completed') === 'true');
-  }, []);
+    setOnboarded(localStorage.getItem('onboarding_completed') === 'true')
+  }, [])
 
-  if (onboarded === null) return null;
-  if (!onboarded) return <Onboarding onComplete={() => setOnboarded(true)} />;
+  if (onboarded === null) return null
+  if (!onboarded) return <Onboarding onComplete={() => setOnboarded(true)} />
 
   return (
     <PermissionGate>
@@ -830,7 +1059,7 @@ function App() {
         </ToastProvider>
       </NotificationProvider>
     </PermissionGate>
-  );
+  )
 }
 
-export default App;
+export default App

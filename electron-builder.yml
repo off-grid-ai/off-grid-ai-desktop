@@ -1,12 +1,28 @@
 # Single build is the pro-capable one (license-gated). Keep the `.pro` bundle id so
 # existing Pro installs auto-update into it (bundle id + granted TCC permissions match).
+extends: scripts/config/electron-builder-runtime.yml
 appId: co.getoffgridai.desktop.pro
-productName: Off Grid AI
+productName: Off Grid AI Desktop
 copyright: © Off Grid AI
+# This hook runs before electron-builder emits artifactCreated, which is the event
+# that schedules publishing. A truncated DMG therefore cannot reach GitHub.
+artifactBuildCompleted: scripts/verify-electron-builder-artifact.mjs
 directories:
   buildResources: build
 files:
+  # Positive application boundary. Source, tests, documentation, marketing data,
+  # and local tooling are not runtime inputs and must never enter app.asar.
+  - 'out/**/*'
+  - 'package.json'
   - '!**/.vscode/*'
+  # Local profiles and agent worktrees may contain private user data, downloaded
+  # multi-GB models, nested builds, or symlinks outside the repository. They are
+  # never application inputs. Keep this boundary here rather than relying on
+  # .gitignore: electron-builder packages filesystem contents, not only git files.
+  - '!{.demo-profile,.offgrid,.claude,.Codex,coverage}/**'
+  # The packaged-helper integration test must use an in-repo workspace because
+  # electron-builder rejects macOS's /tmp alias. Never admit that disposable output.
+  - '!out/packaged-helpers-*/**'
   - '!src/*'
   - '!pro/**'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
@@ -14,19 +30,6 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,tsconfig.web.tsbuildinfo}'
   - '!**/*.tsbuildinfo'
-# Bundles everything under resources/ (the local model runner — llama/whisper/ffmpeg/sd
-# — plus the native helpers release.yml stages into resources/bin: meeting-recorder, the
-# dictation hotkey, etc.) + UI assets. Those native binaries are built fresh and copied
-# into resources/bin by release.yml BEFORE this runs, so they get bundled and signed in
-# the normal pass. (An earlier note claimed a separate "Pro build config" added
-# meeting-recorder — there is no such config; that gap shipped it missing, so it is now
-# staged in release.yml like the rest.)
-extraResources:
-  - from: resources
-    to: .
-    filter:
-      - "**/*"
-      - "!models/**"
 win:
   executableName: off-grid-ai
   # Without this, electron-builder ships the default Electron icon on Windows (the
@@ -39,6 +42,9 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  # Every bundled native runtime is compiled for macOS 13 or newer. Advertising
+  # macOS 12 here lets the app install while its local chat engine cannot launch.
+  minimumSystemVersion: '13.0'
   # DMG is the human download; the zip + latest-mac.yml (generated for the zip)
   # are what electron-updater needs, so auto-update keeps working. One build, one
   # update channel — no core/pro split, no arch variants to confuse anyone.
@@ -63,6 +69,12 @@ mac:
   # electron-builder's signing stand.
 dmg:
   artifactName: ${name}-${version}.${ext}
+  # The app is currently ~3.3 GB before compression. macOS 26 adds an EFI/GPT
+  # partition to large HFS images, so dmgbuild's computed size can leave less usable
+  # space than the bundle needs. Allocate deterministic headroom, then shrink after
+  # the copy so the published download remains compressed to its actual contents.
+  size: 5g
+  shrink: true
 linux:
   target:
     - AppImage
@@ -71,7 +83,6 @@ linux:
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
-npmRebuild: false
 # Electron fuses (flipped at package time). ASAR integrity makes a tampered app.asar
 # refuse to load — the local-first anti-tamper lever (we don't phone home, so this is
 # the bar against cracking the offline license check). Only the integrity fuses are

@@ -57,11 +57,16 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.channel }}" = "stable" ]; then
             CHANNEL=stable
-            npm version patch --no-git-tag-version
             VERSION=$(node -p "require('./package.json').version")
-            git add package.json package-lock.json
-            git commit -m "chore: bump version to $VERSION [skip ci]"
-            git push
+            # A deliberately prepared version (for example 0.0.39) ships as-is.
+            # Only advance when that exact version already has a release tag.
+            if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+              npm version patch --no-git-tag-version
+              VERSION=$(node -p "require('./package.json').version")
+              git add package.json package-lock.json
+              git commit -m "chore: bump version to $VERSION [skip ci]"
+              git push
+            fi
           else
             CHANNEL=beta
             # A nightly is a prerelease of the NEXT patch, so it sorts ABOVE the last
@@ -89,9 +94,10 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.sha }} # the exact bumped commit
           fetch-depth: 0
-          lfs: true # resources/bin/* (llama-server, sd-cli, whisper, ffmpeg, dylibs)
-                    # are Git LFS — without this CI bundles pointer stubs and every
-                    # runtime spawn fails with ENOEXEC.
+          lfs:
+            true # resources/bin/* (llama-server, sd-cli, whisper, ffmpeg, dylibs)
+            # are Git LFS — without this CI bundles pointer stubs and every
+            # runtime spawn fails with ENOEXEC.
       - name: Pull LFS binaries
         run: git lfs pull
       # Rebuild the chat engine from source with a PINNED macOS deployment target.
@@ -105,6 +111,13 @@ jobs:
           command -v cmake >/dev/null || brew install cmake
           MACOS_DEPLOYMENT_TARGET=13.0 LLAMA_REF=b9838 bash scripts/build-llama.sh
           otool -l resources/bin/llama/llama-server | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print "[ci] bundled engine minos="$2; exit}'
+      # Rebuild the one-shot Whisper CLI instead of trusting the committed LFS
+      # payload. The production script disables OpenMP/BLAS auto-discovery and
+      # rejects Homebrew paths, missing @rpath names, symlinks, and a newer minos.
+      - name: Build Whisper CLI (pinned deployment target)
+        run: |
+          MACOS_DEPLOYMENT_TARGET=13.0 WHISPER_REF=v1.7.4 bash scripts/build-whisper-cli.sh
+          otool -l resources/bin/whisper/whisper-cli | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print "[ci] bundled Whisper minos="$2; exit}'
       # Compile the native meeting recorder (ScreenCaptureKit + AVFoundation) and stage
       # it into resources/bin so extraResources bundles it at Contents/Resources/bin —
       # the first path recorderBin() resolves in the packaged app (pro meeting-native.ts).
@@ -179,7 +192,7 @@ jobs:
             "${{ github.repository }}" \
             > release-notes.md
           cat release-notes.md
-      - name: Package, sign, notarize & publish (DMG + auto-update metadata)
+      - name: Package, sign, notarize & verify (publication disabled)
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -187,26 +200,48 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          OFFGRID_REQUIRE_RELEASE_TRUST: '1'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # notarytool needs the API key as a file; write it from the secret.
           printf '%s' "$APPLE_API_KEY_CONTENT" > "$RUNNER_TEMP/AuthKey.p8"
           export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
-          # ONE signed + notarized build. The version's channel decides the feed:
-          #   stable → latest-mac.yml, published as a normal release (everyone)
-          #   beta   → beta-mac.yml (from the -beta suffix), published as a
-          #            PRE-RELEASE so it never becomes /releases/latest and the
-          #            stable feed + the OffGrid-latest.dmg link stay untouched.
-          if [ "${{ needs.version.outputs.channel }}" = "stable" ]; then
-            npx electron-builder --mac \
-              -c.dmg.artifactName='OffGrid-${version}.${ext}' \
-              -c.publish.releaseType=release \
-              --publish always
+          # Build every artifact with publication disabled. The artifact hook verifies
+          # both the updater ZIP and DMG before this command can complete.
+          npx electron-builder --mac \
+            -c.dmg.artifactName='OffGrid-${version}.${ext}' \
+            --publish never
+      - name: Prove packaged TTS resolves and synthesizes headlessly
+        run: |
+          APP="$(find dist -mindepth 2 -maxdepth 2 -type d -name 'Off Grid AI Desktop.app' -print -quit)"
+          test -n "$APP"
+          node scripts/probe-packaged-tts.mjs "$APP" --synthesize
+      - name: Stage verified update assets and publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+          CHANNEL: ${{ needs.version.outputs.channel }}
+          TARGET_SHA: ${{ needs.version.outputs.sha }}
+        run: |
+          if [ "$CHANNEL" = stable ]; then
+            FEED=latest-mac.yml
           else
-            npx electron-builder --mac \
-              -c.dmg.artifactName='OffGrid-${version}.${ext}' \
-              -c.publish.releaseType=prerelease \
-              --publish always
+            FEED=beta-mac.yml
+          fi
+          test -f "dist/$FEED"
+          node scripts/prepare-mac-release-assets.mjs \
+            "dist/$FEED" dist dist/release-assets "$VERSION"
+
+          TAG="v$VERSION"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --target "$TARGET_SHA" \
+              --title "Off Grid AI Desktop $VERSION" --notes-file release-notes.md
+          fi
+          gh release upload "$TAG" dist/release-assets/* --clobber
+          if [ "$CHANNEL" = stable ]; then
+            gh release edit "$TAG" --draft=false --prerelease=false --latest
+          else
+            gh release edit "$TAG" --draft=false --prerelease
           fi
       - name: Migrate legacy Pro update channel (publish pro-mac.yml)
         env:

@@ -16,13 +16,42 @@ jobs:
     timeout-minutes: 25 # backstop: a hung step fails fast instead of running for hours
     steps:
       - uses: actions/checkout@v4
-      - name: Check out pro (paid features) into ./pro
+      # Check out pro on the branch that MATCHES this PR/push (so a coordinated
+      # core+pro change is tested together). If pro has no such branch (most PRs),
+      # this step's checkout fails quietly and the fallback below pulls pro `main`.
+      # Without this, CI silently tested the core branch against pro `main`, so
+      # pro's new test files were absent while pro source was still measured →
+      # coverage cratered (60% vs 97% local). See PR #46.
+      - name: Check out pro (matching branch) into ./pro
+        id: pro_branch
         uses: actions/checkout@v4
         continue-on-error: true
         with:
           repository: off-grid-ai/desktop-pro
           token: ${{ secrets.CI_CROSS_REPO_TOKEN }}
           path: pro
+          ref: ${{ github.head_ref || github.ref_name }}
+          # Don't leave the cross-repo PAT in ./pro/.git/config where a later
+          # PR-controlled step could reuse it — we only need it for the clone.
+          persist-credentials: false
+      - name: Fall back to pro main if no matching branch
+        if: ${{ steps.pro_branch.outcome != 'success' || hashFiles('pro/tsconfig.json') == '' }}
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: off-grid-ai/desktop-pro
+          token: ${{ secrets.CI_CROSS_REPO_TOKEN }}
+          path: pro
+          persist-credentials: false
+      # pro MUST be present: without it the guarded typecheck/coverage path is skipped and
+      # CI would pass core-only with cratered/misleading coverage (the failure the
+      # matching-branch checkout above was added to fix). Fail loudly instead of silently.
+      - name: Require pro checkout to have succeeded
+        run: |
+          if [ ! -f pro/tsconfig.json ]; then
+            echo "::error::pro (desktop-pro) was not checked out — cannot validate the open-core build. Check CI_CROSS_REPO_TOKEN / repo access."
+            exit 1
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '24' # node:sqlite (used by integration tests) is available unflagged
@@ -35,9 +64,31 @@ jobs:
         if: ${{ hashFiles('pro/tsconfig.json') != '' }}
         timeout-minutes: 6
         run: cd pro && npx tsc --noEmit -p tsconfig.json
-      - name: Test
+      # Runs the full vitest suite AND enforces the coverage ratchet floor
+      # (vitest.config.ts `thresholds`) — the same gate as the pre-push hook, so a
+      # coverage regression fails CI, not just local pushes. The pro/** threshold
+      # group applies only when pro was checked out above (guarded in the config).
+      - name: Test + coverage thresholds
         timeout-minutes: 10
-        run: npm test
+        run: npm run test:coverage
+      # Build/native/port integration tests (packaging, whisper build-staging, the
+      # model-port + System Health seams that own :8439). These need a packaged
+      # build / native toolchain / a live engine port the pure `verify` runner
+      # doesn't have, so they're advisory here (bounded, non-blocking) and run for
+      # real in the build/release job + locally via `npm run test:heavy`.
+      - name: Heavy integration (build/native/port)
+        timeout-minutes: 10
+        continue-on-error: true
+        run: npm run test:heavy
+      # Architecture-boundary gate (hygiene §A/§H): walks the import graph and fails
+      # on a forbidden edge — core->pro (open-core), a pure-logic module gaining an
+      # IO import, renderer->main, circular deps. Fast (graph-only, ~2s), so unlike
+      # eslint it can BLOCK without wedging CI. Rules verified clean on the tree.
+      - name: Dependency boundaries
+        timeout-minutes: 4
+        run: npm run depcruise
+      # NOTE: SonarCloud runs via Automatic Analysis (SonarCloud clones this repo and
+      # analyzes core on each push/PR — no CI step, token, or coverage upload here).
       # Advisory: lint is enforced locally; bounded + non-blocking here so an
       # eslint slowdown over the full tree (incl. checked-out pro/) can't wedge CI.
       - name: Lint

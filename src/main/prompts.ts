@@ -1,17 +1,15 @@
-import { getSetting, deleteSetting } from './database';
-
-export interface PromptVariable {
-  name: string;
-  description: string;
+interface PromptVariable {
+  name: string
+  description: string
 }
 
 export interface PromptDef {
-  key: string;
-  name: string;
-  description: string;
-  category: 'master-memory' | 'memory-filter' | 'entity' | 'session' | 'chat';
-  variables: PromptVariable[];
-  defaultTemplate: string;
+  key: string
+  name: string
+  description: string
+  category: 'master-memory' | 'memory-filter' | 'entity' | 'session' | 'chat'
+  variables: PromptVariable[]
+  defaultTemplate: string
 }
 
 // ---------------------------------------------------------------------------
@@ -27,7 +25,7 @@ Be specific — include names, versions, concrete details. Skip generic info.
 Conversation Summary:
 {{SUMMARY}}
 
-Master Memory:`;
+Master Memory:`
 
 const MASTER_MEMORY_INCREMENTAL = `Update this master memory by integrating the new conversation summary. Write in third person.
 
@@ -39,7 +37,7 @@ CURRENT MASTER MEMORY:
 NEW SUMMARY:
 {{NEW_SUMMARY}}
 
-Updated Master Memory:`;
+Updated Master Memory:`
 
 const MASTER_MEMORY_BATCH_FIRST = `Create a MASTER MEMORY about this user from the conversation summaries below. Write in third person.
 
@@ -48,7 +46,7 @@ Include sections for: About the User, Projects & Work, Technical Environment, Pr
 Conversation Summaries:
 {{BATCH_TEXT}}
 
-Master Memory:`;
+Master Memory:`
 
 const MASTER_MEMORY_BATCH_EXPAND = `Update this master memory by integrating new conversation summaries. PRESERVE existing info, ADD new facts. Write in third person.
 
@@ -58,7 +56,7 @@ CURRENT MASTER MEMORY:
 ADDITIONAL SUMMARIES (batch {{BATCH_NUM}}):
 {{BATCH_TEXT}}
 
-Updated Master Memory:`;
+Updated Master Memory:`
 
 const MASTER_MEMORY_MERGE = `Merge these partial summaries into one unified MASTER MEMORY about the user. Write in third person.
 
@@ -67,7 +65,7 @@ Combine all information, remove duplicates, organize into sections: About the Us
 Partial Summaries:
 {{PARTIAL_SUMMARIES}}
 
-Master Memory:`;
+Master Memory:`
 
 const MEMORY_FILTER_LENIENT = `You are a inclusive memory filter. Decide if the following single message should be saved as LONG-TERM memory that a user would want in future chats.
 
@@ -96,7 +94,7 @@ Return JSON ONLY with this shape:
 
 Role: {{ROLE}}
 Message: {{MESSAGE}}
-JSON:`;
+JSON:`
 
 const MEMORY_FILTER_BALANCED = `You are a balanced memory filter. Decide if the following single message should be saved as LONG-TERM memory that a user would want in future chats.
 
@@ -131,7 +129,7 @@ Return JSON ONLY with this shape:
 
 Role: {{ROLE}}
 Message: {{MESSAGE}}
-JSON:`;
+JSON:`
 
 const MEMORY_FILTER_STRICT = `You are a very strict memory filter. Decide if the following single message should be saved as LONG-TERM memory that a user would want in future chats.
 
@@ -162,7 +160,7 @@ Return JSON ONLY with this shape:
 
 Role: {{ROLE}}
 Message: {{MESSAGE}}
-JSON:`;
+JSON:`
 
 const ENTITY_EXTRACTION_LENIENT = `You are extracting entities from long-term memory statements. Be inclusive - capture entities that might be useful later.
 
@@ -187,7 +185,7 @@ Rules:
 Memory statements:
 {{MEMORY_TEXT}}
 
-JSON:`;
+JSON:`
 
 const ENTITY_EXTRACTION_BALANCED = `You are extracting entities from long-term memory statements. Only keep entities worth remembering for future chats.
 
@@ -215,7 +213,7 @@ Rules:
 Memory statements:
 {{MEMORY_TEXT}}
 
-JSON:`;
+JSON:`
 
 const ENTITY_EXTRACTION_STRICT = `You are extracting entities from long-term memory statements. Be very selective - only keep high-value entities.
 
@@ -242,7 +240,7 @@ Rules:
 Memory statements:
 {{MEMORY_TEXT}}
 
-JSON:`;
+JSON:`
 
 const ENTITY_SUMMARY = `You are updating an entity profile summary.
 
@@ -255,7 +253,7 @@ Existing summary:
 New facts:
 {{NEW_FACTS}}
 
-Write a concise, well-structured summary. Include only verified facts. Do not add speculation. Output plain text only.`;
+Write a concise, well-structured summary. Include only verified facts. Do not add speculation. Output plain text only.`
 
 const SESSION_SUMMARY = `Extract a user profile summary from this conversation. Focus on the USER, not the assistant. Write in third person.
 
@@ -265,7 +263,7 @@ Skip: generic advice, code snippets, things merely asked about but not adopted.
 Conversation:
 {{CONVERSATION_TEXT}}
 
-User Profile Summary:`;
+User Profile Summary:`
 
 const RAG_CHAT = `You are a helpful assistant that answers using ONLY the provided context from the user's memories, conversations, summaries, and entities.
 Prefer specific evidence from messages, summaries, entities, and memories over the master memory. Use the master memory only as supplemental context.
@@ -293,7 +291,7 @@ User question:
 Context:
 {{CONTEXT_BLOCK}}
 
-Answer:`;
+Answer:`
 
 // ---------------------------------------------------------------------------
 // Prompt registry
@@ -307,7 +305,7 @@ export const PROMPT_REGISTRY: PromptDef[] = [
     description: 'Creates the first master memory document from a single conversation summary.',
     category: 'master-memory',
     variables: [{ name: 'SUMMARY', description: 'The conversation summary to build from' }],
-    defaultTemplate: MASTER_MEMORY_INITIAL,
+    defaultTemplate: MASTER_MEMORY_INITIAL
   },
   {
     key: 'masterMemory.incremental',
@@ -316,17 +314,18 @@ export const PROMPT_REGISTRY: PromptDef[] = [
     category: 'master-memory',
     variables: [
       { name: 'CURRENT_MASTER', description: 'The current master memory content' },
-      { name: 'NEW_SUMMARY', description: 'The new conversation summary to integrate' },
+      { name: 'NEW_SUMMARY', description: 'The new conversation summary to integrate' }
     ],
-    defaultTemplate: MASTER_MEMORY_INCREMENTAL,
+    defaultTemplate: MASTER_MEMORY_INCREMENTAL
   },
   {
     key: 'masterMemory.batchFirst',
     name: 'Batch First',
-    description: 'Creates master memory from the first batch of summaries during full regeneration.',
+    description:
+      'Creates master memory from the first batch of summaries during full regeneration.',
     category: 'master-memory',
     variables: [{ name: 'BATCH_TEXT', description: 'Formatted batch of conversation summaries' }],
-    defaultTemplate: MASTER_MEMORY_BATCH_FIRST,
+    defaultTemplate: MASTER_MEMORY_BATCH_FIRST
   },
   {
     key: 'masterMemory.batchExpand',
@@ -336,9 +335,9 @@ export const PROMPT_REGISTRY: PromptDef[] = [
     variables: [
       { name: 'CURRENT_MASTER', description: 'The current master memory content' },
       { name: 'BATCH_NUM', description: 'The current batch number' },
-      { name: 'BATCH_TEXT', description: 'Formatted batch of conversation summaries' },
+      { name: 'BATCH_TEXT', description: 'Formatted batch of conversation summaries' }
     ],
-    defaultTemplate: MASTER_MEMORY_BATCH_EXPAND,
+    defaultTemplate: MASTER_MEMORY_BATCH_EXPAND
   },
 
   // Memory Filter
@@ -349,9 +348,9 @@ export const PROMPT_REGISTRY: PromptDef[] = [
     category: 'memory-filter',
     variables: [
       { name: 'ROLE', description: 'Message role (user or assistant)' },
-      { name: 'MESSAGE', description: 'The message content to evaluate' },
+      { name: 'MESSAGE', description: 'The message content to evaluate' }
     ],
-    defaultTemplate: MEMORY_FILTER_LENIENT,
+    defaultTemplate: MEMORY_FILTER_LENIENT
   },
   {
     key: 'memoryFilter.balanced',
@@ -360,20 +359,21 @@ export const PROMPT_REGISTRY: PromptDef[] = [
     category: 'memory-filter',
     variables: [
       { name: 'ROLE', description: 'Message role (user or assistant)' },
-      { name: 'MESSAGE', description: 'The message content to evaluate' },
+      { name: 'MESSAGE', description: 'The message content to evaluate' }
     ],
-    defaultTemplate: MEMORY_FILTER_BALANCED,
+    defaultTemplate: MEMORY_FILTER_BALANCED
   },
   {
     key: 'memoryFilter.strict',
     name: 'Strict Filter',
-    description: 'Very selective memory filter that only stores high-value, directly stated information.',
+    description:
+      'Very selective memory filter that only stores high-value, directly stated information.',
     category: 'memory-filter',
     variables: [
       { name: 'ROLE', description: 'Message role (user or assistant)' },
-      { name: 'MESSAGE', description: 'The message content to evaluate' },
+      { name: 'MESSAGE', description: 'The message content to evaluate' }
     ],
-    defaultTemplate: MEMORY_FILTER_STRICT,
+    defaultTemplate: MEMORY_FILTER_STRICT
   },
 
   // Entity Extraction
@@ -383,7 +383,7 @@ export const PROMPT_REGISTRY: PromptDef[] = [
     description: 'Inclusive entity extraction that captures all mentioned entities.',
     category: 'entity',
     variables: [{ name: 'MEMORY_TEXT', description: 'Formatted list of memory statements' }],
-    defaultTemplate: ENTITY_EXTRACTION_LENIENT,
+    defaultTemplate: ENTITY_EXTRACTION_LENIENT
   },
   {
     key: 'entityExtraction.balanced',
@@ -391,7 +391,7 @@ export const PROMPT_REGISTRY: PromptDef[] = [
     description: 'Balanced entity extraction for entities worth remembering.',
     category: 'entity',
     variables: [{ name: 'MEMORY_TEXT', description: 'Formatted list of memory statements' }],
-    defaultTemplate: ENTITY_EXTRACTION_BALANCED,
+    defaultTemplate: ENTITY_EXTRACTION_BALANCED
   },
   {
     key: 'entityExtraction.strict',
@@ -399,7 +399,7 @@ export const PROMPT_REGISTRY: PromptDef[] = [
     description: 'Very selective entity extraction for only high-value entities.',
     category: 'entity',
     variables: [{ name: 'MEMORY_TEXT', description: 'Formatted list of memory statements' }],
-    defaultTemplate: ENTITY_EXTRACTION_STRICT,
+    defaultTemplate: ENTITY_EXTRACTION_STRICT
   },
   {
     key: 'entitySummary',
@@ -410,9 +410,12 @@ export const PROMPT_REGISTRY: PromptDef[] = [
       { name: 'NAME', description: 'Entity name' },
       { name: 'TYPE', description: 'Entity type (Person, Project, etc.)' },
       { name: 'EXISTING_SUMMARY', description: 'Current entity summary or "(none)"' },
-      { name: 'NEW_FACTS', description: 'New facts to integrate (one per line, prefixed with "- ")' },
+      {
+        name: 'NEW_FACTS',
+        description: 'New facts to integrate (one per line, prefixed with "- ")'
+      }
     ],
-    defaultTemplate: ENTITY_SUMMARY,
+    defaultTemplate: ENTITY_SUMMARY
   },
 
   // Session
@@ -421,8 +424,10 @@ export const PROMPT_REGISTRY: PromptDef[] = [
     name: 'Session Summary',
     description: 'Extracts a user profile summary from a conversation for the master memory.',
     category: 'session',
-    variables: [{ name: 'CONVERSATION_TEXT', description: 'Full conversation text with role labels' }],
-    defaultTemplate: SESSION_SUMMARY,
+    variables: [
+      { name: 'CONVERSATION_TEXT', description: 'Full conversation text with role labels' }
+    ],
+    defaultTemplate: SESSION_SUMMARY
   },
 
   // Chat
@@ -433,59 +438,52 @@ export const PROMPT_REGISTRY: PromptDef[] = [
     category: 'chat',
     variables: [
       { name: 'HISTORY_BLOCK', description: 'Previous conversation history (may be empty)' },
-      { name: 'QUERY', description: 'The user\'s current question' },
-      { name: 'CONTEXT_BLOCK', description: 'Retrieved context from memories, messages, summaries, and entities' },
+      { name: 'QUERY', description: "The user's current question" },
+      {
+        name: 'CONTEXT_BLOCK',
+        description: 'Retrieved context from memories, messages, summaries, and entities'
+      }
     ],
-    defaultTemplate: RAG_CHAT,
+    defaultTemplate: RAG_CHAT
   },
 
   // Master Memory - Merge (map-reduce final step)
   {
     key: 'masterMemory.merge',
     name: 'Merge Partials',
-    description: 'Merges multiple partial summaries into the final master memory (used in map-reduce regeneration).',
+    description:
+      'Merges multiple partial summaries into the final master memory (used in map-reduce regeneration).',
     category: 'master-memory',
     variables: [{ name: 'PARTIAL_SUMMARIES', description: 'All partial summaries concatenated' }],
-    defaultTemplate: MASTER_MEMORY_MERGE,
-  },
-];
+    defaultTemplate: MASTER_MEMORY_MERGE
+  }
+]
 
 // Build a lookup map for fast access
-const registryMap = new Map<string, PromptDef>();
+const registryMap = new Map<string, PromptDef>()
 for (const def of PROMPT_REGISTRY) {
-  registryMap.set(def.key, def);
+  registryMap.set(def.key, def)
 }
 
 // ---------------------------------------------------------------------------
 // Public helpers
 // ---------------------------------------------------------------------------
 
-/** Returns the user-customized template if one exists, otherwise the default. */
-export function getPromptTemplate(key: string): string {
-  const def = registryMap.get(key);
-  if (!def) throw new Error(`Unknown prompt key: ${key}`);
-  return getSetting<string>(`prompt:${key}`, def.defaultTemplate);
+/** Returns the registered default template and rejects unknown prompt keys. */
+export function getDefaultPromptTemplate(key: string): string {
+  const def = registryMap.get(key)
+  if (!def) throw new Error(`Unknown prompt key: ${key}`)
+  return def.defaultTemplate
 }
 
 /** Replaces {{VAR}} placeholders with the provided values. */
 export function fillTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
-    return vars[varName] !== undefined ? vars[varName] : match;
-  });
-}
-
-/** Gets the (possibly customized) template for `key` and fills it with `vars`. */
-export function getPrompt(key: string, vars: Record<string, string>): string {
-  const template = getPromptTemplate(key);
-  return fillTemplate(template, vars);
+    return vars[varName] !== undefined ? vars[varName] : match
+  })
 }
 
 /** Returns the full registry for the Settings UI. */
 export function getAllPromptDefs(): PromptDef[] {
-  return PROMPT_REGISTRY;
-}
-
-/** Deletes a custom override so the prompt reverts to its default. */
-export function resetPrompt(key: string): void {
-  deleteSetting(`prompt:${key}`);
+  return PROMPT_REGISTRY
 }

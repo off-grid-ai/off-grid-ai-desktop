@@ -1,4 +1,4 @@
-import { cn } from '@renderer/lib/utils';
+import { cn } from '@renderer/lib/utils'
 
 /** Starry-night layer over the terminal grid, in BOTH themes (themeable dots:
  *  dark on light, bright on dark — see .og-starfield in main.css), plus a periodic
@@ -13,5 +13,5 @@ export function StarfieldBackdrop({ className }: { className?: string }): React.
       <div className="og-starfield absolute inset-0" />
       <span className="og-shooting-star" />
     </div>
-  );
+  )
 }

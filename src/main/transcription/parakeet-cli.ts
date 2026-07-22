@@ -18,6 +18,7 @@ import { getActiveModal } from '../active-models'
 import { ffmpegBin } from './whisper-cli'
 import { existing } from './bin-resolution'
 import { modelsByEngine } from './classify'
+import { decodeToWavArgs, DECODE_TIMEOUT_MS } from './ffmpeg-decode'
 import type { TranscriptionService, Transcript, TranscribeOptions } from './types'
 
 const execFileAsync = promisify(execFile)
@@ -25,10 +26,10 @@ const execFileAsync = promisify(execFile)
 /** Resolve the bundled sherpa-onnx offline CLI across dev / packaged layouts. The CI
  *  stager preserves the prebuilt's bin/ + lib/ structure (so its @rpath finds the
  *  dylibs), hence bin/sherpa-onnx-offline; the flat path is a fallback. */
-export function parakeetBin(): string | null {
+function parakeetBin(): string | null {
   return existing([
     ...binRoots().map((r) => path.join(r, 'parakeet', 'bin', 'sherpa-onnx-offline')),
-    ...binRoots().map((r) => path.join(r, 'parakeet', 'sherpa-onnx-offline')),
+    ...binRoots().map((r) => path.join(r, 'parakeet', 'sherpa-onnx-offline'))
   ])
 }
 
@@ -67,7 +68,7 @@ export function matchParakeetFiles(names: string[]): {
 /** Resolve the Parakeet model to use: the active/downloaded catalog model first, then a
  *  CI-bundled default. Honors the shared active-transcription slot when it names a
  *  Parakeet file; otherwise uses the first fully-downloaded Parakeet catalog entry. */
-export function parakeetModel(): ParakeetModel | null {
+function parakeetModel(): ParakeetModel | null {
   const fromCatalog = downloadedCatalogModel()
   if (fromCatalog) return fromCatalog
   // Bundled default (CI-staged) — fixed file names in resources/bin/parakeet/model.
@@ -78,7 +79,7 @@ export function parakeetModel(): ParakeetModel | null {
         encoder: path.join(dir, 'encoder.onnx'),
         decoder: path.join(dir, 'decoder.onnx'),
         joiner: path.join(dir, 'joiner.onnx'),
-        tokens: path.join(dir, 'tokens.txt'),
+        tokens: path.join(dir, 'tokens.txt')
       }
     }
   }
@@ -90,7 +91,7 @@ export function parakeetModel(): ParakeetModel | null {
  *  so match either form. Pure — exported for testing. */
 export function activeMatchesEntry(
   active: string | null,
-  entry: { id: string; files: Array<{ name: string }> },
+  entry: { id: string; files: Array<{ name: string }> }
 ): boolean {
   if (!active) return false
   return entry.id === active || entry.files.some((f) => f.name === active)
@@ -107,20 +108,25 @@ function downloadedCatalogModel(): ParakeetModel | null {
   const active = getActiveModal('transcription')
   const ordered = active
     ? [...entries].sort((a, b) =>
-        activeMatchesEntry(active, a) ? -1 : activeMatchesEntry(active, b) ? 1 : 0,
+        activeMatchesEntry(active, a) ? -1 : activeMatchesEntry(active, b) ? 1 : 0
       )
     : entries
   for (const e of ordered) {
     const names = e.files.map((f) => f.name)
     const matched = matchParakeetFiles(names)
     if (!matched) continue
-    if (![matched.encoder, matched.decoder, matched.joiner, matched.tokens].every((n) => existsIn(dir, n))) continue
+    if (
+      ![matched.encoder, matched.decoder, matched.joiner, matched.tokens].every((n) =>
+        existsIn(dir, n)
+      )
+    )
+      continue
     return {
       dir,
       encoder: path.join(dir, matched.encoder),
       decoder: path.join(dir, matched.decoder),
       joiner: path.join(dir, matched.joiner),
-      tokens: path.join(dir, matched.tokens),
+      tokens: path.join(dir, matched.tokens)
     }
   }
   return null
@@ -175,7 +181,7 @@ function unescapeJson(s: string): string {
   return s.replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\\\/g, '\\')
 }
 
-export class ParakeetCliTranscription implements TranscriptionService {
+class ParakeetCliTranscription implements TranscriptionService {
   isAvailable(): boolean {
     return !!parakeetBin() && !!parakeetModel()
   }
@@ -193,11 +199,7 @@ export class ParakeetCliTranscription implements TranscriptionService {
       if (!ff) throw new Error('ffmpeg is required to decode audio and was not found.')
       tmp = path.join(os.tmpdir(), `offgrid-parakeet-${Date.now()}-${process.pid}.wav`)
       try {
-        await execFileAsync(
-          ff,
-          ['-y', '-i', input.path, '-vn', '-ar', '16000', '-ac', '1', '-f', 'wav', tmp],
-          { timeout: 10 * 60_000 }
-        )
+        await execFileAsync(ff, decodeToWavArgs(input.path, tmp), { timeout: DECODE_TIMEOUT_MS })
       } catch (e) {
         fs.promises.unlink(tmp).catch(() => {})
         throw e

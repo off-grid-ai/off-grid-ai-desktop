@@ -11,60 +11,154 @@
 // Bound to 127.0.0.1 ONLY (never the LAN), with a per-launch token in the path and
 // a strict allowlist of root dirs, so it can't be used to read arbitrary files.
 
-import http from 'http';
-import fs from 'fs';
-import path from 'path';
-import { randomUUID } from 'crypto';
-import { app } from 'electron';
-import { parseRange, isPathAllowed } from './media-range';
-import { MEDIA_PORT } from '../shared/ports';
-
-const MIME: Record<string, string> = {
-  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm',
-  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.aac': 'audio/aac', '.ogg': 'audio/ogg',
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
-};
+import http from 'http'
+import fs from 'fs'
+import path from 'path'
+import { randomUUID } from 'crypto'
+import { app } from 'electron'
+import { parseRange, isPathAllowed } from './media-range'
+import { MEDIA_PORT } from '../shared/ports'
+import { mimeForExt } from './mime'
+import { localMediaRoots } from './media-roots'
 
 // Fixed loopback port so the renderer CSP (media-src) can allowlist it. Bound to
 // 127.0.0.1 only — not reachable off-device. Canonical value in shared/ports.
 
-let server: http.Server | null = null;
-let token = '';
-let port = 0;
-let listening = false;
-// Canonical (symlink-resolved) allowed roots — comparing canonical-to-canonical is
-// what makes the allowlist symlink-proof (a link inside userData pointing elsewhere
-// resolves to its real target and fails the check).
-let allowedRoots: string[] = [];
-
 /** Resolve symlinks + `..` to a canonical absolute path; null if it can't (e.g. missing). */
 function canonical(p: string): string | null {
   try {
-    return fs.realpathSync.native(p);
+    return fs.realpathSync.native(p)
   } catch {
-    return null;
+    return null
   }
 }
 
+export interface LoopbackMediaServerOptions {
+  roots: string[]
+  /** Use `0` when the operating system should allocate an isolated test port. */
+  port?: number
+  token?: string
+}
+
+/**
+ * Owns one loopback server, including readiness, URL admission, and shutdown.
+ * Callers receive URLs only after the socket is listening, which removes the
+ * startup race where the first Replay frame permanently received `null`.
+ */
+export class LoopbackMediaServer {
+  private server: http.Server | null = null
+  private startPromise: Promise<void> | null = null
+  private boundPort = 0
+  private readonly token: string
+  private readonly roots: string[]
+  private readonly requestedPort: number
+
+  constructor(options: LoopbackMediaServerOptions) {
+    this.token = options.token ?? randomUUID().replace(/-/g, '')
+    this.requestedPort = options.port ?? MEDIA_PORT
+    this.roots = options.roots.map((root) => canonical(root) ?? path.resolve(root))
+  }
+
+  start(): Promise<void> {
+    if (this.boundPort > 0) return Promise.resolve()
+    if (this.startPromise) return this.startPromise
+
+    const candidate = http.createServer((req, res) => this.handle(req, res))
+    this.server = candidate
+    this.startPromise = new Promise<void>((resolve, reject) => {
+      const fail = (error: Error): void => {
+        if (this.server === candidate) {
+          this.server = null
+          this.boundPort = 0
+        }
+        this.startPromise = null
+        reject(error)
+      }
+      candidate.once('error', fail)
+      candidate.listen(this.requestedPort, '127.0.0.1', () => {
+        candidate.off('error', fail)
+        candidate.on('error', (error) => console.error('[media-server]', error))
+        const address = candidate.address()
+        if (!address || typeof address === 'string') {
+          candidate.close()
+          fail(new Error('Loopback media server did not receive a TCP port.'))
+          return
+        }
+        this.boundPort = address.port
+        this.startPromise = null
+        resolve()
+      })
+    })
+    return this.startPromise
+  }
+
+  async urlFor(absPath: string): Promise<string | null> {
+    if (!absPath) return null
+    await this.start()
+    const real = canonical(absPath)
+    if (!real || !isPathAllowed(real, this.roots)) return null
+    const encoded = Buffer.from(real, 'utf8').toString('base64url')
+    return `http://127.0.0.1:${this.boundPort}/m/${this.token}/${encoded}`
+  }
+
+  async close(): Promise<void> {
+    const active = this.server
+    this.server = null
+    this.boundPort = 0
+    this.startPromise = null
+    if (!active) return
+    await new Promise<void>((resolve, reject) => {
+      active.close((error) => (error ? reject(error) : resolve()))
+    })
+  }
+
+  private handle(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const url = req.url || '/'
+    const prefix = `/m/${this.token}/`
+    if (!url.startsWith(prefix)) {
+      res.writeHead(403).end()
+      return
+    }
+
+    let filePath: string
+    try {
+      const encoded = url.slice(prefix.length).split('?')[0]!
+      filePath = Buffer.from(decodeURIComponent(encoded), 'base64url').toString('utf8')
+    } catch {
+      res.writeHead(400).end()
+      return
+    }
+
+    const real = canonical(filePath)
+    if (!real || !isPathAllowed(real, this.roots)) {
+      res.writeHead(real ? 403 : 404).end()
+      return
+    }
+    serveFile(req, res, real)
+  }
+}
+
+let productionServer: LoopbackMediaServer | null = null
+
 function serveFile(req: http.IncomingMessage, res: http.ServerResponse, filePath: string): void {
-  let stat: fs.Stats;
+  let stat: fs.Stats
   try {
-    stat = fs.statSync(filePath);
+    stat = fs.statSync(filePath)
   } catch {
-    res.writeHead(404).end();
-    return;
+    res.writeHead(404).end()
+    return
   }
   if (!stat.isFile()) {
-    res.writeHead(404).end();
-    return;
+    res.writeHead(404).end()
+    return
   }
-  const size = stat.size;
-  const type = MIME[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
-  const r = parseRange(req.headers.range, size);
+  const size = stat.size
+  const type = mimeForExt(path.extname(filePath))
+  const r = parseRange(req.headers.range, size)
 
   if (r.unsatisfiable) {
-    res.writeHead(416, { 'Content-Range': `bytes */${size}` }).end();
-    return;
+    res.writeHead(416, { 'Content-Range': `bytes */${size}` }).end()
+    return
   }
   if (!r.full) {
     res.writeHead(206, {
@@ -72,94 +166,49 @@ function serveFile(req: http.IncomingMessage, res: http.ServerResponse, filePath
       'Content-Length': r.end - r.start + 1,
       'Content-Range': `bytes ${r.start}-${r.end}/${size}`,
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'no-store',
-    });
-    const rs = fs.createReadStream(filePath, { start: r.start, end: r.end });
-    rs.on('error', () => res.destroy());
-    rs.pipe(res);
-    return;
+      'Cache-Control': 'no-store'
+    })
+    const rs = fs.createReadStream(filePath, { start: r.start, end: r.end })
+    rs.on('error', () => res.destroy())
+    rs.pipe(res)
+    return
   }
 
   res.writeHead(200, {
     'Content-Type': type,
     'Content-Length': size,
     'Accept-Ranges': 'bytes',
-    'Cache-Control': 'no-store',
-  });
-  const rs = fs.createReadStream(filePath);
-  rs.on('error', () => res.destroy());
-  rs.pipe(res);
+    'Cache-Control': 'no-store'
+  })
+  const rs = fs.createReadStream(filePath)
+  rs.on('error', () => res.destroy())
+  rs.pipe(res)
 }
 
 /** Start the loopback media server (idempotent). Call after app is ready. */
 export function startMediaServer(): void {
-  if (server) return;
-  token = randomUUID().replace(/-/g, '');
-  // Allowlist ONLY the media sub-dirs, not the whole userData — otherwise the
-  // loopback server could serve sensitive app state (memories.db, secrets, license
-  // cache, models). Canonicalize each once at startup so symlink-resolved request
-  // paths compare correctly (fall back to a plain resolve if the dir doesn't exist).
-  const ud = app.getPath('userData');
-  allowedRoots = ['meetings', 'uploads', 'captures', 'voice', 'generated-images', 'style-thumbs']
-    .map((d) => path.join(ud, d))
-    .map((d) => canonical(d) ?? path.resolve(d));
-
-  server = http.createServer((req, res) => {
-    const url = req.url || '/';
-    // Route: /m/<token>/<base64url(abs path)>
-    const prefix = `/m/${token}/`;
-    if (!url.startsWith(prefix)) {
-      res.writeHead(403).end();
-      return;
-    }
-    let filePath: string;
-    try {
-      const enc = url.slice(prefix.length).split('?')[0];
-      filePath = Buffer.from(decodeURIComponent(enc), 'base64url').toString('utf8');
-    } catch {
-      res.writeHead(400).end();
-      return;
-    }
-    // Resolve symlinks on the actual file before the allowlist check, so a link
-    // inside userData can't smuggle a path outside it past the guard.
-    const real = canonical(filePath);
-    if (!real || !isPathAllowed(real, allowedRoots)) {
-      res.writeHead(real ? 403 : 404).end();
-      return;
-    }
-    serveFile(req, res, real);
-  });
-
-  server.on('error', (e) => {
-    console.error('[media-server]', e);
-    // A listen failure (e.g. EADDRINUSE) must NOT wedge the singleton: reset so a
-    // later startMediaServer() can retry instead of being blocked by `if (server)`.
-    if (!listening) {
-      server = null;
-      port = 0;
-    }
-  });
-  // Loopback ONLY — never the LAN. Fixed port so the renderer CSP can allowlist it.
-  server.listen(MEDIA_PORT, '127.0.0.1', () => {
-    listening = true;
-    port = MEDIA_PORT;
-    console.log(`[media-server] loopback media at http://127.0.0.1:${port}/m/…`);
-  });
+  productionServer ??= new LoopbackMediaServer({
+    roots: localMediaRoots(app.getPath('userData')),
+    port: MEDIA_PORT
+  })
+  void productionServer.start().catch((error) => console.error('[media-server]', error))
 }
 
-/** Build a loopback URL the renderer can put in a <video src>. Null until ready. */
-export function mediaUrlFor(absPath: string): string | null {
-  if (!server || !port || !absPath) return null;
-  // Canonicalize so the URL encodes the same real path the server will enforce.
-  const real = canonical(absPath);
-  if (!real || !isPathAllowed(real, allowedRoots)) return null;
-  const enc = Buffer.from(real, 'utf8').toString('base64url');
-  return `http://127.0.0.1:${port}/m/${token}/${enc}`;
+/** Build a loopback URL only after the production socket is ready. */
+export async function mediaUrlFor(absPath: string): Promise<string | null> {
+  if (!productionServer) return null
+  try {
+    return await productionServer.urlFor(absPath)
+  } catch (error) {
+    console.error('[media-server]', error)
+    return null
+  }
 }
 
-export function stopMediaServer(): void {
-  server?.close();
-  server = null;
-  port = 0;
-  listening = false;
+/** Stop the production listener and release its port. Safe before start and on
+ * repeated shutdown calls. */
+export async function stopMediaServer(): Promise<void> {
+  const active = productionServer
+  productionServer = null
+  await active?.close()
 }

@@ -4,3 +4,15 @@ pnpm-lock.yaml
 LICENSE.md
 tsconfig.json
 tsconfig.*.json
+
+# Agent worktrees + local Claude config: copies of the repo / ephemeral state, never ours to format.
+.claude
+
+# Vendored, minified third-party libraries served verbatim — reformatting them is meaningless and bloats the diff.
+resources/artifacts
+**/*.min.js
+**/*.min.css
+
+# Local, non-source scratch files.
+.offgrid
+pr-targets.local.md

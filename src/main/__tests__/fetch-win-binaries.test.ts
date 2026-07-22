@@ -14,12 +14,12 @@
  * test fails if the script ever references that dead asset again, and asserts it
  * matches a currently-published Windows asset instead.
  */
-import { describe, it, expect } from 'vitest';
-import fs from 'fs';
-import path from 'path';
+import { describe, it, expect } from 'vitest'
+import fs from 'fs'
+import path from 'path'
 
-const SCRIPT = path.resolve(process.cwd(), 'scripts/fetch-win-binaries.ps1');
-const SRC = fs.existsSync(SCRIPT) ? fs.readFileSync(SCRIPT, 'utf-8') : '';
+const SCRIPT = path.resolve(process.cwd(), 'scripts/fetch-win-binaries.ps1')
+const SRC = fs.existsSync(SCRIPT) ? fs.readFileSync(SCRIPT, 'utf-8') : ''
 
 describe.skipIf(!SRC)('fetch-win-binaries.ps1 — stable-diffusion.cpp asset', () => {
   it('does not FETCH the retired avx2 Windows asset', () => {
@@ -27,26 +27,26 @@ describe.skipIf(!SRC)('fetch-win-binaries.ps1 — stable-diffusion.cpp asset', (
     // name may still appear in a comment (documenting the breakage) — what must
     // never come back is an active Expand-Asset call against it.
     const activeAvx2 = SRC.split(/\r?\n/).some(
-      (line) => /Expand-Asset/.test(line) && /avx2/.test(line) && !/^\s*#/.test(line),
-    );
-    expect(activeAvx2).toBe(false);
-  });
+      (line) => /Expand-Asset/.test(line) && /avx2/.test(line) && !/^\s*#/.test(line)
+    )
+    expect(activeAvx2).toBe(false)
+  })
 
   it('matches a currently-published Windows sd asset (cpu x64)', () => {
     // CPU build is deliberate: the default one-shot sd-cli path has no launch-
     // failure fallback, so the bundled binary must load without a GPU/Vulkan
     // loader. See the script comment.
-    expect(SRC).toMatch(/leejet\/stable-diffusion\.cpp'\s+'bin-win-cpu-x64\\\.zip\$'/);
-  });
+    expect(SRC).toMatch(/leejet\/stable-diffusion\.cpp'\s+'bin-win-cpu-x64\\\.zip\$'/)
+  })
 
   it('still renames upstream sd.exe to the sd-cli.exe the app resolves', () => {
     // imagegen.ts / sd-server.ts resolve resources/bin/sd/sd-cli(.exe); upstream
     // ships it as sd.exe, so the rename must stay or the resolver misses it.
-    expect(SRC).toMatch(/sd-cli\.exe/);
-    expect(SRC).toMatch(/Copy-Item \$sd \$cli -Force/);
-  });
+    expect(SRC).toMatch(/sd-cli\.exe/)
+    expect(SRC).toMatch(/Copy-Item \$sd \$cli -Force/)
+  })
 
   it('keeps sd-cli.exe in the post-fetch verify (present, even if only a warning)', () => {
-    expect(SRC).toMatch(/'sd\\sd-cli\.exe'/);
-  });
-});
+    expect(SRC).toMatch(/'sd\\sd-cli\.exe'/)
+  })
+})

@@ -34,22 +34,24 @@ const range = prevTag ? `${prevTag}..${toRef}` : toRef
 const raw = execFileSync(
   'git',
   ['log', range, '--no-merges', '--invert-grep', '--grep=\\[skip ci\\]', '--pretty=format:%s\t%h'],
-  { encoding: 'utf8' },
+  { encoding: 'utf8' }
 ).trim()
 
-const commits = raw ? raw.split('\n').map((l) => {
-  const [subject, hash] = l.split('\t')
-  return { subject, hash }
-}) : []
+const commits = raw
+  ? raw.split('\n').map((l) => {
+      const [subject, hash] = l.split('\t')
+      return { subject, hash }
+    })
+  : []
 
 // Turn a conventional-commit subject into a plain sentence a user can read.
 function humanize(subject) {
   const m = subject.match(/^(\w+)(?:\(([^)]+)\))?!?:\s*(.+)$/)
   let text = m ? m[3] : subject
   text = text
-    .replace(/\s*\(#\d+\)\s*$/, '')      // drop trailing PR refs: "(#11)"
-    .replace(/[—–]/g, ' - ')    // em/en dash -> " - " (brand voice)
-    .replace(/[‘’]/g, "'")      // curly -> straight
+    .replace(/\s*\(#\d+\)\s*$/, '') // drop trailing PR refs: "(#11)"
+    .replace(/[—–]/g, ' - ') // em/en dash -> " - " (brand voice)
+    .replace(/[‘’]/g, "'") // curly -> straight
     .replace(/[“”]/g, '"')
     .replace(/\s+/g, ' ')
     .trim()
@@ -91,7 +93,7 @@ if (hasHighlights) {
   out.push('Maintenance release. No user-facing changes this build.', '')
 }
 
-out.push('## What\'s Changed', '')
+out.push("## What's Changed", '')
 if (commits.length) {
   for (const c of commits) out.push(`- ${c.subject} (${c.hash})`)
 } else {

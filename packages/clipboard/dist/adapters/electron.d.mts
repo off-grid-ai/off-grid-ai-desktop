@@ -1,4 +1,4 @@
-import { C as ClipboardBridge, a as ClipboardRead, b as ClipboardItem } from '../types-hjEscIvQ.mjs';
+import { C as ClipboardBridge, e as ClipboardRead, b as ClipboardItem } from '../types-B7DdTBPa.mjs';
 
 /** Minimal shape of Electron's nativeImage instances we use. */
 interface ElectronImage {

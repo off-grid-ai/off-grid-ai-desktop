@@ -7,7 +7,7 @@
 // and is unit-testable. Callers pass the platform: `process.platform` in main,
 // the preload-bridged value in the renderer (see src/renderer/src/lib/device.ts).
 
-export type DevicePlatform = NodeJS.Platform | string;
+export type DevicePlatform = NodeJS.Platform | string
 
 /**
  * Noun to show the user for their computer.
@@ -18,11 +18,11 @@ export type DevicePlatform = NodeJS.Platform | string;
  * becomes `'Device'` (no effect on `'Mac'`, which is already capitalized).
  */
 export function deviceNoun(platform: DevicePlatform, opts?: { capitalize?: boolean }): string {
-  const noun = platform === 'darwin' ? 'Mac' : 'device';
+  const noun = platform === 'darwin' ? 'Mac' : 'device'
   if (opts?.capitalize) {
-    return noun.charAt(0).toUpperCase() + noun.slice(1);
+    return noun.charAt(0).toUpperCase() + noun.slice(1)
   }
-  return noun;
+  return noun
 }
 
 /**
@@ -32,5 +32,5 @@ export function deviceNoun(platform: DevicePlatform, opts?: { capitalize?: boole
  * untested feature (see proCatalog.proFeatureComingSoon).
  */
 export function isMac(platform: DevicePlatform): boolean {
-  return platform === 'darwin';
+  return platform === 'darwin'
 }

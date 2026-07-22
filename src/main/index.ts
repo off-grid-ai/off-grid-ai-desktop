@@ -5,16 +5,25 @@ import fs from 'fs'
 // Custom scheme to serve local capture screenshots to the renderer (file:// is
 // blocked there). Registered before app 'ready'; handled after.
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'ogcapture', privileges: { secure: true, supportFetchAPI: true, bypassCSP: true, stream: true } },
+  {
+    scheme: 'ogcapture',
+    privileges: { secure: true, supportFetchAPI: true, bypassCSP: true, stream: true }
+  },
+  {
+    scheme: 'ogartifact',
+    privileges: { standard: true, secure: true, stream: true }
+  }
 ])
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { setupIPC } from './ipc' // IMPORT FROM IPC ONLY
 import { setupRagIPC } from './rag-ipc'
 import { setupMcpIpc } from './mcp-ipc'
-import { startModelServer } from './model-server'
-import { startMediaServer, mediaUrlFor } from './media-server'
-import { isPathAllowed } from './media-range'
+import { preloadPath } from './preload-path'
+import { startModelServer, stopModelServer } from './model-server'
+import { startMediaServer, stopMediaServer, mediaUrlFor } from './media-server'
+import { serveCaptureFile } from './ogcapture-serve'
+import { serveArtifactPreview } from './artifact-preview'
 import { ipcMain } from 'electron'
 import { loadProFeaturesMain } from './bootstrap/loadProFeaturesMain'
 import { initLicensing } from './licensing/license-service'
@@ -22,8 +31,25 @@ import { setupLicenseIpc } from './license-ipc'
 import { nativeImage } from 'electron'
 import { purgeLegacyChatImports, getSetting } from './database'
 import { modalityQueue } from './modality-queue/queue'
+import { applyQueueConfig, readQueueConfig } from './modality-queue/config'
 import { registerRuntime } from './runtime-manager'
 import { guardConsoleStreams } from './stream-guards'
+import { PRODUCT_NAME } from '../shared/product-identity'
+import { installMediaPermissionHandler } from './media-permission'
+import { localMediaRoots } from './media-roots'
+import { beginProductIdentityBootstrap } from './product-identity-lifecycle'
+import {
+  installDiagnosticConsoleCapture,
+  installIpcDiagnostics,
+  writeDiagnosticLog
+} from './diagnostics-log'
+import {
+  applicationShutdown,
+  installApplicationShutdown,
+  registerCoreShutdownOwners
+} from './shutdown'
+import { shutdownRuntimes } from './runtime-manager'
+import { shutdownModelDownloads } from './models/download-queue'
 
 // Before anything logs: a broken stdout/stderr pipe (parent/e2e-harness exited, closed pipe)
 // must never crash main via an uncaught EPIPE. See stream-guards.ts.
@@ -33,13 +59,10 @@ guardConsoleStreams([process.stdout, process.stderr])
 // name, and migrate data from the legacy split dirs ("My Memories" had the
 // models, "my-memories" had the DB) so nothing is lost / re-downloaded. Must run
 // before app 'ready' and before any getPath('userData') usage.
-// Brand the app name as early as possible (before ready) so the menu bar, the
-// about panel, and notifications read "Off Grid AI" rather than the Electron
-// default. (In `electron-vite dev` the macOS Dock tooltip still reads "Electron"
-// because that's the dev binary's bundle name; the packaged build's CFBundleName
-// comes from electron-builder `productName`, so it's correct there.)
-app.setName('Off Grid AI')
-
+// Preserve the Keychain namespace used by every existing install during Electron's
+// early safeStorage bootstrap. The returned callback restores the canonical visible
+// product name at the beginning of the ready phase.
+const restoreCanonicalProductName = beginProductIdentityBootstrap(app, process.platform)
 ;(function unifyUserDataPath(): void {
   try {
     // Test/CI seam: let a harness isolate userData (e.g. screenshot capture of
@@ -73,8 +96,26 @@ app.setName('Off Grid AI')
   }
 })()
 
+installDiagnosticConsoleCapture()
+writeDiagnosticLog('app', 'bootstrap.started', {
+  version: app.getVersion(),
+  packaged: app.isPackaged,
+  platform: process.platform,
+  arch: process.arch
+})
+
+installApplicationShutdown(app, applicationShutdown, ({ owner, error }) =>
+  console.error(`[shutdown] ${owner} failed`, error)
+)
+registerCoreShutdownOwners(applicationShutdown, {
+  stopGateway: stopModelServer,
+  stopMediaServer,
+  stopModelRuntimes: shutdownRuntimes,
+  stopModelDownloads: shutdownModelDownloads
+})
+
 // FORCE UPDATE VERIFICATION: 3 - SHELL OVERWRITE
-console.log("MAIN PROCESS: LOADING CUSTOM ENTRY POINT (SHELL OVERWRITE)");
+console.log('MAIN PROCESS: LOADING CUSTOM ENTRY POINT (SHELL OVERWRITE)')
 
 function createWindow(): void {
   // Create the browser window.
@@ -82,11 +123,11 @@ function createWindow(): void {
     width: 900,
     height: 670,
     show: false,
-    title: 'Off Grid AI',
+    title: PRODUCT_NAME,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' || process.platform === 'win32' ? { icon } : {}),
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: preloadPath(),
       sandbox: false, // REQUIRED for IPC
       contextIsolation: true,
       plugins: true, // Chromium's built-in PDF viewer (chat attachment viewer) needs this
@@ -126,36 +167,55 @@ function createWindow(): void {
 // recorder. Bail before whenReady if we can't get the lock; focus the existing
 // window instead.
 if (!app.requestSingleInstanceLock()) {
-  app.quit();
+  app.quit()
 } else {
   app.on('second-instance', () => {
-    const win = BrowserWindow.getAllWindows()[0];
+    const win = BrowserWindow.getAllWindows()[0]
     if (win) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
+      if (win.isMinimized()) win.restore()
+      win.focus()
     }
-  });
+  })
 }
 
 app.whenReady().then(() => {
+  restoreCanonicalProductName()
+
   // Server-only (headless) mode: boot just the multimodal gateway + LLM runtime,
   // no window / tray / capture / CRM loops. Lets the gateway be deployed on its
   // own — `<app-binary> --server-only` (or OFFGRID_SERVER_ONLY=1) — while still
   // reusing the Electron-built native binaries. First step toward a standalone
   // gateway CLI (see docs/GATEWAY_SPINE.md "externalize later").
-  const serverOnly = process.argv.includes('--server-only') || process.env.OFFGRID_SERVER_ONLY === '1';
+  const serverOnly =
+    process.argv.includes('--server-only') || process.env.OFFGRID_SERVER_ONLY === '1'
   if (serverOnly) {
-    console.log('[gateway] server-only mode — gateway on :7878, no UI/capture');
-    if (process.platform === 'darwin' && app.dock) { try { app.dock.hide(); } catch { /* ignore */ } }
-    try { startModelServer(); } catch (e) { console.error('[gateway] start failed', e); }
-    void import('./llm').then(({ llm }) => llm.init().catch((err) => console.error('[gateway] LLM init failed', err)));
-    return; // skip window, tray, watcher, IPC, capture, connectors — gateway only
+    console.log('[gateway] server-only mode — gateway on :7878, no UI/capture')
+    if (process.platform === 'darwin' && app.dock) {
+      try {
+        app.dock.hide()
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      startModelServer()
+    } catch (e) {
+      console.error('[gateway] start failed', e)
+    }
+    void import('./llm').then(({ llm }) =>
+      llm.init().catch((err) => console.error('[gateway] LLM init failed', err))
+    )
+    return // skip window, tray, IPC, capture, connectors — gateway only
   }
 
-  console.log("APP READY: Initializing Services...");
+  console.log('APP READY: Initializing Services...')
 
   // One-time, idempotent cleanup of the old "My Memories" AI-chat imports.
-  try { purgeLegacyChatImports(); } catch (e) { console.warn('[startup] legacy purge failed', e); }
+  try {
+    purgeLegacyChatImports()
+  } catch (e) {
+    console.warn('[startup] legacy purge failed', e)
+  }
 
   // Dock icon = the Off Grid green chip logo (in dev macOS otherwise shows the
   // default Electron icon; the packaged build uses build/icon from electron-builder).
@@ -177,76 +237,25 @@ app.whenReady().then(() => {
   // tear the file stream down SILENTLY — never call controller.error/close after a
   // cancel — otherwise Chromium treats the seek as a failed load and resets to 0:00.
   // (net.fetch(file://) sidesteps this but doesn't honour Range, so seeking is dead.)
-  const OGCAPTURE_MIME: Record<string, string> = {
-    mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
-    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
-    mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', aac: 'audio/aac', ogg: 'audio/ogg',
-  };
-  const fileStreamToWeb = (rs: fs.ReadStream): ReadableStream<Uint8Array> => {
-    let done = false;
-    return new ReadableStream<Uint8Array>({
-      start(controller) {
-        rs.on('data', (chunk: string | Buffer) => {
-          if (done) return;
-          controller.enqueue(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : new Uint8Array(chunk));
-          if ((controller.desiredSize ?? 1) <= 0) rs.pause();
-        });
-        rs.on('end', () => { if (!done) { done = true; try { controller.close(); } catch { /* closed */ } } });
-        rs.on('error', (err) => { if (!done) { done = true; try { controller.error(err); } catch { /* errored */ } } });
-      },
-      pull() { if (!done) rs.resume(); },
-      // Player cancelled (seek / teardown): kill the fd quietly, NEVER touch the controller.
-      cancel() { done = true; rs.destroy(); },
-    });
-  };
   // Only serve files inside the app's own media dirs — this scheme is reachable
   // from the renderer, so serving an arbitrary decoded path would be a local-file
   // read primitive. isPathAllowed is symlink-safe (canonicalizes both sides).
   // NOTE: keep this in sync with the dirs the renderer requests over ogcapture://.
   // 'generated-images' + 'style-thumbs' were missing, so every image-gen output and
   // every style-picker thumbnail 403'd and rendered as a broken image.
-  const ogCaptureRoots = ['meetings', 'uploads', 'captures', 'entity-photos', 'generated-images', 'style-thumbs'].map((d) =>
-    join(app.getPath('userData'), d),
-  );
+  const ogCaptureRoots = localMediaRoots(app.getPath('userData'))
   protocol.handle('ogcapture', async (request) => {
-    const p = decodeURIComponent(request.url.slice('ogcapture://'.length));
-    if (!isPathAllowed(p, ogCaptureRoots)) {
-      return new Response(null, { status: 403 });
-    }
     try {
-      const stat = await fs.promises.stat(p);
-      const size = stat.size;
-      const ext = p.split('.').pop()?.toLowerCase() ?? '';
-      const type = OGCAPTURE_MIME[ext] ?? 'application/octet-stream';
-      const range = request.headers.get('Range');
-      const m = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
-      if (m && (m[1] || m[2])) {
-        const start = m[1] ? parseInt(m[1], 10) : Math.max(0, size - parseInt(m[2], 10));
-        const end = m[1] && m[2] ? Math.min(parseInt(m[2], 10), size - 1) : size - 1;
-        if (start >= size || start > end) {
-          return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
-        }
-        const rs = fs.createReadStream(p, { start, end });
-        return new Response(fileStreamToWeb(rs), {
-          status: 206,
-          headers: {
-            'Content-Type': type,
-            'Content-Length': String(end - start + 1),
-            'Content-Range': `bytes ${start}-${end}/${size}`,
-            'Accept-Ranges': 'bytes',
-          },
-        });
-      }
-      const rs = fs.createReadStream(p);
-      return new Response(fileStreamToWeb(rs), {
-        status: 200,
-        headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' },
-      });
-    } catch (e) {
-      console.error('[ogcapture] serve failed for', p, e);
-      return new Response(null, { status: 404 });
+      const requestedPath = decodeURIComponent(request.url.slice('ogcapture://'.length))
+      return serveCaptureFile(requestedPath, ogCaptureRoots, request.headers.get('Range'))
+    } catch {
+      return new Response(null, { status: 400 })
     }
-  });
+  })
+
+  // Model-generated executable documents use a separate opaque origin and their
+  // own response CSP. The trusted renderer never receives their inline/eval grants.
+  protocol.handle('ogartifact', (request) => serveArtifactPreview(request.url))
 
   // Meeting recorder: grant SYSTEM AUDIO (loopback) for getDisplayMedia so the
   // recorder can capture remote participants on macOS 13+ via ScreenCaptureKit.
@@ -255,41 +264,39 @@ app.whenReady().then(() => {
     session.defaultSession.setDisplayMediaRequestHandler(
       async (_request, callback) => {
         try {
-          const sources = await desktopCapturer.getSources({ types: ['screen'] });
+          const sources = await desktopCapturer.getSources({ types: ['screen'] })
           // Multi-monitor: record the display the user is actually on (cursor),
           // not an arbitrary sources[0].
-          let pick = sources[0];
+          let pick = sources[0]
           try {
-            const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-            const m = sources.find((s) => s.display_id === String(disp.id));
-            if (m) pick = m;
+            const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+            const m = sources.find((s) => s.display_id === String(disp.id))
+            if (m) pick = m
           } catch {
             /* single display */
           }
-          callback({ video: pick, audio: 'loopback' });
+          callback({ video: pick, audio: 'loopback' })
         } catch {
-          callback({});
+          callback({})
         }
       },
       { useSystemPicker: false }
-    );
+    )
   } catch (e) {
-    console.warn('[meetings] display-media handler setup failed', e);
+    console.warn('[meetings] display-media handler setup failed', e)
   }
 
   // Grant microphone access for in-app voice input (STT). The OS still gates the
   // actual mic behind its own prompt (NSMicrophoneUsageDescription); this just
   // lets the renderer's getUserMedia request through Electron's permission layer.
   try {
-    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-      callback(permission === 'media');
-    });
+    installMediaPermissionHandler(session.defaultSession)
   } catch (e) {
-    console.warn('[voice] permission handler setup failed', e);
+    console.warn('[voice] permission handler setup failed', e)
   }
 
-  // NOTE: Accessibility is a Pro (capture) permission — the free build never asks
-  // for it. Pro requests it when capture starts (see pro focus/watcher).
+  // NOTE: Accessibility is a Pro permission for global input/text insertion — the
+  // free build never asks for it. Screen capture itself is owned by pro/focus.ts.
 
   // Set app user model id for Windows notifications/taskbar grouping.
   electronApp.setAppUserModelId('co.getoffgridai.desktop')
@@ -297,72 +304,85 @@ app.whenReady().then(() => {
   // Native About panel branding (macOS / Linux).
   try {
     app.setAboutPanelOptions({
-      applicationName: 'Off Grid AI',
+      applicationName: PRODUCT_NAME,
       applicationVersion: app.getVersion(),
       copyright: 'Off Grid AI — private, on-device AI',
-      website: 'https://getoffgridai.co',
+      website: 'https://getoffgridai.co'
     })
-  } catch { /* not supported on this platform */ }
+  } catch {
+    /* not supported on this platform */
+  }
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
-
-
   // 2. Setup IPC Handlers (core) + the local model gateway
   try {
-     // Licensing first: load the cached Keygen entitlement into memory and register
-     // the SYNC `pro:is-enabled` handler BEFORE createWindow() (line below) so the
-     // preload's sendSync resolves and window.api.isPro reflects the real license.
-     initLicensing();
-     setupLicenseIpc();
-     setupIPC();
-     setupRagIPC();
-     setupMcpIpc(); // basic MCP connectors (management + chat tool extension)
-     startModelServer(); // one OpenAI-compatible local gateway on :7878 (LLM + STT)
-     startMediaServer(); // loopback HTTP for seekable local media (meeting videos)
-     ipcMain.handle('media:url', (_e, absPath: string) => mediaUrlFor(absPath));
-     // (clipboard is now a pro feature — setupClipboard runs in pro's activateMain)
-     // Pro features (capture, CRM, meetings, connectors, secretary, proactive,
-     // skills engine, console, tray) register their own IPC + intervals + watchers
-     // here. No-op in the free build (the pro submodule is absent → stub).
-     void loadProFeaturesMain().catch((e) => console.error('[pro] load failed', e));
-     // Demo seeder for testing: OFFGRID_SEED=1 seeds once; OFFGRID_SEED=force re-seeds.
-     if (process.env.OFFGRID_SEED) {
-       void import('./dev-seed').then((m) => m.seedDemo(process.env.OFFGRID_SEED === 'force')).catch((e) => console.error('[seed]', e));
-     }
-     console.log("IPC Handlers Registered.");
+    installIpcDiagnostics(ipcMain)
+    // Licensing first: load the cached Keygen entitlement into memory and register
+    // the SYNC `pro:is-enabled` handler BEFORE createWindow() (line below) so the
+    // preload's sendSync resolves and window.api.isPro reflects the real license.
+    initLicensing()
+    setupLicenseIpc()
+    setupIPC()
+    setupRagIPC()
+    setupMcpIpc() // basic MCP connectors (management + chat tool extension)
+    startModelServer() // one OpenAI-compatible local gateway on :7878 (LLM + STT)
+    startMediaServer() // loopback HTTP for seekable local media (meeting videos)
+    // Heal a stale active-model.json whose model gained a vision projector after it was
+    // activated (e.g. Gemma 4 E2B) — turns vision on at launch if the projector is now
+    // on disk, without waiting for a re-activate.
+    void import('./models-manager').then((m) => m.reconcileActiveModelProjector()).catch(() => {})
+    ipcMain.handle('media:url', (_e, absPath: string) => mediaUrlFor(absPath))
+    // (clipboard is now a pro feature — setupClipboard runs in pro's activateMain)
+    // Pro features (capture, CRM, meetings, connectors, secretary, proactive,
+    // skills engine, console, tray) register their own IPC + intervals/capture loop
+    // here. No-op in the free build (the pro submodule is absent → stub).
+    void loadProFeaturesMain().catch((e) => console.error('[pro] load failed', e))
+    // Demo seeder for testing: OFFGRID_SEED=1 seeds once; OFFGRID_SEED=force re-seeds.
+    if (process.env.OFFGRID_SEED) {
+      void import('./dev-seed')
+        .then((m) => m.seedDemo(process.env.OFFGRID_SEED === 'force'))
+        .catch((e) => console.error('[seed]', e))
+    }
+    console.log('IPC Handlers Registered.')
   } catch (e) {
-     console.error("FATAL: IPC Setup failed", e);
+    console.error('FATAL: IPC Setup failed', e)
   }
 
   // 3. Initialize LLM (Async)
   // We don't await this to avoid blocking window creation
   import('./llm').then(({ llm }) => {
-      // Register the chat engine through the shared residency seam (runtime-manager),
-      // exactly like every other engine — the queue evicts it before a competing
-      // heavy job and re-warms it mode-aware (resident = reload; on-demand = release
-      // the pause block so it lazily respawns on next use, freeing RAM meanwhile).
-      registerRuntime(llm.runtime);
-      // Apply persisted queue settings (defaults: enabled, tier-1 coexists).
-      modalityQueue.setEnabled(getSetting('modalityQueueEnabled', true));
-      modalityQueue.setTier1CoexistsWithTier2(getSetting('modalityTier1CoexistsWithTier2', true));
-      llm.init().catch(err => console.error("Failed to init LLM:", err));
-  });
+    // Register the chat engine through the shared residency seam (runtime-manager),
+    // exactly like every other engine — the queue evicts it before a competing
+    // heavy job and re-warms it mode-aware (resident = reload; on-demand = release
+    // the pause block so it lazily respawns on next use, freeing RAM meanwhile).
+    registerRuntime(llm.runtime)
+    // Apply persisted queue settings (defaults: enabled, tier-1 coexists) — the
+    // keys + apply live in modality-queue/config so the settings UI shares them.
+    applyQueueConfig(modalityQueue, readQueueConfig(getSetting))
+    llm.init().catch((err) => console.error('Failed to init LLM:', err))
+  })
   // Every other engine joins the SAME residency seam (runtime-manager), lazily so
   // module load never blocks window creation. Registration only stores hooks — it
   // doesn't spawn anything until the engine is actually used.
-  import('./tts').then(({ ttsRuntime }) => registerRuntime(ttsRuntime)).catch(() => {});
-  import('./imagegen').then(({ imageRuntime }) => registerRuntime(imageRuntime)).catch(() => {});
-  import('./transcription/select').then(({ sttRuntime }) => registerRuntime(sttRuntime)).catch(() => {});
+  import('./tts').then(({ ttsRuntime }) => registerRuntime(ttsRuntime)).catch(() => {})
+  import('./imagegen').then(({ imageRuntime }) => registerRuntime(imageRuntime)).catch(() => {})
+  import('./transcription/select')
+    .then(({ sttRuntime }) => registerRuntime(sttRuntime))
+    .catch(() => {})
 
   createWindow()
 
-  // Auto-update from GitHub Releases (production only; dev has no update feed).
-  if (!is.dev) {
-    import('./updater').then((m) => m.startAutoUpdates()).catch((e) => console.error('[update] init', e))
-  }
+  // Update IPC is always registered (the renderer queries staged-version on startup
+  // in every build); the auto-download engine runs production-only (dev has no feed).
+  import('./updater')
+    .then((m) => {
+      m.registerUpdateIpc()
+      if (!is.dev) m.startAutoUpdates()
+    })
+    .catch((e) => console.error('[update] init', e))
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

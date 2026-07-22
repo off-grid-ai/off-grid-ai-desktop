@@ -16,7 +16,7 @@
 
 // Rough token estimate: ~4 chars/token for compact JSON. Good enough for a guard.
 function estTokens(v: unknown): number {
-  return Math.ceil(JSON.stringify(v ?? '').length / 4);
+  return Math.ceil(JSON.stringify(v ?? '').length / 4)
 }
 
 // Keywords stripped from a schema: they bloat tokens and/or the compiled grammar
@@ -24,52 +24,69 @@ function estTokens(v: unknown): number {
 // constraints (minimum/maximum/…) are the worst offenders — they expand into
 // giant nested-digit grammars. enum/type/properties/required/items are KEPT.
 const DROP_KEYS = new Set([
-  'examples', 'example', '$comment', 'title', 'default',
-  'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
-  'pattern', 'format', 'minLength', 'maxLength', 'minItems', 'maxItems',
-]);
+  'examples',
+  'example',
+  '$comment',
+  'title',
+  'default',
+  'minimum',
+  'maximum',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+  'multipleOf',
+  'pattern',
+  'format',
+  'minLength',
+  'maxLength',
+  'minItems',
+  'maxItems'
+])
 
-const MAX_DESC = 120; // chars — enough to guide tool choice, not to bloat the prompt
+const MAX_DESC = 120 // chars — enough to guide tool choice, not to bloat the prompt
 
 function pruneSchema(node: unknown): unknown {
-  if (Array.isArray(node)) return node.map(pruneSchema);
-  if (!node || typeof node !== 'object') return node;
-  const out: Record<string, unknown> = {};
+  if (Array.isArray(node)) return node.map(pruneSchema)
+  if (!node || typeof node !== 'object') return node
+  const out: Record<string, unknown> = {}
   for (const [k, val] of Object.entries(node as Record<string, unknown>)) {
-    if (DROP_KEYS.has(k)) continue;
+    if (DROP_KEYS.has(k)) continue
     if (k === 'description' && typeof val === 'string') {
-      out[k] = val.length > MAX_DESC ? val.slice(0, MAX_DESC - 1) + '…' : val;
+      out[k] = val.length > MAX_DESC ? val.slice(0, MAX_DESC - 1) + '…' : val
     } else {
-      out[k] = pruneSchema(val);
+      out[k] = pruneSchema(val)
     }
   }
-  return out;
+  return out
 }
 
 export interface ToolBudgetResult {
-  tools: unknown[];
-  droppedCount: number; // connector tools removed to fit
-  pruned: boolean;      // schemas were pruned to fit
-  estTokens: number;    // final estimate
+  tools: unknown[]
+  droppedCount: number // connector tools removed to fit
+  pruned: boolean // schemas were pruned to fit
+  estTokens: number // final estimate
 }
 
 /** Fit `tools` into `maxTokens`. `keepFirst` leading tools are BUILT-INS that are
  *  never dropped (only the connector tools after them are). */
-export function budgetTools(tools: unknown[], maxTokens: number, keepFirst: number): ToolBudgetResult {
+export function budgetTools(
+  tools: unknown[],
+  maxTokens: number,
+  keepFirst: number
+): ToolBudgetResult {
   if (estTokens(tools) <= maxTokens) {
-    return { tools, droppedCount: 0, pruned: false, estTokens: estTokens(tools) };
+    return { tools, droppedCount: 0, pruned: false, estTokens: estTokens(tools) }
   }
   // 1) Prune every schema first — cheap, keeps all tools available.
-  const prunedAll = tools.map(pruneSchema);
+  const prunedAll = tools.map(pruneSchema)
   if (estTokens(prunedAll) <= maxTokens) {
-    return { tools: prunedAll, droppedCount: 0, pruned: true, estTokens: estTokens(prunedAll) };
+    return { tools: prunedAll, droppedCount: 0, pruned: true, estTokens: estTokens(prunedAll) }
   }
   // 2) Still over: drop connector tools from the end, never below the built-ins.
-  const kept = prunedAll.slice();
-  let dropped = 0;
+  const kept = prunedAll.slice()
+  let dropped = 0
   while (kept.length > keepFirst && estTokens(kept) > maxTokens) {
-    kept.pop();
-    dropped++;
+    kept.pop()
+    dropped++
   }
-  return { tools: kept, droppedCount: dropped, pruned: true, estTokens: estTokens(kept) };
+  return { tools: kept, droppedCount: dropped, pruned: true, estTokens: estTokens(kept) }
 }

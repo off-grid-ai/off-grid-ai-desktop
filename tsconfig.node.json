@@ -3,6 +3,15 @@
   "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "src/bootstrap/**/*", "src/shared/**/*"],
   "compilerOptions": {
     "composite": true,
+    // Dead-code gates at type-check time (strongest place — blocks the build): no
+    // unused locals/imports/params, and no code after return/throw/break.
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    // Index/record access is T|undefined — a guard/`!` at every array/record read.
+    // Kills the whole out-of-bounds bug class; makes the real guards no-unnecessary-
+    // condition stops flagging as "unnecessary". Whole tree guarded before enabling.
+    "noUncheckedIndexedAccess": true,
     "types": ["electron-vite/node"],
     "baseUrl": ".",
     "paths": {

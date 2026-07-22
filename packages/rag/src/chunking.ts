@@ -5,58 +5,58 @@
 
 export interface ChunkOptions {
   /** Target chunk size in characters (default 500). */
-  chunkSize?: number;
+  chunkSize?: number
   /** Sliding-window overlap for oversized paragraphs (default 100). */
-  overlap?: number;
+  overlap?: number
   /** Drop chunks shorter than this (default 20). */
-  minChunkLength?: number;
+  minChunkLength?: number
 }
 
 export interface Chunk {
-  content: string;
-  position: number;
+  content: string
+  position: number
 }
 
 export function chunkText(text: string, opts: ChunkOptions = {}): Chunk[] {
-  const chunkSize = opts.chunkSize ?? 500;
-  const overlap = opts.overlap ?? 100;
-  const minChunkLength = opts.minChunkLength ?? 20;
+  const chunkSize = opts.chunkSize ?? 500
+  const overlap = opts.overlap ?? 100
+  const minChunkLength = opts.minChunkLength ?? 20
 
-  const clean = text.replace(/\r\n/g, '\n').trim();
-  if (!clean) return [];
+  const clean = text.replace(/\r\n/g, '\n').trim()
+  if (!clean) return []
 
   const paragraphs = clean
     .split(/\n\n+/)
     .map((p) => p.trim())
-    .filter(Boolean);
+    .filter(Boolean)
 
-  const chunks: string[] = [];
-  let buffer = '';
+  const chunks: string[] = []
+  let buffer = ''
 
   const flush = (): void => {
-    const t = buffer.trim();
-    if (t.length >= minChunkLength) chunks.push(t);
-    buffer = '';
-  };
+    const t = buffer.trim()
+    if (t.length >= minChunkLength) chunks.push(t)
+    buffer = ''
+  }
 
   for (const para of paragraphs) {
     if (para.length > chunkSize) {
       // Oversized paragraph: emit the buffer, then sliding-window the paragraph.
-      flush();
-      const step = Math.max(1, chunkSize - overlap);
+      flush()
+      const step = Math.max(1, chunkSize - overlap)
       for (let start = 0; start < para.length; start += step) {
-        const slice = para.slice(start, start + chunkSize).trim();
-        if (slice.length >= minChunkLength) chunks.push(slice);
-        if (start + chunkSize >= para.length) break;
+        const slice = para.slice(start, start + chunkSize).trim()
+        if (slice.length >= minChunkLength) chunks.push(slice)
+        if (start + chunkSize >= para.length) break
       }
-    } else if (buffer && (buffer.length + 2 + para.length) > chunkSize) {
-      flush();
-      buffer = para;
+    } else if (buffer && buffer.length + 2 + para.length > chunkSize) {
+      flush()
+      buffer = para
     } else {
-      buffer = buffer ? `${buffer}\n\n${para}` : para;
+      buffer = buffer ? `${buffer}\n\n${para}` : para
     }
   }
-  flush();
+  flush()
 
-  return chunks.map((content, position) => ({ content, position }));
+  return chunks.map((content, position) => ({ content, position }))
 }

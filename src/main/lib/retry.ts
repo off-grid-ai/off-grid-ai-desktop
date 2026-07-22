@@ -14,18 +14,18 @@
 /** Minimal clock seam so tests inject fake time instead of sleeping for real. */
 export interface Clock {
   /** Current epoch milliseconds (like `Date.now()`). */
-  now(): number;
+  now(): number
   /** Schedule `cb` after `ms` (like `setTimeout`, return value ignored). */
-  setTimeout(cb: () => void, ms: number): void;
+  setTimeout(cb: () => void, ms: number): void
 }
 
 /** Real wall-clock backed by the host timers. */
 export const systemClock: Clock = {
   now: () => Date.now(),
   setTimeout: (cb, ms) => {
-    setTimeout(cb, ms);
-  },
-};
+    setTimeout(cb, ms)
+  }
+}
 
 export interface RetryOptions {
   /**
@@ -33,24 +33,24 @@ export interface RetryOptions {
    * `clock.now() < deadlineMs`; once reached, the last failure is thrown.
    * A deadline at or before the first attempt means "no retries" (fail fast).
    */
-  deadlineMs: number;
+  deadlineMs: number
   /**
    * Whether this attempt may be replayed. A streamed/piped request that has
    * already consumed its body is NOT replayable and must fail fast even within
    * the deadline. Defaults to `true` (the common replayable case).
    */
-  replayable?: boolean;
+  replayable?: boolean
   /**
    * Classify a rejection: `true` = transient (connection error, worth
    * retrying), `false` = fatal (e.g. an HTTP >= 400 answer, never retried).
    * Defaults to treating every rejection as transient, matching the callers
    * that only ever reject on a connection error.
    */
-  isTransient?: (err: unknown) => boolean;
+  isTransient?: (err: unknown) => boolean
   /** Delay between attempts in ms. Defaults to 1000, matching the proxies. */
-  delayMs?: number;
+  delayMs?: number
   /** Clock seam (defaults to the real system clock). */
-  clock?: Clock;
+  clock?: Clock
 }
 
 /**
@@ -65,19 +65,19 @@ export function retryWithDeadline<T>(fn: () => Promise<T>, opts: RetryOptions): 
     replayable = true,
     isTransient = () => true,
     delayMs = 1000,
-    clock = systemClock,
-  } = opts;
+    clock = systemClock
+  } = opts
 
   return new Promise<T>((resolve, reject) => {
     const attempt = (): void => {
       fn().then(resolve, (err) => {
         if (replayable && isTransient(err) && clock.now() < deadlineMs) {
-          clock.setTimeout(attempt, delayMs);
+          clock.setTimeout(attempt, delayMs)
         } else {
-          reject(err);
+          reject(err)
         }
-      });
-    };
-    attempt();
-  });
+      })
+    }
+    attempt()
+  })
 }

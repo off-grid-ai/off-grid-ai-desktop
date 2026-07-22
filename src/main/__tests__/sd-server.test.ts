@@ -7,107 +7,184 @@
  *   2. the finished image lives at result.images[0].b64_json.
  * Payloads mirror real sd-server responses captured during bring-up.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest'
 import {
   buildSdServerContextArgs,
   contextKey,
   buildImgGenRequest,
   parseJobResult,
-} from '../sd-server';
+  describeSdFetchFailure
+} from '../sd-server'
 
 describe('buildSdServerContextArgs', () => {
   it('builds launch args with model, port, threads and flash-attn', () => {
-    const args = buildSdServerContextArgs({ modelPath: '/m/x.gguf', port: 8440, threads: 8, diffusionFa: true });
-    expect(args).toEqual(['-m', '/m/x.gguf', '--listen-port', '8440', '--diffusion-fa', '-t', '8']);
-  });
+    const args = buildSdServerContextArgs({
+      modelPath: '/m/x.gguf',
+      port: 8440,
+      threads: 8,
+      diffusionFa: true
+    })
+    expect(args).toEqual(['-m', '/m/x.gguf', '--listen-port', '8440', '--diffusion-fa', '-t', '8'])
+  })
 
   it('omits --diffusion-fa when not requested', () => {
-    expect(buildSdServerContextArgs({ modelPath: '/m/x.gguf', port: 8440, threads: 4 }))
-      .toEqual(['-m', '/m/x.gguf', '--listen-port', '8440', '-t', '4']);
-  });
+    expect(buildSdServerContextArgs({ modelPath: '/m/x.gguf', port: 8440, threads: 4 })).toEqual([
+      '-m',
+      '/m/x.gguf',
+      '--listen-port',
+      '8440',
+      '-t',
+      '4'
+    ])
+  })
 
   it('adds --taesd when a fast-VAE decoder path is given', () => {
-    const args = buildSdServerContextArgs({ modelPath: '/m/x.gguf', port: 8440, threads: 4, taesdPath: '/m/taesdxl.safetensors' });
-    expect(args).toEqual(['-m', '/m/x.gguf', '--listen-port', '8440', '--taesd', '/m/taesdxl.safetensors', '-t', '4']);
-  });
-});
+    const args = buildSdServerContextArgs({
+      modelPath: '/m/x.gguf',
+      port: 8440,
+      threads: 4,
+      taesdPath: '/m/taesdxl.safetensors'
+    })
+    expect(args).toEqual([
+      '-m',
+      '/m/x.gguf',
+      '--listen-port',
+      '8440',
+      '--taesd',
+      '/m/taesdxl.safetensors',
+      '-t',
+      '4'
+    ])
+  })
+})
 
 describe('contextKey', () => {
   it('changes when the model changes (forces a server restart)', () => {
-    const a = contextKey({ modelPath: '/m/a.gguf', port: 8440 });
-    const b = contextKey({ modelPath: '/m/b.gguf', port: 8440 });
-    expect(a).not.toBe(b);
-  });
+    const a = contextKey({ modelPath: '/m/a.gguf', port: 8440 })
+    const b = contextKey({ modelPath: '/m/b.gguf', port: 8440 })
+    expect(a).not.toBe(b)
+  })
   it('is stable for the same config', () => {
-    const cfg = { modelPath: '/m/a.gguf', diffusionFa: true, threads: 8, port: 8440 };
-    expect(contextKey(cfg)).toBe(contextKey({ ...cfg }));
-  });
+    const cfg = { modelPath: '/m/a.gguf', diffusionFa: true, threads: 8, port: 8440 }
+    expect(contextKey(cfg)).toBe(contextKey({ ...cfg }))
+  })
   it('changes when taesd is toggled (forces a restart to add/remove the decoder)', () => {
-    const base = { modelPath: '/m/a.gguf', port: 8440 };
-    expect(contextKey(base)).not.toBe(contextKey({ ...base, taesdPath: '/m/taesdxl.safetensors' }));
-  });
-});
+    const base = { modelPath: '/m/a.gguf', port: 8440 }
+    expect(contextKey(base)).not.toBe(contextKey({ ...base, taesdPath: '/m/taesdxl.safetensors' }))
+  })
+})
 
 describe('buildImgGenRequest', () => {
   it('nests steps/method/scheduler/guidance under sample_params (NOT top-level)', () => {
-    const body = buildImgGenRequest({ prompt: 'a cat', width: 512, height: 512, steps: 8, cfgScale: 2, sampleMethod: 'dpm++2m', scheduler: 'karras' });
-    expect(body).not.toHaveProperty('sample_steps');
-    const sp = body.sample_params as Record<string, unknown>;
-    expect(sp.sample_steps).toBe(8);
-    expect(sp.sample_method).toBe('dpm++2m');
-    expect(sp.scheduler).toBe('karras');
-    expect(sp.guidance).toEqual({ txt_cfg: 2 });
-    expect(body.width).toBe(512);
-    expect(body.prompt).toBe('a cat');
-  });
+    const body = buildImgGenRequest({
+      prompt: 'a cat',
+      width: 512,
+      height: 512,
+      steps: 8,
+      cfgScale: 2,
+      sampleMethod: 'dpm++2m',
+      scheduler: 'karras'
+    })
+    expect(body).not.toHaveProperty('sample_steps')
+    const sp = body.sample_params as Record<string, unknown>
+    expect(sp.sample_steps).toBe(8)
+    expect(sp.sample_method).toBe('dpm++2m')
+    expect(sp.scheduler).toBe('karras')
+    expect(sp.guidance).toEqual({ txt_cfg: 2 })
+    expect(body.width).toBe(512)
+    expect(body.prompt).toBe('a cat')
+  })
 
   it('applies the crisp fast defaults (512, 8 steps, dpm++2m, KARRAS, cfg 2) when unspecified', () => {
-    const body = buildImgGenRequest({ prompt: 'x' });
-    expect(body.width).toBe(512);
-    expect(body.height).toBe(512);
-    const sp = body.sample_params as Record<string, unknown>;
-    expect(sp.sample_steps).toBe(8);
-    expect(sp.sample_method).toBe('dpm++2m');
-    expect(sp.scheduler).toBe('karras');
-    expect(sp.guidance).toEqual({ txt_cfg: 2 });
-  });
+    const body = buildImgGenRequest({ prompt: 'x' })
+    expect(body.width).toBe(512)
+    expect(body.height).toBe(512)
+    const sp = body.sample_params as Record<string, unknown>
+    expect(sp.sample_steps).toBe(8)
+    expect(sp.sample_method).toBe('dpm++2m')
+    expect(sp.scheduler).toBe('karras')
+    expect(sp.guidance).toEqual({ txt_cfg: 2 })
+  })
 
   it('sends a concrete seed, but omits it when -1 (random)', () => {
-    expect(buildImgGenRequest({ prompt: 'x', seed: 42 }).seed).toBe(42);
-    expect(buildImgGenRequest({ prompt: 'x', seed: -1 })).not.toHaveProperty('seed');
-    expect(buildImgGenRequest({ prompt: 'x' })).not.toHaveProperty('seed');
-  });
-});
+    expect(buildImgGenRequest({ prompt: 'x', seed: 42 }).seed).toBe(42)
+    expect(buildImgGenRequest({ prompt: 'x', seed: -1 })).not.toHaveProperty('seed')
+    expect(buildImgGenRequest({ prompt: 'x' })).not.toHaveProperty('seed')
+  })
+})
 
 describe('parseJobResult', () => {
   it('extracts the PNG from a completed job', () => {
-    const out = parseJobResult({ status: 'completed', result: { images: [{ b64_json: 'QUJD', index: 0 }], output_format: 'png' } });
-    expect(out).toEqual({ done: true, ok: true, pngBase64: 'QUJD', progress: undefined });
-  });
+    const out = parseJobResult({
+      status: 'completed',
+      result: { images: [{ b64_json: 'QUJD', index: 0 }], output_format: 'png' }
+    })
+    expect(out).toEqual({ done: true, ok: true, pngBase64: 'QUJD', progress: undefined })
+  })
 
   it('flags a completed-but-empty job as a failure (no silent success)', () => {
-    const out = parseJobResult({ status: 'completed', result: { images: [] } });
-    expect(out.done).toBe(true);
-    expect(out.ok).toBe(false);
-    expect(out.error).toMatch(/no image/i);
-  });
+    const out = parseJobResult({ status: 'completed', result: { images: [] } })
+    expect(out.done).toBe(true)
+    expect(out.ok).toBe(false)
+    expect(out.error).toMatch(/no image/i)
+  })
 
   it('surfaces the server error on a failed job', () => {
-    const out = parseJobResult({ status: 'failed', error: 'out of memory' });
-    expect(out).toMatchObject({ done: true, ok: false, error: 'out of memory' });
-  });
+    const out = parseJobResult({ status: 'failed', error: 'out of memory' })
+    expect(out).toMatchObject({ done: true, ok: false, error: 'out of memory' })
+  })
 
   it('surfaces the resolved seed when the server reports one (reproducible -1)', () => {
     // seed may live on the job, the result, or the image entry.
-    expect(parseJobResult({ status: 'completed', seed: 123, result: { images: [{ b64_json: 'QQ' }] } }).seed).toBe(123);
-    expect(parseJobResult({ status: 'completed', result: { seed: 456, images: [{ b64_json: 'QQ' }] } }).seed).toBe(456);
-    expect(parseJobResult({ status: 'completed', result: { images: [{ b64_json: 'QQ', seed: 789 }] } }).seed).toBe(789);
+    expect(
+      parseJobResult({ status: 'completed', seed: 123, result: { images: [{ b64_json: 'QQ' }] } })
+        .seed
+    ).toBe(123)
+    expect(
+      parseJobResult({ status: 'completed', result: { seed: 456, images: [{ b64_json: 'QQ' }] } })
+        .seed
+    ).toBe(456)
+    expect(
+      parseJobResult({ status: 'completed', result: { images: [{ b64_json: 'QQ', seed: 789 }] } })
+        .seed
+    ).toBe(789)
     // absent -> undefined (caller falls back to the requested seed)
-    expect(parseJobResult({ status: 'completed', result: { images: [{ b64_json: 'QQ' }] } }).seed).toBeUndefined();
-  });
+    expect(
+      parseJobResult({ status: 'completed', result: { images: [{ b64_json: 'QQ' }] } }).seed
+    ).toBeUndefined()
+  })
 
   it('treats queued/running as not-done and forwards progress', () => {
-    expect(parseJobResult({ status: 'queued', queue_position: 0 }).done).toBe(false);
-    expect(parseJobResult({ status: 'running', progress: 0.5 })).toMatchObject({ done: false, progress: 0.5 });
-  });
-});
+    expect(parseJobResult({ status: 'queued', queue_position: 0 }).done).toBe(false)
+    expect(parseJobResult({ status: 'running', progress: 0.5 })).toMatchObject({
+      done: false,
+      progress: 0.5
+    })
+  })
+})
+
+describe('describeSdFetchFailure — actionable error when the resident server dies mid-job', () => {
+  it('surfaces the server stderr tail when the process crashed (never a bare "fetch failed")', () => {
+    const msg = describeSdFetchFailure(
+      false,
+      ['ggml_metal: out of memory', 'sd-server aborting'],
+      new TypeError('fetch failed')
+    )
+    expect(msg).toContain('crashed')
+    expect(msg).toContain('out of memory') // the actionable cause, not "fetch failed"
+    expect(msg).not.toBe('fetch failed')
+  })
+
+  it('says "became unreachable" and falls back to the raw error when there is no stderr', () => {
+    const msg = describeSdFetchFailure(true, [], new TypeError('fetch failed'))
+    expect(msg).toContain('became unreachable')
+    expect(msg).toContain('fetch failed') // no stderr captured → surface the raw reason
+  })
+
+  it('keeps only the last few stderr lines (a wall of logs is not actionable)', () => {
+    const many = Array.from({ length: 20 }, (_, i) => `line${i}`)
+    const msg = describeSdFetchFailure(false, many, 'x')
+    expect(msg).toContain('line19') // most recent kept
+    expect(msg).not.toContain('line0') // old lines trimmed
+  })
+})

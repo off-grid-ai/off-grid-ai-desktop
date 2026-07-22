@@ -87,8 +87,13 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private let q = DispatchQueue(label: "ai.offgrid.meeting.rec")
     private var micRecorder: AVAudioRecorder?
     private var finished = false
+    private var screenFrames = 0 // diagnostic: how many complete frames we actually wrote
 
     func start() async throws {
+        // DECISIVE for a black recording: ScreenCaptureKit hands back BLACK frames (no
+        // error) when THIS process isn't authorized for screen recording. Since we're a
+        // separate spawned binary, our authorization is independent of the parent app's.
+        errLog("[rec] screen-capture preauthorized=\(CGPreflightScreenCaptureAccess())")
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
 
         // Capture the FULL display the call is on — the product records the SCREEN, and a
@@ -124,6 +129,16 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
         // AVAssetWriter: H.264 video + AAC audio into screen.mov
         let w = try AVAssetWriter(outputURL: screenURL, fileType: .mov)
+        // CRASH-SAFETY (never lose data): without this, the moov atom is written ONLY at
+        // finishWriting(), so a SIGKILL (app force-quit mid-recording) leaves an unreadable
+        // file and the whole recording is lost. A movie-fragment interval makes AVFoundation
+        // write the header up front + flush periodic fragments (moof/mdat), so a killed file
+        // stays playable up to the last flushed fragment. At a 1s interval the on-disk file is
+        // effectively real-time: a hard kill loses at most ~1s of tail, never the session —
+        // and startup recovery (recoverOrphanedMeetings) can then mux it. A graceful quit
+        // finalizes fully via stopProServices -> requestStop.
+        w.movieFragmentInterval = CMTime(value: 1, timescale: 1)
+        w.shouldOptimizeForNetworkUse = true
         let vSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: outW,
@@ -190,6 +205,10 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
             }
             if started, let vIn = videoInput, vIn.isReadyForMoreMediaData {
                 vIn.append(sampleBuffer)
+                screenFrames += 1
+                if screenFrames == 1 || screenFrames % 150 == 0 {
+                    errLog("[rec] wrote \(screenFrames) screen frame(s)")
+                }
             }
         } else if type == .audio {
             // Only write audio once the session has started (video drives the clock).

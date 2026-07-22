@@ -1,5 +1,5 @@
 @import './base.css';
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* Tailwind v4 auto-detects content but SKIPS .gitignored paths — and the pro/
    submodule is gitignored. Without this, any utility class used only in pro
@@ -8,8 +8,8 @@
 @source "../../../../pro/renderer";
 
 @theme {
-  --animate-spotlight: spotlight 2s ease .75s 1 forwards;
-  --animate-orbit: orbit calc(var(--duration)*1s) linear infinite;
+  --animate-spotlight: spotlight 2s ease 0.75s 1 forwards;
+  --animate-orbit: offgrid-orbit-circles calc(var(--duration) * 1s) linear infinite;
 
   /*
    * Remap the Tailwind palette the components already use onto the Off Grid
@@ -92,16 +92,19 @@
     }
   }
 
-  @keyframes orbit {
+  /* Namespaced because onboarding.css also carries a legacy `orbit` keyframe.
+     Global keyframe names collide even when the rules live in separate files. */
+  @keyframes offgrid-orbit-circles {
     0% {
-      transform: rotate(calc(var(--angle) * 1deg)) translateY(calc(var(--radius) * 1px)) rotate(calc(var(--angle) * -1deg));
+      transform: rotate(var(--angle, 0deg)) translateY(calc(-1 * var(--radius, 160px)))
+        rotate(calc(-1 * var(--angle, 0deg)));
     }
     100% {
-      transform: rotate(calc(var(--angle) * 1deg + 360deg)) translateY(calc(var(--radius) * 1px)) rotate(calc((var(--angle) + 360) * -1deg));
+      transform: rotate(calc(var(--angle, 0deg) + 360deg))
+        translateY(calc(-1 * var(--radius, 160px))) rotate(calc(-1 * var(--angle, 0deg) - 360deg));
     }
   }
 }
-
 
 body {
   display: flex;
@@ -114,7 +117,21 @@ body {
 
 /* Body disables selection for native-feel app chrome; re-enable it for actual
    text content so chat messages (yours and the responses) can be selected/copied. */
-p, li, pre, code, h1, h2, h3, h4, h5, h6, blockquote, td, th, .selectable, [data-selectable] {
+p,
+li,
+pre,
+code,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+blockquote,
+td,
+th,
+.selectable,
+[data-selectable] {
   user-select: text;
   -webkit-user-select: text;
   cursor: auto;
@@ -123,7 +140,7 @@ p, li, pre, code, h1, h2, h3, h4, h5, h6, blockquote, td, th, .selectable, [data
 /* Clickable elements get the hand cursor (browsers don't do this for <button>
    by default, and the rules above reset it to auto). */
 button:not(:disabled),
-[role="button"]:not([aria-disabled="true"]),
+[role='button']:not([aria-disabled='true']),
 a[href],
 select,
 summary,
@@ -133,8 +150,29 @@ label[for],
   cursor: pointer;
 }
 button:disabled,
-[aria-disabled="true"] {
+[aria-disabled='true'] {
   cursor: not-allowed;
+}
+
+/* Keyboard navigation must remain visible even on controls that use outline-none
+   for pointer styling. Keep one theme-aware focus policy for every interactive
+   surface instead of duplicating ring utilities across screens.
+   Scoped to keyboard modality (main.tsx stamps [data-user-modality]) so the ring
+   shows on Tab navigation but NOT on a mouse click — browsers otherwise match
+   :focus-visible on clicked text inputs, painting the ring on every field click. */
+:root[data-user-modality='keyboard']
+  :where(
+    button,
+    [role='button'],
+    a[href],
+    input,
+    textarea,
+    select,
+    summary,
+    [tabindex]:not([tabindex='-1'])
+  ):focus-visible {
+  outline: 2px solid var(--og-primary);
+  outline-offset: 2px;
 }
 
 code {
@@ -184,10 +222,7 @@ code {
   display: flex;
   flex-direction: column;
   padding: 20px;
-  overflow-y: hidden;
-  /* Scroll handled by inner feed if needed, or just let it scroll */
   position: relative;
-  /* We want the scrollable area to be the feed itself usually, but for now let's make this the container */
   overflow-y: auto;
 }
 
@@ -322,7 +357,6 @@ code {
 }
 
 @media (max-width: 350px) {
-
   .tip,
   .actions {
     display: none;
@@ -332,11 +366,24 @@ code {
    streaks across the upper area, layered over the terminal grid. Static star dots
    live on StarfieldBackdrop; this is just the animation. Pure CSS, no deps. */
 @keyframes og-shooting-star {
-  0%   { transform: translate3d(0, 0, 0) rotate(32deg); opacity: 0; }
-  4%   { opacity: 1; }
-  16%  { opacity: 1; }
-  20%  { transform: translate3d(900px, 560px, 0) rotate(32deg); opacity: 0; }
-  100% { transform: translate3d(900px, 560px, 0) rotate(32deg); opacity: 0; }
+  0% {
+    transform: translate3d(0, 0, 0) rotate(32deg);
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  16% {
+    opacity: 1;
+  }
+  20% {
+    transform: translate3d(900px, 560px, 0) rotate(32deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(900px, 560px, 0) rotate(32deg);
+    opacity: 0;
+  }
 }
 .og-shooting-star {
   position: absolute;
@@ -350,28 +397,102 @@ code {
   animation: og-shooting-star 12s ease-in 4s infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .og-shooting-star { animation: none; display: none; }
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .og-shooting-star {
+    animation: none;
+    display: none;
+  }
+}
+
+/* Dialog / modal transitions. The shared shadcn Dialog ships tailwindcss-animate
+   classes (`animate-in`, `zoom-in-95`, …) that this project doesn't include, so
+   modals used to pop in with no transition. These keyframes hook Radix's
+   data-state (open/closed) directly for a smooth fade + scale on EVERY dialog,
+   and Radix waits for the close animation before unmounting. The `translate`
+   matches the Dialog's base centering transform so there's no positional jump;
+   reduced-motion is honored by the global block above. */
+@keyframes og-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes og-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+/* IMPORTANT: animate ONLY scale + opacity, never translate. Tailwind v4 centers
+   the dialog with the `translate` CSS property (translate-x/y-[-50%]); animating
+   `transform: translate(…)` here would ADD a second translate on top of it during
+   the animation — the element flies to the top-left, then snaps back to center
+   when the animation ends. Scaling uses `transform: scale()`, which composes with
+   the `translate` property cleanly, so the modal scales from its centered spot. */
+@keyframes og-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes og-dialog-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+[data-slot='dialog-overlay'][data-state='open'] {
+  animation: og-overlay-in 160ms ease-out;
+}
+[data-slot='dialog-overlay'][data-state='closed'] {
+  animation: og-overlay-out 130ms ease-in;
+}
+[data-slot='dialog-content'][data-state='open'] {
+  animation: og-dialog-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-slot='dialog-content'][data-state='closed'] {
+  animation: og-dialog-out 140ms ease-in;
 }
 
 /* Static star field — themeable so it reads in BOTH modes: dark dots on light,
    bright dots on dark. Tiled radial-gradients, repeated across the viewport. */
 .og-starfield {
   background-image:
-    radial-gradient(1.5px 1.5px at 30px 40px, rgba(0,0,0,0.55), transparent),
-    radial-gradient(1px 1px at 110px 90px, rgba(0,0,0,0.42), transparent),
-    radial-gradient(1.5px 1.5px at 170px 28px, rgba(0,0,0,0.50), transparent),
-    radial-gradient(2px 2px at 70px 158px, rgba(0,0,0,0.50), transparent),
-    radial-gradient(1px 1px at 150px 192px, rgba(0,0,0,0.38), transparent),
-    radial-gradient(1px 1px at 205px 120px, rgba(0,0,0,0.45), transparent);
+    radial-gradient(1.5px 1.5px at 30px 40px, rgba(0, 0, 0, 0.55), transparent),
+    radial-gradient(1px 1px at 110px 90px, rgba(0, 0, 0, 0.42), transparent),
+    radial-gradient(1.5px 1.5px at 170px 28px, rgba(0, 0, 0, 0.5), transparent),
+    radial-gradient(2px 2px at 70px 158px, rgba(0, 0, 0, 0.5), transparent),
+    radial-gradient(1px 1px at 150px 192px, rgba(0, 0, 0, 0.38), transparent),
+    radial-gradient(1px 1px at 205px 120px, rgba(0, 0, 0, 0.45), transparent);
   background-size: 220px 220px;
   background-repeat: repeat;
 }
-[data-theme="dark"] .og-starfield {
+[data-theme='dark'] .og-starfield {
   background-image:
-    radial-gradient(1.5px 1.5px at 30px 40px, rgba(255,255,255,0.95), transparent),
-    radial-gradient(1px 1px at 110px 90px, rgba(255,255,255,0.70), transparent),
-    radial-gradient(1px 1px at 170px 28px, rgba(255,255,255,0.85), transparent),
-    radial-gradient(2px 2px at 70px 158px, rgba(255,255,255,0.90), transparent),
-    radial-gradient(1px 1px at 150px 192px, rgba(255,255,255,0.60), transparent),
-    radial-gradient(1px 1px at 205px 120px, rgba(255,255,255,0.78), transparent);
+    radial-gradient(1.5px 1.5px at 30px 40px, rgba(255, 255, 255, 0.95), transparent),
+    radial-gradient(1px 1px at 110px 90px, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 170px 28px, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(2px 2px at 70px 158px, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(1px 1px at 150px 192px, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 205px 120px, rgba(255, 255, 255, 0.78), transparent);
 }

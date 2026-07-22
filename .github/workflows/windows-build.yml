@@ -30,9 +30,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false # don't leave the token in .git/config for npm postinstall scripts
-          lfs: false # the repo's LFS binaries are macOS-only; Windows runtimes
-                     # come from fetch-win-binaries.ps1, so don't pull ~235MB of
-                     # dylibs we won't ship.
+          lfs:
+            false # the repo's LFS binaries are macOS-only; Windows runtimes
+            # come from fetch-win-binaries.ps1, so don't pull ~235MB of
+            # dylibs we won't ship.
 
       # Private pro source into pro/ → __OFFGRID_PRO__ true, so the exe bundles the
       # Pro layer (mirrors release.yml). Needed to exercise the Pro "coming soon"

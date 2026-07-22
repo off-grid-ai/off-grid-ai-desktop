@@ -125,7 +125,7 @@ function findBestMatch(pattern, text) {
   return { score, matches: ranges };
 }
 function isWordBoundary(char) {
-  return /[\s\-_.,;:!?()[\]{}'"\/\\]/.test(char);
+  return /[\s\-_.,;:!?()[\]{}'"/\\]/.test(char);
 }
 function isUpperCase(char) {
   return char >= "A" && char <= "Z";
@@ -158,7 +158,10 @@ function wordMatchBonus(query, text) {
   const textLower = text.toLowerCase();
   let bonus = 0;
   for (const word of queryWords) {
-    const wordRegex = new RegExp(`(?:^|[\\s\\-_.,;:!?()\\[\\]{}'"\\/\\\\])${escapeRegex(word)}(?:$|[\\s\\-_.,;:!?()\\[\\]{}'"\\/\\\\])`, "i");
+    const wordRegex = new RegExp(
+      `(?:^|[\\s\\-_.,;:!?()\\[\\]{}'"\\/\\\\])${escapeRegex(word)}(?:$|[\\s\\-_.,;:!?()\\[\\]{}'"\\/\\\\])`,
+      "i"
+    );
     if (wordRegex.test(text)) {
       bonus += 50;
     } else if (textLower.includes(word)) {

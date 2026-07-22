@@ -11,32 +11,32 @@
  *  callers can pass either the package `ModelEntry` or a renderer-local model type
  *  (whose `kind` is a plain string) without a cast. */
 export interface RecommendableModel {
-  id: string;
-  kind: string;
-  tags?: string[];
+  id: string
+  kind: string
+  tags?: string[]
 }
 
 /** RAM (GB) at or below which the lighter (Light-tagged) quant is recommended.
  *  16GB is the ceiling: verified that the full Q8 DreamShaper pegs memory (~4.7GB
  *  peak) and can freeze a 16GB Mac, while the Q4 (~3.08GB peak) does not. */
-export const LIGHT_MODEL_RAM_CEILING_GB = 16;
+export const LIGHT_MODEL_RAM_CEILING_GB = 16
 
 const hasLightTag = (m: RecommendableModel): boolean =>
-  (m.tags ?? []).some((t) => /^light$/i.test(t));
+  (m.tags ?? []).some((t) => /^light$/i.test(t))
 
 const isVersatile = (m: RecommendableModel): boolean =>
-  (m.tags ?? []).some((t) => /^versatile$/i.test(t));
+  (m.tags ?? []).some((t) => /^versatile$/i.test(t))
 
 /** Prefer the 'Versatile' all-rounder (DreamShaper) when several models qualify,
  *  so the badge is stable no matter how many Light variants the catalog lists /
  *  their order. Falls back to the first candidate. */
 const pickVersatileFirst = (candidates: RecommendableModel[]): RecommendableModel | undefined =>
-  candidates.find(isVersatile) ?? candidates[0];
+  candidates.find(isVersatile) ?? candidates[0]
 
 /** Family key for pairing a full quant with its Light sibling: the id with any
  *  trailing quant suffix (e.g. "-Q4") stripped, so both DreamShaper entries map
  *  to the same family. */
-const familyKey = (m: RecommendableModel): string => m.id.replace(/-Q\d[\w]*$/i, '');
+const familyKey = (m: RecommendableModel): string => m.id.replace(/-Q\d[\w]*$/i, '')
 
 /**
  * The image model id best suited to a machine with `ramGb` RAM, or null when no
@@ -48,19 +48,23 @@ const familyKey = (m: RecommendableModel): string => m.id.replace(/-Q\d[\w]*$/i,
  * family (DreamShaper) rather than an unrelated heavy model. Falls back to any
  * Light model when only that exists (small machine) / the family's full entry.
  */
-export function recommendedImageModelId(models: RecommendableModel[], ramGb: number | null | undefined): string | null {
-  if (!ramGb || !Number.isFinite(ramGb)) return null;
-  const images = models.filter((m) => m.kind === 'image');
-  if (!images.length) return null;
+export function recommendedImageModelId(
+  models: RecommendableModel[],
+  ramGb: number | null | undefined
+): string | null {
+  if (!ramGb || !Number.isFinite(ramGb)) return null
+  const images = models.filter((m) => m.kind === 'image')
+  if (!images.length) return null
 
-  const light = images.filter(hasLightTag);
+  const light = images.filter(hasLightTag)
   // Families that ship a Light variant — those are the ones we recommend within.
-  const lightFamilies = new Set(light.map(familyKey));
-  const fullOfLightFamily = images.filter((m) => !hasLightTag(m) && lightFamilies.has(familyKey(m)));
+  const lightFamilies = new Set(light.map(familyKey))
+  const fullOfLightFamily = images.filter((m) => !hasLightTag(m) && lightFamilies.has(familyKey(m)))
 
   if (ramGb <= LIGHT_MODEL_RAM_CEILING_GB) {
-    return (pickVersatileFirst(light) ?? images[0]).id;
+    return (pickVersatileFirst(light) ?? images[0]).id
   }
   // Above the ceiling: the full sibling of a Light family, else any non-Light image model.
-  return (pickVersatileFirst(fullOfLightFamily) ?? images.find((m) => !hasLightTag(m)) ?? images[0]).id;
+  return (pickVersatileFirst(fullOfLightFamily) ?? images.find((m) => !hasLightTag(m)) ?? images[0])
+    .id
 }

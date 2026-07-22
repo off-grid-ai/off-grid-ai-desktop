@@ -7,8 +7,8 @@ the "app that connects to all the nodes" (Off Grid Desktop/Mobile). Next.js.
 This is a **new, separate product** from Off Grid Desktop. The nodes already carry the
 gateway and enforce policy locally (see `ENTERPRISE_BUILD_PLAN.md`). The Console does **not**
 run the intelligence or enforce policy — it **defines and observes**: provisions policy +
-knowledge + config *down* to the fleet, aggregates audit + telemetry + distilled learnings
-*up*.
+knowledge + config _down_ to the fleet, aggregates audit + telemetry + distilled learnings
+_up_.
 
 ---
 
@@ -46,6 +46,7 @@ customer takes any subset and never the whole ecosystem to use one part:
 - **All of it** — the full common control plane.
 
 Baked into the build:
+
 - **API-first.** Every module exposes its function over a documented API; the Console UI is
   one consumer of that same API. "API only" is free — it's the contract the UI uses.
 - **Independent modules.** Each plane/service (Gateway, Brain, Agents, Data/ingest, Fleet,
@@ -88,15 +89,15 @@ below, then wiring real nodes once Stage 1 ships.
 Define this API first — both sides build against it. Pull-based, versioned, mTLS or
 device-token auth.
 
-| Direction | Endpoint (Console side) | Purpose |
-|---|---|---|
-| Enroll | `POST /v1/devices/enroll` (with admin-issued enrollment token) | Node registers; Console issues a device identity/token (C4) |
-| Policy down | `GET /v1/devices/{id}/policy` | Node pulls current policy bundle (guardrails, egress rules, RBAC, AI-use policy) |
-| Config + knowledge down | `GET /v1/devices/{id}/provision` | Intelligence config + SOPs/KB refs the node's role gets (from Brain) |
-| Audit up | `POST /v1/devices/{id}/audit` | Node pushes audit batches (calls, what-left-device, tool use) |
-| Telemetry up | `POST /v1/devices/{id}/telemetry` | Tokens, latency, eval results, drift signals |
-| Learnings up | `POST /v1/devices/{id}/learnings` | Distilled SOPs/patterns (never raw capture) → Brain |
-| Commands | `GET /v1/devices/{id}/commands` (+ optional SSE) | Kill switch, re-provision, revoke — node polls/streams |
+| Direction               | Endpoint (Console side)                                        | Purpose                                                                          |
+| ----------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Enroll                  | `POST /v1/devices/enroll` (with admin-issued enrollment token) | Node registers; Console issues a device identity/token (C4)                      |
+| Policy down             | `GET /v1/devices/{id}/policy`                                  | Node pulls current policy bundle (guardrails, egress rules, RBAC, AI-use policy) |
+| Config + knowledge down | `GET /v1/devices/{id}/provision`                               | Intelligence config + SOPs/KB refs the node's role gets (from Brain)             |
+| Audit up                | `POST /v1/devices/{id}/audit`                                  | Node pushes audit batches (calls, what-left-device, tool use)                    |
+| Telemetry up            | `POST /v1/devices/{id}/telemetry`                              | Tokens, latency, eval results, drift signals                                     |
+| Learnings up            | `POST /v1/devices/{id}/learnings`                              | Distilled SOPs/patterns (never raw capture) → Brain                              |
+| Commands                | `GET /v1/devices/{id}/commands` (+ optional SSE)               | Kill switch, re-provision, revoke — node polls/streams                           |
 
 ---
 
@@ -105,29 +106,30 @@ device-token auth.
 Navigation mirrors the planes (and the `ENTERPRISE_BUILD_PLAN.md` component map):
 
 - **Fleet** — device inventory, enrollment, groups/roles, per-role policy + intelligence
-  assignment, kill switch. *(C4, C9c, provisioning.)*
+  assignment, kill switch. _(C4, C9c, provisioning.)_
 - **Control plane** — gateway config (model routing, leashed cloud), guardrail rules
   (input/output), **egress rules**, **audit log explorer**, observability dashboards, RBAC
-  authoring. *(C1, C2, C3, C5, C7, C8, C16.)*
+  authoring. _(C1, C2, C3, C5, C7, C8, C16.)_
 - **Data plane** — connectors to DBs/warehouses/SaaS, ingest jobs + status, PII/masking
-  rules, data catalog, retention/erasure (DSAR). *(A1, A3, A5, A7, A9, A11, A12a.)*
+  rules, data catalog, retention/erasure (DSAR). _(A1, A3, A5, A7, A9, A11, A12a.)_
 - **AI plane (Brain)** — KB/SOP management (review, edit, publish "what good is"), model
-  registry, retrieval config, **eval + drift** dashboards. *(B2a, B3, B5a, B16, C9, C9a.)*
+  registry, retrieval config, **eval + drift** dashboards. _(B2a, B3, B5a, B16, C9, C9a.)_
 - **Regulatory** — the **DPO single view**: compliance status, framework→control mapping,
-  one-click audit/DPIA export, AI-use-policy authoring. *(E1, E2, E6, C7 rollup.)*
+  one-click audit/DPIA export, AI-use-policy authoring. _(E1, E2, E6, C7 rollup.)_
 
 ---
 
 ## Standards (decision locked)
 
 We follow the Wednesday **Standards Kit** for engineering and component sourcing, and the
-**Off Grid brutalist brand** (`docs/DESIGN.md`) for visual identity. Where the kit's *visual*
+**Off Grid brutalist brand** (`docs/DESIGN.md`) for visual identity. Where the kit's _visual_
 identity conflicts with Off Grid (it uses green→teal gradients, Instrument Serif, DM Sans,
 shimmer, card-lift, rich animation), **Off Grid wins** — the Console is one product family
 with the Desktop/Mobile nodes it manages, and a dense compliance/audit tool suits the flat,
 information-first look.
 
 **Engineering standards (from the kit — adopted as-is):**
+
 - Cyclomatic complexity **< 8** (no exceptions); refactor over nesting.
 - Naming: **PascalCase** (components/types), **camelCase** (logic).
 - Strict **import ordering**: React → Next → state → UI → alias → relative.
@@ -136,6 +138,7 @@ information-first look.
   `aria-label` on icons, `alt` on images; 4.5:1 contrast.
 
 **Visual identity (Off Grid `docs/DESIGN.md` — overrides the kit):**
+
 - Menlo mono everywhere; single emerald accent (`#34D399`/`#059669`), **no gradients**.
 - Flat 8px radius, hairline borders, no shadow/lift; hierarchy via size+opacity, not color.
 - **No decorative animation** — loading spinner only. (So the kit's animation-timing table
@@ -147,22 +150,24 @@ information-first look.
 `wednesday-solutions/component-library-animations` is a **catalog** — an index of the ~399
 components that exist across the ecosystem (shadcn, aceternity, animate-ui, cult-ui,
 eldora-ui, magic-ui, motion-primitives), with **example implementations**. Use the catalog to
-find the *right* component for each need; then bring that component in **from its real source
+find the _right_ component for each need; then bring that component in **from its real source
 library**, and re-theme it. The repo's `Button` is an example — we don't import it; we use
 the actual library's component.
 
 **Setup (one-time):**
+
 1. Clone `wednesday-solutions/component-library-animations` **inside** the console repo as a
    **reference catalog**.
 2. **`.gitignore` that clone** — it's for discovery, not a committed dependency. Checked out
    fresh per environment.
 
 **Workflow (every UI need):**
+
 1. **Discover** — search `skills/component-library-index.md` (indexed **by use case**) +
    `src/componentRegistry.tsx`. Find the right component and note **which library it's from**.
 2. **Source it from that library** — install/add the real component from its upstream
    (shadcn via its CLI, aceternity/magic-ui/cult-ui from their source). The catalog's file is
-   the *example*; the real library is the *source of truth*.
+   the _example_; the real library is the _source of truth_.
 3. **Re-theme to `docs/DESIGN.md`** — the brand overrides the library's defaults.
 
 If a need isn't in the catalog, find the **closest catalog component** and adapt it — still
@@ -177,7 +182,7 @@ gradients**, **single emerald accent**, Menlo mono, **no decorative animation**)
   admin console is dense and information-first, not a landing page.
 - **Skip the decorative pieces** (AuroraBackground, NeonGradientCard, RainbowButton,
   ShinyText, Meteors, GlowingStars…) — they fight the brand.
-- **Re-theme on use:** Menlo `font-mono`, emerald `#34D399/#059669` as the *only* accent,
+- **Re-theme on use:** Menlo `font-mono`, emerald `#34D399/#059669` as the _only_ accent,
   flat 8px radius, hairline borders, hierarchy via size+opacity not color. Animation only
   where functional (loading), never decorative.
 
@@ -208,11 +213,11 @@ Sequenced so the Console is demoable early (against mocks) and useful as soon as
    the component-library-animations repo as a **discovery catalog**; source components from
    their real libraries per the workflow above (no custom, no vendored repo copies); apply
    `@offgrid/design` / `docs/DESIGN.md` theme; OIDC login, RBAC, Postgres schema (devices,
-   policies, audit, users). Mocked node API. *Demoable console with a fake fleet, brand-
-   matched, components sourced from the library.*
+   policies, audit, users). Mocked node API. _Demoable console with a fake fleet, brand-
+   matched, components sourced from the library._
 2. **M1 — Fleet foundation.** Enrollment flow, device inventory, push a policy bundle,
    ingest audit, the audit log explorer, kill switch. Wire to **real nodes** once node-side
-   Stage 1 ships. *Done when an admin governs a real device from the console.*
+   Stage 1 ships. _Done when an admin governs a real device from the console._
    - ✅ **Contract API + OpenAPI/Scalar docs shipped** — the full node↔console lifecycle
      (enroll · pull policy · push audit · poll commands · admin token/policy/kill · fleet
      audit) on a swappable in-memory store; OpenAPI 3.1 at `/openapi.json`, interactive
@@ -223,15 +228,15 @@ Sequenced so the Console is demoable early (against mocks) and useful as soon as
 3. **M2 — Control plane UI.** ✅ Policy editor (egress toggle + editable guardrails + allowed
    models, published as a **versioned** policy), **policy history**, **RBAC** (users + role
    change, validated), and the audit log. Gateway section reads the live node gateway
-   (`:7878`). *Observability dashboards deferred to the Analytics module.*
+   (`:7878`). _Observability dashboards deferred to the Analytics module._
 4. **M3 — Data plane UI.** ✅ Connectors (add/sync/delete), ingest jobs, PII/masking rules
    (add/toggle), data catalog with classification, and retention/erasure (DSAR). Real
-   Postgres tables + admin APIs. *Next: wire ingest into Brain (M4).*
+   Postgres tables + admin APIs. _Next: wire ingest into Brain (M4)._
 5. **M4 — Brain UI.** ✅ LanceDB ingestion→retrieval (RAG): KB/SOP list + add-document
    (embed+index), semantic search with scored citations. Embeddings via the gateway
-   `/v1/embeddings` (deterministic fallback). *Next: eval/drift + model registry.*
+   `/v1/embeddings` (deterministic fallback). _Next: eval/drift + model registry._
 6. **M5 — Regulatory / DPO.** Compliance view, framework mapping, one-click audit/DPIA
-   export, AI-use-policy authoring. *Done when a DPO can export a defensible pack.*
+   export, AI-use-policy authoring. _Done when a DPO can export a defensible pack._
 7. **M6 — Self-host packaging.** Docker Compose bundle, install docs, backup/restore.
 
 ---
@@ -268,7 +273,7 @@ diagrams + OSS map). All on real Postgres + LanceDB + SSO + the live `:7878` gat
 
 1. **Desktop grounding of the story** — survey `../desktop` so Fleet Control, auto-SOP
    creation, and org-knowledge sync messaging matches what the app actually does
-   (capture → synthesize → SOPs; memory + `@offgrid/sync`). *(in progress)*
+   (capture → synthesize → SOPs; memory + `@offgrid/sync`). _(in progress)_
 2. **Multi-tenant Admin module + ABAC/RBAC** — tenants/orgs, provisioning (who the console
    is for + their access), ABAC (tenant/purpose/data-class) layered on existing RBAC. Do now
    to avoid a retrofit. Single interface (ours) — no white-labeling underlying tools.

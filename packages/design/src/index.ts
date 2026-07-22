@@ -33,8 +33,8 @@ export const COLORS_LIGHT = {
   info: '#525252',
 
   overlay: 'rgba(0, 0, 0, 0.4)',
-  divider: '#EBEBEB',
-} as const;
+  divider: '#EBEBEB'
+} as const
 
 export const COLORS_DARK = {
   primary: '#34D399',
@@ -63,20 +63,20 @@ export const COLORS_DARK = {
   info: '#B0B0B0',
 
   overlay: 'rgba(0, 0, 0, 0.7)',
-  divider: '#1A1A1A',
-} as const;
+  divider: '#1A1A1A'
+} as const
 
-export type ThemeColors = typeof COLORS_LIGHT;
-export type ColorToken = keyof ThemeColors;
+export type ThemeColors = typeof COLORS_LIGHT
+export type ColorToken = keyof ThemeColors
 
 // Monospace font stack. Menlo is the canonical Off Grid face; the rest are
 // graceful fallbacks for non-macOS web environments.
 export const FONT_MONO =
-  "'Menlo', ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', monospace";
+  "'Menlo', ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', monospace"
 
 export const FONTS = {
-  mono: 'Menlo',
-} as const;
+  mono: 'Menlo'
+} as const
 
 // Spacing scale in pixels (mobile/src/constants/index.ts SPACING).
 export const SPACING = {
@@ -85,17 +85,17 @@ export const SPACING = {
   md: 12,
   lg: 16,
   xl: 24,
-  xxl: 32,
-} as const;
+  xxl: 32
+} as const
 
-export type SpacingToken = keyof typeof SPACING;
+export type SpacingToken = keyof typeof SPACING
 
 // Single accent radius. The design guide favours crisp, sharp edges; 8px is
 // the standard control radius, 2px for inline code and chips.
 export const RADIUS = {
   sm: 2,
-  md: 8,
-} as const;
+  md: 8
+} as const
 
 // Typography scale (mobile/src/constants/index.ts TYPOGRAPHY). Sizes in px,
 // weights as numeric strings to match the RN tokens. Weights stay <= 400.
@@ -109,17 +109,17 @@ export const TYPOGRAPHY = {
   label: { fontSize: 10, fontFamily: FONTS.mono, fontWeight: '400', letterSpacing: 0.3 },
   labelSmall: { fontSize: 9, fontFamily: FONTS.mono, fontWeight: '400', letterSpacing: 0.3 },
   meta: { fontSize: 10, fontFamily: FONTS.mono, fontWeight: '300', letterSpacing: 0 },
-  metaSmall: { fontSize: 9, fontFamily: FONTS.mono, fontWeight: '300', letterSpacing: 0 },
-} as const;
+  metaSmall: { fontSize: 9, fontFamily: FONTS.mono, fontWeight: '300', letterSpacing: 0 }
+} as const
 
-export type TypographyToken = keyof typeof TYPOGRAPHY;
+export type TypographyToken = keyof typeof TYPOGRAPHY
 
 // Build a CSS variable reference from a color token, e.g.
 // cssVar('primary') -> 'var(--og-primary)'.
 export function cssVar(token: ColorToken): string {
-  return `var(--og-${kebab(token)})`;
+  return `var(--og-${kebab(token)})`
 }
 
 function kebab(s: string): string {
-  return s.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+  return s.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
 }

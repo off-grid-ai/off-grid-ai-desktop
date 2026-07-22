@@ -15,139 +15,136 @@
  *    preload `pro:is-enabled` sync IPC can read it WITHOUT async, and a change
  *    notifier pushes updates to the renderer instead of mutating a Zustand store.
  */
-import { app, safeStorage } from 'electron';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { app, safeStorage } from 'electron'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { PRO_PURCHASE_URL } from '../../shared/product-links'
 import {
   validateKey,
   activateMachine,
   listMachines,
   deactivateMachine,
   KeygenNetworkError,
-  type KeygenMachine,
-} from './keygen-client';
-import { getDeviceFingerprint, getPlatformTag } from './device-fingerprint';
+  type KeygenMachine
+} from './keygen-client'
+import { getDeviceFingerprint, getPlatformTag } from './device-fingerprint'
+import { decodeLicenseCache, encodeLicenseCache, type ProLicense } from './license-cache'
 
-const LICENSE_FILE = 'license.json';
+const LICENSE_FILE = 'license.json'
 
 // Public web pay page (RevenueCat checkout). "Get Pro" opens this; the buyer is
 // emailed a license key by the issuance Worker and enters it via activateProByKey.
-export const PRO_PAY_PAGE_URL = 'https://getoffgridai.co/pay';
+export const PRO_PAY_PAGE_URL = PRO_PURCHASE_URL
 
-export type ActivateResult = { ok: true } | { ok: false; reason: 'invalid' | 'limit' | 'network' };
+export type ActivateResult = { ok: true } | { ok: false; reason: 'invalid' | 'limit' | 'network' }
 
-type ProLicense = {
-  isPro: boolean;
-  key: string | null;
-  licenseId: string | null;
-  expiry: string | null; // ISO timestamp, or null for a perpetual (lifetime) key
-  verifiedAt: number;
-};
+export type { ProLicense } from './license-cache'
 
-const EMPTY: ProLicense = { isPro: false, key: null, licenseId: null, expiry: null, verifiedAt: 0 };
+const EMPTY: ProLicense = { isPro: false, key: null, licenseId: null, expiry: null, verifiedAt: 0 }
 
-const REVOKED_CODES = ['EXPIRED', 'SUSPENDED', 'BANNED', 'OVERDUE', 'NOT_FOUND'];
-const NEEDS_ACTIVATION = ['NO_MACHINE', 'NO_MACHINES', 'FINGERPRINT_SCOPE_MISMATCH'];
+export const REVOKED_CODES = ['EXPIRED', 'SUSPENDED', 'BANNED', 'OVERDUE', 'NOT_FOUND']
+export const NEEDS_ACTIVATION = ['NO_MACHINE', 'NO_MACHINES', 'FINGERPRINT_SCOPE_MISMATCH']
 
-export type ProTier = 'lifetime' | 'monthly';
+type ProTier = 'lifetime' | 'monthly'
 export interface ProLicenseInfo {
-  isPro: boolean;
-  tier: ProTier | null; // lifetime (no expiry) vs monthly (has expiry); null when not Pro
-  expiry: string | null;
-  verifiedAt: number;
+  isPro: boolean
+  tier: ProTier | null // lifetime (no expiry) vs monthly (has expiry); null when not Pro
+  expiry: string | null
+  verifiedAt: number
 }
 
 // In-memory mirror of the on-disk license, loaded by init() at boot. Drives the
 // SYNCHRONOUS isProEntitled() so the pro gate and preload don't await disk/network.
-let cache: ProLicense = EMPTY;
+let cache: ProLicense = EMPTY
 
 // Pushed to the renderer on any entitlement change (set by the IPC layer).
-let notifyChange: ((info: ProLicenseInfo) => void) | null = null;
+let notifyChange: ((info: ProLicenseInfo) => void) | null = null
 export function setLicenseChangeNotifier(fn: (info: ProLicenseInfo) => void): void {
-  notifyChange = fn;
+  notifyChange = fn
 }
 
 function licensePath(): string {
-  return join(app.getPath('userData'), LICENSE_FILE);
+  return join(app.getPath('userData'), LICENSE_FILE)
 }
 
 /** Whether the cached license grants Pro right now (offline-safe, synchronous). */
-function isProActive(lic: ProLicense): boolean {
-  if (!lic.isPro) return false;
+export function isProActive(lic: ProLicense): boolean {
+  if (!lic.isPro || !lic.key || !lic.licenseId) return false
   // Monthly keys carry an expiry — once it passes, no Pro even offline. Lifetime
   // keys have null expiry. Revocation propagates at the next online revalidate.
-  if (lic.expiry && Date.parse(lic.expiry) <= Date.now()) return false;
-  return true;
+  if (lic.expiry) {
+    const expiry = Date.parse(lic.expiry)
+    if (!Number.isFinite(expiry) || expiry <= Date.now()) return false
+  }
+  return true
 }
 
-function toInfo(lic: ProLicense): ProLicenseInfo {
-  const isPro = isProActive(lic);
+export function toInfo(lic: ProLicense): ProLicenseInfo {
+  const isPro = isProActive(lic)
   return {
     isPro,
     tier: !isPro ? null : lic.expiry ? 'monthly' : 'lifetime',
     expiry: lic.expiry,
-    verifiedAt: lic.verifiedAt,
-  };
+    verifiedAt: lic.verifiedAt
+  }
 }
 
 function readLicenseFromDisk(): ProLicense {
-  const file = licensePath();
+  const file = licensePath()
   try {
-    if (!existsSync(file)) return EMPTY;
-    const raw = readFileSync(file, 'utf8');
-    const wrapper = JSON.parse(raw) as { enc: boolean; data: string };
-    const json = wrapper.enc
-      ? safeStorage.decryptString(Buffer.from(wrapper.data, 'base64'))
-      : wrapper.data;
-    const p = JSON.parse(json);
-    return {
-      isPro: p.isPro ?? false,
-      key: p.key ?? null,
-      licenseId: p.licenseId ?? null,
-      expiry: p.expiry ?? null,
-      verifiedAt: p.verifiedAt ?? 0,
-    };
+    if (!existsSync(file)) return EMPTY
+    const raw = readFileSync(file, 'utf8')
+    return decodeLicenseCache(raw, {
+      packaged: app.isPackaged,
+      decrypt: (encrypted) => safeStorage.decryptString(encrypted)
+    })
   } catch (e) {
-    console.error(`[Pro] readLicense failed: ${e instanceof Error ? e.message : String(e)}`);
-    return EMPTY;
+    console.error(`[Pro] readLicense failed: ${e instanceof Error ? e.message : String(e)}`)
+    return EMPTY
   }
 }
 
 function writeLicense(lic: ProLicense): void {
-  cache = lic;
+  cache = lic
   try {
-    const json = JSON.stringify(lic);
-    const canEncrypt = safeStorage.isEncryptionAvailable();
-    const wrapper = canEncrypt
-      ? { enc: true, data: safeStorage.encryptString(json).toString('base64') }
-      : { enc: false, data: json };
-    writeFileSync(licensePath(), JSON.stringify(wrapper), { encoding: 'utf8', mode: 0o600 });
+    const wrapper = encodeLicenseCache(lic, {
+      packaged: app.isPackaged,
+      encryptionAvailable: safeStorage.isEncryptionAvailable(),
+      encrypt: (plaintext) => safeStorage.encryptString(plaintext)
+    })
+    if (!wrapper) {
+      rmSync(licensePath(), { force: true })
+      throw new Error('OS-protected license storage is unavailable')
+    }
+    writeFileSync(licensePath(), JSON.stringify(wrapper), { encoding: 'utf8', mode: 0o600 })
   } catch (e) {
-    console.error(`[Pro] writeLicense failed: ${e instanceof Error ? e.message : String(e)}`);
+    console.error(`[Pro] writeLicense failed: ${e instanceof Error ? e.message : String(e)}`)
   }
-  notifyChange?.(toInfo(lic));
+  notifyChange?.(toInfo(lic))
 }
 
 /** Load the cached license into memory. Call once after app 'ready'. */
 export function initLicensing(): void {
-  cache = readLicenseFromDisk();
-  console.log(`[Pro] license loaded — entitled=${isProActive(cache)}`);
+  cache = readLicenseFromDisk()
+  console.log(`[Pro] license loaded — entitled=${isProActive(cache)}`)
 }
 
 /** SYNCHRONOUS entitlement check used by the pro gate and preload sync IPC. */
 export function isProEntitled(): boolean {
-  return isProActive(cache);
+  return isProActive(cache)
 }
 
 /** Cached license details for the Settings/Pro status UI (offline-safe). */
 export function getProLicenseInfo(): ProLicenseInfo {
-  return toInfo(cache);
+  return toInfo(cache)
 }
 
-/** Returns the cached entitlement immediately and revalidates in the background. */
+/** Returns the cached entitlement immediately and revalidates in the background.
+ *  @public — scaffolded paid-product entry point (revalidate-on-check); intentional,
+ *  wired when launch-time revalidation is enabled. Keeps revalidatePro reachable. */
 export function checkProStatus(): boolean {
-  revalidatePro().catch(() => {});
-  return isProActive(cache);
+  revalidatePro().catch(() => {})
+  return isProActive(cache)
 }
 
 /**
@@ -155,42 +152,50 @@ export function checkProStatus(): boolean {
  * the cached flag to false and locks the app. Network errors are swallowed so
  * offline users keep cached access.
  */
-export async function revalidatePro(): Promise<void> {
-  const lic = cache;
-  if (!lic.key) return; // nothing to revalidate (empty cache)
-  let fp: string;
+async function revalidatePro(): Promise<void> {
+  const lic = cache
+  if (!lic.key) return // nothing to revalidate (empty cache)
+  let fp: string
   try {
-    fp = await getDeviceFingerprint();
+    fp = await getDeviceFingerprint()
   } catch {
-    return;
+    return
   }
   try {
-    const r = await validateKey(lic.key, fp);
+    const r = await validateKey(lic.key, fp)
     if (r.valid && r.code === 'VALID') {
       writeLicense({
         isPro: true,
         key: lic.key,
         licenseId: r.license?.id ?? lic.licenseId,
         expiry: r.license?.expiry ?? null,
-        verifiedAt: Date.now(),
-      });
+        verifiedAt: Date.now()
+      })
     } else if (REVOKED_CODES.includes(r.code)) {
-      writeLicense({ ...lic, isPro: false, expiry: r.license?.expiry ?? lic.expiry, verifiedAt: Date.now() });
+      writeLicense({
+        ...lic,
+        isPro: false,
+        expiry: r.license?.expiry ?? lic.expiry,
+        verifiedAt: Date.now()
+      })
     } else if (NEEDS_ACTIVATION.includes(r.code) && r.license) {
       // Valid key but this device lost its slot — try to reclaim it.
-      const act = await activateMachine(lic.key, r.license.id, { fingerprint: fp, platform: getPlatformTag() });
+      const act = await activateMachine(lic.key, r.license.id, {
+        fingerprint: fp,
+        platform: getPlatformTag()
+      })
       writeLicense({
         isPro: act.ok,
         key: lic.key,
         licenseId: r.license.id,
         expiry: r.license.expiry,
-        verifiedAt: Date.now(),
-      });
+        verifiedAt: Date.now()
+      })
     }
     // TOO_MANY_MACHINES / UNKNOWN: leave the cached state untouched.
   } catch (e) {
-    if (e instanceof KeygenNetworkError) return; // offline — keep cached access
-    console.error(`[Pro] revalidate error: ${e instanceof Error ? e.message : String(e)}`);
+    if (e instanceof KeygenNetworkError) return // offline — keep cached access
+    console.error(`[Pro] revalidate error: ${e instanceof Error ? e.message : String(e)}`)
   }
 }
 
@@ -199,69 +204,84 @@ export async function revalidatePro(): Promise<void> {
  * needed (Keygen enforces the device cap), and cache the entitlement.
  */
 export async function activateProByKey(rawKey: string): Promise<ActivateResult> {
-  const key = rawKey.trim();
-  if (!key) return { ok: false, reason: 'invalid' };
-  let fp: string;
+  const key = rawKey.trim()
+  if (!key) return { ok: false, reason: 'invalid' }
+  let fp: string
   try {
-    fp = await getDeviceFingerprint();
+    fp = await getDeviceFingerprint()
   } catch {
-    return { ok: false, reason: 'network' };
+    return { ok: false, reason: 'network' }
   }
 
-  let r;
+  let r
   try {
-    r = await validateKey(key, fp);
+    r = await validateKey(key, fp)
   } catch {
-    return { ok: false, reason: 'network' };
+    return { ok: false, reason: 'network' }
   }
 
   // Already activated on this device.
   if (r.valid && r.code === 'VALID' && r.license) {
-    writeLicense({ isPro: true, key, licenseId: r.license.id, expiry: r.license.expiry, verifiedAt: Date.now() });
-    return { ok: true };
+    writeLicense({
+      isPro: true,
+      key,
+      licenseId: r.license.id,
+      expiry: r.license.expiry,
+      verifiedAt: Date.now()
+    })
+    return { ok: true }
   }
-  if (r.code === 'TOO_MANY_MACHINES') return { ok: false, reason: 'limit' };
-  if (REVOKED_CODES.includes(r.code) || !r.license) return { ok: false, reason: 'invalid' };
+  if (r.code === 'TOO_MANY_MACHINES') return { ok: false, reason: 'limit' }
+  if (REVOKED_CODES.includes(r.code) || !r.license) return { ok: false, reason: 'invalid' }
 
   // Valid key, this device not yet activated — claim a slot.
   if (NEEDS_ACTIVATION.includes(r.code)) {
-    let act;
+    let act
     try {
-      act = await activateMachine(key, r.license.id, { fingerprint: fp, platform: getPlatformTag() });
+      act = await activateMachine(key, r.license.id, {
+        fingerprint: fp,
+        platform: getPlatformTag()
+      })
     } catch {
-      return { ok: false, reason: 'network' };
+      return { ok: false, reason: 'network' }
     }
-    if (act.limitReached) return { ok: false, reason: 'limit' };
-    if (!act.ok) return { ok: false, reason: 'invalid' };
-    writeLicense({ isPro: true, key, licenseId: r.license.id, expiry: r.license.expiry, verifiedAt: Date.now() });
-    return { ok: true };
+    if (act.limitReached) return { ok: false, reason: 'limit' }
+    if (!act.ok) return { ok: false, reason: 'invalid' }
+    writeLicense({
+      isPro: true,
+      key,
+      licenseId: r.license.id,
+      expiry: r.license.expiry,
+      verifiedAt: Date.now()
+    })
+    return { ok: true }
   }
-  return { ok: false, reason: 'invalid' };
+  return { ok: false, reason: 'invalid' }
 }
 
 /** Devices registered on the active license (for the device-management screen). */
 export async function listProDevices(): Promise<KeygenMachine[]> {
-  const lic = cache;
-  if (!lic.key || !lic.licenseId) return [];
+  const lic = cache
+  if (!lic.key || !lic.licenseId) return []
   try {
-    return await listMachines(lic.key, lic.licenseId);
+    return await listMachines(lic.key, lic.licenseId)
   } catch {
-    return [];
+    return []
   }
 }
 
 /** Free a device slot. */
 export async function deactivateProDevice(machineId: string): Promise<boolean> {
-  const lic = cache;
-  if (!lic.key) return false;
+  const lic = cache
+  if (!lic.key) return false
   try {
-    return await deactivateMachine(lic.key, machineId);
+    return await deactivateMachine(lic.key, machineId)
   } catch {
-    return false;
+    return false
   }
 }
 
 /** Drop the cached license (sign-out / testing). */
 export function clearPro(): void {
-  writeLicense({ ...EMPTY });
+  writeLicense({ ...EMPTY })
 }

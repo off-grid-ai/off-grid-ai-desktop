@@ -9,11 +9,12 @@ import {
   Broadcast,
   ClipboardText,
   Waveform,
-  ShieldCheck,
-} from '@phosphor-icons/react';
-import type { ComponentType } from 'react';
-import { deviceNoun } from '@renderer/lib/device';
-import { isMac, type DevicePlatform } from '@offgrid/core/shared/device';
+  ShieldCheck
+} from '@phosphor-icons/react'
+import type { ComponentType } from 'react'
+import { deviceNoun } from '@renderer/lib/device'
+import { isMac, type DevicePlatform } from '@offgrid/core/shared/device'
+import { PRO_PURCHASE_URL } from '@offgrid/core/shared/product-links'
 
 // Static catalogue of the Pro features. This ships in the OPEN build so the free
 // app can advertise everything Pro unlocks — the sidebar shows these as locked
@@ -22,20 +23,20 @@ import { isMac, type DevicePlatform } from '@offgrid/core/shared/device';
 // screenRegistry/navRegistry) take over these same routes.
 
 /** Buy Pro — live now, $49/year or $69 once, one license across up to 5 devices. */
-export const PRO_PAY_URL = 'https://getoffgridai.co/pay';
+export const PRO_PAY_URL = PRO_PURCHASE_URL
 
 export interface ProFeature {
   /** Route name — matches the route a registered pro screen claims when unlocked. */
-  route: string;
-  label: string;
+  route: string
+  label: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  icon: ComponentType<any>;
+  icon: ComponentType<any>
   /** One-line pitch shown under the title. */
-  tagline: string;
+  tagline: string
   /** Upsell paragraph. */
-  description: string;
+  description: string
   /** Concrete capabilities, shown as a checklist. */
-  highlights: string[];
+  highlights: string[]
 }
 
 export const PRO_FEATURES: ProFeature[] = [
@@ -49,8 +50,8 @@ export const PRO_FEATURES: ProFeature[] = [
     highlights: [
       'A morning briefing built from your real activity',
       'Per-meeting prep: who’s in it and your open items',
-      'Priorities surfaced from what you actually did',
-    ],
+      'Priorities surfaced from what you actually did'
+    ]
   },
   {
     route: 'reflect',
@@ -59,7 +60,11 @@ export const PRO_FEATURES: ProFeature[] = [
     tagline: 'See where your time really goes.',
     description:
       'A private, on-device breakdown of your focus — the apps, projects, and people that took your attention — so you can see your week clearly and adjust.',
-    highlights: ['Daily & weekly mind-share', 'Focus vs. distraction trends', 'All computed locally — never uploaded'],
+    highlights: [
+      'Daily & weekly mind-share',
+      'Focus vs. distraction trends',
+      'All computed locally — never uploaded'
+    ]
   },
   {
     route: 'replay',
@@ -68,7 +73,11 @@ export const PRO_FEATURES: ProFeature[] = [
     tagline: 'Rewind anything you saw.',
     description:
       'Scrub back through your screen history to find that doc, message, or number you know you saw — captured on-device and searchable.',
-    highlights: ['Timeline of captured frames', 'Jump straight to the moment', 'Stays on your machine'],
+    highlights: [
+      'Timeline of captured frames',
+      'Jump straight to the moment',
+      'Stays on your machine'
+    ]
   },
   {
     route: 'meetings',
@@ -77,7 +86,11 @@ export const PRO_FEATURES: ProFeature[] = [
     tagline: 'Record & transcribe meetings, locally.',
     description:
       'Capture Zoom, Meet, and Teams calls with system audio + mic and get a private transcript and summary — no cloud meeting bot, nothing leaves your device.',
-    highlights: ['Auto-detects calls', 'On-device transcription', 'Searchable transcripts & summaries'],
+    highlights: [
+      'Auto-detects calls',
+      'On-device transcription',
+      'Searchable transcripts & summaries'
+    ]
   },
   {
     route: 'actions',
@@ -86,7 +99,11 @@ export const PRO_FEATURES: ProFeature[] = [
     tagline: 'To-dos and actions, handled.',
     description:
       'Off Grid extracts the commitments out of your day and your secretary proposes the next step — every action waits in an approval queue, so nothing happens without your say-so.',
-    highlights: ['Auto-extracted to-dos', 'Secretary-proposed actions', 'Approval-gated — you’re always in control'],
+    highlights: [
+      'Auto-extracted to-dos',
+      'Secretary-proposed actions',
+      'Approval-gated — you’re always in control'
+    ]
   },
   {
     route: 'entities',
@@ -95,7 +112,11 @@ export const PRO_FEATURES: ProFeature[] = [
     tagline: 'A private graph of your work.',
     description:
       'Every person, project, and company you touch becomes a record with a synthesized story across your screen activity, meetings, and connectors — your own CRM that builds itself.',
-    highlights: ['Auto-built people & project records', 'Cross-source narrative summaries', 'Relationship graph'],
+    highlights: [
+      'Auto-built people & project records',
+      'Cross-source narrative summaries',
+      'Relationship graph'
+    ]
   },
   {
     route: 'search',
@@ -104,7 +125,7 @@ export const PRO_FEATURES: ProFeature[] = [
     tagline: 'Search everything you’ve ever seen.',
     description:
       'One search bar across your captured activity, meetings, entities, and connectors — semantic + keyword, all on-device.',
-    highlights: ['Unified semantic search', 'Across capture, meetings & connectors', 'Fully local'],
+    highlights: ['Unified semantic search', 'Across capture, meetings & connectors', 'Fully local']
   },
   {
     route: 'notifications',
@@ -113,20 +134,23 @@ export const PRO_FEATURES: ProFeature[] = [
     tagline: 'Approvals & to-dos, surfaced.',
     description:
       'Off Grid reaches out first — a morning briefing, a heads-up before meetings, approvals waiting on your decision, and to-dos it pulled from your day — even when the window is closed.',
-    highlights: ['Proactive briefings & meeting prep', 'Approval queue for actions', 'Auto-extracted to-dos'],
+    highlights: [
+      'Proactive briefings & meeting prep',
+      'Approval queue for actions',
+      'Auto-extracted to-dos'
+    ]
   },
   {
     route: 'voice',
     label: 'Voice',
     icon: Waveform,
     tagline: 'Talk instead of type, fully local.',
-    description:
-      `Hold Option+Space and speak — Off Grid AI Desktop transcribes on-device with whisper.cpp and pastes the text into whatever app you are in. Tap to toggle, hold to push-to-talk. Every recording and transcript is kept in a searchable library, and you can drop in any audio or video file to transcribe it. Runs in your ${deviceNoun()}'s RAM; nothing leaves the device.`,
+    description: `Hold Option+Space and speak — Off Grid AI Desktop transcribes on-device with whisper.cpp and pastes the text into whatever app you are in. Tap to toggle, hold to push-to-talk. Every recording and transcript is kept in a searchable library, and you can drop in any audio or video file to transcribe it. Runs in your ${deviceNoun()}'s RAM; nothing leaves the device.`,
     highlights: [
       'Option+Space push-to-talk or toggle, anywhere',
       'Paste-at-cursor + a searchable recordings library',
-      'Transcribe any audio/video file, all on-device',
-    ],
+      'Transcribe any audio/video file, all on-device'
+    ]
   },
   {
     route: 'vault',
@@ -138,8 +162,8 @@ export const PRO_FEATURES: ProFeature[] = [
     highlights: [
       'AES-256 + Argon2id, device-key bound',
       'Logins, app passwords, API keys, notes, and files',
-      'KDBX4 format - compatible with KeePassXC',
-    ],
+      'KDBX4 format - compatible with KeePassXC'
+    ]
   },
   {
     route: 'clipboard',
@@ -151,32 +175,25 @@ export const PRO_FEATURES: ProFeature[] = [
     highlights: [
       'Searchable history of text, images & files',
       'Cmd+Shift+C quick-paste popup anywhere',
-      'Stored locally in your encrypted database',
-    ],
-  },
-];
+      'Stored locally in your encrypted database'
+    ]
+  }
+]
 
 export function getProFeature(route: string): ProFeature | undefined {
-  return PRO_FEATURES.find((f) => f.route === route);
+  return PRO_FEATURES.find((f) => f.route === route)
 }
 
-/**
- * The base rule for Pro-feature availability: Pro is macOS-tested only for now,
- * so a Pro subscriber on a non-Mac platform (Windows/Linux) must see a "coming
- * soon" surface instead of the untested feature. Free users are unaffected (they
- * still get the UpgradeScreen upsell). Defined once here so every Pro surface —
- * the feature tabs (proFeatureComingSoon) and the pro Settings sections — gates
- * on the SAME rule. Pure + unit-testable; callers pass platform + entitlement.
- */
+/** Pro runtime features are macOS-tested only for now. */
 export function proComingSoonHere(platform: DevicePlatform, isPro: boolean): boolean {
-  return isPro && !isMac(platform);
+  return isPro && !isMac(platform)
 }
 
-/**
- * Whether a Pro *route* should show the coming-soon screen instead of the real
- * feature. Same rule as proComingSoonHere, scoped to a real catalog route (so it
- * never fires for core/unknown views).
- */
-export function proFeatureComingSoon(route: string, platform: DevicePlatform, isPro: boolean): boolean {
-  return proComingSoonHere(platform, isPro) && getProFeature(route) !== undefined;
+/** Apply the platform rule only to registered Pro routes, never core or unknown views. */
+export function proFeatureComingSoon(
+  route: string,
+  platform: DevicePlatform,
+  isPro: boolean
+): boolean {
+  return proComingSoonHere(platform, isPro) && getProFeature(route) !== undefined
 }

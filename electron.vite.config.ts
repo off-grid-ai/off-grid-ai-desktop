@@ -1,8 +1,10 @@
-import { resolve } from 'path'
-import { existsSync } from 'fs'
+import { resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { createRendererContentSecurityPolicy } from './src/shared/renderer-csp'
 
 // Open-core seam: the private `pro/` git submodule is present only in paid
 // builds. When it's missing (free / contributor build) we alias the pro entry
@@ -20,17 +22,38 @@ const proRenderer = proExists ? resolve('pro/renderer/index.tsx') : stub
 // Baked into every bundle so runtime code can tell a pro build from a free build
 // without relying on an env var default (which can't distinguish "unset" from "pro").
 const proDefine = { __OFFGRID_PRO__: JSON.stringify(proExists) }
+const rendererStyleNonce = randomBytes(18).toString('base64url')
+const rendererContentSecurityPolicy = createRendererContentSecurityPolicy(rendererStyleNonce)
 
 export default defineConfig({
   main: {
     define: proDefine,
+    build: {
+      rollupOptions: {
+        // The TTS worker must live inside app.asar beside its JavaScript
+        // dependencies. Copying the raw source into Resources makes ESM resolve
+        // from that external directory, where kokoro-js does not exist.
+        input: {
+          index: resolve('src/main/index.ts'),
+          'tts-worker': resolve('resources/tts-worker.mjs')
+        }
+      }
+    },
     // Deps are externalized by default (resolved from node_modules at runtime).
     // @scure/bip39 + @noble/hashes are ESM-only ("type":"module"); a CJS main
     // process require()-ing them throws ERR_REQUIRE_ESM at runtime. Exclude them
     // from externalization so Rollup BUNDLES them into the main chunk (transpiled
     // to the output format), sidestepping the ESM/CJS boundary. Used by the pro
     // vault recovery-phrase feature (pro/main/vault/vault-recovery.ts).
-    plugins: [externalizeDepsPlugin({ exclude: ['@scure/bip39', '@noble/hashes'] })],
+    plugins: [
+      externalizeDepsPlugin({
+        // Kokoro owns Transformers v3 transitively. The worker imports its env
+        // directly so cache configuration and Kokoro share one module instance;
+        // keep that native Node package external instead of bundling browser shims.
+        include: ['@huggingface/transformers'],
+        exclude: ['@scure/bip39', '@noble/hashes']
+      })
+    ],
     resolve: {
       alias: {
         '@offgrid/core': resolve('src'),
@@ -43,6 +66,7 @@ export default defineConfig({
   },
   renderer: {
     define: proDefine,
+    html: { cspNonce: rendererStyleNonce },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),
@@ -51,6 +75,25 @@ export default defineConfig({
         '@offgrid/pro/renderer': proRenderer
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [
+      {
+        name: 'offgrid-renderer-csp',
+        transformIndexHtml: {
+          order: 'pre',
+          handler: () => [
+            {
+              tag: 'meta',
+              attrs: {
+                'http-equiv': 'Content-Security-Policy',
+                content: rendererContentSecurityPolicy
+              },
+              injectTo: 'head-prepend'
+            }
+          ]
+        }
+      },
+      react(),
+      tailwindcss()
+    ]
   }
 })

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DB integration tests (src/main/__tests__/*.dbtest.ts) exercise the real data layer against
+# DB integration tests (core + pro *.dbtest.ts) exercise the real data layer against
 # a temp SQLite DB. They need better-sqlite3-multiple-ciphers built for the TEST RUNNER's node
 # ABI - but the app builds it for ELECTRON's ABI (via electron-builder install-app-deps). So:
 # rebuild for node, run the tests, then ALWAYS restore Electron's build - even on failure or
@@ -29,4 +29,7 @@ echo "[test:db] rebuilding better-sqlite3-multiple-ciphers for node $(node -v)..
 npm rebuild better-sqlite3-multiple-ciphers >/dev/null 2>&1
 
 echo "[test:db] running DB integration tests..."
-npx vitest run --config vitest.db.config.ts "$@"
+# Native/model/UI DB journeys are intentionally serial. Parallel files compete for
+# process-wide engines, Electron module state, and timing-sensitive recorder owners,
+# which turns real integration coverage into suite-load flakes.
+npx vitest run --config vitest.db.config.ts --no-file-parallelism --maxWorkers=1 "$@"

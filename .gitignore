@@ -54,6 +54,15 @@ scripts/dictation-hotkey/dictation-hotkey
 # Local demo profile — synthetic-data run target for `npm run demo` (never real userData)
 .demo-profile/
 
+# Local test/runtime profile — generated dummy models + gateway logs, never real userData
+.offgrid/
+
+# Local machine-specific build/signing notes (keychain-dependent, not portable)
+local-build.local.md
+
 # Test coverage output
 coverage/
 swift-tests/**/.build/
+
+# Off Grid AI Pro early-bird campaign (customer PII + send tooling - do not commit)
+marketing/emails/pro-earlybird/

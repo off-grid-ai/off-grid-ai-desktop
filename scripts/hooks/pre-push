@@ -8,6 +8,17 @@
 #
 # Bypass in a genuine emergency with:  git push --no-verify
 
+# Local gate mirrors CI's hard gates so a push can't be red on arrival: typecheck (fast
+# fail), then the coverage ratchet. Bypass only in a genuine emergency with --no-verify;
+# if a running app is holding a model port (:8439) so a port-owner test can't bind, stop it
+# first rather than bypassing — see CLAUDE.md "model ports are single-owner".
+echo "[pre-push] typecheck — npm run typecheck"
+if ! npm run --silent typecheck; then
+  echo ""
+  echo "[pre-push] BLOCKED: typecheck failed. Fix the type errors above before pushing."
+  exit 1
+fi
+
 echo "[pre-push] coverage gate — npm run test:coverage"
 if ! npm run --silent test:coverage; then
   echo ""
@@ -17,10 +28,8 @@ if ! npm run --silent test:coverage; then
 fi
 echo "[pre-push] coverage gate passed."
 
-# Standing reminder (see CLAUDE.md "Pending hygiene adoption"). Non-blocking - just surfaces
-# the deferred gold-standard prettier + tight-eslint adoption before each push so it is not
-# forgotten. Remove this echo (and the CLAUDE.md section) once the adoption PR has landed.
-echo ""
-echo "[pre-push] TODO before merge: adopt the gold-standard prettier config (repo-wide reformat)"
-echo "           and tighten eslint (complexity / max-lines / max-params / no-shadow). Deferred"
-echo "           to its own PR - see CLAUDE.md 'Pending hygiene adoption'."
+# The gold-standard hygiene adoption has LANDED on this branch: prettier is applied repo-wide
+# (enforced by eslint's prettier/prettier rule) and the structural rules (curly / complexity /
+# max-lines / max-params / no-shadow …) are a warn ratchet in eslint.config.mjs. No standing
+# TODO here anymore — see CLAUDE.md "Code hygiene (adopted)". Tighten the ratchet to error as
+# the god-files decompose; never loosen it to pass.

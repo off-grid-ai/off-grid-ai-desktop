@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 #
 # Local macOS test builds — produces BOTH the core (free) and pro DMGs from a
-# single checkout, UNSIGNED and WITHOUT notarization or GitHub publishing, so you
+# single checkout, AD-HOC SIGNED and WITHOUT notarization or GitHub publishing, so you
 # can smoke-test the packaged app before any real release.
 #
-#   - Signing/notarization are skipped (CSC_IDENTITY_AUTO_DISCOVERY=false +
-#     -c.mac.notarize=false) so there are no cert/Apple-ID prompts. The DMGs are
-#     unsigned: on first launch, right-click the app → Open to bypass Gatekeeper.
+#   - Developer ID discovery/notarization are skipped so there are no cert/Apple-ID
+#     prompts. `mac.identity=-` makes electron-builder ad-hoc sign AFTER it mutates
+#     Electron fuses; skipping that final sign produces a CODESIGNING Invalid Page
+#     crash in Electron Framework. Gatekeeper still treats ad-hoc builds as unsigned.
 #   - --publish never: nothing touches GitHub.
 #   - Core uses OFFGRID_FORCE_CORE=1 so the pro/ submodule (present in this
 #     checkout) is aliased to the stub, exactly like a real free build.
@@ -23,7 +24,9 @@ cd "$(dirname "$0")/.."
 VERSION=$(node -p "require('./package.json').version")
 TARGET="${1:-both}"
 
-export CSC_IDENTITY_AUTO_DISCOVERY=false   # unsigned local builds
+export CSC_IDENTITY_AUTO_DISCOVERY=false # do not search for a Developer ID locally
+export OFFGRID_ALLOW_LOCAL_ARTIFACT=1 # artifact verifier permits ad-hoc only on this unpublished path
+export OFFGRID_LOCAL_PUBLISH_POLICY=never # kept in sync with both electron-builder invocations below
 
 # Guard against the bug that broke the last release: the runtime binaries in
 # resources/bin/ are stored in Git LFS. If they're still 131-byte pointer stubs,
@@ -43,15 +46,45 @@ check_lfs() {
   echo "   OK"
 }
 
+stage_native_helpers() {
+  echo "==> Building native helpers through the production staging path…"
+  command -v cmake >/dev/null || {
+    echo "!! cmake is required to rebuild llama-server and Whisper. Install it before continuing."
+    exit 1
+  }
+  MACOS_DEPLOYMENT_TARGET=13.0 LLAMA_REF=b9838 bash scripts/build-llama.sh
+  MACOS_DEPLOYMENT_TARGET=13.0 WHISPER_REF=v1.7.4 bash scripts/build-whisper-cli.sh
+  bash scripts/build-meeting-recorder.sh
+  bash scripts/build-dictation-hotkey.sh
+  mkdir -p resources/bin
+  cp scripts/meeting-recorder/meeting-recorder resources/bin/meeting-recorder
+  cp scripts/dictation-hotkey/dictation-hotkey resources/bin/dictation-hotkey
+  chmod +x resources/bin/meeting-recorder resources/bin/dictation-hotkey
+  bash scripts/fetch-parakeet.sh
+}
+
+verify_packaged_helpers() {
+  local app_dir node_arch
+  node_arch="$(node -p 'process.arch')"
+  case "$node_arch" in
+    arm64) app_dir="dist/mac-arm64/Off Grid AI Desktop.app" ;;
+    x64) app_dir="dist/mac/Off Grid AI Desktop.app" ;;
+    *) echo "!! Unsupported Electron build architecture: $node_arch"; exit 1 ;;
+  esac
+  node scripts/probe-packaged-helpers.mjs "$app_dir"
+}
+
 build_core() {
   echo "==> Building CORE (free) macOS DMG  v$VERSION"
   OFFGRID_FORCE_CORE=1 npx electron-vite build
   npx electron-builder --mac \
     -c.mac.notarize=false \
-    -c.productName="Off Grid AI" \
+    -c.mac.identity=- \
+    -c.productName="Off Grid AI Desktop" \
     -c.appId="co.getoffgridai.desktop" \
     -c.dmg.artifactName="OffGrid-core-\${version}.dmg" \
     --publish never
+  verify_packaged_helpers
 }
 
 build_pro() {
@@ -59,13 +92,16 @@ build_pro() {
   npx electron-vite build
   npx electron-builder --mac \
     -c.mac.notarize=false \
-    -c.productName="Off Grid AI Pro" \
+    -c.mac.identity=- \
+    -c.productName="Off Grid AI Desktop" \
     -c.appId="co.getoffgridai.desktop.pro" \
     -c.dmg.artifactName="OffGrid-pro-\${version}.dmg" \
     --publish never
+  verify_packaged_helpers
 }
 
 check_lfs
+stage_native_helpers
 case "$TARGET" in
   core) build_core ;;
   pro)  build_pro ;;

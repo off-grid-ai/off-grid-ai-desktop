@@ -10,7 +10,7 @@ Full design doc: **`docs/DESIGN.md`**. The essentials, which OVERRIDE any mobile
 - **Typeface: Menlo** (monospace) everywhere — terminal/brutalist.
 - **Accent: emerald** — `#34D399` (dark) / `#059669` (light). THE accent for primary actions, active states, links, success. (Tailwind `green-500/400` is an acceptable stand-in but prefer the exact tokens.)
 - **Base:** black / `#0A0A0A` + white; neutral grays for surfaces/borders/text tiers. Flat, sharp, dense.
-- Tokens: `@offgrid/design`. Brand canon: `mobile/docs/design/DESIGN_PHILOSOPHY_SYSTEM.md` (brand only — desktop *layout* follows `docs/DESIGN.md`, desktop-first).
+- Tokens: `@offgrid/design`. Brand canon: `mobile/docs/design/DESIGN_PHILOSOPHY_SYSTEM.md` (brand only — desktop _layout_ follows `docs/DESIGN.md`, desktop-first).
 - Real brand logos (Simple Icons), no decorative tiles behind them; no gradients; no emojis in the UI.
 
 ### Use the screen real estate — desktop density rules
@@ -19,7 +19,7 @@ The window is WIDE. A list of cards/rows stretched edge-to-edge in a single colu
 
 - **Multi-column responsive grids for collections.** Any list of comparable items (models, connectors, entities, meetings) is a grid that fills the width: `grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4`, not one full-width row each. A card's controls stay next to its content, never flung across empty space.
 - **Tight, consistent spacing on a 4/8/12px scale.** Dense data UIs use narrow gutters (8-12px) and small padding, NOT the 16-24px editorial spacing. Body text ~12-14px, compact line-height. Flat and sharp, per the brand.
-- **Group, then separate.** Reduce gaps *within* a group (rows in a section) but keep clear separation *between* functional groups (filters vs data, "On this device" vs "Available"). Section headers over a wall of identical rows.
+- **Group, then separate.** Reduce gaps _within_ a group (rows in a section) but keep clear separation _between_ functional groups (filters vs data, "On this device" vs "Available"). Section headers over a wall of identical rows.
 - **Progressive disclosure.** Secondary info and rarely-used controls go behind a detail panel / "…" / hover affordance — don't lay everything flat. Master list stays scannable; depth lives in the side panel or slide-over.
 - **Sticky context.** Fix headers, tabs, filter bars, and column labels while the body scrolls, so context never scrolls away.
 - **Finesse the interactions.** Every click gets a small micro-interaction — `transition-all duration-150`, `active:scale-95` on buttons, slide+fade (not abrupt mount) for panels/slide-overs. State changes animate; nothing pops in or out hard.
@@ -55,14 +55,44 @@ Two process rules, learned from the same incident — they matter as much as the
 - Verify changes with `npx tsc --noEmit` (main: `tsconfig.node.json`, web: `tsconfig.web.json`) before declaring done.
 - Main-process changes need an app restart; renderer changes hot-reload.
 - Don't over-restart — it interrupts capture.
+- **Local packaged builds:** commands for building the `.app` on a dev Mac (signing, unsigned, fresh-profile) live in `local-build.local.md` (gitignored, machine-specific). Check it before running `build:unpack`/`build:mac` locally — keychain cert setup varies per machine. Real release signing is CI-only (`release.yml`).
 
-## Pending hygiene adoption — READ BEFORE EVERY PUSH
+## Commit incrementally — never batch a session's work into one commit
 
-**TODO (deferred to its own PR — do NOT bundle into an unrelated PR):** adopt the wednesday-solutions
-gold-standard code hygiene. The pre-push hook echoes this reminder so it isn't forgotten. Two parts:
+A long agent session WILL hit a context/session limit; anything uncommitted is lost. Protect
+progress by committing continuously, not at the end:
 
-1. **Prettier — repo-wide reformat.** Adopt `.prettierrc`: `{ printWidth: 120, tabWidth: 2, useTabs: false, singleQuote: true, trailingComma: 'none' }`. Desktop has no `.prettierrc` today (prettier defaults), so applying this reformats the whole tree — a huge diff. Do it ALONE, in its own PR/commit, so it never swamps a feature/refactor diff.
-2. **ESLint — tighten to the gold-standard rules** (adapted to desktop's flat config + React web, not RN/redux): `curly: all`, `no-console: [allow error,warn]`, `no-else-return`, `no-empty`, `prefer-template`, `max-params: 3`, `complexity` (gold standard is 5 — start looser, e.g. 15-20, and ratchet), `max-lines-per-function: 250`, `max-lines: 350`, `@typescript-eslint/no-shadow`. Many current files violate the structural caps (MemoryChat 2601, ipc.ts 1707, etc.), so introduce them with a **ratchet** like the coverage floor: set to `warn` (or grandfather the known-large files) and tighten to `error` as the god-files get decomposed — never lower a threshold to pass. Gold-standard source: github.com/wednesday-solutions/react-template (`.eslintrc.js`, `.prettierrc`).
+- **One logical change = one commit, landed as soon as it's green** (tsc + its tests pass). A bug
+  fix, a single consolidation/extraction, a doc update — each is its own small, self-contained,
+  well-described commit. Do NOT accumulate 5 unrelated edits and commit them together "later".
+- **Commit the moment a unit is verified**, before starting the next one — so a session cut-off at
+  any point leaves every finished unit already saved. Treat "done and green" as "commit now".
+- **Push regularly** (at least whenever you'd be sad to lose what's landed) so progress survives even
+  a lost local worktree; the pre-push gate (tsc + tests + coverage ratchet) still runs each time.
+  If a pre-push hook is blocked by an unrelated environment issue (e.g. a running app holding a
+  port), use the documented CI-equivalent workaround (see the gateway-dead-port note) — never
+  `--no-verify`.
+- **Small commits are the record** (merge, never squash — see the workspace multi-agent model), so
+  each step stays reviewable and revertible. A giant end-of-session commit is a defect.
+
+## Code hygiene (adopted)
+
+The wednesday-solutions gold-standard hygiene is **adopted** (landed on the quality-hardening
+release branch, not a separate PR). Two parts:
+
+1. **Prettier — applied repo-wide.** Config: `.prettierrc.yaml` (`singleQuote`, `semi: false`,
+   `printWidth: 100`, `trailingComma: none`) — the repo settled on 100/semi-false rather than the
+   120 originally sketched. The whole tree is formatted to it; `eslintConfigPrettier` runs
+   `prettier/prettier` as a lint rule so drift is caught. `.prettierignore` (core + `pro/`) excludes
+   vendored/ephemeral trees (`.claude` worktrees, `resources/artifacts` + `**/*.min.*`, tsconfig
+   jsonc, local scratch). Re-run with `npm run format`.
+2. **ESLint — gold-standard rules as a warn RATCHET** (`eslint.config.mjs`, `goldStandardRatchet`):
+   `curly: all`, `no-console: [allow error,warn]`, `no-else-return`, `no-empty`, `prefer-template`,
+   `max-params: 3`, `complexity: 15`, `max-lines-per-function: 250`, `max-lines: 350`,
+   `@typescript-eslint/no-shadow` — all at `warn` because the god-files (MemoryChat ~2.6k, ipc.ts
+   ~1.7k) exceed the structural caps. **Tighten toward `error` (and `complexity` toward the gold 5)
+   as those files decompose — never loosen to pass.** This is the same ratchet discipline as the
+   coverage floor. Source: github.com/wednesday-solutions/react-template.
 
 ## Testing — test every approved behavior change in the same pass
 
@@ -80,7 +110,7 @@ When iterating (a request, a fix, a tweak the user just confirmed), add a test t
 
 E2E and screenshot/video capture (including the Provit capture harness) run the app on a **fresh temp `OFFGRID_USER_DATA` profile** and must use **synthetic demo data only — never a real profile, never upload real user data.**
 
-- **Seed with the demo script — BOTH seeders.** A blank profile is EMPTY, so any flow that *generates* (chat, especially the "All memory" scope) will error with **"Sorry, something went wrong…"** — a **profile/RAG gap, not a bug**: no seeded memory store means the memory path throws before streaming. There are TWO independent seeders and a flow may need both: **`OFFGRID_SEED=force`** → core `seedDemo` (`src/main/index.ts` → `dev-seed.ts`) seeds chats / knowledge / RAG memory (this is what "All memory" chat queries); **`OFFGRID_SEED_PRO=force`** → pro `seedProDemo` (`pro/main/index.ts` → `pro/main/dev-seed.ts`) seeds observations / entities / clipboard / replay frames. `npm run demo` sets both — use it (or set both env vars) for any capture that exercises chat/generation.
+- **Seed with the demo script — BOTH seeders.** A blank profile is EMPTY, so any flow that _generates_ (chat, especially the "All memory" scope) will error with **"Sorry, something went wrong…"** — a **profile/RAG gap, not a bug**: no seeded memory store means the memory path throws before streaming. There are TWO independent seeders and a flow may need both: **`OFFGRID_SEED=force`** → core `seedDemo` (`src/main/index.ts` → `dev-seed.ts`) seeds chats / knowledge / RAG memory (this is what "All memory" chat queries); **`OFFGRID_SEED_PRO=force`** → pro `seedProDemo` (`pro/main/index.ts` → `pro/main/dev-seed.ts`) seeds observations / entities / clipboard / replay frames. `npm run demo` sets both — use it (or set both env vars) for any capture that exercises chat/generation.
 - **Model ports are single-owner.** Only one app instance can bind the model engine ports (`:7878` gateway, `:8439` llama-server, `:7879`). A running `npm run dev` will block a second capture instance's engine → generation errors that look like a bug but aren't. Free the ports (stop the dev app) before an e2e capture, or the recording exercises the error path only.
 - **Never upload private data.** Screenshots/video from real-profile runs (real chats, memories) must not be published. Capture runs must be synthetic-seeded so anything that lands in a PR or the public showcase is demo data.
 
@@ -123,8 +153,9 @@ The `pro/` directory is a **git submodule** pointing at the private `desktop-pro
 Design to abstractions, not concrete types. When implementations are interchangeable (model backends, TTS/STT engines, image/diffusion runtimes, connectors), the rest of the app depends on one service/interface — never branch on a concrete type in UI/stores (`if (engine === 'kokoro')`, `instanceof X`). Push the decision behind the abstraction; adding an implementation should need zero changes to callers. Normalize capability gaps inside the service, not the UI.
 
 **Before every code edit, stop and ask three questions — out loud, in the response:**
+
 1. **Is there enough here to abstract?** Two or more concrete cases handled by the same caller (text vs vision vs image models, Slack vs Mail surfaces, kokoro vs piper TTS) means there's a seam. One case, used once, is not — don't abstract speculatively (YAGNI).
-2. **Can we apply SOLID here?** Mainly: does one thing own one responsibility (SRP), and do callers depend on an interface rather than the concretes (DSP)? A `kind === 'x'` / `instanceof` / per-type `switch` in a caller — *especially in the renderer* — is the tell that the decision belongs behind a service.
+2. **Can we apply SOLID here?** Mainly: does one thing own one responsibility (SRP), and do callers depend on an interface rather than the concretes (DSP)? A `kind === 'x'` / `instanceof` / per-type `switch` in a caller — _especially in the renderer_ — is the tell that the decision belongs behind a service.
 3. **Are we actually using it?** A mapping or rule must be defined ONCE and reused. If the same kind→modality map, the same routing `if`, or the same capability check appears in two layers (e.g. main process AND renderer), that's duplication, not abstraction — collapse it to a single source of truth and have both sides call it.
 
 If the answer to 1 is "no", say so and write the simple version. If "yes", build the seam before piling on the second concrete branch — retrofitting after drift is the expensive path.

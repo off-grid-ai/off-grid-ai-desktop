@@ -5,32 +5,32 @@
 // Automatic updates are user-controlled (Settings → Software update). When OFF,
 // we never auto-download or auto-install-on-quit, and we skip the periodic check
 // — but the user can still run a manual "Check for updates" and choose to install.
-import { autoUpdater } from 'electron-updater';
-import { app, BrowserWindow, ipcMain } from 'electron';
-import { getSetting, saveSetting } from './database';
+import { autoUpdater } from 'electron-updater'
+import { app, BrowserWindow, ipcMain } from 'electron'
+import { getSetting, saveSetting } from './database'
 
 // Version of an update that finished downloading and is staged for install
 // (null = none). Held in main so a window created AFTER the download finished
 // (on macOS the app keeps running with zero windows) can still seed the banner
 // via update:staged-version — the update:downloaded event alone only reaches
 // windows that existed at download time.
-let stagedVersion: string | null = null;
+let stagedVersion: string | null = null
 
 function autoEnabled(): boolean {
-  return getSetting<boolean>('updates:auto', true); // default ON
+  return getSetting<boolean>('updates:auto', true) // default ON
 }
 
-type UpdateChannel = 'stable' | 'beta';
+type UpdateChannel = 'stable' | 'beta'
 function channelPref(): UpdateChannel {
-  return getSetting<UpdateChannel>('updates:channel', 'stable'); // default stable
+  return getSetting<UpdateChannel>('updates:channel', 'stable') // default stable
 }
 
 // Apply the user's auto-update preference to the updater. With auto OFF nothing
 // downloads or installs without an explicit user action.
 function applyAutoPref(): void {
-  const on = autoEnabled();
-  autoUpdater.autoDownload = on;
-  autoUpdater.autoInstallOnAppQuit = on;
+  const on = autoEnabled()
+  autoUpdater.autoDownload = on
+  autoUpdater.autoInstallOnAppQuit = on
 }
 
 // Point the updater at the chosen feed: 'beta' reads beta-mac.yml (the nightly,
@@ -38,80 +38,98 @@ function applyAutoPref(): void {
 // lets a user who switches beta → stable move back to the latest STABLE build even
 // though its version is "older" than the beta they were running.
 function applyChannel(): void {
-  const beta = channelPref() === 'beta';
-  autoUpdater.channel = beta ? 'beta' : 'latest';
-  autoUpdater.allowPrerelease = beta;
-  autoUpdater.allowDowngrade = true;
+  const beta = channelPref() === 'beta'
+  autoUpdater.channel = beta ? 'beta' : 'latest'
+  autoUpdater.allowPrerelease = beta
+  autoUpdater.allowDowngrade = true
 }
 
-export function startAutoUpdates(): void {
-  applyAutoPref();
-  applyChannel();
-
+// Register the update IPC surface. Split OUT of startAutoUpdates so it can run in
+// EVERY build, including dev: the renderer queries update:staged-version on startup
+// regardless of environment, and gating registration behind !is.dev left it with no
+// handler ("No handler registered for 'update:staged-version'"). Every handler here is
+// safe in dev — reads return the running version / null, and checkForUpdates() itself
+// short-circuits on !app.isPackaged. The auto-download ENGINE (feed, listeners,
+// background cadence) stays in startAutoUpdates and remains production-only.
+export function registerUpdateIpc(): void {
   // Apply a staged update on demand. autoInstallOnAppQuit only swaps the bundle
   // on a GRACEFUL quit — a force-kill (Activity Monitor, kill -9, killall) skips
   // it, so a fully-downloaded update can sit unapplied forever. quitAndInstall
   // forces the clean quit + relaunch + swap, so the renderer's "Restart to
   // update" button always lands the update regardless of how the app is closed.
   ipcMain.handle('update:install', () => {
-    autoUpdater.quitAndInstall();
-  });
+    autoUpdater.quitAndInstall()
+  })
 
   // Lets a freshly-created window ask whether an update is already staged.
-  ipcMain.handle('update:staged-version', () => stagedVersion);
+  ipcMain.handle('update:staged-version', () => stagedVersion)
 
   // Current state for the Settings UI: the running version + auto on/off + channel.
-  ipcMain.handle('update:get-prefs', () => ({ currentVersion: app.getVersion(), auto: autoEnabled(), channel: channelPref() }));
+  ipcMain.handle('update:get-prefs', () => ({
+    currentVersion: app.getVersion(),
+    auto: autoEnabled(),
+    channel: channelPref()
+  }))
 
   // Toggle automatic updates. Persisted + applied live; turning it on kicks an
   // immediate background check so the user doesn't wait for the next interval.
   ipcMain.handle('update:set-auto', (_e, on: boolean) => {
-    saveSetting('updates:auto', !!on);
-    applyAutoPref();
-    if (on) autoUpdater.checkForUpdatesAndNotify().catch((e) => console.error('[update] check failed', e));
-    return autoEnabled();
-  });
+    saveSetting('updates:auto', !!on)
+    applyAutoPref()
+    if (on)
+      autoUpdater.checkForUpdatesAndNotify().catch((e) => console.error('[update] check failed', e))
+    return autoEnabled()
+  })
 
   // Switch update channel (stable ⇄ beta/nightly). Persisted + applied live, then
   // an immediate check so the user sees the channel's latest build right away.
   ipcMain.handle('update:set-channel', (_e, channel: UpdateChannel) => {
-    const next: UpdateChannel = channel === 'beta' ? 'beta' : 'stable';
-    saveSetting('updates:channel', next);
-    applyChannel();
+    const next: UpdateChannel = channel === 'beta' ? 'beta' : 'stable'
+    saveSetting('updates:channel', next)
+    applyChannel()
     // Always check after a channel switch so the user gets immediate feedback
     // on what's available — even if auto-updates are off.
-    autoUpdater.checkForUpdatesAndNotify().catch((e) => console.error('[update] channel check failed', e));
-    return next;
-  });
+    autoUpdater
+      .checkForUpdatesAndNotify()
+      .catch((e) => console.error('[update] channel check failed', e))
+    return next
+  })
 
   // Manual "Check for updates". Resolves with a definite status the UI can show.
   // If an update exists and auto-download is OFF, we still fetch it so the user's
   // "Restart to update" banner can install it (the explicit-check implies intent).
-  ipcMain.handle('update:check', () => checkForUpdates());
+  ipcMain.handle('update:check', () => checkForUpdates())
+}
 
-  autoUpdater.on('error', (e) => console.error('[update] error', e));
-  autoUpdater.on('checking-for-update', () => console.log('[update] checking…'));
-  autoUpdater.on('update-available', (i) => console.log('[update] available', i.version));
-  autoUpdater.on('update-not-available', () => console.log('[update] up to date'));
+export function startAutoUpdates(): void {
+  applyAutoPref()
+  applyChannel()
+
+  autoUpdater.on('error', (e) => console.error('[update] error', e))
+  autoUpdater.on('checking-for-update', () => console.log('[update] checking…'))
+  autoUpdater.on('update-available', (i) => console.log('[update] available', i.version))
+  autoUpdater.on('update-not-available', () => console.log('[update] up to date'))
   autoUpdater.on('update-downloaded', (i) => {
-    console.log('[update] downloaded', i.version, '— will install on quit');
-    stagedVersion = i.version;
-    BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('update:downloaded', { version: i.version }));
-  });
+    console.log('[update] downloaded', i.version, '— will install on quit')
+    stagedVersion = i.version
+    BrowserWindow.getAllWindows().forEach((w) =>
+      w.webContents.send('update:downloaded', { version: i.version })
+    )
+  })
 
   // Background cadence — only when the user has automatic updates enabled.
   const check = (): void => {
-    if (!autoEnabled()) return;
-    autoUpdater.checkForUpdatesAndNotify().catch((e) => console.error('[update] check failed', e));
-  };
-  setTimeout(check, 10_000); // shortly after launch
-  setInterval(check, 6 * 60 * 60 * 1000); // every 6 hours
+    if (!autoEnabled()) return
+    autoUpdater.checkForUpdatesAndNotify().catch((e) => console.error('[update] check failed', e))
+  }
+  setTimeout(check, 10_000) // shortly after launch
+  setInterval(check, 6 * 60 * 60 * 1000) // every 6 hours
 }
 
 export type UpdateCheckResult =
   | { status: 'available'; version: string }
   | { status: 'not-available'; version: string }
-  | { status: 'error'; error: string };
+  | { status: 'error'; error: string }
 
 /**
  * Run a one-shot update check and resolve with a definite outcome (instead of the
@@ -123,30 +141,38 @@ export function checkForUpdates(timeoutMs = 30_000): Promise<UpdateCheckResult> 
   // against, so it would silently hang to the timeout — surface the real reason
   // instead of a vague failure.
   if (!app.isPackaged) {
-    return Promise.resolve({ status: 'error', error: 'Updates only work in the installed app, not a dev build.' });
+    return Promise.resolve({
+      status: 'error',
+      error: 'Updates only work in the installed app, not a dev build.'
+    })
   }
   return new Promise<UpdateCheckResult>((resolve) => {
-    let done = false;
+    let done = false
     const finish = (r: UpdateCheckResult): void => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      autoUpdater.removeListener('update-available', onAvail);
-      autoUpdater.removeListener('update-not-available', onNone);
-      autoUpdater.removeListener('error', onErr);
-      resolve(r);
-    };
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      autoUpdater.removeListener('update-available', onAvail)
+      autoUpdater.removeListener('update-not-available', onNone)
+      autoUpdater.removeListener('error', onErr)
+      resolve(r)
+    }
     const onAvail = (i: { version: string }): void => {
       // Explicit check implies intent: stage the download even if auto is off.
-      if (!autoUpdater.autoDownload) autoUpdater.downloadUpdate().catch((e) => console.error('[update] download failed', e));
-      finish({ status: 'available', version: i.version });
-    };
-    const onNone = (): void => finish({ status: 'not-available', version: app.getVersion() });
-    const onErr = (e: unknown): void => finish({ status: 'error', error: e instanceof Error ? e.message : String(e) });
-    autoUpdater.once('update-available', onAvail);
-    autoUpdater.once('update-not-available', onNone);
-    autoUpdater.once('error', onErr);
-    const timer = setTimeout(() => finish({ status: 'error', error: 'Update check timed out' }), timeoutMs);
-    autoUpdater.checkForUpdates().catch((e) => onErr(e));
-  });
+      if (!autoUpdater.autoDownload)
+        autoUpdater.downloadUpdate().catch((e) => console.error('[update] download failed', e))
+      finish({ status: 'available', version: i.version })
+    }
+    const onNone = (): void => finish({ status: 'not-available', version: app.getVersion() })
+    const onErr = (e: unknown): void =>
+      finish({ status: 'error', error: e instanceof Error ? e.message : String(e) })
+    autoUpdater.once('update-available', onAvail)
+    autoUpdater.once('update-not-available', onNone)
+    autoUpdater.once('error', onErr)
+    const timer = setTimeout(
+      () => finish({ status: 'error', error: 'Update check timed out' }),
+      timeoutMs
+    )
+    autoUpdater.checkForUpdates().catch((e) => onErr(e))
+  })
 }

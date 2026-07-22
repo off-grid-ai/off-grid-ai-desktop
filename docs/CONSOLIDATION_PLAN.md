@@ -30,7 +30,6 @@ NOT DONE (deferred, deliberate):
     forked-pipeline. NOT done - needs its own PR. See C7 below.
 -->
 
-
 **Scope:** 76 raw findings from parallel audits, deduped to **29 surviving actions** across 5 patterns. **9 findings dropped** as false positives or already-single-source (listed at the end). Four items are **live disagreements shipping today** (P0). Two audit claims were factually wrong on inspection and are corrected inline.
 
 ---
@@ -40,30 +39,35 @@ NOT DONE (deferred, deliberate):
 These are not "risk of drift"; the two sides already disagree. Fix first, each with a regression test asserting the shared constant.
 
 ### P0.1 — `RagConversation.project_id` missing on the preload/renderer boundary
+
 - **Pattern:** duplicate-config-or-type · **Principle:** DRY · **Severity:** high
 - **Locations:** `src/main/database.ts:1129` (has `project_id?: string | null`), `src/preload/index.d.ts:46` (omits it), `src/renderer/src/env.d.ts:76` (omits it) — **verified**.
 - **Fix:** Export `RagConversation` from `database.ts`; import in preload + renderer. Do not redeclare.
 - **Drift risk (already real):** project-scoped conversations lose `project_id` at the preload type boundary — the frontend never sees it. Project chat routing silently degrades. This is a live bug, not hypothetical.
 
 ### P0.2 — `saveArtifact` kind union diverges preload vs renderer
+
 - **Pattern:** duplicate-config-or-type · **Principle:** DRY · **Severity:** high
 - **Locations:** `src/preload/index.ts:248` allows `'html'|'svg'|'mermaid'|'react'`; `src/renderer/src/env.d.ts:187` allows those **plus `'text'|'image'`** — **verified**.
 - **Fix:** Use the canonical `ArtifactKind` (`src/main/artifacts.ts:33`) — better, the shared `@offgrid/artifacts` type (see D2) — everywhere. Align preload to the full union.
 - **Drift risk (already real):** renderer can call `saveArtifact({kind:'text'})`, which the preload type rejects — a compile-time contract split; `text`/`image` artifacts hit an untyped path.
 
 ### P0.3 — `ctxSize` default: backend 16384 vs UI 32768
+
 - **Pattern:** duplicate-config-or-type · **Principle:** DRY · **Severity:** medium (raised to P0: values disagree now)
 - **Locations:** `src/main/llm.ts:70` (`ctxSize = 16384`), `src/renderer/src/components/SettingsPanel.tsx:151` (`s.ctxSize ?? 32768`, and the option list labels `65536` as "(default)") — **verified, three-way disagreement**.
 - **Fix:** `src/shared/llm-defaults.ts` exporting `DEFAULT_CTX_SIZE`; import in both. Reconcile which value is truly the default (the option-list label says 65536 — a third number, decide deliberately).
 - **Drift risk (already real):** a user with no stored setting sees 32768 in the UI while inference runs at 16384; "reset to defaults" changes actual behavior.
 
 ### P0.4 — Advanced sampler defaults: backend `undefined` vs UI hardcoded
+
 - **Pattern:** duplicate-config-or-type · **Principle:** DRY · **Severity:** high
 - **Locations:** `src/main/llm.ts:77-80` (`topP/topK/minP/repeatPenalty` = `undefined`, intentionally "let llama.cpp default" — confirmed by the source comment), `src/renderer/src/components/SettingsPanel.tsx:20` (`DEFAULTS` hardcodes `topP:0.95, topK:40, minP:0.05, repeatPenalty:1.1`) — **verified**.
 - **Fix:** Put the decision in `src/shared/llm-defaults.ts` **once**. Either (a) initialize the backend fields from it, or (b) drop them from UI `DEFAULTS` so `undefined` stays `undefined`. Pick one; the backend comment says the intent is "let llama.cpp decide," so (b) is likely correct.
 - **Drift risk (already real):** UI "Reset to defaults" pushes sampler overrides the backend never intended — fresh instances and post-reset instances infer differently.
 
 ### P0.5 — Two incompatible `Modality` types with the same name
+
 - **Pattern:** duplicate-config-or-type · **Principle:** DRY · **Severity:** high
 - **Locations:** `src/main/active-models.ts:10` = `'image'|'speech'|'transcription'`; `src/main/runtime-residency.ts:18` = `'llm'|'image'|'stt'|'tts'` — **verified**. Same name, different members, `speech`≠`tts`, `transcription`≠`stt`.
 - **Fix:** One `Modality` in a shared module. Reconcile the vocabulary (`speech`/`tts`, `transcription`/`stt`) to a single set; `active-models` already owns the canonical `modalityForKind()` dispatch (`:18`), so anchor there and let residency extend it with the `llm` tier explicitly.
@@ -74,13 +78,16 @@ These are not "risk of drift"; the two sides already disagree. Fix first, each w
 ## Foundational shared modules (do these next — everything else imports them)
 
 ### F1 — `src/main/constants.ts`: engine ports
+
 - **Pattern:** duplicate-config-or-type · **Principle:** DRY · **Severity:** high
 - **`LLAMA_SERVER_PORT = 8439`** — `llm.ts:51`, `tools.ts:14`, `model-server.ts:39`, `setup.ts:44` — **verified (4 sites)**.
 - **`GATEWAY_PORT = 7878`** — `GatewayScreen.tsx:6`, `setup.ts:45`, `model-server.ts:919` — **verified (3 sites)**. Renderer needs it too, so this constant (or a preload-exposed copy) must be reachable from the renderer.
 - **Fix:** Single `src/shared/ports.ts`; import in main + expose to renderer. **Drift risk:** a port change misses one site → gateway UI snippets point at the wrong port; upstream proxy breaks.
 
 ### F2 — `src/shared/llm-defaults.ts`: sampling + timeouts + mode presets
+
 Merges four findings into one config module:
+
 - Sampler/ctx defaults (P0.3, P0.4).
 - `temperature 0.7`, `maxTokens 2048`, tool `temperature 0.3 / max_tokens 1024`, `timeoutMs 300000` — `llm.ts:69,81,554-555`, `tools.ts:303`.
 - `LLAMA_RELOAD_TIMEOUT_MS = 45_000` — `model-server.ts:569,576`.
@@ -88,6 +95,7 @@ Merges four findings into one config module:
 - **Principle:** DRY · **Severity:** high (aggregate). **Fix:** one `LLAMA_DEFAULTS` object + `MODE_PRESETS`; backend fields and UI both import. **Drift risk:** tool-chat's deliberate 0.3 temp is an invisible magic number; mode-preset ctx and RAM-budget fractions drift apart across `llm.ts`/`setup.ts`.
 
 ### F3 — `src/main/types/model-kinds.ts`: model-kind / capability source of truth
+
 - **Pattern:** branch-on-concrete-type · **Principle:** OCP · **Severity:** medium
 - **Locations:** `model-server.ts:638` (`'vision'`/`'chat'` string literals), `setup.ts:183` (`performanceMode` triple-check), `models-manager.ts:301,305` (`kind === 'image'|'speech'|'transcription'` dispatch), `ModelsScreen.tsx:88,231,296` (`m.kind === 'vision'`).
 - **Fix:** const-object `MODEL_KINDS` + `isVisionKind()`/capability guards; **route all modality dispatch through the existing `modalityForKind()`** (`active-models.ts:18`) — models-manager should call it, not re-branch. Renderer asks "supports vision?" via a capability check, not `kind ===`.
@@ -98,6 +106,7 @@ Merges four findings into one config module:
 ## Group A — duplicate-config-or-type (remaining)
 
 ### A1 — Cross-boundary type triplication (UserProfile / RagMessage / AppSettings / PermissionStatus / ReprocessProgress)
+
 - **Principle:** DRY · **Severity:** high
 - **UserProfile:** `database.ts:1090`, `preload/index.d.ts:3`, `renderer/env.d.ts:3`
 - **RagMessage:** `database.ts:1138`, `preload/index.d.ts:54`, `renderer/env.d.ts:84`
@@ -108,22 +117,26 @@ Merges four findings into one config module:
 - **Coupling:** touches `preload/index.d.ts` and `renderer/env.d.ts` — the SAME two files as P0.1, P0.2. **Sequence these; do not parallelize.**
 
 ### A2 — Artifact kind→label/icon/runtime maps duplicated
+
 - **Principle:** DRY · **Severity:** medium
 - **Locations:** `artifacts.ts:37` (runtime if-chain), `ArtifactCanvas.tsx:13`, `ProjectsScreen.tsx:29`, plus the wider renderer `KIND_LABEL/KIND_ICON` spread in `ModelsScreen.tsx:110`, `StoragePanel.tsx:30-32`, `SetupPanel.tsx:15-20`, `CommandPalette.tsx:10`.
 - **Fix:** one `ARTIFACT_CONFIG` (kind → {label, icon, runtime}); ideally sourced from `@offgrid/artifacts` (see D2). Renderer kind-maps → `src/renderer/src/constants/kinds.ts`. **Drift risk:** Projects label ≠ Canvas label; new kind labeled in one place only.
 - **Coupling:** overlaps D2 (both edit `artifacts.ts` + `ArtifactCanvas.tsx`) — do D2's import swap and A2's map extraction together.
 
 ### A3 — Notification type descriptors duplicated across switch/union/array
+
 - **Principle:** DRY / OCP · **Severity:** high
 - **Locations:** `useNotifications.tsx:5` (union), `NotificationList.tsx:13,15-25,46-53,69,227`.
 - **Fix:** `NOTIFICATION_TYPE_DESCRIPTORS` (type → {label, icon}) in a shared `notificationUtil.ts`; derive `FilterType` and `filterOptions` via `keyof`. Mirror VaultScreen's `TYPES` pattern (which the audit correctly flags as the good example). **Drift risk:** new type → missing icon/label, raw enum in badge (`:227`).
 
 ### A4 — App route ↔ viewMode maps defined twice (with real gaps)
+
 - **Principle:** DRY · **Severity:** medium
 - **Locations:** `App.tsx:221-241` (path→view) and `App.tsx:266-288` (view→path). Audit reports `/clipboard` + `/vault` missing from the forward map.
 - **Fix:** one `ROUTES` catalog; generate both maps from it. **Drift risk:** deep links reach a route that never activates the view. **Coupling:** same file as A9 (App.tsx core-screen chain).
 
 ### A5 — Strictness settings + prompt-key strings fetched ad hoc
+
 - **Principle:** DRY · **Severity:** low/medium
 - **Locations:** strictness `ipc.ts:361,418`; prompt keys `ipc.ts:23,38,82,113,130,363,422,480,511,933`.
 - **Fix:** `getStrictness(category)` helper + `PROMPT_KEYS` constants. **Drift risk:** mistyped prompt key silently falls back to empty instructions; strictness default fixed in one call site only. **Note:** low priority — bundle into the ipc.ts refactor (A8) since it touches the same file.
@@ -133,16 +146,19 @@ Merges four findings into one config module:
 ## Group B — branch-on-concrete-type (remaining)
 
 ### B1 — Artifact kind dispatch in `artifacts.ts` + gallery
+
 - **Principle:** OCP · **Severity:** low/medium
 - **Locations:** `artifacts.ts:37,38,67,71` (`artifactRuntime`/`deriveTitle` parallel chains); `MemoryChat.tsx:2587-2598` (gallery onClick + thumbnail by kind).
 - **Fix:** the `ARTIFACT_CONFIG` map from A2 + an `openArtifactPanel(artifact, handlers)` helper. Folds into A2/D2.
 
 ### B2 — Attachment kind branching scattered in MemoryChat
+
 - **Principle:** OCP · **Severity:** medium
 - **Locations:** `MemoryChat.tsx:666,1220,1607-1625,2182-2210`.
 - **Fix:** `renderAttachmentPreview(att)` + viewer map keyed by kind. **Note:** lands inside the MemoryChat decomposition (C3) — do together, same file.
 
 ### B3 — Transcription engine guards (`entry.engine === 'parakeet'`)
+
 - **Principle:** OCP · **Severity:** medium
 - **Locations:** `transcription/whisper-cli.ts:61`, `transcription/parakeet-cli.ts:113`.
 - **Fix:** `modelsByEngine(engine)` pure fn in `select.ts`; both CLIs call it. Pairs with C1 (transcription dispatcher).
@@ -152,23 +168,27 @@ Merges four findings into one config module:
 ## Group C — god-module / forked-pipeline
 
 ### C1 — Transcription selection fork (`select.ts`) + engine dispatch
+
 - **Pattern:** forked-pipeline · **Principle:** OCP · **Severity:** medium
 - **Locations:** `select.ts:32-45,77-80,85-87,94-100` (`pickTranscription` + 4 callers re-deciding), plus B3's engine guards.
 - **Fix:** one dispatcher `resolveTranscription(engine, mode?, services?) → {service, engine, fellBack}`; all callers invoke it. **Drift risk:** whisper-resident→whisper fallback priority spread across 4 fns.
 
 ### C2 — Image-runtime god-path in `imagegen.ts`
+
 - **Pattern:** god-module + branch-on-concrete-type · **Principle:** SRP/OCP · **Severity:** high
 - **Locations:** `imagegen.ts:40-48` (`isCoreMLModelDir`), `72-79`, `330` (`mfluxAvailable`), `416` (`isMfluxModelId`), `477`, `485-509`, `537-644`, `602-714`. `runImageGen` is 500+ LOC interleaving mflux/sd-cli/Core ML/Z-Image memory guards + arg building + preview parsing.
 - **Fix:** `ImageRuntime` interface (`generate/validateMemory/buildArgs/parseProgress`) with `ImageRuntimeMflux/SdCli/CoreML`; dispatch once at the top of `runImageGen`. Move `isCoreMLModelDir` to a shared `runtime-model-detect.ts`.
 - **Coupling with C5 (models-manager runtime dispatch):** both introduce a per-runtime handler abstraction — design ONE `RuntimeHandler`/`ImageRuntime` shape and reuse across `imagegen.ts` and `models-manager.ts` so we don't build two parallel registries. Sequence C5 after C2's interface lands.
 
 ### C3 — `MemoryChat.tsx` god component (2600 LOC, 63 useState, 286-LOC `sendMessage`)
+
 - **Pattern:** god-module · **Principle:** SRP · **Severity:** high
 - **Locations:** `MemoryChat.tsx:200-330` (state), `652-937` (`sendMessage`), plus B2, and the citation/source dispatch (C6) and RagContext render (A-adjacent).
 - **Fix:** extract hooks — `useMessageSender`, `useImageGeneration`, `useVoiceInput`, `useGallery`, `useComposerPrefs`, `useAttachments`, `useStreamingChat`. MemoryChat becomes a coordinator.
 - **Largest deliberate refactor here.** Do LAST, after the renderer shared helpers (timeAgo D3, SearchHit handler C6, attachment map B2) exist so the extracted hooks import them instead of carrying the duplication forward.
 
 ### C4 — `ipc.ts` `rag:chat` god-handler + parallel SQL filters
+
 - **Pattern:** god-module + forked-pipeline · **Principle:** SRP/DRY · **Severity:** high
 - **Locations:** `ipc.ts:656-970` (314-line handler, 5 intent paths); parallel `source_app`/`app_name LIKE` filters `ipc.ts:547-548,780-781,797-798,814-815,830-831,844-852,868-869` and the 5-query block `774-802,805-818,821-834,837-856,859-872`; also `database.ts:395-396,701-702,722-723,754-755` and `search.ts:150-157`.
 - **Fix (two layers, do the cheap one first):**
@@ -177,16 +197,19 @@ Merges four findings into one config module:
 - **Coupling:** A5 (strictness/prompt keys), A6-embeddings, and B/broadcast all live in `ipc.ts`. **One owner for `ipc.ts` per round.**
 
 ### C5 — `models-manager.ts` per-runtime `=== 'mflux'` branching ×3
+
 - **Pattern:** duplicate-config-or-type/OCP · **Severity:** high
 - **Locations:** `models-manager.ts:55,111-123,212-226` (list/download/delete each branch on runtime).
 - **Fix:** `RuntimeHandler {isCached, download, delete}` map — the SAME abstraction as C2. **Drift risk:** third runtime → edits in 3 functions.
 
 ### C6 — SearchHit / unified-source navigation dispatch duplicated
+
 - **Pattern:** copy-pasted-helper + branch-on-concrete-type · **Severity:** high
 - **Locations:** `App.tsx:440-452`, `MemoryChat.tsx:432-438`, `MemoryChat.tsx:1859-1864`.
 - **Fix:** `useSearchHitHandler({onEntity,onMemory,onMeeting,onReplay})` in renderer nav utils; call from all three. **Drift risk:** one site adds screen-replay, another doesn't. Prerequisite helper for C3.
 
 ### C7 — `toolChat` is a SECOND generation pipeline forked from `ragChat`/`streamAnswer` (MISSED BY THE ORIGINAL AUDIT)
+
 - **Pattern:** forked-pipeline · **Principle:** SRP/DRY · **Severity:** high · **Status:** NOT done (deferred - behavioral change)
 - **This is the fork that started the whole effort** (the "chat doesn't stream / no thinking bubble" bug). The audit scanned for behavior-preserving mechanical dedup and bucketed this as a "product fix," so it never became a plan item - a real gap. Recording it here as the canonical forked-pipeline.
 - **Locations:** `src/main/tools.ts` `toolChat()` runs its OWN blocking `fetch` loop to `/v1/chat/completions` (its own port const, `max_tokens:1024`, `temperature:0.3`, no streaming, no thinking) - parallel to `ipc.ts` `streamAnswer()` -> `llm.chatStream()` (streams tokens + reasoning over `rag:stream`, honors `thinking`, abortable). Renderer forks at `MemoryChat.tsx:811`: `if (toolsOn || connectorsOn) -> window.api.toolChat(...)` (blocking) else the streaming path.
@@ -195,23 +218,27 @@ Merges four findings into one config module:
 - **Why deferred from this PR:** every other consolidation item is behavior-preserving; this one changes what the tool path DOES (starts streaming + thinking), so it needs its own PR + on-device verification. It is the highest-value remaining forked-pipeline.
 
 ### C8 — `rag:chat` runs TWO retrieval pipelines on the same query (found by the C7 follow-up sweep)
+
 - **Pattern:** forked-pipeline · **Principle:** DRY · **Severity:** high · **Status:** NOT done (behavioral)
 - **Locations:** `ipc.ts:771-802` (inline SQL vector search on memories, threshold >=0.2) + `ipc.ts:804-872` (inline FTS on messages/summaries/entities/facts) AND then `ipc.ts:904-905` `universalSearch()` (search.ts - hybrid FTS + LanceDB semantic + RRF fusion + recency boost) on the SAME query.
 - **Drift/risk:** the same memories/entities are retrieved twice with DIFFERENT ranking (BM25/cosine + threshold vs RRF, no threshold). The CONTEXT_BLOCK (from inline SQL) and the SOURCES cards (from universalSearch) can disagree; an item below the SQL 0.2 threshold is dropped from context but shown as a source. Project mode (`ipc.ts:737` `ragService.searchProject`) is yet a third retrieval path that misses the hybrid fusion.
 - **Fix:** make `universalSearch()` the single retrieval engine for all three chat modes; delete the inline SQL block; pass a `sources`/appName filter param. (Overlaps C4 - same handler.)
 
 ### C9 — image-generation intent decided in 3 places that can disagree
+
 - **Pattern:** forked-pipeline + duplicated-decision-rule · **Principle:** DRY/SRP · **Severity:** medium · **Status:** NOT done (behavioral)
 - **Locations:** renderer regex `looksLikeImageRequest` (`src/renderer/src/lib/image-intent.ts`) auto-switches to image mode at `MemoryChat.tsx:746`; main LLM classifier `classifyIntent` (`ipc.ts:254-280`) decides `intent==='image'`; the model itself can emit a ` ```image ` fenced block parsed at `MemoryChat.tsx:863`. The ` ```image ` format is PRODUCED in `ipc.ts:668` and PARSED by a separate regex in the renderer (not via `parseArtifact`).
 - **Drift/risk:** renderer regex and main LLM can disagree on "is this an image request" (e.g. "make a dashboard" - regex no, LLM maybe); the fenced-block format has no single producer/parser definition.
 - **Fix:** one intent decision (renderer asks main via an intent IPC, or shares one rule module); define the ` ```image ` fence once and parse it through `parseArtifact`.
 
 ### C10 — `maxTokens` default duplicated (same class as P0.3, but MECHANICAL/behavior-preserving)
+
 - **Pattern:** duplicate-config-or-type · **Principle:** DRY · **Severity:** low · **Status:** NOT done (cheap, safe)
 - **Locations:** `llm.ts` `private maxTokens = 2048` and `SettingsPanel.tsx` DEFAULTS `maxTokens: 2048`. Currently AGREE, but there is no shared constant (unlike ctxSize, which we already moved to `shared/llm-defaults.ts` as `DEFAULT_CTX_SIZE`).
 - **Fix:** add `DEFAULT_MAX_TOKENS = 2048` to `shared/llm-defaults.ts`, import in both. This one IS behavior-preserving - could fold into this PR or a trivial follow-up. (The audit also flagged tool-chat's `max_tokens:1024`/`temperature:0.3` magic numbers - fold those into the shared defaults too.)
 
 ### C11 — summarization/entity extraction is 4+ independent LLM calls with independently-set strictness
+
 - **Pattern:** forked-pipeline · **Principle:** SRP · **Severity:** medium · **Status:** NOT done (behavioral)
 - **Locations:** `ipc.ts:371` (memory-eval, applies `memoryStrictness`), `ipc.ts:515` (session summary), `ipc.ts:426` (entity extraction, applies `entityStrictness`), `ipc.ts:488` (per-entity fact summary), plus `updateMasterMemoryIncremental`. Each is its own prompt + LLM call.
 - **Drift/risk:** memory-eval strictness and entity strictness are set independently and can disagree on what is worth keeping; no dedup across repeated summarizations. Not a correctness bug today, but a coherence/cost fork.
@@ -224,43 +251,51 @@ Merges four findings into one config module:
 ## Group D — copy-pasted-helper / forked shared packages
 
 ### D1 — `extractJson` duplicated across 10+ pro modules, 3 fallback variants
+
 - **Pattern:** copy-pasted-helper · **Principle:** DRY · **Severity:** high
 - **Locations (verified, larger than reported):** `pro/main/meetings.ts:71`, `ingest.ts:39`, `crm/agent.ts:66`, `crm/extract.ts:68`, `crm/preferences.ts:92`, `crm/actions.ts:135`, `dictation/sinks/memory-ingest.ts:16`, **plus** `crm/calendar.ts:58` (`[`/`]` array variant), `crm/layout.ts:99`, `crm/organize.ts:73`.
 - **Fix:** one helper in a shared pro util (`pro/main/crm/json.ts` or a `@offgrid/core` util) with `mode: 'object'|'array'` and configurable fallback. **Drift risk (real today):** `preferences.ts` returns `s` on failure, others return `'{}'`, array variants return `']'`-slice — inconsistent silent-fail behavior across every LLM JSON parse.
 
 ### D2 — Desktop reimplements `@offgrid/artifacts` and `@offgrid/rag` extraction
+
 - **Pattern:** forked-pipeline/duplicate-config-or-type · **Principle:** DRY · **Severity:** high
 - **Locations:** `src/main/artifacts.ts:33-40` + `ArtifactCanvas.tsx:11-18,85-130` reimplement `ArtifactKind`/`isLiveKind`/`artifactTitle`/`buildSrcDoc` — **verified those exist in `../shared/packages/artifacts/src/index.ts:31,52,95` and desktop does NOT depend on `@offgrid/artifacts` at all**. Also `src/main/files.ts:13-76` re-routes file-kind detection that `@offgrid/rag` `extract.ts` owns.
 - **Correction to the audit:** the claim that `files.ts` `AUDIO_EXT` is "missing `oga` and `aiff`" is **false** — `files.ts:14` includes both. The routing duplication is real; that specific drift-example is not.
 - **Fix:** add `@offgrid/artifacts` dep; import `isLiveKind/artifactTitle/buildSrcDoc` and the canonical `ArtifactKind`. Reuse `@offgrid/rag`'s `extractContent` in `files.ts`, wrapping with desktop temp-file/userData persistence. **Coupling:** anchors A2, B1, P0.2 — do the import swap first, then those maps reference the shared type.
 
 ### D3 — `timeAgo` duplicated (renderer) + `formatTimestamp` (pro)
+
 - **Pattern:** copy-pasted-helper · **Severity:** medium/low
 - **Locations:** `MemoryChat.tsx:183-195`, `ProjectsScreen.tsx:104-114`, and pro `NotificationList.tsx:27-44` vs `clipboard/clipboardUtil.ts:113-122`.
 - **Fix:** `src/renderer/src/lib/time.ts` `timeAgo(input: string|number|Date)`; pro imports (or a pro `timeUtils.ts`). **Drift risk:** timezone/format fix applied to one copy only.
 
 ### D4 — Pro CRM helper trio: `today()`, `hasColumn()`, `notify()`
+
 - **Pattern:** copy-pasted-helper · **Severity:** medium
 - **Locations:** `today()` `crm/skills-engine.ts:30-32` + `crm/proactive.ts:18-20`; `hasColumn()` `crm/preferences.ts:38-40` + `crm/actions.ts:74-76`; `notify()` `crm/skills-engine.ts:19-28` + `crm/proactive.ts:24-33` (**with variance** — skills truncates body to 240, proactive doesn't).
 - **Fix:** `pro/main/crm/utils.ts` (or `time.ts`/`schema.ts`/`notify.ts`); `notify(opts, {truncate?})`. **Drift risk:** inconsistent notification truncation UX today.
 
 ### D5 — Image-data-URL + message-construction + thinking-payload helpers
+
 - **Pattern:** copy-pasted-helper · **Severity:** medium/low
 - **Locations:** data-URL build `llm.ts:576-586,652-656`, `model-server.ts:263-265`, `tools.ts:284-286`; message-array build `llm.ts:569-594` vs `651-663`; thinking payload `llm.ts:675-680`.
 - **Caveat (verified):** `tools.ts` already imports `buildUserContent` from `tool-content.ts` — a partial seam exists. **Check `tool-content.ts` first** and extend it rather than making a fourth copy. Extract `imageToDataUrl()`, `buildMessages()`, `buildThinkingPayload()` around it. **Drift risk:** webp/MIME support added to one path, missed in another.
 
 ### D6 — HTTP retry-with-deadline duplicated (`model-server.ts`)
+
 - **Pattern:** copy-pasted-helper · **Severity:** medium
 - **Locations:** `model-server.ts:187-217` (`proxyToLlama`) + `504-543` (`callLlamaJson`).
 - **Fix:** `retryWithDeadline<T>(deadline, attempt)`. **Drift risk:** off-by-one on the deadline check affects only one of streaming/buffered paths.
 
 ### D7 — Embeddings serialization + service coupling + BrowserWindow broadcast
+
 - **Pattern:** copy-pasted-helper · **Principle:** DRY/DIP · **Severity:** medium
 - **Locations:** serialize/parse `ipc.ts:318-319,565-566,591-592,771-772`, `database.ts:50-72`, `search.ts:335-336`, rag/store parseEmbedding; broadcast idiom `ipc.ts:338-344,465-473,1328-1335`; `embed()` wrapper `embeddings.ts:29`.
 - **Fix:** `serializeVector`/`deserializeVector` + `embed(text)` in `embeddings.ts`; `broadcast(channel, payload)` module helper. **Drift risk:** format/caching change misses a call site → incompatible stored vectors, score=0 results vanish. **Note:** deferred embedding dimension validation is a nice-to-have, not dedup — keep it out of scope unless bundled.
 - **Coupling:** all in `ipc.ts` — bundle with C4 under one owner.
 
 ### D8 — `existing()` binary-resolver + pro `TypeIcon` component
+
 - **Pattern:** copy-pasted-helper · **Severity:** low/high
 - **Locations:** `existing()` `whisper-cli.ts:19-28` + `parakeet-cli.ts:24-33` → `transcription/bin-resolution.ts`. `TypeIcon` `pro/renderer/ClipboardPopup.tsx:14-19` + `ClipboardScreen.tsx:74-79` → `clipboardUtil.ts` (alongside existing `CONTENT_TYPE_FILTERS`/`typeLabel`). Pro notification filter/count `NotificationList.tsx:59-61,117-119` → `notificationMatches()` (folds into A3).
 
@@ -298,9 +333,9 @@ Merges four findings into one config module:
 3. **`whisper/parakeet isAvailable()`** — correct polymorphism; each service owns its own check. Audit itself marked it intended.
 4. **`mfluxAvailable()` "duplicated"** — actually defined once in `mflux.ts` and imported; already DRY.
 5. **Skill trigger branching (`skills-engine.ts:122`)** — single centralized dispatch; exemplary, not a violation.
-6. **ModelsScreen vision-kind checks as "single boundary"** (finding #57) — the *renderer-boundary* framing is right, but the SAME lines appear in the branch-on-concrete finding (#38); folded into F3, not double-counted. The "no fix needed" duplicate is dropped.
+6. **ModelsScreen vision-kind checks as "single boundary"** (finding #57) — the _renderer-boundary_ framing is right, but the SAME lines appear in the branch-on-concrete finding (#38); folded into F3, not double-counted. The "no fix needed" duplicate is dropped.
 7. **`VaultScreen TYPES` "only used locally"** — correct single-source pattern; speculative export (YAGNI). Keep as-is.
-8. **`ArtifactCanvas` kind branching for rendering** — a legitimate single rendering boundary; not scattered. Only the *gallery caller* (B1) is the real finding.
+8. **`ArtifactCanvas` kind branching for rendering** — a legitimate single rendering boundary; not scattered. Only the _gallery caller_ (B1) is the real finding.
 9. **Embedding dimension schema validation** (part of finding #28) — a correctness/robustness feature, not deduplication; out of scope for this plan (note it in the gaps backlog instead).
 
 **Corrections to audit claims:** `files.ts:14` AUDIO_EXT is NOT missing `oga`/`aiff` (both present) — that drift example is wrong, routing dup is still valid (D2). `extractJson` is 10+ sites with `[`/`]` variants, not 7 (D1). `tools.ts` already uses `buildUserContent` — D5 must extend that seam, not add a fourth copy.
