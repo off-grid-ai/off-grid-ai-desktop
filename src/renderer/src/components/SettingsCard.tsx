@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { LockKey, CaretDown, CaretLeft, Clock } from '@phosphor-icons/react'
 import { cn } from '@renderer/lib/utils'
@@ -26,6 +26,17 @@ export function SettingsCardsGroup({
   children: React.ReactNode
 }): React.ReactElement {
   const [openId, setOpenId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!openId) return
+    const collapseDetail = (event: KeyboardEvent): void => {
+      if (!(event.metaKey || event.ctrlKey) || event.key !== ']') return
+      event.preventDefault()
+      event.stopPropagation()
+      setOpenId(null)
+    }
+    window.addEventListener('keydown', collapseDetail, true)
+    return () => window.removeEventListener('keydown', collapseDetail, true)
+  }, [openId])
   return <GroupContext.Provider value={{ openId, setOpenId }}>{children}</GroupContext.Provider>
 }
 

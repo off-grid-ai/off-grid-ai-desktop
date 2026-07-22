@@ -6,14 +6,15 @@
 // uses — if core ever went back to branching on `isPro` with the real sections
 // inlined, the fake would not appear and this test would fail.
 //
-//   - Free build (nothing registered) → the catalogued ProPlaceholder shows.
-//   - Pro build (a section registered for a slot id) → the registered component
-//     renders in that slot, and the placeholder is gone.
+//   - Free build (nothing registered) → Capture & processing explains the Pro gap.
+//   - Pro build (capture registered) → the Pro contribution and core processing
+//     controls share the same Settings detail.
 //
 // resetModules per test so the freshly-imported Settings and sectionRegistry share
 // one registry instance (the registry is a module singleton).
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 function stubApi(platform = 'darwin'): void {
   const api = new Proxy(
@@ -24,6 +25,11 @@ function stubApi(platform = 'darwin'): void {
         if (prop === 'platform') return platform
         if (prop === 'license') return { status: () => Promise.resolve({}) }
         if (prop === 'getAppVersion') return () => Promise.resolve('')
+        if (prop === 'queueConfigGet') {
+          return () => Promise.resolve({ enabled: true, tier1Coexists: true })
+        }
+        if (prop === 'queueState') return () => Promise.resolve({ running: [], queued: [] })
+        if (prop === 'residencyGet') return () => Promise.resolve({})
         return () => Promise.resolve({})
       }
     }
@@ -40,37 +46,44 @@ afterEach(() => {
 })
 
 describe('Settings pro-section registry seam (D31)', () => {
-  it('free build (registry empty): shows the catalogued ProPlaceholder for a pro slot', async () => {
+  it('free build explains capture availability inside the combined processing detail', async () => {
     vi.resetModules()
     stubApi()
     const { Settings } = await import('../Settings')
+    const user = userEvent.setup()
     render(<Settings />)
-    // The proactive slot's PLACEHOLDER copy (from proSettingsCatalog) is on screen...
-    await waitFor(() =>
-      expect(screen.getByText(/native notifications, even when the window is closed/i)).toBeTruthy()
-    )
-    // ...and no section was registered to replace it.
-    expect(screen.queryByTestId('fake-proactive')).toBeNull()
+
+    await user.click(screen.getByText('Capture & processing'))
+    expect(
+      await screen.findByText(/screen capture, backlog recovery, and proactive delivery/i)
+    ).toBeTruthy()
+    expect(screen.getByText('Processing priority')).toBeTruthy()
+    expect(screen.getByText('Chat and capture model')).toBeTruthy()
+    expect(screen.queryByTestId('fake-capture')).toBeNull()
   })
 
-  it('pro build: a section registered for the slot id renders instead of the placeholder', async () => {
+  it('pro build composes the registered capture owner with shared processing controls', async () => {
     vi.resetModules()
     stubApi()
-    // Register a FAKE section through the SAME interface the pro package uses.
     const { registerSettingsSection } = await import('../../bootstrap/sectionRegistry')
     registerSettingsSection({
-      id: 'proactive',
-      component: () => <div data-testid="fake-proactive">FAKE PROACTIVE SECTION</div>
+      id: 'capture',
+      component: () => <div data-testid="fake-capture">FAKE CAPTURE SECTION</div>
     })
     const { Settings } = await import('../Settings')
+    const user = userEvent.setup()
     render(<Settings />)
-    // The registered component renders in the slot...
-    await waitFor(() => expect(screen.getByTestId('fake-proactive')).toBeTruthy())
-    // ...and the placeholder for that slot is gone.
-    expect(screen.queryByText(/native notifications, even when the window is closed/i)).toBeNull()
+
+    await user.click(screen.getByText('Capture & processing'))
+    await waitFor(() => expect(screen.getByTestId('fake-capture')).toBeTruthy())
+    expect(screen.getByText('Processing priority')).toBeTruthy()
+    expect(screen.getByText('Chat and capture model')).toBeTruthy()
+    expect(
+      screen.queryByText(/screen capture, backlog recovery, and proactive delivery/i)
+    ).toBeNull()
   })
 
-  it('Windows Pro build: withholds Mac-only sections but keeps account sections available', async () => {
+  it('Windows Pro build withholds native capture while keeping account sections available', async () => {
     vi.resetModules()
     stubApi('win32')
     const { registerSettingsSection } = await import('../../bootstrap/sectionRegistry')
@@ -79,18 +92,20 @@ describe('Settings pro-section registry seam (D31)', () => {
       component: () => <div data-testid="fake-identity">FAKE IDENTITY SECTION</div>
     })
     registerSettingsSection({
-      id: 'proactive',
-      component: () => <div data-testid="fake-proactive">FAKE PROACTIVE SECTION</div>
+      id: 'capture',
+      component: () => <div data-testid="fake-capture">FAKE CAPTURE SECTION</div>
     })
 
     const { Settings } = await import('../Settings')
+    const user = userEvent.setup()
     render(<Settings />)
 
     await waitFor(() => expect(screen.getByTestId('fake-identity')).toBeTruthy())
-    expect(screen.queryByTestId('fake-proactive')).toBeNull()
+    await user.click(screen.getByText('Capture & processing'))
+    expect(screen.queryByTestId('fake-capture')).toBeNull()
     expect(
-      screen.getByText(/morning briefings and meeting alerts are available on Mac/i)
+      screen.getByText(/screen capture, backlog recovery, and proactive delivery/i)
     ).toBeTruthy()
-    expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0)
+    expect(screen.getByText('Processing priority')).toBeTruthy()
   })
 })
