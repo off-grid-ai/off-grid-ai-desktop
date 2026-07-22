@@ -17,100 +17,106 @@ const { execSync } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 
-function findDeveloperId() {
-  try {
-    const out = execSync('security find-identity -v -p codesigning', { encoding: 'utf8' })
-    const m = out.match(/"(Developer ID Application:[^"]+)"/)
-    return m ? m[1] : null
-  } catch {
-    return null
-  }
-}
+const resign = {
+  findDeveloperId() {
+    try {
+      const out = execSync('security find-identity -v -p codesigning', { encoding: 'utf8' })
+      const match = out.match(/"(Developer ID Application:[^"]+)"/)
+      return match ? match[1] : null
+    } catch {
+      return null
+    }
+  },
 
-exports.default = async function (context) {
-  const { appOutDir, packager } = context
-  if (packager.platform.name !== 'mac') return
+  async afterSign(context) {
+    const { appOutDir, packager } = context
+    if (packager.platform.name !== 'mac') return
 
-  const appName = packager.appInfo.productFilename
-  const appPath = path.join(appOutDir, `${appName}.app`)
-  const resourcesPath = path.join(appPath, 'Contents', 'Resources')
-  const entitlements = path.join(__dirname, '..', 'build', 'entitlements.mac.plist')
-  const hasEnt = fs.existsSync(entitlements)
+    const appName = packager.appInfo.productFilename
+    const appPath = path.join(appOutDir, `${appName}.app`)
+    const resourcesPath = path.join(appPath, 'Contents', 'Resources')
+    const entitlements = path.join(__dirname, '..', 'build', 'entitlements.mac.plist')
+    const hasEnt = fs.existsSync(entitlements)
 
-  const devId = findDeveloperId()
-  const identity = devId || '-' // '-' = ad-hoc
-  const runtime = devId ? '--options runtime' : ''
-  console.log(
-    devId
-      ? `[resign] Developer ID found — signing + hardened runtime for notarization: ${devId}`
-      : '[resign] No Developer ID — ad-hoc signing (local dev; not notarizable)'
-  )
+    const devId = resign.findDeveloperId()
+    const identity = devId || '-' // '-' = ad-hoc
+    const runtime = devId ? '--options runtime' : ''
+    console.log(
+      devId
+        ? `[resign] Developer ID found — signing + hardened runtime for notarization: ${devId}`
+        : '[resign] No Developer ID — ad-hoc signing (local dev; not notarizable)'
+    )
 
-  const sign = (filePath, withEntitlements = false) => {
-    const ent = withEntitlements && hasEnt ? `--entitlements "${entitlements}"` : ''
-    execSync(`codesign --force ${runtime} ${ent} --sign "${identity}" "${filePath}"`, {
-      stdio: 'inherit'
-    })
-  }
-
-  try {
-    const binDir = path.join(resourcesPath, 'bin')
-    if (fs.existsSync(binDir)) {
-      const walk = (dir) => {
+    const signing = {
+      sign(filePath, withEntitlements = false) {
+        const ent = withEntitlements && hasEnt ? `--entitlements "${entitlements}"` : ''
+        execSync(`codesign --force ${runtime} ${ent} --sign "${identity}" "${filePath}"`, {
+          stdio: 'inherit'
+        })
+      },
+      walkLibraries(dir) {
         for (const name of fs.readdirSync(dir)) {
           if (name.startsWith('.')) continue
-          const p = path.join(dir, name)
-          const st = fs.statSync(p)
-          if (st.isDirectory()) {
-            walk(p)
+          const itemPath = path.join(dir, name)
+          const stat = fs.statSync(itemPath)
+          if (stat.isDirectory()) {
+            signing.walkLibraries(itemPath)
             continue
           }
           if (name.endsWith('.dylib')) {
             console.log(`[resign] dylib: ${name}`)
-            sign(p)
+            signing.sign(itemPath)
           }
         }
-      }
-      walk(binDir) // dylibs first (dependencies before dependents)
-      const walkExec = (dir) => {
+      },
+      walkExecutables(dir) {
         for (const name of fs.readdirSync(dir)) {
           if (name.startsWith('.')) continue
-          const p = path.join(dir, name)
-          const st = fs.statSync(p)
-          if (st.isDirectory()) {
-            walkExec(p)
+          const itemPath = path.join(dir, name)
+          const stat = fs.statSync(itemPath)
+          if (stat.isDirectory()) {
+            signing.walkExecutables(itemPath)
             continue
           }
           if (name.endsWith('.dylib')) continue
           try {
-            fs.accessSync(p, fs.constants.X_OK)
+            fs.accessSync(itemPath, fs.constants.X_OK)
             console.log(`[resign] bin: ${name}`)
-            sign(p, true)
+            signing.sign(itemPath, true)
           } catch {
             /* not exec */
           }
         }
       }
-      walkExec(binDir)
     }
 
-    // Re-seal the outer bundle. With a real identity we DON'T use --deep (that
-    // would overwrite the framework/helper entitlements electron-builder set
-    // correctly); a top-level re-sign re-establishes the seal over our changed
-    // nested binaries. Ad-hoc dev keeps --deep for simplicity.
-    console.log('[resign] re-sealing app bundle')
-    if (devId) {
-      const ent = hasEnt ? `--entitlements "${entitlements}"` : ''
-      execSync(`codesign --force ${runtime} ${ent} --sign "${identity}" "${appPath}"`, {
-        stdio: 'inherit'
-      })
-    } else {
-      const ent = hasEnt ? `--entitlements "${entitlements}"` : ''
-      execSync(`codesign --deep --force --sign - ${ent} "${appPath}"`, { stdio: 'inherit' })
+    try {
+      const binDir = path.join(resourcesPath, 'bin')
+      if (fs.existsSync(binDir)) {
+        signing.walkLibraries(binDir) // dylibs first (dependencies before dependents)
+        signing.walkExecutables(binDir)
+      }
+
+      // Re-seal the outer bundle. With a real identity we DON'T use --deep (that
+      // would overwrite the framework/helper entitlements electron-builder set
+      // correctly); a top-level re-sign re-establishes the seal over our changed
+      // nested binaries. Ad-hoc dev keeps --deep for simplicity.
+      console.log('[resign] re-sealing app bundle')
+      if (devId) {
+        const ent = hasEnt ? `--entitlements "${entitlements}"` : ''
+        execSync(`codesign --force ${runtime} ${ent} --sign "${identity}" "${appPath}"`, {
+          stdio: 'inherit'
+        })
+      } else {
+        const ent = hasEnt ? `--entitlements "${entitlements}"` : ''
+        execSync(`codesign --deep --force --sign - ${ent} "${appPath}"`, { stdio: 'inherit' })
+      }
+      console.log('[resign] done')
+    } catch (error) {
+      console.error('[resign] failed:', error)
+      throw error
     }
-    console.log('[resign] done')
-  } catch (error) {
-    console.error('[resign] failed:', error)
-    throw error
   }
 }
+
+exports.default = resign.afterSign
