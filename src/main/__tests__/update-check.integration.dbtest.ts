@@ -193,49 +193,51 @@ describe('manual update check', () => {
     expect(checkForUpdates).toHaveBeenCalledTimes(3)
   })
 
-  it('reports an available version without downloading when automatic updates are off', async () => {
+  it('lets a manual-update user choose when an available version starts downloading', async () => {
     const updater = await import('../updater')
     updater.registerUpdateIpc()
     updater.startAutoUpdates()
     expect(await handler<boolean>('update:set-auto')(false)).toBe(false)
+    installRendererTransport()
+    vi.useRealTimers()
+    const card = await renderUpdateCard()
+    const user = userEvent.setup()
 
-    const result = handler<{ status: string; version: string }>('update:check')()
+    await user.click(within(card).getByRole('button', { name: 'Check for updates' }))
     updaterEvents.emit('update-available', { version: '0.0.104' })
 
-    await expect(result).resolves.toEqual({
-      status: 'available',
-      version: '0.0.104',
-      downloadStarted: false
-    })
+    expect(await within(card).findByText('Update 0.0.104 is available.')).toBeTruthy()
     expect(downloadUpdate).not.toHaveBeenCalled()
-    await expect(handler('update:download')('0.0.104')).resolves.toEqual({
-      status: 'downloading',
-      version: '0.0.104'
-    })
+    await user.click(within(card).getByRole('button', { name: 'Download 0.0.104' }))
+    expect(await within(card).findByText('Downloading 0.0.104 in the background.')).toBeTruthy()
     expect(downloadUpdate).toHaveBeenCalledOnce()
     expect(checkForUpdates).toHaveBeenCalledOnce()
     expect(updaterEvents.listenerCount('update-available')).toBe(1)
     expect(updaterEvents.listenerCount('update-not-available')).toBe(1)
   })
 
-  it('persists a skipped version and reports it instead of claiming the app is current', async () => {
+  it('lets a user skip a version and reports the persisted choice on the next check', async () => {
     const updater = await import('../updater')
     updater.registerUpdateIpc()
     updater.startAutoUpdates()
     expect(await handler<boolean>('update:set-auto')(false)).toBe(false)
+    installRendererTransport()
+    vi.useRealTimers()
+    const card = await renderUpdateCard()
+    const user = userEvent.setup()
 
-    const available = handler<{ status: string; version: string }>('update:check')()
+    await user.click(within(card).getByRole('button', { name: 'Check for updates' }))
     updaterEvents.emit('update-available', { version: '0.0.104' })
-    await available
+    await user.click(await within(card).findByRole('button', { name: 'Skip 0.0.104' }))
 
-    await expect(handler<string>('update:skip-version')('0.0.104')).resolves.toBe('0.0.104')
+    expect(await within(card).findByText('Skipped v0.0.104.')).toBeTruthy()
     await expect(handler<{ skippedVersion: string }>('update:get-prefs')()).resolves.toMatchObject({
       skippedVersion: '0.0.104'
     })
 
-    const skipped = handler<{ status: string; version: string }>('update:check')()
+    await user.click(within(card).getByRole('button', { name: 'Check for updates' }))
     updaterEvents.emit('update-not-available', { version: '0.0.104' })
-    await expect(skipped).resolves.toEqual({ status: 'skipped', version: '0.0.104' })
+    expect(await within(card).findByText('Skipped v0.0.104.')).toBeTruthy()
   })
 
   it('lists compatible history and downloads an explicitly confirmed older version', async () => {
