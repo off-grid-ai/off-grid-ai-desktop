@@ -483,6 +483,9 @@ export function MemoryChat({
   const [imgCfgScale, setImgCfgScale] = useState(2)
   const [imgSeed, setImgSeed] = useState('')
   const [imgNegative, setImgNegative] = useState('')
+  // Rewrite the prompt with the local model before generating (default on). Reads
+  // the SAME key the main-process image gate reads (enhanceImagePrompts).
+  const [enhanceImg, setEnhanceImg] = useState(true)
   const [imgInit, setImgInit] = useState<string | null>(null)
   const [imgStrength, setImgStrength] = useState(0.6)
   const [imgModels, setImgModels] = useState<string[]>([])
@@ -564,6 +567,7 @@ export function MemoryChat({
           setImgParamStore(s.imageParams as ImageParamStore)
         if (typeof s.imgSeed === 'string') setImgSeed(s.imgSeed)
         if (typeof s.imgNegative === 'string') setImgNegative(s.imgNegative)
+        if (typeof s.enhanceImagePrompts === 'boolean') setEnhanceImg(s.enhanceImagePrompts)
         if (typeof s.imgStrength === 'number') setImgStrength(s.imgStrength)
         if (typeof s.imgStyle === 'string' || s.imgStyle === null)
           setActiveStyle((s.imgStyle as string | null) ?? null)
@@ -598,6 +602,9 @@ export function MemoryChat({
   useEffect(() => {
     if (prefsLoaded.current) void window.api.saveSetting('imgNegative', imgNegative)
   }, [imgNegative])
+  useEffect(() => {
+    if (prefsLoaded.current) void window.api.saveSetting('enhanceImagePrompts', enhanceImg)
+  }, [enhanceImg])
   useEffect(() => {
     if (prefsLoaded.current) void window.api.saveSetting('imgStrength', imgStrength)
   }, [imgStrength])
@@ -3790,6 +3797,18 @@ export function MemoryChat({
                     placeholder="Negative prompt"
                     className="min-w-[10rem] flex-1 rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 text-neutral-300 placeholder-neutral-700 outline-none focus:border-green-500"
                   />
+                  <label
+                    className="flex items-center gap-1.5"
+                    title="Rewrite your prompt with the local model for richer, more detailed images"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={enhanceImg}
+                      onChange={(e) => setEnhanceImg(e.target.checked)}
+                      className="accent-green-500"
+                    />
+                    Enhance
+                  </label>
                   {imgInit ? (
                     <span className="flex items-center gap-2 rounded-md border border-green-500/40 px-2 py-1 text-green-500">
                       {imgInit.split('/').pop()}
@@ -4409,7 +4428,9 @@ export function MemoryChat({
                             <Cpu className="h-3.5 w-3.5 shrink-0" />
                             <span className="truncate">{modelSummary.name}</span>
                             {modelSummary.ctx && (
-                              <span className="shrink-0 text-neutral-600">· {modelSummary.ctx}</span>
+                              <span className="shrink-0 text-neutral-600">
+                                · {modelSummary.ctx}
+                              </span>
                             )}
                           </Button>
                         </TooltipTrigger>
