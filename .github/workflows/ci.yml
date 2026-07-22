@@ -71,6 +71,15 @@ jobs:
       - name: Test + coverage thresholds
         timeout-minutes: 10
         run: npm run test:coverage
+      # Build/native/port integration tests (packaging, whisper build-staging, the
+      # model-port + System Health seams that own :8439). These need a packaged
+      # build / native toolchain / a live engine port the pure `verify` runner
+      # doesn't have, so they're advisory here (bounded, non-blocking) and run for
+      # real in the build/release job + locally via `npm run test:heavy`.
+      - name: Heavy integration (build/native/port)
+        timeout-minutes: 10
+        continue-on-error: true
+        run: npm run test:heavy
       # Architecture-boundary gate (hygiene §A/§H): walks the import graph and fails
       # on a forbidden edge — core->pro (open-core), a pure-logic module gaining an
       # IO import, renderer->main, circular deps. Fast (graph-only, ~2s), so unlike
