@@ -340,14 +340,16 @@ function schemas(
   scope: { projectActive: boolean; allMemory: boolean }
 ): unknown[] {
   const off = disabledSet()
-  return TOOLS.filter((t) => !off.has(t.name))
-    .filter((t) => t.name !== 'generate_image' || imageAvailable)
-    // Memory tools (search_knowledge_base / search_memory) follow the chat's memory scope.
-    .filter((t) => isMemoryToolAllowed(t.name, scope))
-    .map((t) => ({
-      type: 'function',
-      function: { name: t.name, description: t.description, parameters: t.parameters }
-    }))
+  return (
+    TOOLS.filter((t) => !off.has(t.name))
+      .filter((t) => t.name !== 'generate_image' || imageAvailable)
+      // Memory tools (search_knowledge_base / search_memory) follow the chat's memory scope.
+      .filter((t) => isMemoryToolAllowed(t.name, scope))
+      .map((t) => ({
+        type: 'function',
+        function: { name: t.name, description: t.description, parameters: t.parameters }
+      }))
+  )
 }
 
 /** Normalize a tool's return (bare string or structured) to a ToolResult. */
@@ -494,9 +496,22 @@ export async function toolChat(
   // Smart routing: rank connector tools by relevance to this turn's message BEFORE
   // budgeting, so the budgeter (which drops from the end) keeps the tools that
   // actually match the request rather than whichever were last. Built-ins keep
-  // their position. No-op with 0-1 connector tools or an unrelated query.
-  const { rankConnectorTools } = await import('./tools/tool-ranking')
-  const rankedTools = rankConnectorTools(query, rawTools, builtins.length)
+  // their position. Prefer SEMANTIC ranking (embedding similarity — matches on
+  // meaning, e.g. "meetings" → a calendar tool); fall back to lexical term-overlap
+  // if the embeddings backend isn't ready. No-op with 0-1 connector tools.
+  let rankedTools = rawTools
+  if (rawTools.length - builtins.length > 1) {
+    try {
+      const { embeddings } = await import('./embeddings')
+      const { rankConnectorToolsSemantic } = await import('./tools/tool-embedding-ranking')
+      rankedTools = await rankConnectorToolsSemantic(query, rawTools, builtins.length, {
+        embed: (t) => embeddings.generateEmbedding(t)
+      })
+    } catch {
+      const { rankConnectorTools } = await import('./tools/tool-ranking')
+      rankedTools = rankConnectorTools(query, rawTools, builtins.length)
+    }
+  }
   const { budgetTools } = await import('./tools/tool-budget')
   const ctx = llm.effectiveContextSize()
   // Cap tool tokens in ABSOLUTE terms too, not just as a fraction of context:
