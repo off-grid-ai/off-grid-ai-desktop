@@ -24,12 +24,12 @@ function releaseDate(value: string | null): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date)
 }
 
-interface PreviousVersionsPanelProps {
+type PreviousVersionsPanelProps = Readonly<{
   loading: boolean
   error: string
   releases: PreviousVersion[]
   onSelect: (release: PreviousVersion) => void
-}
+}>
 
 function PreviousVersionsPanel({
   loading,
@@ -72,13 +72,13 @@ function PreviousVersionsPanel({
   )
 }
 
-interface RollbackDialogProps {
+type RollbackDialogProps = Readonly<{
   currentVersion: string
   selected: PreviousVersion | null
   downloading: boolean
   onClose: () => void
   onDownload: () => void
-}
+}>
 
 function RollbackDialog({
   currentVersion,
@@ -267,6 +267,7 @@ export function SoftwareUpdateSection(): React.ReactElement {
           Turn this off to update only when you choose.
         </p>
         <button
+          type="button"
           onClick={toggle}
           role="switch"
           aria-label="Automatic updates"
@@ -284,6 +285,7 @@ export function SoftwareUpdateSection(): React.ReactElement {
           stable. These are pre-release - expect rough edges. Off by default.
         </p>
         <button
+          type="button"
           onClick={toggleBeta}
           role="switch"
           aria-label="Nightly builds"

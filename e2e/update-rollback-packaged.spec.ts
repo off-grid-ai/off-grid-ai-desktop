@@ -50,7 +50,6 @@ test.beforeAll(async () => {
     const button = page.getByRole('button', { name: /Continue|Start using Off Grid/i })
     if (!(await button.isVisible().catch(() => false))) break
     await button.click()
-    await page.waitForTimeout(250)
   }
   await page
     .getByRole('button', { name: 'Expand sidebar' })
@@ -77,7 +76,6 @@ test('a user can confirm a real signed release and start its exact-version downl
   const releaseButton = page.getByRole('button', { name: /^Use v/ }).first()
   await expect(releaseButton).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText('Signed releases for this device')).toBeVisible()
-  await page.waitForTimeout(300)
   await page.screenshot({ path: 'e2e/screenshots/update-previous-versions.png' })
 
   const label = await releaseButton.textContent()
@@ -90,7 +88,13 @@ test('a user can confirm a real signed release and start its exact-version downl
   await expect(page.getByText(/Automatic updates will be turned off/)).toBeVisible()
   const downloadButton = page.getByRole('button', { name: `Download v${version}` })
   await expect(downloadButton).toBeVisible()
-  await page.waitForTimeout(500)
+  await Promise.all(
+    [page.locator('[data-slot="dialog-overlay"]'), page.getByRole('dialog')].map((locator) =>
+      locator.evaluate((element) =>
+        Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished))
+      )
+    )
+  )
   await page.screenshot({ path: 'e2e/screenshots/update-rollback-confirmation.png' })
 
   await downloadButton.click()
