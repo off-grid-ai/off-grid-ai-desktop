@@ -438,24 +438,30 @@ code {
     opacity: 0;
   }
 }
+/* IMPORTANT: animate ONLY scale + opacity, never translate. Tailwind v4 centers
+   the dialog with the `translate` CSS property (translate-x/y-[-50%]); animating
+   `transform: translate(…)` here would ADD a second translate on top of it during
+   the animation — the element flies to the top-left, then snaps back to center
+   when the animation ends. Scaling uses `transform: scale()`, which composes with
+   the `translate` property cleanly, so the modal scales from its centered spot. */
 @keyframes og-dialog-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -48%) scale(0.96);
+    transform: scale(0.95);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
   }
 }
 @keyframes og-dialog-out {
   from {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
   }
   to {
     opacity: 0;
-    transform: translate(-50%, -48%) scale(0.96);
+    transform: scale(0.96);
   }
 }
 [data-slot='dialog-overlay'][data-state='open'] {
