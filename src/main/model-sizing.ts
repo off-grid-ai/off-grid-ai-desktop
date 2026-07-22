@@ -155,6 +155,31 @@ export function checkOverrideSurvival(opts: {
   return { fits: freeAfterGb >= OVERRIDE_SURVIVAL_FLOOR_GB, freeAfterGb }
 }
 
+export interface LoadAttempt {
+  ctxSize: number
+  gpuLayers: number
+  reason: string
+}
+
+/** The ordered launch attempts for a model, so a load that OOMs degrades instead
+ *  of failing (mobile's GPU → smaller-ctx → CPU ladder). Largest context on GPU
+ *  first, then halve context down the ladder, then a final CPU-only pass at the
+ *  2048 floor. The runtime only advances to the next attempt on an OUT-OF-MEMORY
+ *  failure — a non-memory failure (bad arch, missing dylib) isn't retried. */
+export function loadAttempts(requestedCtx: number, gpuLayers: number): LoadAttempt[] {
+  const out: LoadAttempt[] = contextLadder(requestedCtx).map((ctxSize, i) => ({
+    ctxSize,
+    gpuLayers,
+    reason: i === 0 ? 'requested' : `context ${ctxSize}`
+  }))
+  // Last resort: CPU-only at the floor. Skipped if GPU offload was already off
+  // (that attempt is already covered by the ctx=2048 rung above).
+  if (gpuLayers > 0) {
+    out.push({ ctxSize: 2048, gpuLayers: 0, reason: 'CPU-only, context 2048' })
+  }
+  return out
+}
+
 /** The context-size fallback ladder for a load that OOMs at the requested size:
  *  the values to retry, largest first, down to the 2048 floor. The runtime tries
  *  each until one loads (mobile's resolveSafeContext stepdown). Always 1k-aligned
