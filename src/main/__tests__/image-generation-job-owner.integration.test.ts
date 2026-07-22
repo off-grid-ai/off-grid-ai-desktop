@@ -18,7 +18,7 @@ interface ControlledGeneration {
   fail(error: unknown): void
 }
 
-function controlledRuntime(cancelResult = true): {
+function controlledRuntime(cancelResult = true, saveScopeError?: Error): {
   runtime: ImageGenerationRuntime
   generation(): ControlledGeneration
   savedScopes: { path: string; request: ImageGenerationJobRequest }[]
@@ -38,7 +38,10 @@ function controlledRuntime(cancelResult = true): {
         })
       },
       cancel: () => cancelResult,
-      saveScope: (path, request) => savedScopes.push({ path, request })
+      saveScope: (path, request) => {
+        if (saveScopeError) throw saveScopeError
+        savedScopes.push({ path, request })
+      }
     },
     generation: () => ({
       progress: (progress) => reportProgress?.(progress),
@@ -98,6 +101,7 @@ describe('main-owned image generation job journeys', () => {
     expect(jobs.status()).toMatchObject({
       phase: 'succeeded',
       outputPath: output.path,
+      progress: null,
       error: null
     })
     expect(boundary.savedScopes).toEqual([{ path: output.path, request }])
@@ -123,6 +127,7 @@ describe('main-owned image generation job journeys', () => {
     jobs.onChange((job) => phases.push(job.phase))
     const generation = jobs.start({ prompt: 'Cancel this image' })
 
+    boundary.generation().progress({ step: 1, total: 4, secPerStep: 0.5 })
     expect(jobs.cancel()).toBe(true)
     expect(jobs.cancel()).toBe(false)
     boundary.generation().progress({ step: 3, total: 4, secPerStep: 0.5 })
@@ -146,14 +151,39 @@ describe('main-owned image generation job journeys', () => {
     const generation = jobs.start({ prompt: 'A failing image' })
 
     expect(jobs.cancel()).toBe(false)
+    boundary.generation().progress({ step: 1, total: 4, secPerStep: 0.5 })
     boundary.generation().fail('native runtime unavailable')
     await expect(generation).rejects.toBe('native runtime unavailable')
     expect(jobs.status()).toMatchObject({
       phase: 'failed',
       error: 'native runtime unavailable',
+      progress: null,
       conversationId: null,
       projectId: null
     })
+  })
+
+  it('keeps a generated image successful when scope metadata cannot be saved', async () => {
+    const boundary = controlledRuntime(true, new Error('scope database unavailable'))
+    const jobs = new ImageGenerationJobService(boundary.runtime)
+    const generation = jobs.start(request)
+    const output: ImageGenOutput = {
+      dataUrl: 'data:image/png;base64,aW1hZ2U=',
+      path: '/generated/image-without-scope.png',
+      seed: 91,
+      model: 'Local image model'
+    }
+
+    boundary.generation().succeed(output)
+
+    await expect(generation).resolves.toEqual(output)
+    expect(jobs.status()).toMatchObject({
+      phase: 'succeeded',
+      outputPath: output.path,
+      progress: null,
+      error: null
+    })
+    expect(boundary.savedScopes).toEqual([])
   })
 
   it('completes an unscoped native result without writing metadata', async () => {

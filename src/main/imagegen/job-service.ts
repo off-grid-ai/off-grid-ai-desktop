@@ -103,12 +103,23 @@ export class ImageGenerationJobService {
         this.updateProgress(id, progress)
       )
       if (result.path && (request.conversationId || request.projectId)) {
-        this.runtime.saveScope(result.path, request)
+        try {
+          this.runtime.saveScope(result.path, request)
+        } catch (scopeError) {
+          console.error(
+            `[image-job] ${JSON.stringify({
+              event: 'save-scope-failed',
+              id,
+              error: scopeError instanceof Error ? scopeError.message : String(scopeError)
+            })}`
+          )
+        }
       }
       this.snapshot = {
         ...this.snapshot,
         phase: 'succeeded',
         outputPath: result.path ?? null,
+        progress: null,
         finishedAt: Date.now()
       }
       this.publish()
@@ -119,8 +130,9 @@ export class ImageGenerationJobService {
       const cancelled = this.snapshot.id === id && this.snapshot.phase === 'cancelled'
       this.snapshot = {
         ...this.snapshot,
-        phase: cancelled || /cancel/i.test(message) ? 'cancelled' : 'failed',
+        phase: cancelled ? 'cancelled' : 'failed',
         error: message,
+        progress: null,
         finishedAt: Date.now()
       }
       this.publish()
@@ -137,7 +149,12 @@ export class ImageGenerationJobService {
     if (this.snapshot.phase !== 'running') return false
     const cancelled = this.runtime.cancel()
     if (!cancelled) return false
-    this.snapshot = { ...this.snapshot, phase: 'cancelled', finishedAt: Date.now() }
+    this.snapshot = {
+      ...this.snapshot,
+      phase: 'cancelled',
+      progress: null,
+      finishedAt: Date.now()
+    }
     this.publish()
     return true
   }
