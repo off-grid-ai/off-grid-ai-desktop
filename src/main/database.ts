@@ -732,7 +732,10 @@ export function rebuildEntityEdgesForAllSessions(): void {
     `
   ).run()
 
-  db.prepare('DELETE FROM entity_edges').run()
+  // Core owns chat co-occurrence + fact-mention projections. Pro may register
+  // other durable relationship projections (for example observation evidence),
+  // so rebuilding chat must not erase another domain's edges.
+  db.prepare("DELETE FROM entity_edges WHERE type IN ('cooccurrence', 'mention')").run()
 
   const sessions = db.prepare('SELECT DISTINCT session_id FROM entity_sessions').all() as {
     session_id: string
