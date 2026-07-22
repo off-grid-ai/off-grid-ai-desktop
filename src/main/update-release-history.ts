@@ -2,7 +2,10 @@ import { clean, lt, prerelease, rcompare, valid } from 'semver'
 
 const RELEASES_URL =
   'https://api.github.com/repos/off-grid-ai/off-grid-ai-desktop/releases?per_page=50'
-const RELEASE_DOWNLOAD_PREFIX = '/off-grid-ai/off-grid-ai-desktop/releases/download/'
+const RELEASE_DOWNLOAD_PREFIXES = [
+  '/off-grid-ai/off-grid-ai-desktop/releases/download/',
+  '/off-grid-ai/OGAD/releases/download/'
+] as const
 
 export interface PreviousUpdateRelease {
   version: string
@@ -36,7 +39,7 @@ function releaseFeedUrl(asset: GitHubAsset): string | null {
     if (
       url.protocol !== 'https:' ||
       url.hostname !== 'github.com' ||
-      !url.pathname.startsWith(RELEASE_DOWNLOAD_PREFIX)
+      !RELEASE_DOWNLOAD_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
     ) {
       return null
     }
@@ -69,7 +72,7 @@ function parseRelease(
   }
 }
 
-export function parsePreviousUpdateReleases(
+function parsePreviousUpdateReleases(
   value: unknown,
   currentVersion: string,
   platform: NodeJS.Platform

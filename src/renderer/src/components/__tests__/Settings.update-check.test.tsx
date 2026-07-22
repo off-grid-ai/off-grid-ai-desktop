@@ -12,11 +12,6 @@ type UpdateResult =
 const checkForUpdates = vi.fn<() => Promise<UpdateResult>>()
 const downloadUpdate = vi.fn<(version: string) => Promise<{ status: string; version: string }>>()
 const skipUpdate = vi.fn<(version: string) => Promise<string>>()
-const listVersions =
-  vi.fn<
-    () => Promise<{ version: string; channel: 'stable' | 'nightly'; publishedAt: string | null }[]>
-  >()
-const downloadVersion = vi.fn<(version: string) => Promise<{ status: string; version: string }>>()
 
 function stubApi(): void {
   const api = new Proxy(
@@ -26,8 +21,6 @@ function stubApi(): void {
       checkForUpdates,
       updateDownload: downloadUpdate,
       updateSkipVersion: skipUpdate,
-      updateListVersions: listVersions,
-      updateDownloadVersion: downloadVersion,
       updateGetPrefs: () =>
         Promise.resolve({ currentVersion: '0.0.103', auto: false, channel: 'stable' }),
       getAppVersion: () => Promise.resolve('0.0.103')
@@ -54,10 +47,6 @@ afterEach(() => {
   downloadUpdate.mockResolvedValue({ status: 'downloading', version: '0.0.104' })
   skipUpdate.mockReset()
   skipUpdate.mockResolvedValue('0.0.104')
-  listVersions.mockReset()
-  listVersions.mockResolvedValue([])
-  downloadVersion.mockReset()
-  downloadVersion.mockResolvedValue({ status: 'downloading', version: '0.0.102' })
   vi.unstubAllGlobals()
   vi.resetModules()
 })
@@ -131,33 +120,5 @@ describe('Settings manual update check', () => {
     expect(
       within(card).getByRole('button', { name: 'Check for updates' }).hasAttribute('disabled')
     ).toBe(false)
-  })
-
-  it('warns about data compatibility before downloading a previous version', async () => {
-    listVersions.mockResolvedValue([
-      {
-        version: '0.0.102',
-        channel: 'stable',
-        publishedAt: '2026-07-01T12:00:00Z'
-      }
-    ])
-    const card = await renderUpdateCard()
-    const user = userEvent.setup()
-
-    await user.click(within(card).getByRole('button', { name: 'Previous versions' }))
-    expect(await within(card).findByText('v0.0.102')).toBeTruthy()
-    await user.click(within(card).getByRole('button', { name: 'Use v0.0.102' }))
-
-    expect(await screen.findByText('Install v0.0.102?')).toBeTruthy()
-    expect(
-      screen.getByText(/Data written by v0\.0\.103 may not open correctly in v0\.0\.102/)
-    ).toBeTruthy()
-    expect(screen.getByText(/Automatic updates will be turned off/)).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Download v0.0.102' }))
-
-    expect(downloadVersion).toHaveBeenCalledWith('0.0.102')
-    expect(
-      await within(card).findByText('Downloading v0.0.102. Restart when the update banner appears.')
-    ).toBeTruthy()
   })
 })
