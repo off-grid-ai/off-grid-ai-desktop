@@ -144,9 +144,6 @@ export default defineConfig({
         'src/main/bootstrap/loadProFeaturesMain.ts', // dynamic-import loader; proEnabled() tested
         'src/main/search.ts', // DB orchestrator; ranking in search-ranking.ts (tested)
         'src/main/setup.ts', // model-recommendation orchestrator; fusion via tested model-sizing
-        // GitHub release-catalogue network shell. Its real main/preload/renderer behavior is
-        // exercised against GitHub by e2e/update-rollback-packaged.spec.ts.
-        'src/main/update-release-history.ts',
         'src/main/models-manager.ts', // catalog/install/activate IO; logic in models/* (tested)
         'src/main/skills.ts', // fs CRUD shell; parsers → skills-parse.ts (tested)
         'src/main/tools.ts', // agentic loop (tools-stream.test.ts) + parsers (tools-parsers.ts)

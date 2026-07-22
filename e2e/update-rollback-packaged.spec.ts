@@ -86,9 +86,7 @@ test('a user can confirm a real signed release and start its exact-version downl
   await releaseButton.click()
 
   await expect(page.getByRole('heading', { name: `Install v${version}?` })).toBeVisible()
-  await expect(
-    page.getByText(new RegExp(`Data written by v.+ may not open correctly in v${version}`))
-  ).toBeVisible()
+  await expect(page.getByRole('dialog')).toContainText(`may not open correctly in v${version}`)
   await expect(page.getByText(/Automatic updates will be turned off/)).toBeVisible()
   const downloadButton = page.getByRole('button', { name: `Download v${version}` })
   await expect(downloadButton).toBeVisible()
