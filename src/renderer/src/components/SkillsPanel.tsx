@@ -27,26 +27,25 @@ const BLANK: Draft = {
   connectors: true
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SkillDetails = NonNullable<Awaited<ReturnType<typeof window.api.getSkill>>>
+
 function flattenTrigger(
-  full: any
+  full: SkillDetails
 ): Pick<Draft, 'triggerKind' | 'triggerConfig' | 'action' | 'connectors'> {
-  const t = full?.trigger
+  const t = full.trigger
   if (!t) return { triggerKind: '', triggerConfig: '', action: '', connectors: true }
   const action = typeof full.action === 'string' ? full.action : ''
   const connectors = full.connectors !== false
   if (t.kind === 'schedule')
-    return { triggerKind: 'schedule', triggerConfig: t.at || '08:00', action, connectors }
+    return { triggerKind: 'schedule', triggerConfig: t.at, action, connectors }
   if (t.kind === 'keyword')
     return {
       triggerKind: 'keyword',
-      triggerConfig: (t.keywords || []).join(', '),
+      triggerConfig: t.keywords.join(', '),
       action,
       connectors
     }
-  if (t.kind === 'event')
-    return { triggerKind: 'event', triggerConfig: t.on || 'calendar', action, connectors }
-  return { triggerKind: '', triggerConfig: '', action, connectors }
+  return { triggerKind: 'event', triggerConfig: t.on, action, connectors }
 }
 
 function buildTrigger(
@@ -80,10 +79,9 @@ export function SkillsPanel({
 }: {
   onClose: () => void
   onChanged?: () => void
-}) {
+}): React.JSX.Element {
   // Skill automation (triggers) is Pro; the free build shows manual packs only.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const isProBuild = !!(window as any).api?.isPro
+  const isProBuild = !!window.api.isPro
   const [skills, setSkills] = useState<{ name: string; description: string }[]>([])
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
