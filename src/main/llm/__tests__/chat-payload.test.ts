@@ -66,19 +66,19 @@ describe('buildMessages', () => {
   it('blank/whitespace system prompt is NOT prepended (trim rule)', () => {
     const msgs = buildMessages('hi', [], '   \n  ')
     expect(msgs).toHaveLength(1)
-    expect(msgs[0].role).toBe('user')
+    expect(msgs[0]!.role).toBe('user')
   })
 
   it('non-blank system prompt is unshifted in front of the user turn', () => {
     const msgs = buildMessages('hi', [], 'be terse')
     expect(msgs).toHaveLength(2)
     expect(msgs[0]).toEqual({ role: 'system', content: 'be terse' })
-    expect(msgs[1].role).toBe('user')
+    expect(msgs[1]!.role).toBe('user')
   })
 
   it('user content carries the images', () => {
     const msgs = buildMessages('look', [JPG], '')
-    expect(msgs[0].content).toEqual([
+    expect(msgs[0]!.content).toEqual([
       { type: 'text', text: 'look' },
       { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,BBBB' } }
     ])

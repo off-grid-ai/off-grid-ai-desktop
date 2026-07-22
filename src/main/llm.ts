@@ -835,9 +835,8 @@ export class LLMService {
     images: string[] = [],
     timeoutMs: number = 300000,
     maxTokens?: number,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     opts: {
-      responseFormat?: any
+      responseFormat?: unknown
       temperature?: number
       disableThinking?: boolean
       signal?: AbortSignal
@@ -851,8 +850,7 @@ export class LLMService {
       return await this.chatMutex.runExclusive(async () => {
         try {
           const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const payload: any = {
+          const payload: Record<string, unknown> = {
             messages: messages,
             max_tokens: resolveMaxTokens(maxTokens, this.maxTokens),
             temperature: opts.temperature ?? this.temperature,
@@ -871,7 +869,10 @@ export class LLMService {
           )
 
           const raw = await this.httpPost(body, timeoutMs, opts.signal)
-          const data = JSON.parse(raw)
+          const data = JSON.parse(raw) as {
+            usage?: { total_tokens?: number }
+            choices?: { message?: { content?: string } }[]
+          }
           console.log('[LLMService] LLM request completed')
           // Best-effort fleet audit: record the local model call if enrolled in a
           // console. The fleet console is a pro feature — it registers this hook in
@@ -884,8 +885,8 @@ export class LLMService {
             /* audit is never load-bearing */
           }
           return data.choices?.[0]?.message?.content ?? ''
-        } catch (e: any) {
-          console.error('[LLMService] Chat error:', e.message || e)
+        } catch (e: unknown) {
+          console.error('[LLMService] Chat error:', e instanceof Error ? e.message : e)
           throw e
         }
       })
@@ -913,9 +914,8 @@ export class LLMService {
       await this.ensureReady()
 
       const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const resolvedMaxTokens = resolveMaxTokens(maxTokens, this.maxTokens)
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         messages,
         max_tokens: resolvedMaxTokens,
         temperature: opts.temperature ?? this.temperature,
@@ -947,10 +947,8 @@ export class LLMService {
   // through one path. Returns the streamed answer text + the assembled tool calls for
   // this round (empty when the model answered instead of calling a tool).
   async streamChat(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    messages: any[],
+    messages: unknown[],
     onDelta: (text: string, kind: 'content' | 'reasoning') => void,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     opts: {
       temperature?: number
       thinking?: boolean
@@ -964,8 +962,7 @@ export class LLMService {
     await this.beginGeneration()
     try {
       await this.ensureReady()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         messages,
         max_tokens: resolveMaxTokens(opts.maxTokens, this.maxTokens),
         temperature: opts.temperature ?? this.temperature,
@@ -990,7 +987,7 @@ export class LLMService {
     }
   }
 
-  stop() {
+  stop(): void {
     if (this.server) {
       this.intentionalStop = true // deliberate shutdown — don't auto-restart
       this.server.kill()
@@ -1003,18 +1000,18 @@ export class LLMService {
    *  when a chat/tool turn needs the LLM back while it's paused. Kept as a hook so
    *  this module never imports the image runtime (layering). */
   private resumeFromPauseHook: (() => void) | null = null
-  setResumeFromPauseHook(fn: () => void) {
+  setResumeFromPauseHook(fn: () => void): void {
     this.resumeFromPauseHook = fn
   }
 
   /** Pause for image generation: free the server and block respawns until resumed. */
-  pause() {
+  pause(): void {
     this.paused = true
     this.stop()
   }
 
   /** Resume after image generation and warm the server back up (resident mode). */
-  resume() {
+  resume(): void {
     this.paused = false
     this.init().catch(() => {})
   }
@@ -1022,7 +1019,7 @@ export class LLMService {
   /** Clear the pause block WITHOUT warming the server (on-demand mode). The server
    *  stays down and lazily respawns on the next chat/tool turn, freeing its RAM in
    *  the meantime. Pairs with pause() as the on-demand counterpart of resume(). */
-  releasePause() {
+  releasePause(): void {
     this.paused = false
   }
 
@@ -1047,7 +1044,7 @@ export class LLMService {
     }
   }
 
-  isReady() {
+  isReady(): boolean {
     return this.initialized
   }
 
@@ -1055,7 +1052,7 @@ export class LLMService {
    *  yet — the normal several-second warm-up (gemma-4 at -ngl 99 isn't instant).
    *  Lets Health show "Loading model…" instead of a scary "server is not running"
    *  during a cold start. */
-  isStarting() {
+  isStarting(): boolean {
     return this.server !== null && !this.initialized
   }
 
