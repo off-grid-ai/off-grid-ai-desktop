@@ -13,10 +13,11 @@ type Listener = (payload: unknown) => void
 
 class OverlayBoundary {
   readonly listeners = new Map<string, Set<Listener>>()
+  state: 'idle' | 'recording' = 'idle'
 
   readonly api = {
     proInvoke: vi.fn(async (channel: string) => {
-      if (channel === 'voice:dictation:get-state') return 'idle'
+      if (channel === 'voice:dictation:get-state') return this.state
       if (channel === 'voice:dictation:get-settings') {
         return { mode: 'hold', accelerator: 'Alt+Space' }
       }
@@ -138,5 +139,34 @@ describe('<DictationOverlay/> native lifecycle', () => {
       expect(closeContext).toHaveBeenCalledOnce()
     })
     expect([...boundary.listeners.values()].every((listeners) => listeners.size === 0)).toBe(true)
+  })
+
+  it('owns one microphone when first-open event recovery arrives while permission is pending', async () => {
+    boundary.state = 'recording'
+    const stream = {
+      getTracks: () => [{ stop: stopTrack }]
+    } as unknown as MediaStream
+    let grantMicrophone: ((stream: MediaStream) => void) | undefined
+    const getUserMedia = vi.fn(
+      () =>
+        new Promise<MediaStream>((resolve) => {
+          grantMicrophone = resolve
+        })
+    )
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia }
+    })
+
+    render(<DictationOverlay />)
+    await waitFor(() => expect(boundary.listeners.size).toBeGreaterThan(0))
+    // The main process queues `begin` until the cold overlay loads while getState()
+    // independently recovers the already-recording session on mount.
+    act(() => boundary.emit('begin'))
+    expect(getUserMedia).toHaveBeenCalledOnce()
+
+    await act(async () => grantMicrophone?.(stream))
+    await waitFor(() => expect(RecorderBoundary.instances).toHaveLength(1))
+    expect(RecorderBoundary.instances[0]!.state).toBe('recording')
   })
 })
