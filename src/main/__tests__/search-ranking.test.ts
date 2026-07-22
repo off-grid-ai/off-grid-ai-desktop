@@ -19,7 +19,8 @@ import {
   likeMatch,
   LIKE_COLUMNS,
   epochMsSql,
-  type RawHit
+  type RawHit,
+  type SearchResult
 } from '../search-ranking'
 
 const DAY = 86_400_000
@@ -224,7 +225,7 @@ describe('applyBoosts — recency + own-content nudge in place', () => {
 
 describe('rankResults — filter then sort', () => {
   // Build three fused results with known scores/timestamps.
-  const results = () => [
+  const results = (): SearchResult[] => [
     {
       key: 'obs:1',
       kind: 'screen' as const,
