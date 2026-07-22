@@ -24,11 +24,18 @@ import { getSlot, SLOTS } from '@/bootstrap/slotRegistry'
 const LOGO_OVERRIDE: Record<string, string> = { slack: slackLogo }
 
 // BYO-OAuth setup form (e.g. Google client_id/secret) injected by pro. In the
-// free build the slot is empty and this renders nothing.
-function ConnectorSetup({ entry }: { entry: CatalogEntry }): ReactElement | null {
+// free build the slot is empty and this renders nothing. Reports whether the
+// client is configured so the card can gate its Connect button.
+function ConnectorSetup({
+  entry,
+  onReadyChange
+}: {
+  entry: CatalogEntry
+  onReadyChange: (ready: boolean) => void
+}): ReactElement | null {
   const Slot = getSlot(SLOTS.connectorSetup)
   if (entry.oauthClient !== 'byo' || !Slot) return null
-  return <Slot entry={entry} />
+  return <Slot entry={entry} onReadyChange={onReadyChange} />
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -155,6 +162,9 @@ export function ConnectorsScreen() {
   const [errorFor, setErrorFor] = useState<Record<string, string>>({})
   const [tokenFor, setTokenFor] = useState<CatalogEntry | null>(null)
   const [tokenVals, setTokenVals] = useState<Record<string, string>>({})
+  // Whether a BYO-OAuth connector has its client configured yet (reported by the
+  // setup slot). Connect stays gated until it's true — no OAuth without a client.
+  const [byoReady, setByoReady] = useState<Record<string, boolean>>({})
 
   // custom form
   const [name, setName] = useState('')
@@ -604,7 +614,14 @@ export function ConnectorsScreen() {
                                 <p className="truncate text-[11px] text-neutral-500">{e.blurb}</p>
                               </div>
                             </div>
-                            {e.ready && <ConnectorSetup entry={e} />}
+                            {e.ready && (
+                              <ConnectorSetup
+                                entry={e}
+                                onReadyChange={(r) =>
+                                  setByoReady((p) => (p[e.id] === r ? p : { ...p, [e.id]: r }))
+                                }
+                              />
+                            )}
                             {!e.ready ? (
                               <div className="rounded-md border border-neutral-800 py-1.5 text-center text-xs text-neutral-600">
                                 Not enabled yet
@@ -656,30 +673,43 @@ export function ConnectorsScreen() {
                                 </div>
                               </div>
                             ) : (
-                              <div className="space-y-1.5">
-                                <button
-                                  onClick={() => onConnect(e)}
-                                  disabled={connecting === e.id}
-                                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-neutral-700 py-1.5 text-xs text-neutral-200 hover:border-green-500 hover:text-green-500 disabled:opacity-60"
-                                >
-                                  {connecting === e.id ? (
-                                    <>
-                                      <IconLoader2 className="h-3.5 w-3.5 animate-spin" />{' '}
-                                      {e.auth === 'oauth' ? 'Authorize in browser…' : 'Connecting…'}
-                                    </>
-                                  ) : (
-                                    <>
-                                      <IconPlugConnected className="h-3.5 w-3.5" /> Connect
-                                      {e.auth === 'oauth' ? ' with OAuth' : ''}
-                                    </>
-                                  )}
-                                </button>
-                                {errorFor[e.id] && (
-                                  <p className="text-[11px] leading-relaxed text-red-400/80">
-                                    {errorFor[e.id]}
-                                  </p>
-                                )}
-                              </div>
+                              (() => {
+                                // A BYO-OAuth connector can't authorize until its client is
+                                // set up — gate Connect on the slot's readiness instead of
+                                // letting the user hit an OAuth flow that would fail.
+                                const byoBlocked = e.oauthClient === 'byo' && !byoReady[e.id]
+                                return (
+                                  <div className="space-y-1.5">
+                                    <button
+                                      onClick={() => onConnect(e)}
+                                      disabled={connecting === e.id || byoBlocked}
+                                      title={
+                                        byoBlocked ? 'Set up your Google client first' : undefined
+                                      }
+                                      className="flex w-full items-center justify-center gap-1.5 rounded-md border border-neutral-700 py-1.5 text-xs text-neutral-200 transition-all duration-150 hover:border-green-500 hover:text-green-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-neutral-700 disabled:hover:text-neutral-200"
+                                    >
+                                      {connecting === e.id ? (
+                                        <>
+                                          <IconLoader2 className="h-3.5 w-3.5 animate-spin" />{' '}
+                                          {e.auth === 'oauth'
+                                            ? 'Authorize in browser…'
+                                            : 'Connecting…'}
+                                        </>
+                                      ) : (
+                                        <>
+                                          <IconPlugConnected className="h-3.5 w-3.5" /> Connect
+                                          {e.auth === 'oauth' ? ' with OAuth' : ''}
+                                        </>
+                                      )}
+                                    </button>
+                                    {errorFor[e.id] && (
+                                      <p className="text-[11px] leading-relaxed text-red-400/80">
+                                        {errorFor[e.id]}
+                                      </p>
+                                    )}
+                                  </div>
+                                )
+                              })()
                             )}
                           </div>
                         ))}
