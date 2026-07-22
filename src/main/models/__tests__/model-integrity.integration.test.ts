@@ -15,13 +15,20 @@ process.env.OFFGRID_DATA_DIR = dataDir
 const manager = await import('../../models-manager')
 const { CATALOG } = await import('@offgrid/models')
 
+// Single-file GGUF models — download-mechanics fixtures (disk-full / interrupted /
+// offline). Kind-agnostic: the catalog no longer has a pure 'text' kind (every
+// former text model ships an mmproj → derived 'vision'), and these scenarios test
+// the download loop, not the model's modality. Single-file GGUFs exist as image /
+// voice / transcription entries.
 const fixtures = CATALOG.flatMap((entry) => {
   const file = entry.files.at(0)
-  if (entry.kind !== 'text' || entry.files.length !== 1 || !file?.name.endsWith('.gguf')) return []
+  if (entry.files.length !== 1 || !file?.name.endsWith('.gguf')) return []
   return [{ entry, fileName: file.name, filePath: path.join(dataDir, 'models', file.name) }]
 })
 
-const activeSelectionFixtures = ['text', 'vision', 'image', 'voice', 'transcription'].map(
+// 'text' dropped: the chat model is a vision model now (mmproj), so there's no
+// standalone text kind to select.
+const activeSelectionFixtures = ['vision', 'image', 'voice', 'transcription'].map(
   (kind) => {
     const entry = CATALOG.find((candidate) => candidate.kind === kind && candidate.files.length > 0)
     if (!entry) throw new Error(`Model catalog needs an installable ${kind} fixture`)
@@ -31,7 +38,7 @@ const activeSelectionFixtures = ['text', 'vision', 'image', 'voice', 'transcript
 
 const [primary, diskFailure, interrupted, offline] = fixtures
 if (!primary || !diskFailure || !interrupted || !offline) {
-  throw new Error('Model catalog needs four single-file text GGUF fixtures')
+  throw new Error('Model catalog needs four single-file GGUF fixtures')
 }
 
 interface CapacityProbe {
@@ -335,9 +342,10 @@ describe('active model deletion', () => {
 })
 
 describe('active model persistence', () => {
-  it('keeps the selected text model active after a module-style relaunch', async () => {
-    const text = activeSelectionFixtures.find(({ kind }) => kind === 'text')
-    if (!text) throw new Error('Model catalog needs an installable text fixture')
+  it('keeps the selected chat (vision) model active after a module-style relaunch', async () => {
+    // The chat model is a vision model now (no standalone text kind).
+    const text = activeSelectionFixtures.find(({ kind }) => kind === 'vision')
+    if (!text) throw new Error('Model catalog needs an installable vision fixture')
 
     for (const file of text.entry.files) {
       fs.writeFileSync(path.join(dataDir, 'models', file.name), Buffer.alloc(2_048, 1))
