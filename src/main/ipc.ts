@@ -1688,34 +1688,56 @@ export function setupIPC() {
     return imageGenStatus()
   })
 
+  const imageJobPublisher = (
+    snapshot: import('../shared/image-generation-contract').ImageGenerationJobContract
+  ): void => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.isDestroyed()) continue
+      window.webContents.send('imagegen:job-state', snapshot)
+      if (snapshot.progress) window.webContents.send('imagegen:progress', snapshot.progress)
+    }
+  }
+  const imageConversationPublisher = (conversationId: string): void => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed())
+        window.webContents.send('imagegen:conversation-updated', conversationId)
+    }
+  }
+  const imageJobPublisherReady = import('./imagegen/job-service').then(
+    ({ imageGenerationJobs }) => {
+      imageGenerationJobs.onChange(imageJobPublisher)
+      imageGenerationJobs.onConversationUpdated(imageConversationPublisher)
+      return imageGenerationJobs
+    }
+  )
+
+  ipcMain.handle('imagegen:job-status', async () => {
+    const imageGenerationJobs = await imageJobPublisherReady
+    return imageGenerationJobs.status()
+  })
+
   ipcMain.handle(
     'imagegen:generate',
     async (
-      e,
+      _e,
       params: import('./imagegen').ImageGenParams & {
         conversationId?: string
         projectId?: string | null
       }
     ) => {
-      const { generateImage } = await import('./imagegen')
-      const result = await generateImage(params, (p) => {
-        try {
-          e.sender.send('imagegen:progress', p)
-        } catch {
-          /* window gone */
-        }
-      })
-      if (result.path && (params.conversationId || params.projectId)) {
-        const { saveGeneratedImageScope } = await import('./imagegen')
-        saveGeneratedImageScope(result.path, params)
-      }
-      return result
+      const imageGenerationJobs = await imageJobPublisherReady
+      return imageGenerationJobs.start(params)
     }
   )
 
   ipcMain.handle('imagegen:cancel', async () => {
-    const { cancelImageGen } = await import('./imagegen')
-    return cancelImageGen()
+    const imageGenerationJobs = await imageJobPublisherReady
+    return imageGenerationJobs.cancel()
+  })
+
+  ipcMain.handle('imagegen:conversation-persisted', async (_event, conversationId: string) => {
+    const imageGenerationJobs = await imageJobPublisherReady
+    return imageGenerationJobs.acknowledgeConversation(conversationId)
   })
 
   ipcMain.handle(

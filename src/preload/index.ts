@@ -480,7 +480,10 @@ const offGridApi = {
 
   // --- On-device image generation (stable-diffusion.cpp) ---
   imageGenStatus: () => ipcRenderer.invoke('imagegen:status'),
+  imageGenJobStatus: () => ipcRenderer.invoke('imagegen:job-status'),
   cancelImageGen: () => ipcRenderer.invoke('imagegen:cancel'),
+  imageGenConversationPersisted: (conversationId: string) =>
+    ipcRenderer.invoke('imagegen:conversation-persisted', conversationId),
   listGeneratedImages: (scope?: { conversationId?: string; projectId?: string | null }) =>
     ipcRenderer.invoke('imagegen:list', scope),
   styleThumbs: () => ipcRenderer.invoke('imagegen:style-thumbs'),
@@ -519,6 +522,21 @@ const offGridApi = {
     ): void => cb(p)
     ipcRenderer.on('imagegen:progress', sub)
     return unsubscribe('imagegen:progress', sub)
+  },
+  onImageGenJobState: (
+    cb: (state: import('../shared/image-generation-contract').ImageGenerationJobContract) => void
+  ) => {
+    const sub = (
+      _event: unknown,
+      state: import('../shared/image-generation-contract').ImageGenerationJobContract
+    ): void => cb(state)
+    ipcRenderer.on('imagegen:job-state', sub)
+    return unsubscribe('imagegen:job-state', sub)
+  },
+  onImageGenConversationUpdated: (cb: (conversationId: string) => void) => {
+    const sub = (_event: unknown, conversationId: string): void => cb(conversationId)
+    ipcRenderer.on('imagegen:conversation-updated', sub)
+    return unsubscribe('imagegen:conversation-updated', sub)
   },
   pickImageForGen: () => ipcRenderer.invoke('imagegen:pick-image'),
   generateImage: (

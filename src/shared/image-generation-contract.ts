@@ -17,6 +17,30 @@ export interface ImageGenerationRequestContract {
   allowUnsafeMemoryOverride?: boolean
 }
 
+export interface ImageGenerationProgressContract {
+  step: number
+  total: number
+  secPerStep: number
+  preview?: string
+  phase?: 'sampling' | 'decoding'
+}
+
+export type ImageGenerationJobPhase = 'idle' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+/** Main-owned image job state. Renderer mounts observe this snapshot; they never
+ * own or cancel a job merely because a screen unmounted. */
+export interface ImageGenerationJobContract {
+  id: string | null
+  phase: ImageGenerationJobPhase
+  conversationId: string | null
+  projectId: string | null
+  progress: ImageGenerationProgressContract | null
+  outputPath: string | null
+  error: string | null
+  startedAt: number | null
+  finishedAt: number | null
+}
+
 export const IMAGE_MEMORY_GUARD_ERROR_CODE = 'OFFGRID_IMAGE_MEMORY_LIMIT'
 
 export interface ImageMemoryGuardErrorContract {

@@ -29,6 +29,7 @@ import {
 import type { RagConversationContract, ResponseCutoffContract } from '../../../shared/ipc-contracts'
 import {
   parseImageMemoryGuardError,
+  type ImageGenerationJobContract,
   type ImageGenerationRequestContract
 } from '../../../shared/image-generation-contract'
 import { Button } from '@renderer/components/ui/button'
@@ -127,6 +128,14 @@ type ChatMessage = {
 }
 
 type ChatMode = 'ask' | 'image'
+
+async function announceImageMessagePersisted(conversationId: string): Promise<void> {
+  try {
+    await window.api.imageGenConversationPersisted?.(conversationId)
+  } catch {
+    /* The message is already durable; a later mount still loads it from SQLite. */
+  }
+}
 
 type AskBlock = { question: string; options: string[]; multiSelect: boolean }
 
@@ -1027,6 +1036,46 @@ export function MemoryChat({
     return () => off?.()
   }, [])
 
+  const refreshConversationMessages = useCallback(async (conversationId: string): Promise<void> => {
+    const rawMessages = await window.api.getRagMessages(conversationId)
+    setMessagesByConv((prev) => ({
+      ...prev,
+      [conversationId]: mapRagMessages(rawMessages)
+    }))
+  }, [])
+
+  // Image jobs survive this component. Subscribe before reading the snapshot so a
+  // navigation/remount cannot miss the transition between status and observation.
+  // Cleanup only detaches observers; explicit Stop is the sole cancellation path.
+  useEffect(() => {
+    let live = true
+    const observe = (job: ImageGenerationJobContract): void => {
+      if (!live || !job.conversationId) return
+      if (job.phase === 'running') {
+        setImageGenConv(job.conversationId)
+        setImgProgress(job.progress)
+        return
+      }
+      setImageGenConv((owner) => (owner === job.conversationId ? null : owner))
+      setImgProgress(null)
+    }
+    const offJob = window.api.onImageGenJobState?.(observe)
+    const offConversation = window.api.onImageGenConversationUpdated?.((conversationId) => {
+      void refreshConversationMessages(conversationId).catch((error) =>
+        console.error('Failed to refresh generated image message', error)
+      )
+    })
+    void window.api
+      .imageGenJobStatus?.()
+      .then(observe)
+      .catch((error) => console.error('Failed to reattach image generation', error))
+    return () => {
+      live = false
+      offJob?.()
+      offConversation?.()
+    }
+  }, [refreshConversationMessages])
+
   const loadConversations = async () => {
     try {
       const convos = await window.api.getRagConversations()
@@ -1365,6 +1414,7 @@ export function MemoryChat({
             image: img.path,
             imageMetadata
           })
+          await announceImageMessagePersisted(convId)
         } catch {
           /* ignore */
         }
@@ -1518,6 +1568,7 @@ export function MemoryChat({
                 ...(toolCtxWithReasoning ?? {}),
                 image: img.path
               })
+              await announceImageMessagePersisted(convId)
             } catch {
               /* ignore */
             }
@@ -1634,6 +1685,7 @@ export function MemoryChat({
               `Generated: ${imgPrompt.slice(0, 80)}`,
               { image: img.path }
             )
+            await announceImageMessagePersisted(convId)
           } catch {
             /* ignore */
           }
