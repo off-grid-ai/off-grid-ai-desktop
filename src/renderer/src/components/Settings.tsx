@@ -121,6 +121,113 @@ function RuntimeResidencySection(): React.ReactElement {
   )
 }
 
+interface QueueCfg {
+  enabled: boolean
+  tier1Coexists: boolean
+}
+interface QueueLive {
+  running: { label: string; tier: number }[]
+  queued: { label: string; tier: number }[]
+}
+
+/** User controls for the shared model pipeline: whether heavy jobs are serialized
+ *  + prioritized (chat/workspace over background capture), whether speech coexists,
+ *  and a live view of what's running/queued. The scheduler always yields background
+ *  work to the foreground; this exposes the switches that were previously invisible. */
+export function ModelPipelineSection(): React.ReactElement {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api = (window as any).api
+  const [cfg, setCfg] = useState<QueueCfg>({ enabled: true, tier1Coexists: true })
+  const [live, setLive] = useState<QueueLive>({ running: [], queued: [] })
+
+  useEffect(() => {
+    api
+      .queueConfigGet?.()
+      .then(setCfg)
+      .catch(() => {})
+    const poll = (): void => {
+      api
+        .queueState?.()
+        .then(setLive)
+        .catch(() => {})
+    }
+    poll()
+    const t = setInterval(poll, 2000)
+    return () => clearInterval(t)
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [])
+
+  const set = (patch: Partial<QueueCfg>): void => {
+    setCfg((c) => ({ ...c, ...patch })) // optimistic
+    api
+      .queueConfigSet?.(patch)
+      .then(setCfg)
+      .catch(() => {})
+  }
+
+  const rows = [
+    {
+      key: 'enabled' as const,
+      label: 'Prioritized model pipeline',
+      hint: 'Run one heavy model at a time and let chat & workspace jump ahead of background capture. Off = everything competes for memory at once.',
+      on: cfg.enabled
+    },
+    {
+      key: 'tier1Coexists' as const,
+      label: 'Keep speech responsive',
+      hint: 'Let live dictation run alongside a heavy job so your voice never waits behind it.',
+      on: cfg.tier1Coexists
+    }
+  ]
+
+  const activity = [...live.running, ...live.queued]
+  return (
+    <div>
+      <p className="mb-4 text-sm text-neutral-500">
+        Chat and workspace always take priority; capture and other background work yield to them and
+        never block a reply. Only one heavy model runs at a time.
+      </p>
+      <div className="flex flex-col divide-y divide-neutral-800">
+        {rows.map((row) => (
+          <div key={row.key} className="flex items-start justify-between gap-4 py-3 first:pt-0">
+            <div>
+              <div className="text-sm text-neutral-200">{row.label}</div>
+              <div className="text-xs text-neutral-600">{row.hint}</div>
+            </div>
+            <button
+              onClick={() => set({ [row.key]: !row.on })}
+              role="switch"
+              aria-checked={row.on}
+              aria-label={row.label}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${row.on ? 'bg-emerald-500' : 'bg-neutral-700'}`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${row.on ? 'translate-x-6' : 'translate-x-1'}`}
+              />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center gap-2 text-xs text-neutral-600">
+        <span className="uppercase tracking-wide">Now</span>
+        {activity.length === 0 ? (
+          <span className="text-neutral-500">idle</span>
+        ) : (
+          activity.map((j, i) => (
+            <span
+              key={`${j.label}-${String(i)}`}
+              className={`rounded px-1.5 py-0.5 tabular-nums ${live.running.includes(j) ? 'bg-emerald-500/15 text-emerald-400' : 'bg-neutral-800 text-neutral-400'}`}
+            >
+              {j.label}
+              {live.queued.includes(j) ? ' · queued' : ''}
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 function SoftwareUpdateSection(): React.ReactElement {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api = (window as any).api
@@ -348,6 +455,15 @@ export function Settings() {
               delay={0.44}
             >
               <RuntimeResidencySection />
+            </SettingsCard>
+
+            {/* Model pipeline — prioritized scheduling controls (core infra). */}
+            <SettingsCard
+              title="Model pipeline"
+              summary="Prioritize chat & workspace over background capture, and keep speech responsive."
+              delay={0.445}
+            >
+              <ModelPipelineSection />
             </SettingsCard>
 
             {/* Keyboard shortcuts — one reference for every hotkey (core + pro rows). */}

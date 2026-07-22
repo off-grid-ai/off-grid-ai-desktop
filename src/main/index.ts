@@ -31,6 +31,7 @@ import { setupLicenseIpc } from './license-ipc'
 import { nativeImage } from 'electron'
 import { purgeLegacyChatImports, getSetting } from './database'
 import { modalityQueue } from './modality-queue/queue'
+import { applyQueueConfig, readQueueConfig } from './modality-queue/config'
 import { registerRuntime } from './runtime-manager'
 import { guardConsoleStreams } from './stream-guards'
 import { PRODUCT_NAME } from '../shared/product-identity'
@@ -332,9 +333,7 @@ app.whenReady().then(() => {
     // Heal a stale active-model.json whose model gained a vision projector after it was
     // activated (e.g. Gemma 4 E2B) — turns vision on at launch if the projector is now
     // on disk, without waiting for a re-activate.
-    void import('./models-manager')
-      .then((m) => m.reconcileActiveModelProjector())
-      .catch(() => {})
+    void import('./models-manager').then((m) => m.reconcileActiveModelProjector()).catch(() => {})
     ipcMain.handle('media:url', (_e, absPath: string) => mediaUrlFor(absPath))
     // (clipboard is now a pro feature — setupClipboard runs in pro's activateMain)
     // Pro features (capture, CRM, meetings, connectors, secretary, proactive,
@@ -360,9 +359,9 @@ app.whenReady().then(() => {
     // heavy job and re-warms it mode-aware (resident = reload; on-demand = release
     // the pause block so it lazily respawns on next use, freeing RAM meanwhile).
     registerRuntime(llm.runtime)
-    // Apply persisted queue settings (defaults: enabled, tier-1 coexists).
-    modalityQueue.setEnabled(getSetting('modalityQueueEnabled', true))
-    modalityQueue.setTier1CoexistsWithTier2(getSetting('modalityTier1CoexistsWithTier2', true))
+    // Apply persisted queue settings (defaults: enabled, tier-1 coexists) — the
+    // keys + apply live in modality-queue/config so the settings UI shares them.
+    applyQueueConfig(modalityQueue, readQueueConfig(getSetting))
     llm.init().catch((err) => console.error('Failed to init LLM:', err))
   })
   // Every other engine joins the SAME residency seam (runtime-manager), lazily so

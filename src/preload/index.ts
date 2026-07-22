@@ -220,6 +220,11 @@ const offGridApi = {
     ipcRenderer.invoke('runtime:residency:set', modality, mode),
   // Unload a modality's model from memory now (free RAM); reloads on next use.
   unloadRuntime: (modality: string) => ipcRenderer.invoke('runtime:unload', modality),
+  // Pipeline queue config (serialize heavy jobs; let speech coexist) + live state.
+  queueConfigGet: () => ipcRenderer.invoke('queue:config:get'),
+  queueConfigSet: (patch: { enabled?: boolean; tier1Coexists?: boolean }) =>
+    ipcRenderer.invoke('queue:config:set', patch),
+  queueState: () => ipcRenderer.invoke('queue:state'),
   // and a manual "check for updates" that resolves with a definite status.
   updateGetPrefs: () => ipcRenderer.invoke('update:get-prefs'),
   updateSetAuto: (on: boolean) => ipcRenderer.invoke('update:set-auto', on),

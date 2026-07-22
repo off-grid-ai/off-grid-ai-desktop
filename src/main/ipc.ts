@@ -1219,6 +1219,36 @@ export function setupIPC() {
     return freed
   })
 
+  // Pipeline queue config — the user-facing controls for the shared scheduler.
+  // Reads/writes go through modality-queue/config (single source for the keys) and
+  // apply to the live queue immediately, so a toggle takes effect without a restart.
+  ipcMain.handle('queue:config:get', async () => {
+    const { readQueueConfig } = await import('./modality-queue/config')
+    return readQueueConfig(getSetting)
+  })
+  ipcMain.handle(
+    'queue:config:set',
+    async (_e, patch: { enabled?: boolean; tier1Coexists?: boolean }) => {
+      const { readQueueConfig, applyQueueConfig, QUEUE_ENABLED_KEY, TIER1_COEXIST_KEY } =
+        await import('./modality-queue/config')
+      const { modalityQueue } = await import('./modality-queue/queue')
+      if (typeof patch.enabled === 'boolean') {
+        saveSetting(QUEUE_ENABLED_KEY, patch.enabled)
+      }
+      if (typeof patch.tier1Coexists === 'boolean') {
+        saveSetting(TIER1_COEXIST_KEY, patch.tier1Coexists)
+      }
+      const cfg = readQueueConfig(getSetting)
+      applyQueueConfig(modalityQueue, cfg)
+      return cfg
+    }
+  )
+  // Live queue activity (running + queued jobs) for a status indicator.
+  ipcMain.handle('queue:state', async () => {
+    const { modalityQueue } = await import('./modality-queue/queue')
+    return modalityQueue.getState()
+  })
+
   // Fleet console IPC (console:*) is a pro feature — registered by pro's
   // activateMain, not here, so the open build doesn't ship it.
 
