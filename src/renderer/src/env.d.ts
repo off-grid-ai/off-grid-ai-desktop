@@ -94,6 +94,14 @@ interface SessionMemoryRecord {
   created_at: string
 }
 
+interface MemoryListRecord {
+  id: number
+  name: string | null
+  content: string
+  source_app: string
+  created_at: string
+}
+
 interface SessionEntityRecord {
   id: number
   name: string
@@ -140,7 +148,7 @@ interface RendererAPIOverrides {
   onMasterMemoryProgress?: (
     callback: (data: { current: number; total: number }) => void
   ) => () => void
-  getMemories: (limit: number, appName?: string) => Promise<unknown[]>
+  getMemories: (limit: number, appName?: string) => Promise<MemoryListRecord[]>
   addMemory: (content: string, source?: string) => Promise<{ id: number }>
   searchMemories: (query: string) => Promise<unknown[]>
   getStats: () => Promise<Record<string, number>>
