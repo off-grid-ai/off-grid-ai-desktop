@@ -13,16 +13,46 @@ import { join } from 'path'
 const APP_BIN = process.env.APP_BIN
 
 const profile = mkdtempSync(join(tmpdir(), 'ogsmoke-'))
-const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 let pass = 0,
   fail = 0
-const ok = (name, cond) => {
-  if (cond) {
-    pass++
-    console.log(`  ✓ ${name}`)
-  } else {
-    fail++
-    console.error(`  ✗ ${name}`)
+const smoke = {
+  wait(ms) {
+    return new Promise((resolveWait) => setTimeout(resolveWait, ms))
+  },
+  record(name, condition) {
+    if (condition) {
+      pass++
+      console.log(`  ✓ ${name}`)
+    } else {
+      fail++
+      console.error(`  ✗ ${name}`)
+    }
+  },
+  async pageText() {
+    return (
+      (await win
+        .locator('body')
+        .innerText()
+        .catch(() => '')) || ''
+    )
+  },
+  async clickContinue() {
+    const btn = win.getByRole('button', { name: /Continue|Start using Off Grid/i }).first()
+    if (await btn.isVisible().catch(() => false)) {
+      await btn.click().catch(() => {})
+      await smoke.wait(1400)
+      return true
+    }
+    return false
+  },
+  async navigate(label, expectedContent) {
+    try {
+      await win.getByRole('button', { name: label, exact: false }).first().click({ timeout: 5000 })
+      await smoke.wait(1400)
+      return expectedContent.test(await smoke.pageText())
+    } catch {
+      return false
+    }
   }
 }
 
@@ -40,30 +70,18 @@ await app.evaluate(({ BrowserWindow }) => {
     w.center()
   }
 })
-await wait(3500)
-
-const text = async () =>
-  (await win
-    .locator('body')
-    .innerText()
-    .catch(() => '')) || ''
+await smoke.wait(3500)
 
 try {
   // 1) Onboarding shows on a fresh profile (step 1)
-  ok('onboarding screen appears', /Continue|Every model|Private AI|Off Grid/i.test(await text()))
+  smoke.record(
+    'onboarding screen appears',
+    /Continue|Every model|Private AI|Off Grid/i.test(await smoke.pageText())
+  )
 
   // 2) Advance to the orbit step + assert the modality cards aren't collapsed.
   //    The orbit lives on step 2, so navigate there before measuring.
-  const clickContinue = async () => {
-    const btn = win.getByRole('button', { name: /Continue|Start using Off Grid/i }).first()
-    if (await btn.isVisible().catch(() => false)) {
-      await btn.click().catch(() => {})
-      await wait(1400)
-      return true
-    }
-    return false
-  }
-  await clickContinue() // step 1 -> step 2 (orbit)
+  await smoke.clickContinue() // step 1 -> step 2 (orbit)
   const labels = ['Image', 'Vision', 'Chat', 'Projects', 'Speech', 'Voice']
   const boxes = []
   for (const l of labels) {
@@ -79,38 +97,38 @@ try {
     for (let j = i + 1; j < boxes.length; j++) {
       minDist = Math.min(minDist, Math.hypot(boxes[i].x - boxes[j].x, boxes[i].y - boxes[j].y))
     }
-  ok(
+  smoke.record(
     `onboarding orbit cards spaced (${boxes.length} cards, min gap ${Math.round(minDist)}px > 40)`,
     boxes.length >= 4 && minDist > 40
   )
 
   // 3) Finish onboarding into the app
   for (let i = 0; i < 4; i++) {
-    if (!(await clickContinue())) break
+    if (!(await smoke.clickContinue())) break
   }
-  await wait(1500)
-  const appText = await text()
+  await smoke.wait(1500)
+  const appText = await smoke.pageText()
 
   // 4) No hard "Setup Required" wall in the core build
-  ok('no "Setup Required" wall (core build)', !/Setup Required/i.test(appText))
+  smoke.record('no "Setup Required" wall (core build)', !/Setup Required/i.test(appText))
 
   // 5) Lands in the app (Models is the free default)
-  ok('lands on Models screen', /Models|Download models/i.test(appText))
+  smoke.record('lands on Models screen', /Models|Download models/i.test(appText))
 
   // 6) Core screens render
-  const nav = async (label, expect) => {
-    try {
-      await win.getByRole('button', { name: label, exact: false }).first().click({ timeout: 5000 })
-      await wait(1400)
-      return expect.test(await text())
-    } catch {
-      return false
-    }
-  }
-  ok('Chat renders', await nav('Chat', /Start a conversation|Ask anything|New chat/i))
-  ok('Projects renders', await nav('Projects', /Projects|New chat|knowledge/i))
-  ok('Gateway renders', await nav('Gateway', /Gateway|127\.0\.0\.1:7878|OpenAI/i))
-  ok('Integrations renders', await nav('Integrations', /Integrations|Connect a tool|Connect/i))
+  smoke.record(
+    'Chat renders',
+    await smoke.navigate('Chat', /Start a conversation|Ask anything|New chat/i)
+  )
+  smoke.record('Projects renders', await smoke.navigate('Projects', /Projects|New chat|knowledge/i))
+  smoke.record(
+    'Gateway renders',
+    await smoke.navigate('Gateway', /Gateway|127\.0\.0\.1:7878|OpenAI/i)
+  )
+  smoke.record(
+    'Integrations renders',
+    await smoke.navigate('Integrations', /Integrations|Connect a tool|Connect/i)
+  )
 } catch (e) {
   fail++
   console.error('  ✗ exception:', e.message)
