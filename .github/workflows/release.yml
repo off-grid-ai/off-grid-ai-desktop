@@ -72,8 +72,9 @@ jobs:
             # A nightly is a prerelease of the NEXT patch, so it sorts ABOVE the last
             # stable, not below it: 0.0.35 stable -> 0.0.36-beta.<run> (NOT
             # 0.0.35-beta.<run>, which semver ranks BELOW 0.0.35 and would read as a
-            # downgrade). electron-builder turns the -beta suffix into the `beta`
-            # channel (beta-mac.yml) automatically. No commit.
+            # downgrade). The -beta suffix marks the GitHub release as a prerelease;
+            # the update feed itself is always latest-mac.yml (no publish.channel set).
+            # No commit.
             BASE=$(node -p "require('./package.json').version")
             BASE=${BASE%%-*}
             NEXT=$(node -e "const p='$BASE'.split('.').map(Number); console.log(p[0]+'.'+p[1]+'.'+(p[2]+1))")
@@ -178,7 +179,8 @@ jobs:
       # Stamp the resolved version into package.json so electron-builder picks the
       # right channel. For stable this matches the committed bump (no-op); for beta
       # it applies the -beta.<run> version (no commit needed — this checkout is
-      # throwaway). The -beta suffix is what makes electron-builder write beta-mac.yml.
+      # throwaway). The -beta suffix marks the release prerelease; the feed stays
+      # latest-mac.yml (electron-builder emits no beta-mac.yml without publish.channel).
       - name: Stamp build version
         run: npm version "${{ needs.version.outputs.version }}" --no-git-tag-version --allow-same-version
       - name: Build (typecheck + bundle)
@@ -228,11 +230,15 @@ jobs:
           CHANNEL: ${{ needs.version.outputs.channel }}
           TARGET_SHA: ${{ needs.version.outputs.sha }}
         run: |
-          if [ "$CHANNEL" = stable ]; then
-            FEED=latest-mac.yml
-          else
-            FEED=beta-mac.yml
-          fi
+          # electron-builder writes ONE update feed, latest-mac.yml, for BOTH channels
+          # (we set no publish.channel, so it never emits beta-mac.yml). Beta vs stable
+          # is expressed by the release's prerelease flag + electron-updater's
+          # allowPrerelease on the client, NOT by a distinct feed filename — every
+          # shipped beta used latest-mac.yml (e.g. 0.0.39-beta.66), and the pro-mac.yml
+          # migration below copies from latest-mac.yml on the beta path too. A prior
+          # refactor assumed a beta-mac.yml that is never generated, so `test -f` aborted
+          # every nightly publish under `set -e` with no output.
+          FEED=latest-mac.yml
           test -f "dist/$FEED"
           node scripts/prepare-mac-release-assets.mjs \
             "dist/$FEED" dist dist/release-assets "$VERSION"
