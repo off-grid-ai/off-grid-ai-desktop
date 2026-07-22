@@ -21,7 +21,7 @@ import { deviceNoun } from '@renderer/lib/device'
 import { modelKindLabel } from '@renderer/lib/model-kind-labels'
 import { collectTags, matchesAllTags, toggleTag } from '@renderer/lib/model-tag-filter'
 import { companionDownloadLabel } from '@renderer/lib/download-label'
-import { fitTier, type FitTier } from '../../../shared/model-fit'
+import { fitTier, type FitTier, fitLevel, FIT_OK_FRAC } from '../../../shared/model-fit'
 import {
   filterAndSort,
   parseParamCount,
@@ -744,7 +744,7 @@ export function ModelsScreen(): React.JSX.Element {
         ))}
         {ramGb && activeKind !== 'storage' && (
           <span className="ml-auto pb-2 text-[9px] text-neutral-700">
-            {ramGb}GB RAM · fits ≤{Math.round(ramGb * 0.38)}GB
+            {ramGb}GB RAM · fits ≤{Math.round(ramGb * FIT_OK_FRAC)}GB
           </span>
         )}
       </div>
@@ -1006,11 +1006,11 @@ export function ModelsScreen(): React.JSX.Element {
                   </dl>
                   {ramGb && bytes > 0 && (
                     <p className="mt-4 text-[10px] text-neutral-500">
-                      {bytes / 1e9 <= ramGb * 0.38
+                      {fitLevel(bytes / 1e9, ramGb) === 'ok'
                         ? `Comfortable fit on your ${deviceNoun()}.`
-                        : bytes / 1e9 <= ramGb * 0.55
-                          ? 'Tight on RAM — context will be reduced.'
-                          : `Large for your ${deviceNoun()} — may run slowly.`}
+                        : fitLevel(bytes / 1e9, ramGb) === 'tight'
+                          ? 'Tight on RAM - context will be reduced.'
+                          : `Large for your ${deviceNoun()} - may run slowly.`}
                     </p>
                   )}
                   {m.imageModes && m.imageModes.length > 0 && (
