@@ -19,12 +19,21 @@
 //   RELEASE_URL      (optional; default derived from GITHUB_SERVER_URL/GITHUB_REPOSITORY + tag)
 import { readFileSync } from 'node:fs'
 
-const warn = (m) => console.warn(`[slack-release] ${m}`)
+const releaseMessage = {
+  warn(message) {
+    console.warn(`[slack-release] ${message}`)
+  },
+  escapeSlackText(value) {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+}
 
 const webhook = process.env.SLACK_WEBHOOK_URL
 const token = process.env.SLACK_BOT_TOKEN
 if (!webhook && !token) {
-  warn('no SLACK_WEBHOOK_URL or SLACK_BOT_TOKEN set — skipping announcement (no-op).')
+  releaseMessage.warn(
+    'no SLACK_WEBHOOK_URL or SLACK_BOT_TOKEN set — skipping announcement (no-op).'
+  )
   process.exit(0)
 }
 
@@ -42,8 +51,6 @@ const releaseUrl =
 // Slack mrkdwn reserves & < > — a raw commit subject containing them (release notes are raw
 // commit subjects) would misrender or be read as a <link|mention>. Escape the note body only;
 // NOT the intentional <url|label> link line below.
-const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-
 let notes = ''
 try {
   notes = readFileSync(notesFile, 'utf8').trim()
@@ -56,9 +63,11 @@ if (notes.length > 2600) {
 }
 
 const tag = label ? `  \`${label}\`` : ''
-const header = `:package:  *${esc(product)}*  \`${version || 'release'}\`${tag}`
+const header = `:package:  *${releaseMessage.escapeSlackText(product)}*  \`${version || 'release'}\`${tag}`
 const linkLine = releaseUrl ? `<${releaseUrl}|Download / release page>` : ''
-const body = notes ? esc(notes) : '_No release notes generated for this build._'
+const body = notes
+  ? releaseMessage.escapeSlackText(notes)
+  : '_No release notes generated for this build._'
 
 const blocks = [
   { type: 'section', text: { type: 'mrkdwn', text: header } },
@@ -80,7 +89,7 @@ try {
     })
     await res.text().catch(() => '')
     if (!res.ok) {
-      warn(`webhook not ok: HTTP ${res.status}`)
+      releaseMessage.warn(`webhook not ok: HTTP ${res.status}`)
       process.exit(0)
     }
     console.log(`[slack-release] announced ${product} ${version} via webhook`)
@@ -96,12 +105,12 @@ try {
     })
     const j = await res.json().catch(() => ({}))
     if (!res.ok || !j.ok) {
-      warn(`chat.postMessage not ok: HTTP ${res.status}`)
+      releaseMessage.warn(`chat.postMessage not ok: HTTP ${res.status}`)
       process.exit(0)
     }
     console.log(`[slack-release] announced ${product} ${version} via Slack API`)
   }
 } catch {
-  warn('post failed')
+  releaseMessage.warn('post failed')
 }
 process.exit(0)
