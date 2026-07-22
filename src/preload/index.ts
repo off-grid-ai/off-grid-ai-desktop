@@ -233,6 +233,9 @@ const offGridApi = {
   updateDownload: (version: string) => ipcRenderer.invoke('update:download', version),
   updateSkipVersion: (version: string) => ipcRenderer.invoke('update:skip-version', version),
   updateClearSkippedVersion: () => ipcRenderer.invoke('update:clear-skipped-version'),
+  updateListVersions: () => ipcRenderer.invoke('update:list-versions'),
+  updateDownloadVersion: (version: string) =>
+    ipcRenderer.invoke('update:download-version', version),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
 
   // Notification Events — only the things that need the user's attention:

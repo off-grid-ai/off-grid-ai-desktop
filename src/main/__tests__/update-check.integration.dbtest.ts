@@ -21,10 +21,25 @@ const state = vi.hoisted(() => ({
 
 const tempProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-manual-update-'))
 const updaterEvents = new EventEmitter()
-const checkForUpdates = vi.fn(async () => undefined)
+const checkForUpdates = vi.fn<() => Promise<unknown>>(async () => undefined)
 const downloadUpdate = vi.fn(async () => undefined)
 const quitAndInstall = vi.fn()
 const defaultUpdateSupport = vi.fn(async () => true)
+const setFeedURL = vi.fn()
+const releaseHistory = [
+  {
+    tag_name: 'v0.0.102',
+    draft: false,
+    published_at: '2026-07-01T12:00:00Z',
+    assets: [
+      {
+        name: 'latest-mac.yml',
+        browser_download_url:
+          'https://github.com/off-grid-ai/off-grid-ai-desktop/releases/download/v0.0.102/latest-mac.yml'
+      }
+    ]
+  }
+]
 
 vi.mock('electron', () => ({
   app: {
@@ -58,6 +73,7 @@ vi.mock('electron-updater', () => ({
     checkForUpdates,
     downloadUpdate,
     quitAndInstall,
+    setFeedURL,
     on: updaterEvents.on.bind(updaterEvents),
     once: updaterEvents.once.bind(updaterEvents),
     removeListener: updaterEvents.removeListener.bind(updaterEvents)
@@ -79,6 +95,8 @@ function installRendererTransport(): void {
       checkForUpdates: () => handler('update:check')(),
       updateDownload: (version: string) => handler('update:download')(version),
       updateSkipVersion: (version: string) => handler('update:skip-version')(version),
+      updateListVersions: () => handler('update:list-versions')(),
+      updateDownloadVersion: (version: string) => handler('update:download-version')(version),
       getAppVersion: () => Promise.resolve('0.0.103')
     },
     {
@@ -113,6 +131,7 @@ beforeEach(() => {
   downloadUpdate.mockClear()
   quitAndInstall.mockClear()
   defaultUpdateSupport.mockClear()
+  setFeedURL.mockClear()
   vi.useFakeTimers()
 })
 
@@ -217,6 +236,70 @@ describe('manual update check', () => {
     const skipped = handler<{ status: string; version: string }>('update:check')()
     updaterEvents.emit('update-not-available', { version: '0.0.104' })
     await expect(skipped).resolves.toEqual({ status: 'skipped', version: '0.0.104' })
+  })
+
+  it('lists compatible history and downloads an explicitly confirmed older version', async () => {
+    const updater = await import('../updater')
+    updater.registerUpdateIpc()
+    updater.startAutoUpdates()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(releaseHistory), { status: 200 }))
+    )
+
+    await expect(handler('update:list-versions')()).resolves.toEqual([
+      {
+        version: '0.0.102',
+        channel: 'stable',
+        publishedAt: '2026-07-01T12:00:00Z'
+      }
+    ])
+
+    checkForUpdates.mockResolvedValueOnce({
+      isUpdateAvailable: true,
+      updateInfo: { version: '0.0.102' }
+    })
+    await expect(handler('update:download-version')('0.0.102')).resolves.toEqual({
+      status: 'downloading',
+      version: '0.0.102'
+    })
+
+    expect(setFeedURL).toHaveBeenNthCalledWith(1, {
+      provider: 'generic',
+      url: 'https://github.com/off-grid-ai/off-grid-ai-desktop/releases/download/v0.0.102/'
+    })
+    expect(downloadUpdate).toHaveBeenCalledOnce()
+    expect(setFeedURL).toHaveBeenLastCalledWith({
+      provider: 'github',
+      owner: 'off-grid-ai',
+      repo: 'off-grid-ai-desktop'
+    })
+    await expect(handler<{ auto: boolean }>('update:get-prefs')()).resolves.toMatchObject({
+      auto: false
+    })
+  })
+
+  it('keeps automatic updates on when an older version cannot be verified', async () => {
+    const updater = await import('../updater')
+    updater.registerUpdateIpc()
+    updater.startAutoUpdates()
+    await handler<boolean>('update:set-auto')(true)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(releaseHistory), { status: 200 }))
+    )
+    checkForUpdates.mockResolvedValueOnce({
+      isUpdateAvailable: true,
+      updateInfo: { version: '0.0.101' }
+    })
+
+    await expect(handler('update:download-version')('0.0.102')).rejects.toThrow(
+      'The selected version could not be verified for download.'
+    )
+    await expect(handler<{ auto: boolean }>('update:get-prefs')()).resolves.toMatchObject({
+      auto: true
+    })
+    expect(downloadUpdate).not.toHaveBeenCalled()
   })
 
   it('reports the installed version when stable is current and releases one-shot listeners', async () => {

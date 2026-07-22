@@ -11,6 +11,13 @@ import type { UpdateInfo } from 'builder-util-runtime'
 import { valid } from 'semver'
 import { getSetting, saveSetting } from './database'
 import { resolveChannelConfig, type UpdateChannel } from './update-channel'
+import { listPreviousUpdateReleases } from './update-release-history'
+
+const GITHUB_UPDATE_PROVIDER = {
+  provider: 'github' as const,
+  owner: 'off-grid-ai',
+  repo: 'off-grid-ai-desktop'
+}
 
 // Version of an update that finished downloading and is staged for install
 // (null = none). Held in main so a window created AFTER the download finished
@@ -19,6 +26,7 @@ import { resolveChannelConfig, type UpdateChannel } from './update-channel'
 // windows that existed at download time.
 let stagedVersion: string | null = null
 let availableVersion: string | null = null
+let targetedDownloadVersion: string | null = null
 
 const platformSupportsUpdate = autoUpdater.isUpdateSupported
 
@@ -117,6 +125,9 @@ export function registerUpdateIpc(): void {
   })
 
   ipcMain.handle('update:download', (_e, version: string) => {
+    if (targetedDownloadVersion) {
+      throw new Error(`Version ${targetedDownloadVersion} is already downloading.`)
+    }
     if (!availableVersion || version !== availableVersion) {
       throw new Error('Check for updates again before downloading this version.')
     }
@@ -143,10 +154,85 @@ export function registerUpdateIpc(): void {
     return null
   })
 
+  ipcMain.handle('update:list-versions', async () => {
+    if (!app.isPackaged) {
+      throw new Error('Previous versions are only available in the installed app.')
+    }
+    const releases = await listPreviousUpdateReleases({
+      currentVersion: app.getVersion(),
+      platform: process.platform
+    })
+    return releases.slice(0, 20).map(({ version, channel, publishedAt }) => ({
+      version,
+      channel,
+      publishedAt
+    }))
+  })
+
+  ipcMain.handle('update:download-version', (_e, version: string) =>
+    downloadPreviousVersion(version)
+  )
+
   // Manual "Check for updates". Resolves with a definite status the UI can show.
   // With automatic updates off this only reports availability; download remains
   // a separate, explicit action.
   ipcMain.handle('update:check', () => checkForUpdates())
+}
+
+async function downloadPreviousVersion(
+  requestedVersion: string
+): Promise<{ status: 'downloading'; version: string }> {
+  const normalized = valid(requestedVersion)
+  if (!normalized) throw new Error('Invalid update version.')
+  if (targetedDownloadVersion) {
+    throw new Error(`Version ${targetedDownloadVersion} is already downloading.`)
+  }
+
+  const releases = await listPreviousUpdateReleases({
+    currentVersion: app.getVersion(),
+    platform: process.platform
+  })
+  const target = releases.find((release) => release.version === normalized)
+  if (!target) {
+    throw new Error('That version is no longer available for this device.')
+  }
+
+  targetedDownloadVersion = normalized
+  let downloadStarted = false
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = false
+  autoUpdater.isUpdateSupported = (info) => platformSupportsUpdate(info)
+
+  try {
+    autoUpdater.setFeedURL({ provider: 'generic', url: target.feedUrl })
+    autoUpdater.channel = 'latest'
+    autoUpdater.allowPrerelease = true
+    autoUpdater.allowDowngrade = true
+    const result = await autoUpdater.checkForUpdates()
+    if (!result?.isUpdateAvailable || result.updateInfo.version !== normalized) {
+      throw new Error('The selected version could not be verified for download.')
+    }
+
+    saveSetting('updates:auto', false)
+    const download = autoUpdater.downloadUpdate()
+    downloadStarted = true
+    void download
+      .catch((error) => console.error('[update] previous-version download failed', error))
+      .finally(() => {
+        targetedDownloadVersion = null
+      })
+    return { status: 'downloading', version: normalized }
+  } finally {
+    // downloadUpdate captures the exact provider before returning, so routine
+    // checks can safely return to the normal GitHub channel immediately.
+    autoUpdater.setFeedURL(GITHUB_UPDATE_PROVIDER)
+    applyChannel()
+    applySkippedVersionPolicy()
+    if (!downloadStarted) {
+      targetedDownloadVersion = null
+      applyAutoPref()
+    }
+  }
 }
 
 export function startAutoUpdates(): void {

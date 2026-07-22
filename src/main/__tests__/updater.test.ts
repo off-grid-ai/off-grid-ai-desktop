@@ -96,13 +96,21 @@ describe('software-update settings flow: manual check + auto toggle', () => {
     expect(indexSrc).toMatch(/if\s*\(\s*!is\.dev\s*\)\s*m\.startAutoUpdates\(\)/)
   })
 
-  it('never sets allowDowngrade=true unconditionally (would offer an older stable to a beta)', () => {
+  it('allows downgrade only for an explicit channel switch or exact-version rollback', () => {
     // Regression: `autoUpdater.allowDowngrade = true` on every launch made a
     // 0.0.41-beta.69 app accept "Update 0.0.38". The knob must come from the pure
-    // resolveChannelConfig, which only allows a downgrade on an explicit switch.
-    expect(updaterSrc).not.toMatch(/allowDowngrade\s*=\s*true/)
+    // resolveChannelConfig during routine checks. The exact rollback path is the
+    // only direct assignment because the user selected and confirmed that version.
+    const rollbackStart = updaterSrc.indexOf('async function downloadPreviousVersion')
+    const engineStart = updaterSrc.indexOf('export function startAutoUpdates')
+    expect(rollbackStart).toBeGreaterThan(-1)
+    expect(engineStart).toBeGreaterThan(rollbackStart)
+    const routineSource = `${updaterSrc.slice(0, rollbackStart)}${updaterSrc.slice(engineStart)}`
+    const rollbackSource = updaterSrc.slice(rollbackStart, engineStart)
+    expect(routineSource).not.toMatch(/allowDowngrade\s*=\s*true/)
+    expect(rollbackSource).toMatch(/allowDowngrade\s*=\s*true/)
+    expect(rollbackSource).toMatch(/saveSetting\(\s*['"]updates:auto['"]\s*,\s*false\s*\)/)
     expect(updaterSrc).toMatch(/resolveChannelConfig/)
-    // Explicit channel switch is the only caller allowed to permit a downgrade.
     expect(updaterSrc).toMatch(/applyChannel\(true\)/)
   })
 
@@ -116,5 +124,9 @@ describe('software-update settings flow: manual check + auto toggle', () => {
     expect(preloadSrc).toMatch(
       /updateGetPrefs:\s*\(\)\s*=>\s*ipcRenderer\.invoke\(\s*['"]update:get-prefs['"]/
     )
+    expect(preloadSrc).toMatch(
+      /updateListVersions:\s*\(\)\s*=>\s*ipcRenderer\.invoke\(\s*['"]update:list-versions['"]/
+    )
+    expect(preloadSrc).toMatch(/updateDownloadVersion:[\s\S]*update:download-version/)
   })
 })
