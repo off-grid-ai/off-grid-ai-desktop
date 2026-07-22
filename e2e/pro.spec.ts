@@ -29,14 +29,18 @@ import {
 import os from 'os'
 import path from 'path'
 import fs from 'fs'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 
 // Mirrors electron.vite.config's proExists gate: without the pro package, OFFGRID_PRO=1
 // can't activate pro features, so these surfaces would render the free upgrade screen.
 const PRO_PRESENT = fs.existsSync(path.resolve('pro/package.json'))
+const execFileAsync = promisify(execFile)
 
 let app: ElectronApplication
 let page: Page
 let userDataDir: string
+let binDir: string
 
 const nav = async (label: string): Promise<void> => {
   await page.getByRole('button', { name: label, exact: true }).first().click()
@@ -126,14 +130,22 @@ const expectSystemClipboardText = async (expected: string): Promise<void> => {
 test.beforeAll(async () => {
   test.skip(!PRO_PRESENT, 'pro package not present — pro features cannot activate')
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-pro-'))
+  binDir = path.join(userDataDir, 'e2e-bin')
+  const whisper = path.join(binDir, 'whisper', 'whisper-cli')
+  fs.mkdirSync(path.dirname(whisper), { recursive: true })
+  fs.writeFileSync(whisper, '#!/bin/sh\nprintf "synthetic e2e dictation\\n"\n', { mode: 0o755 })
+  const modelsDir = path.join(userDataDir, 'models')
+  fs.mkdirSync(modelsDir, { recursive: true })
+  fs.writeFileSync(path.join(modelsDir, 'ggml-base.bin'), 'synthetic whisper model')
   app = await electron.launch({
-    args: ['.'],
+    args: ['.', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
     env: {
       ...process.env,
       OFFGRID_USER_DATA: userDataDir,
       OFFGRID_PRO: '1', // force pro on without a license (pro code is bundled in this checkout)
       OFFGRID_SEED: 'force', // core chats, knowledge, and RAG schema used by cross-surface Search
       OFFGRID_SEED_PRO: 'force', // deterministic observations + entities + replay frames (TEMP profile only)
+      OFFGRID_BIN_DIR: binDir,
       NODE_ENV: 'production'
     }
   })
@@ -375,6 +387,30 @@ test('Clipboard is unlocked in the pro build', async () => {
   await expect(page.getByPlaceholder('Search content or tags…')).toBeVisible()
 })
 
+test('Clipboard quick-open renders populated content on the first native hotkey press', async () => {
+  await nav('Clipboard')
+  const popupOpened = app.waitForEvent('window', {
+    predicate: (candidate) => candidate.url().includes('#clip-popup'),
+    timeout: 10_000
+  })
+  if (process.platform === 'darwin') {
+    await execFileAsync('/usr/bin/osascript', [
+      '-e',
+      'tell application "System Events" to keystroke "c" using {command down, shift down}'
+    ])
+  } else {
+    await page.getByRole('button', { name: 'Open quick clipboard' }).click()
+  }
+  const popup = await popupOpened
+  await popup.waitForLoadState('domcontentloaded')
+
+  await expect(popup.getByPlaceholder('Search content or tags…')).toBeVisible()
+  await expect(popup.getByText('Nothing copied yet')).toHaveCount(0)
+  await expect(popup.getByText('↑↓ navigate · ↵ paste · esc close')).toBeVisible()
+  await popup.screenshot({ path: 'e2e/screenshots/pro-clipboard-quick-open.png' })
+  await popup.keyboard.press('Escape')
+})
+
 test('Voice is unlocked in the pro build (renders the dictation library)', async () => {
   await nav('Voice')
   await expect(page.getByText('Off Grid Pro · Available now')).toHaveCount(0)
@@ -382,6 +418,21 @@ test('Voice is unlocked in the pro build (renders the dictation library)', async
   await expect(page.getByPlaceholder('Search transcripts')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Start dictation' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Transcribe file' })).toBeVisible()
+})
+
+test('Start dictation renders the recording widget on the first click', async () => {
+  await nav('Voice')
+  const overlayOpened = app.waitForEvent('window', {
+    predicate: (candidate) => candidate.url().includes('#dictation'),
+    timeout: 10_000
+  })
+  await page.getByRole('button', { name: 'Start dictation' }).first().click()
+  const overlay = await overlayOpened
+  await overlay.waitForLoadState('domcontentloaded')
+
+  await expect(overlay.getByTitle('Stop dictation')).toBeVisible()
+  await expect(overlay.getByText(/to stop/)).toBeVisible()
+  await overlay.screenshot({ path: 'e2e/screenshots/pro-dictation-widget.png' })
 })
 
 test('Vault copy actions write username, revealed password, and URL to the OS clipboard', async () => {
