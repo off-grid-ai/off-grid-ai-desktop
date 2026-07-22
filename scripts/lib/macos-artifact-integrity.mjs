@@ -175,8 +175,15 @@ function isAllowedAsarOutEntry(entry) {
   return ALLOWED_ASAR_OUT_ROOTS.some((root) => entry === root || entry.startsWith(`${root}/`))
 }
 
-export function assertAsarArchiveInventory(archive) {
-  for (const entry of listPackage(archive)) {
+// Pure inventory check over an asar's entry list, split out so it unit-tests without
+// building a real archive. @electron/asar's listPackage returns entries with the OS
+// path separator — POSIX "/" on macOS/Linux but "\" on Windows (e.g. "\node_modules").
+// Normalize to "/" so the POSIX allowlist below holds on every build host; without it
+// EVERY entry read as an unexpected root on the Windows runner and this release gate
+// rejected an otherwise-valid app.asar (regressing the Windows build).
+export function assertAsarEntryInventory(entries) {
+  for (const rawEntry of entries) {
+    const entry = rawEntry.replace(/\\/g, '/')
     const segments = entry.split('/').filter(Boolean)
     const privateSegment = segments.find((segment) =>
       FORBIDDEN_PRIVATE_SEGMENTS.has(segment.toLowerCase())
@@ -196,6 +203,10 @@ export function assertAsarArchiveInventory(archive) {
       throw new Error(`app.asar contains unexpected application root: ${entry}`)
     }
   }
+}
+
+export function assertAsarArchiveInventory(archive) {
+  assertAsarEntryInventory(listPackage(archive))
 }
 
 export function assertAsarInventory(bundle) {
