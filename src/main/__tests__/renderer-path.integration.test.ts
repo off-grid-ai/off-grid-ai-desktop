@@ -30,7 +30,7 @@ describe('renderer HTML path service', () => {
       const resolved = resolveRendererHtmlPath(appRoot)
 
       expect(fs.readFileSync(resolved, 'utf8')).toBe(`<title>${name}</title>`)
-      expect(resolved).not.toContain(path.join('out', 'main', 'renderer'))
+      expect(resolved).not.toContain(path.join('out', 'main'))
     }
   })
 })

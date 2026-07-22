@@ -73,11 +73,16 @@ describe('EntityDomain port', () => {
     const rejected = [
       ['entity-domain.ts', 'file'],
       ['API', 'generic'],
+      ['Feature', 'generic'],
+      ['Person', 'generic'],
       ['Project', 'generic'],
       ['Meeting', 'generic'],
       ['Task', 'generic'],
       ['User', 'generic'],
       ['Team', 'generic'],
+      ['Thing', 'generic'],
+      ['Things', 'generic'],
+      ['Topic', 'generic'],
       ['Work', 'generic']
     ] as const
 
