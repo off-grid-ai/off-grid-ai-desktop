@@ -89,6 +89,15 @@ Rules: hierarchy from size+opacity (not color); section labels are tiny, **upper
 - **Destructive**: red only for delete (`hover:text-red-400`).
 - **Live updates**: surfaces refresh on `crm:changed` (capture/sync) — keep old content visible while updating, don't blank-then-flash.
 
+### Motion & micro-interactions (every interaction is smooth)
+
+**Rule: nothing pops. Every state change animates.** Functional motion is required — this is separate from the "no _decorative_ animation" brand rule (no spinning logos, no ambient flourishes). A control that changes, a panel that appears, a value that updates should transition, not snap.
+
+- **Every interactive control** gets `transition-all duration-150` (or `transition-colors`) + `active:scale-95` / `active:scale-[0.99]`. Hover, focus, press, and disabled states are all transitioned.
+- **Panels, slide-overs, modals, dropdowns** enter and leave with a fade + slide/scale (120–200ms, ease-out in / ease-in out), never a hard mount/unmount. Prefer a mounted-flag or the library's state hook so exits animate too.
+- **Respect `prefers-reduced-motion`** — the global block in `main.css` already neutralizes durations; don't fight it.
+- **Gotcha — modals don't animate for free.** The shared shadcn `Dialog` (`ui/dialog.tsx`) ships `animate-in` / `zoom-in-95` classes from **tailwindcss-animate, which this project does NOT include**, so those classes are no-ops. Dialog transitions come from the hand-written `[data-slot='dialog-*'][data-state]` keyframes in `main.css` (`og-dialog-in/out`, `og-overlay-in/out`). Any new Radix-based overlay animates via the same `data-state` hook — don't assume the utility classes work.
+
 ---
 
 ## Anti-patterns (same as mobile, plus desktop)
