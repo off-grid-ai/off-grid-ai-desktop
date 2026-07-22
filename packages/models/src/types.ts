@@ -16,6 +16,9 @@ export interface ModelFile {
   url: string
   /** Size in bytes when known (for progress + RAM/disk checks). */
   sizeBytes?: number
+  /** Expected SHA-256 (HuggingFace lfs oid) when known — the download is verified
+   *  against it before being promoted to installed. Absent = no checksum check. */
+  sha256?: string
   /** Marks an auxiliary file (e.g. a vision mmproj) vs the primary weights. */
   role?: 'primary' | 'mmproj' | 'tokenizer' | 'aux'
 }

@@ -7,7 +7,7 @@ import path from 'path'
 import { llm } from './llm'
 import { isValidGgufFile } from './models/gguf'
 import { pumpToFile } from './models/download-pump'
-import { downloadIntegrityError } from './models/download-verify'
+import { downloadIntegrityError, sha256IntegrityError } from './models/download-verify'
 import { downloadFailureMessage, isStorageCapacityError } from './models/download-error'
 import {
   DOWNLOAD_INTERRUPTED_ERROR,
@@ -293,6 +293,15 @@ export async function downloadModel(
           // truncated/corrupt download installed (it loads as a blank "Chat model Down").
           const integrityErr = downloadIntegrityError(file.name, written, total, partPath)
           if (integrityErr) throw new Error(integrityErr)
+          // Content check: when the file carries an expected SHA-256 (e.g. HF's lfs
+          // oid), verify the bytes match — catches silent corruption the byte-count +
+          // magic check can't. Skipped when no hash is known.
+          const checksumErr = await sha256IntegrityError(
+            file.name,
+            partPath,
+            (file as { sha256?: string }).sha256
+          )
+          if (checksumErr) throw new Error(checksumErr)
           fs.renameSync(partPath, dest)
           activePartPath = null
           writeDiagnosticLog('models.download', 'file.completed', {

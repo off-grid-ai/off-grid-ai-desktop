@@ -8,7 +8,8 @@ import { describe, it, expect, afterAll } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { downloadIntegrityError } from '../download-verify'
+import crypto from 'crypto'
+import { downloadIntegrityError, sha256File, sha256IntegrityError } from '../download-verify'
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-dlverify-'))
 const write = (name: string, buf: Buffer): string => {
@@ -54,5 +55,40 @@ describe('downloadIntegrityError (D2)', () => {
   it('passes when the server gave no length (total = 0) and the file is fine', () => {
     const p = write('nolen.bin', Buffer.alloc(10))
     expect(downloadIntegrityError('nolen.bin', 10, 0, p)).toBeNull()
+  })
+})
+
+describe('sha256 content verification', () => {
+  const sha = (buf: Buffer): string => crypto.createHash('sha256').update(buf).digest('hex')
+
+  it('sha256File computes the real digest of the file on disk', async () => {
+    const buf = Buffer.from('the quick brown fox')
+    const p = write('hashme.bin', buf)
+    expect(await sha256File(p)).toBe(sha(buf))
+  })
+
+  it('passes when the downloaded bytes match the expected hash', async () => {
+    const buf = Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(4096, 7)])
+    const p = write('good.gguf', buf)
+    expect(await sha256IntegrityError('good.gguf', p, sha(buf))).toBeNull()
+  })
+
+  it('flags a mismatch when the bytes are corrupt (right length, wrong content)', async () => {
+    const expected = Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(4096, 7)])
+    const corrupted = Buffer.concat([Buffer.from('GGUF', 'ascii'), Buffer.alloc(4096, 9)])
+    const p = write('bad.gguf', corrupted) // same length, different bytes
+    const err = await sha256IntegrityError('bad.gguf', p, sha(expected))
+    expect(err).toMatch(/checksum mismatch/i)
+  })
+
+  it('is case-insensitive on the expected hex', async () => {
+    const buf = Buffer.from('abc')
+    const p = write('case.bin', buf)
+    expect(await sha256IntegrityError('case.bin', p, sha(buf).toUpperCase())).toBeNull()
+  })
+
+  it('skips verification when no expected hash is known (opt-in)', async () => {
+    const p = write('nohash.gguf', Buffer.from('anything'))
+    expect(await sha256IntegrityError('nohash.gguf', p, undefined)).toBeNull()
   })
 })
