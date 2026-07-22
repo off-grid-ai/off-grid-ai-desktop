@@ -70,7 +70,18 @@ function installApi(): void {
       items: [],
       totalDownloadGb: 0
     }),
-    onSetupProgress: () => () => undefined
+    onSetupProgress: () => () => undefined,
+    getActiveModel: async () => 'synthetic/vision-model',
+    getModelVisionStatus: async () => ({
+      'synthetic/vision-model': { supportsVision: true, projectorInstalled: true }
+    }),
+    proInvoke: async (channel: string) => {
+      if (channel === 'capture:status') {
+        return { running: true, paused: false, visionReady: true }
+      }
+      return undefined
+    },
+    onModelProgress: () => () => undefined
   }
   const api = new Proxy(values, {
     get(target, property: string) {
