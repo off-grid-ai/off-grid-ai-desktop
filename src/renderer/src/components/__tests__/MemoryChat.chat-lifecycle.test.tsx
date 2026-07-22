@@ -328,9 +328,13 @@ describe('<MemoryChat/> - chat lifecycle integration (#36-#42, #47-#48)', () => 
     await send('build the alpha status card', user)
     await waitFor(() => expect(boundary.calls).toHaveLength(1))
 
-    await user.click(screen.getByRole('button', { name: /project alpha/i }))
+    // Switch this chat's memory scope to a different project AFTER sending, via the scope
+    // selector (targeted by its title so it is not confused with the header's "In Project…"
+    // link, which shares the project name). The header then reflects the new active project;
+    // the already-sent turn must stay attributed to alpha (asserted below).
+    await user.click(screen.getByTitle(/choose what this chat can draw on/i))
     await user.click(await screen.findByRole('menuitem', { name: /project beta/i }))
-    expect(await screen.findByRole('button', { name: /project beta/i })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: /in project beta/i })).toBeTruthy()
 
     boundary.resolve(0, 'Alpha result\n```html\n<div>Alpha artifact</div>\n```')
 
