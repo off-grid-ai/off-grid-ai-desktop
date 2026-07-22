@@ -69,14 +69,27 @@ describe('EntityDomain port', () => {
     }
   })
 
-  it('rejects pollution before the real database sees it', () => {
-    const result = resolveEntityCandidate({ name: 'entity-domain.ts', type: 'Project' })
-    expect(result).toEqual({ admitted: false, reason: 'file' })
-    expect(
-      getDB()
-        .prepare("SELECT COUNT(*) AS count FROM entities WHERE name = 'entity-domain.ts'")
-        .get()
-    ).toEqual({ count: 0 })
+  it('rejects files and generic labels before the real database sees them', () => {
+    const rejected = [
+      ['entity-domain.ts', 'file'],
+      ['API', 'generic'],
+      ['Project', 'generic'],
+      ['Meeting', 'generic'],
+      ['Task', 'generic'],
+      ['User', 'generic'],
+      ['Team', 'generic'],
+      ['Work', 'generic']
+    ] as const
+
+    for (const [name, reason] of rejected) {
+      expect(resolveEntityCandidate({ name, type: 'Project' })).toEqual({
+        admitted: false,
+        reason
+      })
+      expect(
+        getDB().prepare('SELECT COUNT(*) AS count FROM entities WHERE name = ?').get(name)
+      ).toEqual({ count: 0 })
+    }
   })
 
   it('normalizes and dedupes an admitted entity through the real database', () => {
