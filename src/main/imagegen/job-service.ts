@@ -19,6 +19,21 @@ export type ImageGenerationJobRequest = ImageGenerationRequestContract & {
 type JobListener = (snapshot: ImageGenerationJobContract) => void
 type ConversationListener = (conversationId: string) => void
 
+export interface ImageGenerationRuntime {
+  generate(
+    request: ImageGenerationJobRequest,
+    onProgress: (progress: ImageGenerationProgressContract) => void
+  ): Promise<ImageGenOutput>
+  cancel(): boolean
+  saveScope(path: string, request: ImageGenerationJobRequest): void
+}
+
+const nativeImageGenerationRuntime: ImageGenerationRuntime = {
+  generate: (request, onProgress) => generateImage(request, onProgress),
+  cancel: () => cancelImageGen(),
+  saveScope: (path, request) => saveGeneratedImageScope(path, request)
+}
+
 const idleSnapshot = (): ImageGenerationJobContract => ({
   id: null,
   phase: 'idle',
@@ -39,6 +54,8 @@ export class ImageGenerationJobService {
   private active = false
   private readonly listeners = new Set<JobListener>()
   private readonly conversationListeners = new Set<ConversationListener>()
+
+  constructor(private readonly runtime: ImageGenerationRuntime = nativeImageGenerationRuntime) {}
 
   status(): ImageGenerationJobContract {
     return { ...this.snapshot, progress: this.snapshot.progress && { ...this.snapshot.progress } }
@@ -82,9 +99,11 @@ export class ImageGenerationJobService {
     )
 
     try {
-      const result = await generateImage(request, (progress) => this.updateProgress(id, progress))
+      const result = await this.runtime.generate(request, (progress) =>
+        this.updateProgress(id, progress)
+      )
       if (result.path && (request.conversationId || request.projectId)) {
-        saveGeneratedImageScope(result.path, request)
+        this.runtime.saveScope(result.path, request)
       }
       this.snapshot = {
         ...this.snapshot,
@@ -116,7 +135,7 @@ export class ImageGenerationJobService {
 
   cancel(): boolean {
     if (this.snapshot.phase !== 'running') return false
-    const cancelled = cancelImageGen()
+    const cancelled = this.runtime.cancel()
     if (!cancelled) return false
     this.snapshot = { ...this.snapshot, phase: 'cancelled', finishedAt: Date.now() }
     this.publish()
