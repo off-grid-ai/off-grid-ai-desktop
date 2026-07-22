@@ -491,6 +491,12 @@ export async function toolChat(
   // set can blow past the context window and 400 the whole turn. Budget to a
   // fraction of the effective context (leaving room for system + history +
   // answer); prune verbose schemas first, drop connector tools only if needed.
+  // Smart routing: rank connector tools by relevance to this turn's message BEFORE
+  // budgeting, so the budgeter (which drops from the end) keeps the tools that
+  // actually match the request rather than whichever were last. Built-ins keep
+  // their position. No-op with 0-1 connector tools or an unrelated query.
+  const { rankConnectorTools } = await import('./tools/tool-ranking')
+  const rankedTools = rankConnectorTools(query, rawTools, builtins.length)
   const { budgetTools } = await import('./tools/tool-budget')
   const ctx = llm.effectiveContextSize()
   // Cap tool tokens in ABSOLUTE terms too, not just as a fraction of context:
@@ -500,7 +506,7 @@ export async function toolChat(
   // roughly halving per-round prompt cost vs the old 45%-of-a-big-context budget.
   const MAX_TOOL_TOKENS = 4000
   const toolBudget = Math.max(1024, Math.min(Math.floor(ctx * 0.4), MAX_TOOL_TOKENS))
-  const budgeted = budgetTools(rawTools, toolBudget, builtins.length)
+  const budgeted = budgetTools(rankedTools, toolBudget, builtins.length)
   if (budgeted.pruned || budgeted.droppedCount) {
     console.warn(
       `[tools] context budget ${toolBudget} tok: pruned schemas${budgeted.droppedCount ? `, dropped ${budgeted.droppedCount} connector tool(s)` : ''} to fit (final ~${budgeted.estTokens} tok)`
