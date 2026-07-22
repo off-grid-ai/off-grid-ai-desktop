@@ -7,8 +7,17 @@
 // — but the user can still run a manual "Check for updates" and choose to install.
 import { autoUpdater } from 'electron-updater'
 import { app, BrowserWindow, ipcMain } from 'electron'
+import type { UpdateInfo } from 'builder-util-runtime'
+import { valid } from 'semver'
 import { getSetting, saveSetting } from './database'
 import { resolveChannelConfig, type UpdateChannel } from './update-channel'
+import { listPreviousUpdateReleases } from './update-release-history'
+
+const GITHUB_UPDATE_PROVIDER = {
+  provider: 'github' as const,
+  owner: 'off-grid-ai',
+  repo: 'off-grid-ai-desktop'
+}
 
 // Version of an update that finished downloading and is staged for install
 // (null = none). Held in main so a window created AFTER the download finished
@@ -16,6 +25,10 @@ import { resolveChannelConfig, type UpdateChannel } from './update-channel'
 // via update:staged-version — the update:downloaded event alone only reaches
 // windows that existed at download time.
 let stagedVersion: string | null = null
+let availableVersion: string | null = null
+let targetedDownloadVersion: string | null = null
+
+const platformSupportsUpdate = autoUpdater.isUpdateSupported
 
 function autoEnabled(): boolean {
   return getSetting<boolean>('updates:auto', true) // default ON
@@ -23,6 +36,18 @@ function autoEnabled(): boolean {
 
 function channelPref(): UpdateChannel {
   return getSetting<UpdateChannel>('updates:channel', 'stable') // default stable
+}
+
+function skippedVersion(): string | null {
+  const stored = getSetting<string | null>('updates:skipped-version', null)
+  return stored && valid(stored) ? stored : null
+}
+
+function applySkippedVersionPolicy(): void {
+  autoUpdater.isUpdateSupported = async (info: UpdateInfo) => {
+    const supported = await Promise.resolve(platformSupportsUpdate(info))
+    return supported && info.version !== skippedVersion()
+  }
 }
 
 // Apply the user's auto-update preference to the updater. With auto OFF nothing
@@ -34,11 +59,10 @@ function applyAutoPref(): void {
 }
 
 // Apply the updater's channel knobs from the user's preference. Decision logic is the
-// pure, Electron-free resolveChannelConfig (unit-tested in update-channel.test.ts): one
-// published feed (latest-mac.yml) for both channels, beta only flips allowPrerelease,
-// and a downgrade is permitted ONLY on an explicit channel switch — never on the routine
-// launch/interval checks, so a beta build (e.g. 0.0.41-beta.69) is never auto-offered an
-// OLDER stable (0.0.38) as an "update".
+// pure, Electron-free resolveChannelConfig. Beta uses the `beta` discovery channel so
+// electron-updater selects prereleases, then its GitHub provider falls back from the
+// absent beta feed to the one published latest feed. A downgrade is permitted only on
+// an explicit channel switch, never on routine launch or interval checks.
 function applyChannel(explicitChannelSwitch = false): void {
   const cfg = resolveChannelConfig(channelPref(), explicitChannelSwitch)
   autoUpdater.channel = cfg.channel
@@ -70,7 +94,8 @@ export function registerUpdateIpc(): void {
   ipcMain.handle('update:get-prefs', () => ({
     currentVersion: app.getVersion(),
     auto: autoEnabled(),
-    channel: channelPref()
+    channel: channelPref(),
+    skippedVersion: skippedVersion()
   }))
 
   // Toggle automatic updates. Persisted + applied live; turning it on kicks an
@@ -99,20 +124,132 @@ export function registerUpdateIpc(): void {
     return next
   })
 
+  ipcMain.handle('update:download', (_e, version: string) => {
+    if (targetedDownloadVersion) {
+      throw new Error(`Version ${targetedDownloadVersion} is already downloading.`)
+    }
+    if (!availableVersion || version !== availableVersion) {
+      throw new Error('Check for updates again before downloading this version.')
+    }
+    saveSetting('updates:skipped-version', null)
+    // An explicit download must still wait for an explicit restart. On macOS,
+    // starting Squirrel with auto-install enabled can stage the bundle for the
+    // next quit before the user has another chance to decline.
+    autoUpdater.autoDownload = false
+    autoUpdater.autoInstallOnAppQuit = false
+    void autoUpdater.downloadUpdate().catch((e) => console.error('[update] download failed', e))
+    return { status: 'downloading' as const, version }
+  })
+
+  ipcMain.handle('update:skip-version', (_e, version: string) => {
+    const normalized = valid(version)
+    if (!normalized) throw new Error('Invalid update version.')
+    saveSetting('updates:skipped-version', normalized)
+    if (availableVersion === normalized) availableVersion = null
+    return normalized
+  })
+
+  ipcMain.handle('update:clear-skipped-version', () => {
+    saveSetting('updates:skipped-version', null)
+    return null
+  })
+
+  ipcMain.handle('update:list-versions', async () => {
+    if (!app.isPackaged) {
+      throw new Error('Previous versions are only available in the installed app.')
+    }
+    const releases = await listPreviousUpdateReleases({
+      currentVersion: app.getVersion(),
+      platform: process.platform
+    })
+    return releases.slice(0, 20).map(({ version, channel, publishedAt }) => ({
+      version,
+      channel,
+      publishedAt
+    }))
+  })
+
+  ipcMain.handle('update:download-version', (_e, version: string) =>
+    downloadPreviousVersion(version)
+  )
+
   // Manual "Check for updates". Resolves with a definite status the UI can show.
-  // If an update exists and auto-download is OFF, we still fetch it so the user's
-  // "Restart to update" banner can install it (the explicit-check implies intent).
+  // With automatic updates off this only reports availability; download remains
+  // a separate, explicit action.
   ipcMain.handle('update:check', () => checkForUpdates())
 }
 
+async function downloadPreviousVersion(
+  requestedVersion: string
+): Promise<{ status: 'downloading'; version: string }> {
+  const normalized = valid(requestedVersion)
+  if (!normalized) throw new Error('Invalid update version.')
+  if (targetedDownloadVersion) {
+    throw new Error(`Version ${targetedDownloadVersion} is already downloading.`)
+  }
+
+  const releases = await listPreviousUpdateReleases({
+    currentVersion: app.getVersion(),
+    platform: process.platform
+  })
+  const target = releases.find((release) => release.version === normalized)
+  if (!target) {
+    throw new Error('That version is no longer available for this device.')
+  }
+
+  targetedDownloadVersion = normalized
+  let downloadStarted = false
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = false
+  autoUpdater.isUpdateSupported = (info) => platformSupportsUpdate(info)
+
+  try {
+    autoUpdater.setFeedURL({ provider: 'generic', url: target.feedUrl })
+    autoUpdater.channel = 'latest'
+    autoUpdater.allowPrerelease = true
+    autoUpdater.allowDowngrade = true
+    const result = await autoUpdater.checkForUpdates()
+    if (!result?.isUpdateAvailable || result.updateInfo.version !== normalized) {
+      throw new Error('The selected version could not be verified for download.')
+    }
+
+    saveSetting('updates:auto', false)
+    const download = autoUpdater.downloadUpdate()
+    downloadStarted = true
+    void download
+      .catch((error) => console.error('[update] previous-version download failed', error))
+      .finally(() => {
+        targetedDownloadVersion = null
+      })
+    return { status: 'downloading', version: normalized }
+  } finally {
+    // downloadUpdate captures the exact provider before returning, so routine
+    // checks can safely return to the normal GitHub channel immediately.
+    autoUpdater.setFeedURL(GITHUB_UPDATE_PROVIDER)
+    applyChannel()
+    applySkippedVersionPolicy()
+    if (!downloadStarted) {
+      targetedDownloadVersion = null
+      applyAutoPref()
+    }
+  }
+}
+
 export function startAutoUpdates(): void {
+  applySkippedVersionPolicy()
   applyAutoPref()
   applyChannel()
 
   autoUpdater.on('error', (e) => console.error('[update] error', e))
   autoUpdater.on('checking-for-update', () => console.log('[update] checking…'))
-  autoUpdater.on('update-available', (i) => console.log('[update] available', i.version))
-  autoUpdater.on('update-not-available', () => console.log('[update] up to date'))
+  autoUpdater.on('update-available', (i) => {
+    availableVersion = i.version
+    console.log('[update] available', i.version)
+  })
+  autoUpdater.on('update-not-available', () => {
+    availableVersion = null
+    console.log('[update] up to date')
+  })
   autoUpdater.on('update-downloaded', (i) => {
     console.log('[update] downloaded', i.version, '— will install on quit')
     stagedVersion = i.version
@@ -131,8 +268,9 @@ export function startAutoUpdates(): void {
 }
 
 export type UpdateCheckResult =
-  | { status: 'available'; version: string }
+  | { status: 'available'; version: string; downloadStarted: boolean }
   | { status: 'not-available'; version: string }
+  | { status: 'skipped'; version: string }
   | { status: 'error'; error: string }
 
 /**
@@ -162,12 +300,18 @@ export function checkForUpdates(timeoutMs = 30_000): Promise<UpdateCheckResult> 
       resolve(r)
     }
     const onAvail = (i: { version: string }): void => {
-      // Explicit check implies intent: stage the download even if auto is off.
-      if (!autoUpdater.autoDownload)
-        autoUpdater.downloadUpdate().catch((e) => console.error('[update] download failed', e))
-      finish({ status: 'available', version: i.version })
+      availableVersion = i.version
+      finish({ status: 'available', version: i.version, downloadStarted: autoUpdater.autoDownload })
     }
-    const onNone = (): void => finish({ status: 'not-available', version: app.getVersion() })
+    const onNone = (i: { version: string }): void => {
+      availableVersion = null
+      const skipped = skippedVersion()
+      finish(
+        skipped && i.version === skipped
+          ? { status: 'skipped', version: skipped }
+          : { status: 'not-available', version: app.getVersion() }
+      )
+    }
     const onErr = (e: unknown): void =>
       finish({ status: 'error', error: e instanceof Error ? e.message : String(e) })
     autoUpdater.once('update-available', onAvail)

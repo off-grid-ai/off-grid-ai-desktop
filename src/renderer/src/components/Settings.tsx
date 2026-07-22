@@ -13,6 +13,7 @@ import { SettingsCard, ProPlaceholder, SettingsCardsGroup } from './SettingsCard
 import { KeyboardShortcuts } from './KeyboardShortcuts'
 import { currentPlatform } from '@renderer/lib/device'
 import { proComingSoonHere } from './pro/proCatalog'
+import { SoftwareUpdateSection } from './SoftwareUpdateSection'
 
 // ---------------------------------------------------------------------------
 // Software update — current version, manual check, automatic-update toggle
@@ -228,107 +229,7 @@ export function ModelPipelineSection(): React.ReactElement {
   )
 }
 
-function SoftwareUpdateSection(): React.ReactElement {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const api = (window as any).api
-  const [auto, setAuto] = useState(true)
-  const [beta, setBeta] = useState(false)
-  const [version, setVersion] = useState('')
-  const [checking, setChecking] = useState(false)
-  const [status, setStatus] = useState('')
-  useEffect(() => {
-    api
-      .updateGetPrefs?.()
-      .then((p: { currentVersion?: string; auto?: boolean; channel?: string }) => {
-        setVersion(p.currentVersion ?? '')
-        setAuto(p.auto !== false)
-        setBeta(p.channel === 'beta')
-      })
-      .catch(() => {})
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [])
-  const toggle = (): void => {
-    void persistToggle(!auto, auto, setAuto, (v) => api.updateSetAuto?.(v))
-  }
-  const toggleBeta = (): void => {
-    const next = !beta
-    void persistToggle(next, beta, setBeta, () => api.updateSetChannel?.(next ? 'beta' : 'stable'))
-    setStatus(
-      next
-        ? 'Switched to nightly builds — these ship on every change and are pre-release. Turn this off to return to stable.'
-        : 'Back on stable builds. You will move to the latest stable version on the next check.'
-    )
-  }
-  const check = async (): Promise<void> => {
-    setChecking(true)
-    setStatus('Checking for updates...')
-    try {
-      const r = await api.checkForUpdates?.()
-      if (!r) setStatus('Could not check right now.')
-      else if (r.status === 'available')
-        setStatus(
-          `Update ${r.version} found. Downloading in the background - you'll get a "Restart to update" prompt when it's ready.`
-        )
-      else if (r.status === 'not-available')
-        setStatus(`You're on the latest version (v${r.version}).`)
-      else setStatus(`Could not check: ${r.error}`)
-    } catch {
-      setStatus('Could not check right now.')
-    } finally {
-      setChecking(false)
-    }
-  }
-  // Body only — the card chrome + title come from SettingsCard.
-  return (
-    <div>
-      <div className="flex items-start justify-between gap-4">
-        <p className="text-neutral-500 text-sm">
-          Off Grid checks for updates in the background and installs them when you quit. Turn this
-          off to update only when you choose.
-        </p>
-        <button
-          onClick={toggle}
-          role="switch"
-          aria-checked={auto}
-          className={`relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${auto ? 'bg-emerald-500' : 'bg-neutral-700'}`}
-        >
-          <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${auto ? 'translate-x-6' : 'translate-x-1'}`}
-          />
-        </button>
-      </div>
-      <div className="mt-4 flex items-start justify-between gap-4 border-t border-neutral-800 pt-4">
-        <p className="text-neutral-500 text-sm">
-          Get nightly builds. New features land here first, on every change, before they reach
-          stable. These are pre-release - expect rough edges. Off by default.
-        </p>
-        <button
-          onClick={toggleBeta}
-          role="switch"
-          aria-checked={beta}
-          className={`relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${beta ? 'bg-emerald-500' : 'bg-neutral-700'}`}
-        >
-          <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${beta ? 'translate-x-6' : 'translate-x-1'}`}
-          />
-        </button>
-      </div>
-      <div className="mt-4 flex items-center gap-3">
-        <button
-          onClick={check}
-          disabled={checking}
-          className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:border-neutral-500 disabled:opacity-60"
-        >
-          {checking ? 'Checking...' : 'Check for updates'}
-        </button>
-        {version && <span className="text-xs text-neutral-600">Current: v{version}</span>}
-      </div>
-      {status && <p className="mt-2 text-xs text-neutral-500">{status}</p>}
-    </div>
-  )
-}
-
-export function Settings() {
+export function Settings(): React.ReactElement {
   // Pro/core aware: the pro Settings sections (identity / proactive / secretary /
   // plan) render only when the pro package has registered them (section registry);
   // the free build shows the catalogued placeholders. isPro still drives the header

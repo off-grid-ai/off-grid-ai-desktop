@@ -230,6 +230,12 @@ const offGridApi = {
   updateSetAuto: (on: boolean) => ipcRenderer.invoke('update:set-auto', on),
   updateSetChannel: (channel: 'stable' | 'beta') =>
     ipcRenderer.invoke('update:set-channel', channel),
+  updateDownload: (version: string) => ipcRenderer.invoke('update:download', version),
+  updateSkipVersion: (version: string) => ipcRenderer.invoke('update:skip-version', version),
+  updateClearSkippedVersion: () => ipcRenderer.invoke('update:clear-skipped-version'),
+  updateListVersions: () => ipcRenderer.invoke('update:list-versions'),
+  updateDownloadVersion: (version: string) =>
+    ipcRenderer.invoke('update:download-version', version),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
 
   // Notification Events — only the things that need the user's attention:
