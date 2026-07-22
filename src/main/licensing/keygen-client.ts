@@ -53,6 +53,16 @@ export interface KeygenMachine {
 /** Raised on a network/transport failure (offline), never on a 4xx from Keygen. */
 export class KeygenNetworkError extends Error {}
 
+type JsonObject = Record<string, unknown>
+
+function objectValue(value: unknown): JsonObject | null {
+  return typeof value === 'object' && value !== null ? (value as JsonObject) : null
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
+}
+
 async function request(path: string, init: RequestInit): Promise<Response> {
   try {
     return await fetch(`${KEYGEN_API_BASE}${path}`, init)
@@ -69,22 +79,27 @@ function safeId(id: string): string {
   return id
 }
 
-export function toLicense(data: any): KeygenLicense | null {
-  if (!data || !data.id) return null
+export function toLicense(data: unknown): KeygenLicense | null {
+  const resource = objectValue(data)
+  const id = stringValue(resource?.id)
+  if (!resource || !id) return null
+  const attributes = objectValue(resource.attributes)
   return {
-    id: data.id,
-    expiry: data.attributes?.expiry ?? null,
-    metadata: data.attributes?.metadata ?? {},
-    name: data.attributes?.name ?? null
+    id,
+    expiry: stringValue(attributes?.expiry),
+    metadata: objectValue(attributes?.metadata) ?? {},
+    name: stringValue(attributes?.name)
   }
 }
 
 /** Turn a validate-key JSON:API body into our ValidateResult shape. Pure. */
-export function parseValidateResult(body: any): ValidateResult {
+export function parseValidateResult(body: unknown): ValidateResult {
+  const document = objectValue(body)
+  const meta = objectValue(document?.meta)
   return {
-    valid: !!body?.meta?.valid,
-    code: (body?.meta?.code ?? 'UNKNOWN') as ValidationCode,
-    license: toLicense(body?.data)
+    valid: meta?.valid === true,
+    code: (stringValue(meta?.code) ?? 'UNKNOWN') as ValidationCode,
+    license: toLicense(document?.data)
   }
 }
 
@@ -95,32 +110,40 @@ export function parseValidateResult(body: any): ValidateResult {
  */
 export function parseActivateResult(
   status: number,
-  body: any
+  body: unknown
 ): { ok: boolean; limitReached: boolean } {
   if (status === 201) return { ok: true, limitReached: false }
-  const errors: any[] = body?.errors ?? []
+  const document = objectValue(body)
+  const errors = Array.isArray(document?.errors) ? document.errors : []
   const limitReached =
     status === 422 &&
-    errors.some(
-      (e) =>
-        String(e?.code ?? '').includes('LIMIT') ||
-        String(e?.detail ?? '')
+    errors.some((error) => {
+      const detail = objectValue(error)
+      return (
+        String(detail?.code ?? '').includes('LIMIT') ||
+        String(detail?.detail ?? '')
           .toLowerCase()
           .includes('machine limit')
-    )
+      )
+    })
   return { ok: false, limitReached }
 }
 
 /** Turn a list-machines JSON:API body into our KeygenMachine[] shape. Pure. */
-export function parseMachines(body: any): KeygenMachine[] {
-  const data: any[] = body?.data ?? []
-  return data.map((m) => ({
-    id: m.id,
-    fingerprint: m.attributes?.fingerprint ?? '',
-    platform: m.attributes?.platform ?? null,
-    name: m.attributes?.name ?? null,
-    lastSeen: m.attributes?.lastHeartbeat ?? m.attributes?.created ?? null
-  }))
+export function parseMachines(body: unknown): KeygenMachine[] {
+  const document = objectValue(body)
+  const data = Array.isArray(document?.data) ? document.data : []
+  return data.map((machine) => {
+    const resource = objectValue(machine)
+    const attributes = objectValue(resource?.attributes)
+    return {
+      id: stringValue(resource?.id) ?? '',
+      fingerprint: stringValue(attributes?.fingerprint) ?? '',
+      platform: stringValue(attributes?.platform),
+      name: stringValue(attributes?.name),
+      lastSeen: stringValue(attributes?.lastHeartbeat) ?? stringValue(attributes?.created)
+    }
+  })
 }
 
 /** Validate a key, scoped to this product + device fingerprint. No auth needed. */
@@ -132,7 +155,7 @@ export async function validateKey(key: string, fingerprint: string): Promise<Val
       meta: { key, scope: { product: KEYGEN_PRODUCT_ID, fingerprint } }
     })
   })
-  const body: any = await res.json().catch(() => ({}))
+  const body: unknown = await res.json().catch(() => ({}))
   return parseValidateResult(body)
 }
 
@@ -155,11 +178,11 @@ export async function activateMachine(
     })
   })
   if (res.status === 201) return { ok: true, limitReached: false }
-  const body: any = await res.json().catch(() => ({}))
+  const body: unknown = await res.json().catch(() => ({}))
   const result = parseActivateResult(res.status, body)
   if (!result.limitReached) {
     // Strip CR/LF from the server-returned error before logging (anti log-forging) and cap it.
-    const errStr = JSON.stringify(body?.errors ?? [])
+    const errStr = JSON.stringify(objectValue(body)?.errors ?? [])
       .replace(/[\r\n]+/g, ' ')
       .slice(0, 300)
     console.error(`[Keygen] activate failed (${res.status}): ${errStr}`)
@@ -173,7 +196,7 @@ export async function listMachines(key: string, licenseId: string): Promise<Keyg
     method: 'GET',
     headers: { Accept: JSON_API, Authorization: `License ${key}` }
   })
-  const body: any = await res.json().catch(() => ({}))
+  const body: unknown = await res.json().catch(() => ({}))
   return parseMachines(body)
 }
 
