@@ -104,7 +104,7 @@ export function PermissionGate({ children }: PermissionGateProps) {
 
   useEffect(() => {
     if (!isPro) return
-    const timer = setInterval(() => void checkCaptureVision(), 5_000)
+    const offCapture = window.api.proOn?.('capture:changed', () => void checkCaptureVision())
     const offProgress = window.api.onModelProgress?.((progress) => {
       if (progress.modelId !== visionIssue?.modelId) return
       if (progress.status === 'completed') {
@@ -117,7 +117,7 @@ export function PermissionGate({ children }: PermissionGateProps) {
       }
     })
     return () => {
-      clearInterval(timer)
+      if (typeof offCapture === 'function') offCapture()
       if (typeof offProgress === 'function') offProgress()
     }
   }, [checkCaptureVision, isPro, visionIssue?.modelId])

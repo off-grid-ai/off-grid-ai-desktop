@@ -13,10 +13,14 @@ import { PermissionGate } from '../PermissionGate'
 const MODEL_ID = 'unsloth/gemma-4-E2B-it-GGUF'
 let visionStatus: Record<string, { supportsVision: boolean; projectorInstalled: boolean }>
 let downloadModel: ReturnType<typeof vi.fn>
+let captureStatus: { running: boolean; paused: boolean; visionReady: boolean }
+let proListeners: Map<string, () => void>
 
 beforeEach(() => {
   visionStatus = {}
   downloadModel = vi.fn(async () => ({ success: true }))
+  captureStatus = { running: true, paused: false, visionReady: false }
+  proListeners = new Map()
   Object.defineProperty(window, 'api', {
     configurable: true,
     value: {
@@ -32,9 +36,13 @@ beforeEach(() => {
       getModelVisionStatus: async () => visionStatus,
       proInvoke: async (channel: string) => {
         if (channel === 'capture:status') {
-          return { running: true, paused: false, visionReady: false }
+          return captureStatus
         }
         return null
+      },
+      proOn: (channel: string, callback: () => void) => {
+        proListeners.set(channel, callback)
+        return () => proListeners.delete(channel)
       },
       onModelProgress: () => () => {},
       downloadModel
@@ -74,5 +82,22 @@ describe('<PermissionGate/> Pro capture vision recovery', () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledOnce())
     expect((navigate.mock.calls[0]?.[0] as CustomEvent).detail).toBe('models')
     window.removeEventListener('og:navigate', navigate)
+  })
+
+  it('surfaces a new capture vision problem when the running pipeline reports a change', async () => {
+    captureStatus = { running: true, paused: false, visionReady: true }
+    render(
+      <PermissionGate>
+        <div>App shell</div>
+      </PermissionGate>
+    )
+
+    await screen.findByText('App shell')
+    expect(screen.queryByText('Capture needs a vision model')).toBeNull()
+
+    captureStatus = { running: true, paused: false, visionReady: false }
+    proListeners.get('capture:changed')?.()
+
+    expect(await screen.findByText('Capture needs a vision model')).toBeTruthy()
   })
 })
