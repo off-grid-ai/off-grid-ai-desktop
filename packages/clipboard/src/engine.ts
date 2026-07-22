@@ -6,7 +6,7 @@
 // Adapted from copyclip's clipboard-monitor (MIT); the OS-specific reading now
 // lives behind ClipboardBridge instead of being baked in.
 
-import type { ClipboardBridge, ClipboardItem, ClipboardStore } from './types'
+import type { ClipboardBridge, ClipboardItem, ClipboardRead, ClipboardStore } from './types'
 
 export interface ClipboardEngineOptions {
   bridge: ClipboardBridge
@@ -99,7 +99,7 @@ export class ClipboardEngine {
     return inserted
   }
 
-  private safeRead() {
+  private safeRead(): ClipboardRead | null {
     try {
       return this.opts.bridge.read()
     } catch {

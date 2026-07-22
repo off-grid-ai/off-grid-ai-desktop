@@ -74,8 +74,35 @@ interface ReprocessProgress {
 interface AppSettings {
   memoryStrictness?: 'lenient' | 'balanced' | 'strict'
   entityStrictness?: 'lenient' | 'balanced' | 'strict'
-  [key: string]: any
+  [key: string]: unknown
 }
+
+interface ChatSessionRecord {
+  session_id: string
+  last_activity: string
+  memory_count: number
+  entity_count: number
+  summary: string | null
+}
+
+interface SessionMemoryRecord {
+  id: number
+  content: string
+  raw_text?: string
+  source_app: string
+  session_id: string
+  created_at: string
+}
+
+interface SessionEntityRecord {
+  id: number
+  name: string
+  type: string
+  summary: string | null
+  updated_at: string
+  fact_count: number
+}
+
 type ArtifactKind = import('../../shared/ipc-contracts').ArtifactKindContract
 
 interface RendererAPIOverrides {
@@ -113,17 +140,17 @@ interface RendererAPIOverrides {
   onMasterMemoryProgress?: (
     callback: (data: { current: number; total: number }) => void
   ) => () => void
-  getMemories: (limit: number, appName?: string) => Promise<any[]>
+  getMemories: (limit: number, appName?: string) => Promise<unknown[]>
   addMemory: (content: string, source?: string) => Promise<{ id: number }>
-  searchMemories: (query: string) => Promise<any[]>
-  getStats: () => Promise<any>
+  searchMemories: (query: string) => Promise<unknown[]>
+  getStats: () => Promise<Record<string, number>>
   getDashboardStats: () => Promise<DashboardStats>
   extractMemory: (text: string) => Promise<{ summary: string; entities: string[]; topic: string }>
 
-  getChatSessions: (appName?: string) => Promise<any[]>
-  getMemoriesForSession: (sessionId: string) => Promise<any[]>
-  getEntitiesForSession: (sessionId: string) => Promise<any[]>
-  getMemoryRecordsForSession: (sessionId: string) => Promise<any[]>
+  getChatSessions: (appName?: string) => Promise<ChatSessionRecord[]>
+  getMemoriesForSession: (sessionId: string) => Promise<unknown[]>
+  getEntitiesForSession: (sessionId: string) => Promise<SessionEntityRecord[]>
+  getMemoryRecordsForSession: (sessionId: string) => Promise<SessionMemoryRecord[]>
   summarizeSession: (sessionId: string) => Promise<string>
   deleteSession: (sessionId: string) => Promise<boolean>
 
@@ -148,7 +175,7 @@ interface RendererAPIOverrides {
       streamId: string
       type: 'content' | 'reasoning' | 'step'
       text?: string
-      step?: any
+      step?: unknown
     }) => void
   ) => () => void
   cancelRag: (streamId: string) => void
@@ -163,7 +190,7 @@ interface RendererAPIOverrides {
     conversationId: string,
     role: 'user' | 'assistant',
     content: string,
-    context?: any
+    context?: unknown
   ) => Promise<number>
   truncateRagMessages: (conversationId: string, keepCount: number) => Promise<number>
   updateRagConversationTitle: (id: string, title: string) => Promise<RagConversation>
@@ -171,7 +198,7 @@ interface RendererAPIOverrides {
 
   // App Settings
   getSettings: () => Promise<AppSettings>
-  saveSetting: (key: string, value: any) => Promise<void>
+  saveSetting: (key: string, value: unknown) => Promise<void>
   consoleEnroll: (
     url: string,
     token: string
@@ -193,13 +220,13 @@ interface RendererAPIOverrides {
   consoleDisconnect: () => Promise<boolean>
   reprocessAllSessions: (clean?: boolean) => Promise<{ processed: number; total: number }>
 
-  getEntities: (appName?: string) => Promise<any[]>
-  getEntityDetails: (entityId: number, appName?: string) => Promise<any>
+  getEntities: (appName?: string) => Promise<unknown[]>
+  getEntityDetails: (entityId: number, appName?: string) => Promise<unknown>
   getEntityGraph: (
     appName?: string,
     focusEntityId?: number,
     edgeLimit?: number
-  ) => Promise<{ nodes: any[]; edges: any[] }>
+  ) => Promise<{ nodes: unknown[]; edges: unknown[] }>
   rebuildEntityGraph: () => Promise<boolean>
   deleteEntity: (entityId: number) => Promise<boolean>
   deleteMemory: (memoryId: number) => Promise<boolean>
