@@ -3,8 +3,8 @@
  *
  * No renderer, IPC, updater, database, or network mocks: this launches the packaged
  * application with a fresh synthetic profile and loads the real signed-release list
- * from GitHub through the production main/preload/renderer path. It stops at the
- * confirmation boundary so the test never downloads or stages an older app bundle.
+ * from GitHub through the production main/preload/renderer path. It confirms the
+ * selected version reaches electron-updater, then closes before the bundle can finish.
  */
 import {
   expect,
@@ -56,6 +56,10 @@ test.beforeAll(async () => {
     .getByRole('button', { name: 'Expand sidebar' })
     .click({ timeout: 4000 })
     .catch(() => {})
+  await page
+    .getByRole('button', { name: 'Dismiss' })
+    .click({ timeout: 2000 })
+    .catch(() => {})
   await page.getByRole('button', { name: 'Settings', exact: true }).first().click()
   await page.getByRole('heading', { name: 'Software update' }).click()
 })
@@ -65,7 +69,7 @@ test.afterAll(async () => {
   if (userDataDir) fs.rmSync(userDataDir, { recursive: true, force: true })
 })
 
-test('a user can inspect a real signed release and reach rollback confirmation', async () => {
+test('a user can confirm a real signed release and start its exact-version download', async () => {
   await expect(page.getByRole('switch', { name: 'Automatic updates' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Previous versions' })).toBeVisible()
 
@@ -86,7 +90,17 @@ test('a user can inspect a real signed release and reach rollback confirmation',
     page.getByText(new RegExp(`Data written by v.+ may not open correctly in v${version}`))
   ).toBeVisible()
   await expect(page.getByText(/Automatic updates will be turned off/)).toBeVisible()
-  await expect(page.getByRole('button', { name: `Download v${version}` })).toBeVisible()
+  const downloadButton = page.getByRole('button', { name: `Download v${version}` })
+  await expect(downloadButton).toBeVisible()
   await page.waitForTimeout(500)
   await page.screenshot({ path: 'e2e/screenshots/update-rollback-confirmation.png' })
+
+  await downloadButton.click()
+  const downloadStatus = page.getByText(
+    `Downloading v${version}. Restart when the update banner appears.`
+  )
+  await expect(downloadStatus).toBeVisible({ timeout: 20_000 })
+  await page.getByRole('button', { name: 'Hide previous versions' }).click()
+  await expect(page.getByRole('button', { name: 'Previous versions' })).toBeVisible()
+  await page.screenshot({ path: 'e2e/screenshots/update-rollback-download-started.png' })
 })
