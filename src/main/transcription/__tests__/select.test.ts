@@ -15,7 +15,15 @@ const svc = (available: boolean, tag: string): TranscriptionService => ({
   transcribe: async () => ({ text: tag })
 })
 
-const three = (w: boolean, p: boolean, r: boolean) => ({
+const three = (
+  w: boolean,
+  p: boolean,
+  r: boolean
+): {
+  whisper: TranscriptionService
+  parakeet: TranscriptionService
+  whisperResident: TranscriptionService
+} => ({
   whisper: svc(w, 'w'),
   parakeet: svc(p, 'p'),
   whisperResident: svc(r, 'r')

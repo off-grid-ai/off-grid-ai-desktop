@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { ModalityQueue, type QueueState } from '../queue'
 
 /** A controllable async fn: resolves only when release() is called. */
-function deferred<T>() {
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (v: T) => void
   const promise = new Promise<T>((r) => {
     resolve = r
@@ -10,7 +10,7 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-const tick = () => new Promise((r) => setTimeout(r, 0))
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('ModalityQueue', () => {
   it('runs two tier-2 jobs sequentially, not concurrently', async () => {
