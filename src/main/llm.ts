@@ -6,7 +6,13 @@ import path from 'path'
 import * as fs from 'fs'
 import { modelsDir as getModelsDir, binRoots, isPackaged, exe } from './runtime-env'
 import { reapOrphanProcessesOnPort, type PortReapResult } from './kill-orphan-port'
-import { computeSafeCtx, modeBudget, type KvCacheType, type PerformanceMode } from './model-sizing'
+import {
+  computeSafeCtx,
+  modeBudget,
+  loadAttempts,
+  type KvCacheType,
+  type PerformanceMode
+} from './model-sizing'
 import { resolveMaxTokens } from './llm/gen-params'
 import { classifyLlamaError, modelPortConflictReason } from './llama-error'
 import type { ManagedRuntime } from './runtime-manager'
@@ -235,12 +241,19 @@ export class LLMService {
    *  `buildLaunchArgs` (single source of truth) after applying the impure RAM clamp,
    *  so `_doInit` and tests build args the same way. */
   launchArgs(): string[] {
+    return this.launchArgsFor(this.safeCtxSize(this.ctxSize), this.gpuLayers)
+  }
+
+  /** Build the argv for a SPECIFIC context size + GPU-layer count — the single
+   *  source used by both `launchArgs()` and the OOM fallback ladder, so every
+   *  attempt is constructed the same way (only ctx + ngl vary). */
+  private launchArgsFor(effectiveCtxSize: number, gpuLayers: number): string[] {
     return buildLaunchArgs({
       modelPath: this.modelPath,
       mmProjPath: this.mmProjPath,
       port: this.port,
-      effectiveCtxSize: this.safeCtxSize(this.ctxSize),
-      gpuLayers: this.gpuLayers,
+      effectiveCtxSize,
+      gpuLayers,
       flashAttn: this.flashAttn,
       kvCacheType: this.kvCacheType,
       threads: this.threads,
@@ -547,10 +560,6 @@ export class LLMService {
 
     console.log(`[LLMService] Model: ${this.modelPath}`)
 
-    // launchArgs() (settings-math buildLaunchArgs) is the single source of truth for
-    // the llama-server launch args — ctx/ngl/flash-attn/kv-cache/threads/batch. The
-    // per-engine quarantine strip + binDir live in launchServer() below.
-    const args = this.launchArgs()
     // Kill any lingering server before spawning (defends against a crashed or
     // orphaned instance still holding the port / RAM).
     if (this.server) {
@@ -567,17 +576,41 @@ export class LLMService {
     // prepareModelPort records an actionable conflict for System Health and aborts this startup.
     await this.prepareModelPort()
 
-    for (let i = 0; i < serverPaths.length; i++) {
-      const serverPath = serverPaths[i]
+    if (await this.launchWithFallback(serverPaths)) return
+    console.error('[LLMService] all llama-server engines failed to load the model')
+  }
+
+  /** Try to load the model, degrading instead of failing so the user is never told
+   *  "can't load". For each engine binary we walk the loadAttempts ladder (requested
+   *  context on GPU → smaller contexts → CPU-only at 2048). We only step DOWN the
+   *  ladder on an out-of-memory failure — any other failure (unsupported arch,
+   *  missing dylib) won't be fixed by less context, so we move to the next engine.
+   *  launchArgs()/buildLaunchArgs stays the single source for the argv shape. */
+  private async launchWithFallback(serverPaths: string[]): Promise<boolean> {
+    const attempts = loadAttempts(this.safeCtxSize(this.ctxSize), this.gpuLayers)
+    for (const serverPath of serverPaths) {
       if (!serverPath) continue
-      if (await this.launchServer(serverPath, args)) return // ready
-      if (i < serverPaths.length - 1) {
-        console.warn(`[LLMService] engine at ${serverPath} failed to start; trying fallback engine`)
-        // launchServer already tore its process down; free the port before retry.
+      for (let a = 0; a < attempts.length; a++) {
+        const at = attempts[a]
+        if (!at) continue
+        if (a > 0) {
+          console.warn(`[LLMService] out of memory — retrying load at ${at.reason}`)
+        }
+        const args = this.launchArgsFor(at.ctxSize, at.gpuLayers)
+        if (await this.launchServer(serverPath, args)) {
+          if (a > 0) {
+            console.warn(`[LLMService] model loaded via fallback: ${at.reason}`)
+          }
+          return true
+        }
+        // launchServer already tore its process down; free the port before any retry.
         await this.prepareModelPort()
+        // Advance down the ladder ONLY for a memory failure; anything else means a
+        // smaller context won't help, so give up on this engine and try the next.
+        if (classifyLlamaError(this.stderrTail.join('\n'))?.code !== 'out_of_memory') break
       }
     }
-    console.error('[LLMService] all llama-server engines failed to start')
+    return false
   }
 
   /** Spawn ONE llama-server binary and wait until the model is loaded. Returns
