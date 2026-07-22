@@ -203,6 +203,12 @@ describe('macOS artifact integrity', () => {
         assertAsarEntryInventory(['\\out\\packaged-helpers-stale\\package\\x.js'])
       ).toThrow('unexpected build output')
     })
+
+    it('still rejects a nested application bundle with Windows separators', () => {
+      expect(() =>
+        assertAsarEntryInventory(['\\out\\main\\Nested.APP\\Contents\\Info.plist'])
+      ).toThrow('nested application bundle')
+    })
   })
 
   it('enforces ASAR inventory on the real Windows artifact hook', async () => {
