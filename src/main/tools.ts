@@ -10,6 +10,7 @@ import fs from 'fs'
 import { llm } from './llm'
 import { SEARCH_KB_TOOL, makeSearchKnowledgeBaseHandler } from '@offgrid/rag'
 import { isMemoryToolAllowed } from './tools/memory-scope'
+import { parseToolCallsFromText } from './tools/tool-call-parse'
 import { getSetting, saveSetting } from './database'
 import { buildUserContent } from './tool-content'
 import { stripTags, htmlToText, decodeDdgHref } from './tools-parsers'
@@ -589,31 +590,45 @@ export async function toolChat(
     // Return what we have; the renderer treats the turn as cancelled.
     if (opts.signal?.aborted) return { answer: content.trim(), toolCalls, unified, imageRequest }
 
-    if (calls.length) {
+    // Native tool_calls are preferred; but small on-device models (the gemma-4 we
+    // ship) often emit a call as TEXT instead of on the tool_calls channel. When
+    // the native channel is empty, recover any text-form call so the turn isn't a
+    // dead narration ("I would search for…"). Normalize both into one shape with
+    // args already parsed to an object.
+    const effective =
+      calls.length > 0
+        ? calls.map((c) => ({
+            id: c.id,
+            name: c.name,
+            args: safeParseArgs(c.arguments),
+            rawArgs: c.arguments || '{}'
+          }))
+        : parseToolCallsFromText(content).map((c, i) => ({
+            id: `txt-${String(step)}-${String(i)}`,
+            name: c.name,
+            args: c.args,
+            rawArgs: JSON.stringify(c.args)
+          }))
+
+    if (effective.length) {
       // Re-add the assistant turn (with its tool_calls) so the model sees what it invoked.
       messages.push({
         role: 'assistant',
         content: content || null,
-        tool_calls: calls.map((c) => ({
+        tool_calls: effective.map((c) => ({
           id: c.id,
           type: 'function',
-          function: { name: c.name, arguments: c.arguments }
+          function: { name: c.name, arguments: c.rawArgs }
         }))
       })
-      for (const c of calls) {
-        let args: Record<string, unknown> = {}
-        try {
-          args = JSON.parse(c.arguments || '{}')
-        } catch {
-          /* keep empty */
-        }
-        opts.onStep?.({ name: c.name, args }) // surface the tool activity BEFORE running it
+      for (const c of effective) {
+        opts.onStep?.({ name: c.name, args: c.args }) // surface the tool activity BEFORE running it
         // Uniform dispatch — every tool owns its own result. Merge any structured
         // side channels: sources are deduped into `unified` across rounds; the last
         // non-empty imageRequest wins (deferred generation after the turn).
         const res = await runTool(
           c.name,
-          args,
+          c.args,
           { conversationId: opts.conversationId, projectId: opts.projectId },
           exts
         )
@@ -623,7 +638,7 @@ export async function toolChat(
           unified.push(s)
         }
         if (res.imageRequest) imageRequest = res.imageRequest
-        toolCalls.push({ name: c.name, args, result: res.text })
+        toolCalls.push({ name: c.name, args: c.args, result: res.text })
         // Surface the COMPLETED call (with its result) live, so the UI can show each
         // tool call + result as it lands, not only in the final batch.
         opts.onToolResult?.({ name: c.name, result: res.text })
@@ -634,7 +649,34 @@ export async function toolChat(
     // No tool calls this round: `content` is the final answer (already streamed via onDelta).
     return { answer: content.trim(), toolCalls, unified, imageRequest }
   }
-  return { answer: 'Stopped after too many tool steps.', toolCalls, unified, imageRequest }
+  // Step cap reached with the model still calling tools. Instead of dead-ending
+  // with a canned "stopped" message, FORCE one final answer WITHOUT tools, so the
+  // user gets a real response built from the results gathered so far.
+  if (opts.signal?.aborted) {
+    return { answer: '', toolCalls, unified, imageRequest }
+  }
+  const final = await llm.streamChat(messages, onDelta, {
+    temperature: 0.3,
+    maxTokens: 1024,
+    thinking: false,
+    signal: opts.signal
+  })
+  return {
+    answer: final.content.trim() || 'Stopped after too many tool steps.',
+    toolCalls,
+    unified,
+    imageRequest
+  }
+}
+
+/** Parse a tool-call arguments JSON string to an object; empty object on failure. */
+function safeParseArgs(raw: string | undefined): Record<string, unknown> {
+  try {
+    const v = JSON.parse(raw || '{}')
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
 }
 
 /** Names + descriptions + enabled state of all tools (for the settings UI). */

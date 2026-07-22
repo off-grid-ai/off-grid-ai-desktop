@@ -126,6 +126,48 @@ describe('agentic tool loop — real toolChat + real LLMService over a fake llam
     )
   })
 
+  it('recovers a tool call the model emitted as TEXT (no native tool_calls) and runs it', async () => {
+    // The small on-device models we ship often print <tool_call>{…} as content
+    // instead of using the tool_calls channel. The loop must recover it, run the
+    // tool for real, feed the result back, and still answer — not narrate a dead
+    // "I would calculate…". Round 1 has NO toolCalls, only text.
+    fake.enqueue(
+      {
+        content:
+          'Let me compute that.\n<tool_call>{"name":"calculator","arguments":{"expression":"2+2"}}</tool_call>'
+      },
+      { content: 'It is 4.' }
+    )
+    const steps: string[] = []
+    const r = await toolChat('what is 2+2', [], { onStep: (c) => steps.push(c.name) })
+
+    expect(steps).toEqual(['calculator']) // recovered from text + surfaced before running
+    expect(r.toolCalls.map((c) => ({ name: c.name, result: c.result }))).toContainEqual({
+      name: 'calculator',
+      result: '4'
+    })
+    expect(r.answer).toContain('4')
+    // The recovered call was fed back as a real tool turn on round 2.
+    const round2 = fake.requests[1] as { messages?: Array<{ role: string }> }
+    expect(round2.messages?.some((m) => m.role === 'tool')).toBe(true)
+  })
+
+  it('forces a real final answer from the results when the step cap is hit (no dead-end)', async () => {
+    // Five tool-call rounds exhaust the loop; instead of a canned "stopped" reply,
+    // the loop makes ONE more no-tools generation so the user gets a real answer
+    // built from what the tools returned.
+    for (let i = 0; i < 5; i++) {
+      fake.enqueue({ toolCalls: [{ name: 'get_datetime', args: {} }] })
+    }
+    fake.enqueue({ content: 'Based on the tools, here is your answer.' })
+    const r = await toolChat('keep going', [])
+    expect(r.answer).toBe('Based on the tools, here is your answer.')
+    expect(r.answer).not.toMatch(/too many tool steps/i)
+    // The final generation ran WITHOUT tools (the forced answer pass).
+    const lastReq = fake.requests[fake.requests.length - 1] as { tools?: unknown[] }
+    expect(lastReq.tools ?? []).toHaveLength(0)
+  })
+
   it('rejects a non-arithmetic calculator expression (real guard branch)', async () => {
     fake.enqueue(
       { toolCalls: [{ name: 'calculator', args: { expression: 'process.exit(1)' } }] },
