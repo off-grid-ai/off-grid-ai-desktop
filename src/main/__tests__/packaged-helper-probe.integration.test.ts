@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
   if (failure && strcmp(failure, name) == 0) return 70;
   const char *hang = getenv("OFFGRID_HELPER_FIXTURE_HANG");
   if (hang && strcmp(hang, name) == 0) while (1) {}
-  if (strcmp(name, "llama-server") == 0) puts("usage: llama-server [options]");
+  if (strcmp(name, "llama-server") == 0) puts("----- common params -----\n-h, --help, --usage    print usage and exit\n-t, --threads N    number of CPU threads (env: LLAMA_ARG_THREADS)");
   else if (strcmp(name, "ffmpeg") == 0) puts("ffmpeg version 6.0-fixture");
   else if (strcmp(name, "whisper-cli") == 0) puts("usage: whisper-cli [options] file\noptions:");
   else if (strcmp(name, "sd-server") == 0) puts("stable-diffusion.cpp version fixture\nUsage: sd-server [options]");

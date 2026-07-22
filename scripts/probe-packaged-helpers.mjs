@@ -22,7 +22,10 @@ const probes = [
     name: 'llama-server',
     relative: 'bin/llama/llama-server',
     args: ['--help'],
-    output: /(?:usage:.*llama-server|llama-server.*options)/is,
+    // llama.cpp b9838+ dropped the "usage: llama-server [options]" banner; --help now leads
+    // with "----- common params -----" and a flag list (e.g. the LLAMA_ARG_THREADS env note).
+    // Match the current format and keep the legacy banner so an older engine still passes.
+    output: /-+\s*common params|--help,\s*--usage|LLAMA_ARG_THREADS|usage:.*llama-server/is,
     libraryPath: true
   },
   {
