@@ -15,12 +15,18 @@ let visionStatus: Record<string, { supportsVision: boolean; projectorInstalled: 
 let downloadModel: ReturnType<typeof vi.fn>
 let captureStatus: { running: boolean; paused: boolean; visionReady: boolean }
 let proListeners: Map<string, () => void>
+let modelProgress: ((progress: {
+  modelId: string
+  percent?: number
+  status?: 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled'
+}) => void) | null
 
 beforeEach(() => {
   visionStatus = {}
   downloadModel = vi.fn(async () => ({ success: true }))
   captureStatus = { running: true, paused: false, visionReady: false }
   proListeners = new Map()
+  modelProgress = null
   Object.defineProperty(window, 'api', {
     configurable: true,
     value: {
@@ -44,7 +50,12 @@ beforeEach(() => {
         proListeners.set(channel, callback)
         return () => proListeners.delete(channel)
       },
-      onModelProgress: () => () => {},
+      onModelProgress: (callback: typeof modelProgress) => {
+        modelProgress = callback
+        return () => {
+          modelProgress = null
+        }
+      },
       downloadModel
     }
   })
@@ -99,5 +110,74 @@ describe('<PermissionGate/> Pro capture vision recovery', () => {
     proListeners.get('capture:changed')?.()
 
     expect(await screen.findByText('Capture needs a vision model')).toBeTruthy()
+  })
+
+  it('does not misdirect a configured vision model during a transient pipeline mismatch', async () => {
+    visionStatus = { [MODEL_ID]: { supportsVision: true, projectorInstalled: true } }
+    render(
+      <PermissionGate>
+        <div>App shell</div>
+      </PermissionGate>
+    )
+
+    await screen.findByText('App shell')
+    await waitFor(() => {
+      expect(screen.queryByText('Capture needs a vision model')).toBeNull()
+      expect(screen.queryByText('Capture needs vision support')).toBeNull()
+    })
+  })
+
+  it('shows projector download progress and restores the action after failure or cancellation', async () => {
+    visionStatus = { [MODEL_ID]: { supportsVision: true, projectorInstalled: false } }
+    downloadModel.mockImplementationOnce(() => new Promise(() => {}))
+    const user = userEvent.setup()
+    render(
+      <PermissionGate>
+        <div>App shell</div>
+      </PermissionGate>
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Download vision support' }))
+    expect(
+      (screen.getByRole('button', { name: 'Downloading 0%' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+
+    modelProgress?.({ modelId: MODEL_ID, percent: 42, status: 'downloading' })
+    expect(
+      (await screen.findByRole('button', { name: 'Downloading 42%' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+
+    modelProgress?.({ modelId: MODEL_ID, status: 'failed' })
+    expect(
+      (await screen.findByRole('button', {
+        name: 'Download vision support'
+      }) as HTMLButtonElement).disabled
+    ).toBe(false)
+
+    modelProgress?.({ modelId: MODEL_ID, percent: 65, status: 'downloading' })
+    expect(
+      (await screen.findByRole('button', { name: 'Downloading 65%' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+    modelProgress?.({ modelId: MODEL_ID, status: 'cancelled' })
+    expect(
+      (await screen.findByRole('button', {
+        name: 'Download vision support'
+      }) as HTMLButtonElement).disabled
+    ).toBe(false)
+  })
+
+  it('clears the setup nudge when the projector download completes', async () => {
+    visionStatus = { [MODEL_ID]: { supportsVision: true, projectorInstalled: false } }
+    render(
+      <PermissionGate>
+        <div>App shell</div>
+      </PermissionGate>
+    )
+
+    expect(await screen.findByText('Capture needs vision support')).toBeTruthy()
+    captureStatus = { running: true, paused: false, visionReady: true }
+    modelProgress?.({ modelId: MODEL_ID, status: 'completed' })
+
+    await waitFor(() => expect(screen.queryByText('Capture needs vision support')).toBeNull())
   })
 })

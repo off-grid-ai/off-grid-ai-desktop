@@ -85,6 +85,10 @@ export function PermissionGate({ children }: PermissionGateProps) {
         })
         return
       }
+      if (activeId && activeStatus?.supportsVision && activeStatus.projectorInstalled) {
+        setVisionIssue(null)
+        return
+      }
       setVisionIssue({
         kind: 'choose-vision-model',
         modelId: activeId ?? null,
@@ -164,10 +168,13 @@ export function PermissionGate({ children }: PermissionGateProps) {
   const handleVisionAction = (): void => {
     if (visionIssue?.kind === 'missing-projector') {
       setVisionDownloadPercent(0)
-      void window.api.downloadModel?.(visionIssue.modelId).finally(() => {
-        setVisionDownloadPercent(null)
-        void checkCaptureVision()
-      })
+      void window.api
+        .downloadModel?.(visionIssue.modelId)
+        .catch((error) => console.error('Failed to download capture vision support:', error))
+        .finally(() => {
+          setVisionDownloadPercent(null)
+          void checkCaptureVision()
+        })
       return
     }
     openModels()
@@ -287,8 +294,7 @@ export function PermissionGate({ children }: PermissionGateProps) {
                   // app shell (already mounted behind this gate) listens for og:navigate
                   // and switches view — replaceState alone wouldn't re-derive it. Keep
                   // the URL in sync, then dismiss the gate.
-                  window.dispatchEvent(new CustomEvent('og:navigate', { detail: 'models' }))
-                  window.history.replaceState(null, '', '/models')
+                  openModels()
                   setSetupDismissed(true)
                   setShowSetup(false)
                 }}
