@@ -222,10 +222,7 @@ code {
   display: flex;
   flex-direction: column;
   padding: 20px;
-  overflow-y: hidden;
-  /* Scroll handled by inner feed if needed, or just let it scroll */
   position: relative;
-  /* We want the scrollable area to be the feed itself usually, but for now let's make this the container */
   overflow-y: auto;
 }
 
