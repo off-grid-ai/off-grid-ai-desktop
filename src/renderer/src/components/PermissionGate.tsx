@@ -69,8 +69,10 @@ export function PermissionGate({ children }: PermissionGateProps) {
         window.api.getModelVisionStatus?.(),
         window.api.proInvoke('capture:status')
       ])
-      const status = capture as { running?: boolean; paused?: boolean; visionReady?: boolean }
-      if (!status.running || status.paused || status.visionReady) {
+      const status = capture as
+        | { running?: boolean; paused?: boolean; visionReady?: boolean }
+        | undefined
+      if (!status?.running || status.paused || status.visionReady) {
         setVisionIssue(null)
         return
       }
@@ -116,7 +118,7 @@ export function PermissionGate({ children }: PermissionGateProps) {
     })
     return () => {
       clearInterval(timer)
-      offProgress?.()
+      if (typeof offProgress === 'function') offProgress()
     }
   }, [checkCaptureVision, isPro, visionIssue?.modelId])
 
