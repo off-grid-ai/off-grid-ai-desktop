@@ -79,6 +79,9 @@ test.beforeAll(async () => {
     }
   })
   page = await app.firstWindow()
+  // Reduced motion disables the decorative infinite .og-shooting-star animation (it honors
+  // prefers-reduced-motion) so the page reaches a stable state for keyboard-focus assertions.
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.waitForLoadState('domcontentloaded')
   await finishOnboarding()
   await expect(page.getByRole('heading', { name: 'Models' })).toBeVisible()
@@ -153,7 +156,15 @@ test('keyboard focus follows navigation, form, dialog, and primary-action order 
       `${size}GB quick filter`
     )
   }
-  for (const useCase of ['General', 'Coding', 'Writing', 'Legal', 'Vision', 'Lightweight']) {
+  for (const useCase of [
+    'General',
+    'Coding',
+    'Writing',
+    'Legal',
+    'Vision',
+    'Lightweight',
+    'Challenger' // the catalog exposes a Challenger use-case chip after Lightweight
+  ]) {
     await page.keyboard.press('Tab')
     await expectVisibleKeyboardFocus(
       page.getByRole('button', { name: useCase, exact: true }),

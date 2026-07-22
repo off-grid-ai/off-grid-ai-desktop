@@ -38,6 +38,11 @@ test.beforeAll(async () => {
     }
   })
   page = await app.firstWindow()
+  // Run with reduced motion so the app's decorative infinite background animation (the
+  // .og-shooting-star, which honors prefers-reduced-motion) is disabled — otherwise its
+  // perpetual transform keeps the page from ever satisfying Playwright's "stable" check
+  // and clicks on section accordions time out.
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.waitForLoadState('domcontentloaded')
   // Click through onboarding into the app shell.
   for (let i = 0; i < 6; i++) {
