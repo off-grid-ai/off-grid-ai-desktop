@@ -11,6 +11,7 @@
 // ALL ordering/admission decisions live in the pure policy.ts and are called from
 // here. It never imports llm/image/capture — those register through the hooks.
 
+import { AsyncLocalStorage } from 'async_hooks'
 import { DEFAULT_POLICY, selectNext, type PolicyConfig, type QueueJob, type Tier } from './policy'
 
 /** An engine that can free its resident memory on demand (and warm back up). */
@@ -42,6 +43,24 @@ export interface QueueRequest {
 export const CHAT_JOB: QueueRequest = Object.freeze({ tier: 2, label: 'chat', evicts: ['image'] })
 export const IMAGE_JOB: QueueRequest = Object.freeze({ tier: 2, label: 'image', evicts: ['llm'] })
 
+// Background model work (capture distill, replay-vision, secretary/agent passes).
+// Tier 3 = lowest priority: runs only when no chat/workspace/image job is running
+// OR waiting, and yields the moment one arrives (admission priority — a running
+// background job is never killed, but chat is always admitted ahead of it). Evicts
+// a resident image server (can't co-reside with the text/vision model it needs).
+export const CAPTURE_JOB: QueueRequest = Object.freeze({
+  tier: 3,
+  label: 'capture',
+  evicts: ['image']
+})
+
+/** A tier-3 background job with a descriptive label (same tier + eviction policy as
+ *  CAPTURE_JOB). Use for the many background LLM passes so they all share ONE
+ *  priority + eviction policy instead of each spelling out an inline literal. */
+export function backgroundJob(label: string): QueueRequest {
+  return { tier: 3, label, evicts: ['image'] }
+}
+
 /** Snapshot of what's running + waiting, for a "queued" indicator in the UI. */
 export interface QueueState {
   running: { label: string; tier: Tier }[]
@@ -69,6 +88,9 @@ export class ModalityQueue {
   private changeCbs = new Set<(s: QueueState) => void>()
 
   private cfg: PolicyConfig = { ...DEFAULT_POLICY }
+  // Tracks whether the current async context is already executing inside a running
+  // job, so a nested run() (sub-work of that job) runs INLINE instead of deadlocking.
+  private readonly jobContext = new AsyncLocalStorage<true>()
   /** Master switch. When off, run() executes fn immediately (today's concurrent
    *  behavior) — no serialization, no eviction. */
   private enabled = true
@@ -126,6 +148,13 @@ export class ModalityQueue {
   async run<T>(request: QueueRequest, fn: () => Promise<T>): Promise<T> {
     if (!this.enabled) return fn()
 
+    // Reentrancy guard: a job started while ALREADY inside a running queued job is
+    // sub-work of that job, which already holds a slot. Run it INLINE — re-admitting
+    // would deadlock (a nested tier-3 task can never see running.length === 0 while
+    // its tier-2 parent holds the slot). This is what makes it safe to wrap every
+    // background LLM call in the queue without auditing the whole call graph.
+    if (this.jobContext.getStore()) return fn()
+
     const job: QueueJob = {
       id: `job-${String(++this.idCounter)}`,
       tier: request.tier,
@@ -141,7 +170,8 @@ export class ModalityQueue {
     })
 
     try {
-      return await fn()
+      // Mark this async context as "inside a job" so any nested run() short-circuits.
+      return await this.jobContext.run(true, fn)
     } finally {
       const entry = this.running.get(job.id)
       this.running.delete(job.id)

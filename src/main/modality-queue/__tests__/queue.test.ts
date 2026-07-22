@@ -190,4 +190,52 @@ describe('ModalityQueue', () => {
     expect(ran).toBe(42)
     expect(q.getState().running).toHaveLength(0)
   })
+
+  it('runs a NESTED job inline instead of deadlocking (reentrancy guard)', async () => {
+    const q = new ModalityQueue()
+    // A tier-2 job that, mid-flight, submits a tier-3 background job. Without the
+    // reentrancy guard the tier-3 job would wait for running.length===0 while its
+    // tier-2 parent holds the slot — a permanent deadlock. With it, the nested job
+    // runs inline and resolves. We assert the whole thing completes (a deadlock
+    // would hang and time the test out).
+    const order: string[] = []
+    const result = await q.run({ tier: 2, label: 'parent' }, async () => {
+      order.push('parent-start')
+      const inner = await q.run(
+        { tier: 3, label: 'nested-capture', evicts: ['image'] },
+        async () => {
+          order.push('nested-ran')
+          return 'inner-value'
+        }
+      )
+      order.push('parent-end')
+      return inner
+    })
+    expect(result).toBe('inner-value')
+    expect(order).toEqual(['parent-start', 'nested-ran', 'parent-end'])
+    expect(q.getState().running).toHaveLength(0)
+  })
+
+  it('a NON-nested background job still waits behind a running foreground job', async () => {
+    // The guard must ONLY short-circuit true reentrancy — an independent tier-3 job
+    // submitted from OUTSIDE any running job must still yield to a running tier-2.
+    const q = new ModalityQueue()
+    const started: string[] = []
+    const fg = deferred<void>()
+    const p2 = q.run({ tier: 2, label: 'chat' }, async () => {
+      started.push('chat')
+      await fg.promise
+    })
+    await tick()
+    let captureStarted = false
+    const p3 = q.run({ tier: 3, label: 'capture' }, async () => {
+      captureStarted = true
+    })
+    await tick()
+    expect(captureStarted).toBe(false) // capture waits behind the running chat job
+    fg.resolve()
+    await p2
+    await p3
+    expect(captureStarted).toBe(true) // ...and runs once chat frees the slot
+  })
 })
