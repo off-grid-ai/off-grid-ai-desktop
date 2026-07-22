@@ -18,10 +18,8 @@ const toolVecCache = new Map<string, number[]>()
 function hash(s: string): string {
   let h = 5381
   for (let i = 0; i < s.length; i++) {
-    // eslint-disable-next-line no-bitwise
     h = ((h << 5) + h) ^ s.charCodeAt(i)
   }
-  // eslint-disable-next-line no-bitwise
   return (h >>> 0).toString(36)
 }
 

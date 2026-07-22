@@ -44,9 +44,8 @@ export function createSpeechQueue(deps: SpeechQueueDeps): SpeechQueue {
         } catch {
           continue // a segment that fails to synthesize is skipped, not fatal
         }
-        if (signal.aborted || !dataUrl) {
-          continue
-        }
+        // play() receives the signal and returns immediately if it aborted during
+        // synthesis (barge-in); an empty url simply fails there and is caught.
         try {
           await deps.play(dataUrl, signal)
         } catch {

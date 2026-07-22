@@ -30,7 +30,7 @@ const MAX_ENHANCED_CHARS = 600
  *  leading "Prompt:"-style label; collapses whitespace; rejects an over-long reply
  *  (the model rambled) by falling back. */
 export function cleanEnhancedPrompt(raw: string, fallback: string): string {
-  let s = (raw ?? '')
+  let s = raw
     .replace(/<think>[\s\S]*?<\/think>/gi, '') // drop any reasoning
     .replace(/<\/?think>/gi, '')
     .trim()
@@ -43,7 +43,7 @@ export function cleanEnhancedPrompt(raw: string, fallback: string): string {
     s = lines[lines.length - 1]!
   }
   s = s
-    .replace(/^(?:image\s+)?prompt\s*[:\-]\s*/i, '') // strip a "Prompt:" label
+    .replace(/^(?:image\s+)?prompt\s*[-:]\s*/i, '') // strip a "Prompt:" label
     .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '') // strip surrounding quotes
     .replace(/\s+/g, ' ')
     .trim()

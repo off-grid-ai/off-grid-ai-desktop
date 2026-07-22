@@ -92,9 +92,9 @@ module.exports = {
     {
       name: 'renderer-not-to-main',
       comment:
-        'The renderer talks to main ONLY through the preload IPC bridge, never by importing main modules.',
+        'The renderer talks to main ONLY through the preload IPC bridge, never by importing main modules. (Renderer *tests* may import main modules to exercise a seam end-to-end — the boundary this rule protects is production renderer code.)',
       severity: 'error',
-      from: { path: '^src/renderer' },
+      from: { path: '^src/renderer', pathNot: '\\.(test|spec)\\.[tj]sx?$|/__tests__/' },
       to: { path: '^src/main' }
     },
     {
