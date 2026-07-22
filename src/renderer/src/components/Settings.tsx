@@ -13,6 +13,7 @@ import { SettingsCard, ProPlaceholder, SettingsCardsGroup } from './SettingsCard
 import { KeyboardShortcuts } from './KeyboardShortcuts'
 import { currentPlatform } from '@renderer/lib/device'
 import { proComingSoonHere } from './pro/proCatalog'
+import { Button } from './ui/button'
 
 // ---------------------------------------------------------------------------
 // Software update — current version, manual check, automatic-update toggle
@@ -235,20 +236,37 @@ function SoftwareUpdateSection(): React.ReactElement {
   const [beta, setBeta] = useState(false)
   const [version, setVersion] = useState('')
   const [checking, setChecking] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [status, setStatus] = useState('')
+  const [availableVersion, setAvailableVersion] = useState<string | null>(null)
+  const [skippedVersion, setSkippedVersion] = useState<string | null>(null)
   useEffect(() => {
     api
       .updateGetPrefs?.()
-      .then((p: { currentVersion?: string; auto?: boolean; channel?: string }) => {
-        setVersion(p.currentVersion ?? '')
-        setAuto(p.auto !== false)
-        setBeta(p.channel === 'beta')
-      })
+      .then(
+        (p: {
+          currentVersion?: string
+          auto?: boolean
+          channel?: string
+          skippedVersion?: string | null
+        }) => {
+          setVersion(p.currentVersion ?? '')
+          setAuto(p.auto !== false)
+          setBeta(p.channel === 'beta')
+          setSkippedVersion(p.skippedVersion ?? null)
+        }
+      )
       .catch(() => {})
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [])
   const toggle = (): void => {
-    void persistToggle(!auto, auto, setAuto, (v) => api.updateSetAuto?.(v))
+    const next = !auto
+    void persistToggle(next, auto, setAuto, (v) => api.updateSetAuto?.(v))
+    setStatus(
+      next
+        ? 'Automatic updates on. New versions download in the background and install when you quit.'
+        : 'Automatic updates off. Nothing downloads or installs until you choose it.'
+    )
   }
   const toggleBeta = (): void => {
     const next = !beta
@@ -265,18 +283,52 @@ function SoftwareUpdateSection(): React.ReactElement {
     try {
       const r = await api.checkForUpdates?.()
       if (!r) setStatus('Could not check right now.')
-      else if (r.status === 'available')
+      else if (r.status === 'available') {
+        setAvailableVersion(r.downloadStarted ? null : r.version)
         setStatus(
-          `Update ${r.version} found. Downloading in the background - you'll get a "Restart to update" prompt when it's ready.`
+          r.downloadStarted
+            ? `Update ${r.version} found. Downloading in the background.`
+            : `Update ${r.version} is available.`
         )
-      else if (r.status === 'not-available')
+      } else if (r.status === 'not-available')
         setStatus(`You're on the latest version (v${r.version}).`)
+      else if (r.status === 'skipped') setStatus(`Skipped v${r.version}.`)
       else setStatus(`Could not check: ${r.error}`)
     } catch {
       setStatus('Could not check right now.')
     } finally {
       setChecking(false)
     }
+  }
+  const download = async (): Promise<void> => {
+    if (!availableVersion) return
+    setDownloading(true)
+    try {
+      await api.updateDownload?.(availableVersion)
+      setStatus(`Downloading ${availableVersion} in the background.`)
+      setAvailableVersion(null)
+      setSkippedVersion(null)
+    } catch {
+      setStatus('Could not start the download. Check again and retry.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+  const skip = async (): Promise<void> => {
+    if (!availableVersion) return
+    try {
+      const skipped = await api.updateSkipVersion?.(availableVersion)
+      setSkippedVersion(skipped ?? availableVersion)
+      setStatus(`Skipped v${availableVersion}.`)
+      setAvailableVersion(null)
+    } catch {
+      setStatus('Could not skip this version.')
+    }
+  }
+  const clearSkipped = async (): Promise<void> => {
+    await api.updateClearSkippedVersion?.()
+    setSkippedVersion(null)
+    setStatus('Skipped version cleared. Check again when you are ready.')
   }
   // Body only — the card chrome + title come from SettingsCard.
   return (
@@ -289,6 +341,7 @@ function SoftwareUpdateSection(): React.ReactElement {
         <button
           onClick={toggle}
           role="switch"
+          aria-label="Automatic updates"
           aria-checked={auto}
           className={`relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${auto ? 'bg-emerald-500' : 'bg-neutral-700'}`}
         >
@@ -305,6 +358,7 @@ function SoftwareUpdateSection(): React.ReactElement {
         <button
           onClick={toggleBeta}
           role="switch"
+          aria-label="Nightly builds"
           aria-checked={beta}
           className={`relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${beta ? 'bg-emerald-500' : 'bg-neutral-700'}`}
         >
@@ -323,12 +377,30 @@ function SoftwareUpdateSection(): React.ReactElement {
         </button>
         {version && <span className="text-xs text-neutral-600">Current: v{version}</span>}
       </div>
+      {availableVersion ? (
+        <div className="mt-3 flex items-center gap-2">
+          <Button size="xs" onClick={() => void download()} disabled={downloading}>
+            {downloading ? 'Starting download...' : `Download ${availableVersion}`}
+          </Button>
+          <Button size="xs" variant="outline" onClick={() => void skip()}>
+            Skip {availableVersion}
+          </Button>
+        </div>
+      ) : null}
+      {skippedVersion ? (
+        <div className="mt-3 flex items-center gap-2 text-xs text-neutral-500">
+          <span>Skipped v{skippedVersion}</span>
+          <Button size="xs" variant="ghost" onClick={() => void clearSkipped()}>
+            Allow again
+          </Button>
+        </div>
+      ) : null}
       {status && <p className="mt-2 text-xs text-neutral-500">{status}</p>}
     </div>
   )
 }
 
-export function Settings() {
+export function Settings(): React.ReactElement {
   // Pro/core aware: the pro Settings sections (identity / proactive / secretary /
   // plan) render only when the pro package has registered them (section registry);
   // the free build shows the catalogued placeholders. isPro still drives the header

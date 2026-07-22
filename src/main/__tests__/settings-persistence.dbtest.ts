@@ -44,6 +44,7 @@ vi.mock('electron-updater', () => ({
     channel: 'latest',
     allowPrerelease: false,
     allowDowngrade: false,
+    isUpdateSupported: async () => true,
     checkForUpdatesAndNotify: vi.fn(async () => undefined),
     checkForUpdates: vi.fn(async () => undefined),
     downloadUpdate: vi.fn(async () => undefined),
@@ -72,14 +73,18 @@ describe('software-update settings survive a full process relaunch', () => {
   it('restores automatic-update and channel choices through fresh production modules', async () => {
     const updater = await import('../updater')
     const database = await import('../database')
+    updater.registerUpdateIpc()
     updater.startAutoUpdates()
 
     const setAuto = state.handlers.get('update:set-auto')
     const setChannel = state.handlers.get('update:set-channel')
+    const skipVersion = state.handlers.get('update:skip-version')
     expect(setAuto).toBeTypeOf('function')
     expect(setChannel).toBeTypeOf('function')
+    expect(skipVersion).toBeTypeOf('function')
     expect(await setAuto?.({}, false)).toBe(false)
     expect(await setChannel?.({}, 'beta')).toBe('beta')
+    expect(await skipVersion?.({}, '0.0.39')).toBe('0.0.39')
 
     database.getDB().close()
     vi.resetModules()
@@ -87,6 +92,7 @@ describe('software-update settings survive a full process relaunch', () => {
 
     const relaunchedUpdater = await import('../updater')
     const relaunchedDatabase = await import('../database')
+    relaunchedUpdater.registerUpdateIpc()
     relaunchedUpdater.startAutoUpdates()
 
     const getPreferences = state.handlers.get('update:get-prefs')
@@ -94,7 +100,8 @@ describe('software-update settings survive a full process relaunch', () => {
     expect(await getPreferences?.({})).toEqual({
       currentVersion: '0.0.0-test',
       auto: false,
-      channel: 'beta'
+      channel: 'beta',
+      skippedVersion: '0.0.39'
     })
     relaunchedDatabase.getDB().close()
   })

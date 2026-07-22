@@ -24,6 +24,7 @@ const updaterEvents = new EventEmitter()
 const checkForUpdates = vi.fn(async () => undefined)
 const downloadUpdate = vi.fn(async () => undefined)
 const quitAndInstall = vi.fn()
+const defaultUpdateSupport = vi.fn(async () => true)
 
 vi.mock('electron', () => ({
   app: {
@@ -52,6 +53,7 @@ vi.mock('electron-updater', () => ({
     channel: 'latest',
     allowPrerelease: false,
     allowDowngrade: false,
+    isUpdateSupported: defaultUpdateSupport,
     checkForUpdatesAndNotify: vi.fn(async () => undefined),
     checkForUpdates,
     downloadUpdate,
@@ -75,6 +77,8 @@ function installRendererTransport(): void {
       platform: 'darwin',
       updateGetPrefs: () => handler('update:get-prefs')(),
       checkForUpdates: () => handler('update:check')(),
+      updateDownload: (version: string) => handler('update:download')(version),
+      updateSkipVersion: (version: string) => handler('update:skip-version')(version),
       getAppVersion: () => Promise.resolve('0.0.103')
     },
     {
@@ -108,6 +112,7 @@ beforeEach(() => {
   checkForUpdates.mockResolvedValue(undefined)
   downloadUpdate.mockClear()
   quitAndInstall.mockClear()
+  defaultUpdateSupport.mockClear()
   vi.useFakeTimers()
 })
 
@@ -127,6 +132,7 @@ afterAll(async () => {
 describe('manual update check', () => {
   it('renders truthful terminal states without changing stable channel or installing (#142)', async () => {
     const updater = await import('../updater')
+    updater.registerUpdateIpc()
     updater.startAutoUpdates()
     installRendererTransport()
     // startAutoUpdates' background cadence is captured by fake timers. Discard it before using
@@ -143,7 +149,7 @@ describe('manual update check', () => {
     expect(within(card).getByRole('button', { name: 'Checking...' }).hasAttribute('disabled')).toBe(
       true
     )
-    updaterEvents.emit('update-not-available')
+    updaterEvents.emit('update-not-available', { version: '0.0.103' })
     expect(await within(card).findByText("You're on the latest version (v0.0.103).")).toBeTruthy()
 
     await user.click(within(card).getByRole('button', { name: 'Check for updates' }))
@@ -168,27 +174,58 @@ describe('manual update check', () => {
     expect(checkForUpdates).toHaveBeenCalledTimes(3)
   })
 
-  it('reports an available version and explicitly downloads when automatic updates are off', async () => {
+  it('reports an available version without downloading when automatic updates are off', async () => {
     const updater = await import('../updater')
+    updater.registerUpdateIpc()
     updater.startAutoUpdates()
     expect(await handler<boolean>('update:set-auto')(false)).toBe(false)
 
     const result = handler<{ status: string; version: string }>('update:check')()
     updaterEvents.emit('update-available', { version: '0.0.104' })
 
-    await expect(result).resolves.toEqual({ status: 'available', version: '0.0.104' })
+    await expect(result).resolves.toEqual({
+      status: 'available',
+      version: '0.0.104',
+      downloadStarted: false
+    })
+    expect(downloadUpdate).not.toHaveBeenCalled()
+    await expect(handler('update:download')('0.0.104')).resolves.toEqual({
+      status: 'downloading',
+      version: '0.0.104'
+    })
     expect(downloadUpdate).toHaveBeenCalledOnce()
     expect(checkForUpdates).toHaveBeenCalledOnce()
     expect(updaterEvents.listenerCount('update-available')).toBe(1)
     expect(updaterEvents.listenerCount('update-not-available')).toBe(1)
   })
 
+  it('persists a skipped version and reports it instead of claiming the app is current', async () => {
+    const updater = await import('../updater')
+    updater.registerUpdateIpc()
+    updater.startAutoUpdates()
+    expect(await handler<boolean>('update:set-auto')(false)).toBe(false)
+
+    const available = handler<{ status: string; version: string }>('update:check')()
+    updaterEvents.emit('update-available', { version: '0.0.104' })
+    await available
+
+    await expect(handler<string>('update:skip-version')('0.0.104')).resolves.toBe('0.0.104')
+    await expect(handler<{ skippedVersion: string }>('update:get-prefs')()).resolves.toMatchObject({
+      skippedVersion: '0.0.104'
+    })
+
+    const skipped = handler<{ status: string; version: string }>('update:check')()
+    updaterEvents.emit('update-not-available', { version: '0.0.104' })
+    await expect(skipped).resolves.toEqual({ status: 'skipped', version: '0.0.104' })
+  })
+
   it('reports the installed version when stable is current and releases one-shot listeners', async () => {
     const updater = await import('../updater')
+    updater.registerUpdateIpc()
     updater.startAutoUpdates()
 
     const result = handler<{ status: string; version: string }>('update:check')()
-    updaterEvents.emit('update-not-available')
+    updaterEvents.emit('update-not-available', { version: '0.0.103' })
 
     await expect(result).resolves.toEqual({ status: 'not-available', version: '0.0.103' })
     expect(updaterEvents.listenerCount('update-available')).toBe(1)
@@ -197,6 +234,7 @@ describe('manual update check', () => {
 
   it('returns a useful boundary failure and remains usable for the next check', async () => {
     const updater = await import('../updater')
+    updater.registerUpdateIpc()
     updater.startAutoUpdates()
 
     const failed = handler<{ status: string; error: string }>('update:check')()
@@ -207,13 +245,14 @@ describe('manual update check', () => {
     })
 
     const retry = handler<{ status: string; version: string }>('update:check')()
-    updaterEvents.emit('update-not-available')
+    updaterEvents.emit('update-not-available', { version: '0.0.103' })
     await expect(retry).resolves.toEqual({ status: 'not-available', version: '0.0.103' })
     expect(checkForUpdates).toHaveBeenCalledTimes(2)
   })
 
   it('times out clearly, cleans up, and allows an immediate retry', async () => {
     const updater = await import('../updater')
+    updater.registerUpdateIpc()
     updater.startAutoUpdates()
 
     const timedOut = updater.checkForUpdates(25)
@@ -221,7 +260,7 @@ describe('manual update check', () => {
     await expect(timedOut).resolves.toEqual({ status: 'error', error: 'Update check timed out' })
 
     const retry = handler<{ status: string; version: string }>('update:check')()
-    updaterEvents.emit('update-not-available')
+    updaterEvents.emit('update-not-available', { version: '0.0.103' })
     await expect(retry).resolves.toEqual({ status: 'not-available', version: '0.0.103' })
   })
 })

@@ -4,11 +4,14 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 
 type UpdateResult =
-  | { status: 'available'; version: string }
+  | { status: 'available'; version: string; downloadStarted: boolean }
   | { status: 'not-available'; version: string }
+  | { status: 'skipped'; version: string }
   | { status: 'error'; error: string }
 
 const checkForUpdates = vi.fn<() => Promise<UpdateResult>>()
+const downloadUpdate = vi.fn<(version: string) => Promise<{ status: string; version: string }>>()
+const skipUpdate = vi.fn<(version: string) => Promise<string>>()
 
 function stubApi(): void {
   const api = new Proxy(
@@ -16,8 +19,10 @@ function stubApi(): void {
       isPro: false,
       platform: 'darwin',
       checkForUpdates,
+      updateDownload: downloadUpdate,
+      updateSkipVersion: skipUpdate,
       updateGetPrefs: () =>
-        Promise.resolve({ currentVersion: '0.0.103', auto: true, channel: 'stable' }),
+        Promise.resolve({ currentVersion: '0.0.103', auto: false, channel: 'stable' }),
       getAppVersion: () => Promise.resolve('0.0.103')
     },
     {
@@ -38,6 +43,10 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   checkForUpdates.mockReset()
+  downloadUpdate.mockReset()
+  downloadUpdate.mockResolvedValue({ status: 'downloading', version: '0.0.104' })
+  skipUpdate.mockReset()
+  skipUpdate.mockResolvedValue('0.0.104')
   vi.unstubAllGlobals()
   vi.resetModules()
 })
@@ -53,7 +62,7 @@ async function renderUpdateCard(): Promise<HTMLElement> {
 }
 
 describe('Settings manual update check', () => {
-  it('shows checking while pending, reports an available version, and re-enables the action', async () => {
+  it('lets manual-update users choose to download or skip an available version', async () => {
     let resolveCheck: ((result: UpdateResult) => void) | undefined
     checkForUpdates.mockImplementationOnce(
       () =>
@@ -70,10 +79,22 @@ describe('Settings manual update check', () => {
     )
     expect(within(card).getByText('Checking for updates...')).toBeTruthy()
 
-    resolveCheck?.({ status: 'available', version: '0.0.104' })
-    expect(
-      await within(card).findByText(/Update 0\.0\.104 found\. Downloading in the background/)
-    ).toBeTruthy()
+    resolveCheck?.({ status: 'available', version: '0.0.104', downloadStarted: false })
+    expect(await within(card).findByText('Update 0.0.104 is available.')).toBeTruthy()
+    await user.click(within(card).getByRole('button', { name: 'Download 0.0.104' }))
+    expect(downloadUpdate).toHaveBeenCalledWith('0.0.104')
+    expect(await within(card).findByText('Downloading 0.0.104 in the background.')).toBeTruthy()
+
+    resolveCheck = undefined
+    checkForUpdates.mockResolvedValueOnce({
+      status: 'available',
+      version: '0.0.105',
+      downloadStarted: false
+    })
+    await user.click(within(card).getByRole('button', { name: 'Check for updates' }))
+    await user.click(await within(card).findByRole('button', { name: 'Skip 0.0.105' }))
+    expect(skipUpdate).toHaveBeenCalledWith('0.0.105')
+    expect(await within(card).findByText('Skipped v0.0.105.')).toBeTruthy()
     expect(
       within(card).getByRole('button', { name: 'Check for updates' }).hasAttribute('disabled')
     ).toBe(false)
@@ -84,6 +105,7 @@ describe('Settings manual update check', () => {
       { status: 'not-available', version: '0.0.103' } as UpdateResult,
       "You're on the latest version (v0.0.103)."
     ],
+    [{ status: 'skipped', version: '0.0.104' } as UpdateResult, 'Skipped v0.0.104.'],
     [
       { status: 'error', error: 'release feed unavailable' } as UpdateResult,
       'Could not check: release feed unavailable'
