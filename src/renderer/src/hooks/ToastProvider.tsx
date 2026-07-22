@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react'
-import { IconCheck, IconX } from '@tabler/icons-react'
+import { IconAlertCircle, IconCheck, IconInfoCircle, IconX } from '@tabler/icons-react'
 import { ToastContext, type ToastContextType } from './useToast'
 
 // Transient top-right toast with an optional action (e.g. Undo). Distinct from
@@ -10,6 +10,7 @@ import { ToastContext, type ToastContextType } from './useToast'
 interface Toast {
   id: string
   message: string
+  tone: 'success' | 'error' | 'neutral'
   actionLabel?: string
   onAction?: () => void
 }
@@ -30,9 +31,11 @@ export function ToastProvider({ children }: { children: ReactNode }): React.Reac
   }, [])
 
   const showToast = useCallback<ToastContextType['showToast']>(
-    ({ message, actionLabel, onAction, durationMs }) => {
+    ({ message, tone = 'success', actionLabel, onAction, durationMs }) => {
       const id = crypto.randomUUID()
-      setToasts((previous) => [{ id, message, actionLabel, onAction }, ...previous].slice(0, 4))
+      setToasts((previous) =>
+        [{ id, message, tone, actionLabel, onAction }, ...previous].slice(0, 4)
+      )
       timers.current[id] = setTimeout(() => dismiss(id), durationMs ?? DEFAULT_DURATION)
     },
     [dismiss]
@@ -45,9 +48,16 @@ export function ToastProvider({ children }: { children: ReactNode }): React.Reac
         {toasts.map((toast) => (
           <div
             key={toast.id}
+            role={toast.tone === 'error' ? 'alert' : 'status'}
             className="pointer-events-auto flex items-center gap-3 rounded-md border border-neutral-800 bg-neutral-900/95 px-3.5 py-2 font-mono text-xs text-neutral-200 shadow-xl backdrop-blur"
           >
-            <IconCheck className="h-4 w-4 shrink-0 text-green-500" />
+            {toast.tone === 'error' ? (
+              <IconAlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+            ) : toast.tone === 'neutral' ? (
+              <IconInfoCircle className="h-4 w-4 shrink-0 text-neutral-400" />
+            ) : (
+              <IconCheck className="h-4 w-4 shrink-0 text-green-500" />
+            )}
             <span className="max-w-[22rem] truncate">{toast.message}</span>
             {toast.actionLabel && toast.onAction && (
               <button
