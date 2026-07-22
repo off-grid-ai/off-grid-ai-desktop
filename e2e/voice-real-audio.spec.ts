@@ -49,6 +49,14 @@ let page: Page
 let profile: string
 let importedTranscript = ''
 
+function assertDisposableProfile(candidate: string): void {
+  const resolved = path.resolve(candidate)
+  const basename = path.basename(resolved)
+  if (!basename.startsWith('offgrid-') || resolved === path.parse(resolved).root) {
+    throw new Error(`Refusing to reset non-disposable E2E profile: ${resolved}`)
+  }
+}
+
 async function finishOnboarding(): Promise<void> {
   for (let step = 0; step < 8; step += 1) {
     const button = page.getByRole('button', { name: /Continue|Start using Off Grid/i })
@@ -100,6 +108,7 @@ test.beforeAll(async () => {
   profile = process.env.OFFGRID_E2E_PROFILE
     ? path.resolve(process.env.OFFGRID_E2E_PROFILE)
     : fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-voice-real-'))
+  assertDisposableProfile(profile)
   fs.rmSync(profile, { recursive: true, force: true })
   const modelDir = path.join(profile, 'models')
   fs.mkdirSync(path.join(modelDir, '.cache'), { recursive: true })

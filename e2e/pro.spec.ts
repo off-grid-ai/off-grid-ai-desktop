@@ -433,6 +433,10 @@ test('Start dictation renders the recording widget on the first click', async ()
   await expect(overlay.getByTitle('Stop dictation')).toBeVisible()
   await expect(overlay.getByText(/to stop/)).toBeVisible()
   await overlay.screenshot({ path: 'e2e/screenshots/pro-dictation-widget.png' })
+  const overlayClosed = overlay.waitForEvent('close')
+  await overlay.getByTitle('Stop dictation').click()
+  await overlayClosed
+  await expect(page.getByRole('button', { name: 'Start dictation' })).toBeVisible()
 })
 
 test('Vault copy actions write username, revealed password, and URL to the OS clipboard', async () => {
