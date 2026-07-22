@@ -12,7 +12,16 @@
 // The RAM-fit verdict is defined once in shared/ and re-exported here so existing
 // main-process importers (setup.ts, tests) are unchanged while the renderer badge
 // imports the same source directly — one rule, no drift.
-export { fitLevel, FIT_OK_FRAC, FIT_TIGHT_FRAC, type FitLevel } from '../shared/model-fit'
+export {
+  fitLevel,
+  fitTier,
+  isLoadableOnDevice,
+  FIT_OK_FRAC,
+  FIT_TIGHT_FRAC,
+  type FitLevel,
+  type FitTier
+} from '../shared/model-fit'
+import { FIT_SOFT_FRAC, FIT_CEIL_FRAC } from '../shared/model-fit'
 
 export type KvCacheType = 'f16' | 'q8_0' | 'q4_0'
 export type PerformanceMode = 'conservative' | 'balanced' | 'extreme'
@@ -37,9 +46,9 @@ export function modeBudget(mode: PerformanceMode): { frac: number; reserveGb: nu
     case 'conservative':
       return { frac: 0.45, reserveGb: 2.0 }
     case 'extreme':
-      return { frac: 0.82, reserveGb: 1.0 }
+      return { frac: FIT_CEIL_FRAC, reserveGb: 1.0 }
     default:
-      return { frac: 0.65, reserveGb: 1.5 }
+      return { frac: FIT_SOFT_FRAC, reserveGb: 1.5 }
   }
 }
 
@@ -119,40 +128,22 @@ export function preferredModelIds(ramGb: number, mode: PerformanceMode): string[
 // ceiling, offers "Load anyway" instead of a dead end. Only the physics floor
 // below can truly refuse a load — the point where the OS would kill the app.
 
-export type FitTier = 'easy' | 'fits' | 'tight' | 'wontFit'
+// fitTier / isLoadableOnDevice / FitTier now live in ../shared/model-fit (re-exported
+// above) so the renderer browse chip and this loader share ONE definition + fractions.
 
 /** The hard headroom (GB) a "Load anyway" must still leave free after the model's
  *  weights are resident, or the OS starts killing the app. Below this we refuse
  *  even an explicit override — this is the ONE true block. */
 export const OVERRIDE_SURVIVAL_FLOOR_GB = 1.0
 
-/** Four-way fit chip for the browse UI. `soft` = the balanced comfort budget,
- *  `ceil` = the extreme (aggressive) ceiling. A model past `ceil` is the only one
- *  labelled "won't fit"; everything up to it stays loadable (with a warning). */
-export function fitTier(weightsGb: number, ramGb: number): FitTier {
-  const soft = ramGb * modeBudget('balanced').frac
-  const ceil = ramGb * modeBudget('extreme').frac
-  if (weightsGb < soft * 0.6) return 'easy'
-  if (weightsGb < soft) return 'fits'
-  if (weightsGb < ceil) return 'tight'
-  return 'wontFit'
-}
-
-/** True when the machine could load this model at all (via the aggressive ceiling
- *  + Load anyway) — so browse never hides it. Only a genuinely oversized model
- *  (past the extreme ceiling) is unloadable. */
-export function isLoadableOnDevice(weightsGb: number, ramGb: number): boolean {
-  return fitTier(weightsGb, ramGb) !== 'wontFit'
-}
-
 /** Physics floor for an explicit "Load anyway": does loading `incomingWeightsGb`
  *  still leave the survival floor free, given what's available now? This is the
  *  only gate an override can't pass — a load that would take an uncatchable OOM
  *  kill. `availGb` is the real free RAM the caller measured. */
-export function checkOverrideSurvival(opts: {
-  availGb: number
-  incomingWeightsGb: number
-}): { fits: boolean; freeAfterGb: number } {
+export function checkOverrideSurvival(opts: { availGb: number; incomingWeightsGb: number }): {
+  fits: boolean
+  freeAfterGb: number
+} {
   const freeAfterGb = opts.availGb - opts.incomingWeightsGb
   return { fits: freeAfterGb >= OVERRIDE_SURVIVAL_FLOOR_GB, freeAfterGb }
 }

@@ -21,7 +21,7 @@ import { deviceNoun } from '@renderer/lib/device'
 import { modelKindLabel } from '@renderer/lib/model-kind-labels'
 import { collectTags, matchesAllTags, toggleTag } from '@renderer/lib/model-tag-filter'
 import { companionDownloadLabel } from '@renderer/lib/download-label'
-import { fitLevel, type FitLevel } from '../../../shared/model-fit'
+import { fitTier, type FitTier } from '../../../shared/model-fit'
 import {
   filterAndSort,
   parseParamCount,
@@ -220,7 +220,9 @@ export function ModelsScreen(): React.JSX.Element {
     void api.getModelVisionStatus?.().then((s) => setVisionSt(s ?? {}))
   }
   const [activeKind, setActiveKind] = useState<string>('text')
-  const [progress, setProgress] = useState<Record<string, { percent: number; status?: string; currentFile?: string }>>({})
+  const [progress, setProgress] = useState<
+    Record<string, { percent: number; status?: string; currentFile?: string }>
+  >({})
   // Active model ids across ALL modalities (chat + image/voice/transcription) —
   // one truth from the backend; the UI never re-derives "active" per kind.
   const [activeIds, setActiveIds] = useState<Set<string>>(new Set())
@@ -460,13 +462,14 @@ export function ModelsScreen(): React.JSX.Element {
     failed: Object.values(progress).filter((p) => p.status === 'failed').length
   }
 
-  // RAM fit label for a model — delegates to the SHARED fit rule so the badge here
-  // and the main-process activation warning (estimateModelFit → fitLevel) can't drift.
-  const ramFit = (m: { files?: ModelFile[] }): FitLevel => {
-    if (!ramGb) return 'ok'
+  // Four-way browse chip: only a model past the AGGRESSIVE ceiling reads "won't
+  // fit"; 55-82%-of-RAM models read "tight" and stay loadable (Load anyway) — the
+  // never-block posture, more accurate than the old 3-way "may not fit".
+  const ramTier = (m: { files?: ModelFile[] }): FitTier => {
+    if (!ramGb) return 'easy'
     const gb = totalBytes(m) / 1e9
-    if (!gb) return 'ok'
-    return fitLevel(gb, ramGb)
+    if (!gb) return 'easy'
+    return fitTier(gb, ramGb)
   }
 
   const renderCard = (
@@ -487,7 +490,7 @@ export function ModelsScreen(): React.JSX.Element {
     const meta = [m.org, m.params ? `${m.params}B` : null, size, fmtReleaseDate(m.releaseDate)]
       .filter(Boolean)
       .join(' · ')
-    const fit = isHf ? 'ok' : ramFit(m)
+    const tier: FitTier = isHf ? 'easy' : ramTier(m)
     const tags = (m.tags ?? []).filter((t) => !/tight|risky|fit/i.test(t))
     // The single image pick best-suited to THIS machine's RAM (Light on <=16GB,
     // full above) — a prominent filled-emerald badge, distinct from the outlined tags.
@@ -532,7 +535,7 @@ export function ModelsScreen(): React.JSX.Element {
         </div>
 
         {/* Badges row */}
-        {(recommended || tags.length > 0 || fit !== 'ok') && (
+        {(recommended || tags.length > 0 || tier === 'tight' || tier === 'wontFit') && (
           <div className="flex flex-wrap items-center gap-1">
             {recommended && (
               // Prominent FILLED emerald badge — the pick for this machine's RAM,
@@ -564,11 +567,20 @@ export function ModelsScreen(): React.JSX.Element {
                 </span>
               )
             })}
-            {fit !== 'ok' && (
+            {(tier === 'tight' || tier === 'wontFit') && (
               <span
-                className={`rounded-sm px-1.5 py-px text-[8px] uppercase tracking-wide ${fit === 'tight' ? 'border border-amber-400/60 text-amber-400' : 'border border-amber-400/60 bg-amber-400/10 text-amber-400'}`}
+                className={`rounded-sm px-1.5 py-px text-[8px] uppercase tracking-wide ${
+                  tier === 'tight'
+                    ? 'border border-amber-400/60 text-amber-400'
+                    : 'border border-red-400/60 bg-red-400/10 text-red-400'
+                }`}
+                title={
+                  tier === 'tight'
+                    ? 'Fits, but context will be tight on this Mac'
+                    : "Past this Mac's comfortable ceiling — you can still Load anyway"
+                }
               >
-                {fit === 'tight' ? 'Tight on RAM' : 'May not fit'}
+                {tier === 'tight' ? 'Tight on RAM' : "Won't fit — Load anyway"}
               </span>
             )}
           </div>
