@@ -105,6 +105,82 @@ export function parseSseLine(rawLine: string): SseFrame | null {
 }
 
 /**
+ * Stateful filter that suppresses tool-call MARKUP from the visible content stream.
+ * Small models (gemma-4/qwen) sometimes emit a tool call as text — `<tool_call>{…}`,
+ * `<|tool_call|>…`, `<invoke …>` — which the loop recovers (see tool-call-parse),
+ * but the raw markup would otherwise flash in the user's answer before the tool
+ * runs. Once an opener is seen, everything after it is dropped from the visible
+ * stream for the rest of the turn (the tool call IS the tail of the content). It
+ * only filters what the USER SEES — the caller still keeps the full text for
+ * parsing. Straddle-safe: holds back a short trailing tail that could be the start
+ * of an opener across chunk boundaries; `end()` flushes it if it wasn't one.
+ *
+ * Pure: the only side effect is the caller-supplied `emit`.
+ */
+export function createToolMarkupFilter(emit: (text: string) => void): {
+  push: (text: string) => void
+  end: () => void
+} {
+  const OPENER = /<\|?tool_call\|?>?|<invoke\b/i
+  const OPENER_PREFIXES = ['<tool_call', '<|tool_call', '<invoke']
+  let suppressing = false
+  let pending = ''
+
+  // The earliest index of a '<' from which the tail is a PARTIAL prefix of a known
+  // opener (so it might complete into one on the next chunk). -1 when no such tail
+  // exists — i.e. normal content that should stream now, at full granularity.
+  const partialOpenerAt = (s: string): number => {
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] !== '<') {
+        continue
+      }
+      const tail = s.slice(i).toLowerCase()
+      if (OPENER_PREFIXES.some((p) => p.startsWith(tail))) {
+        return i
+      }
+    }
+    return -1
+  }
+
+  const push = (text: string): void => {
+    if (suppressing) {
+      return
+    }
+    pending += text
+    const m = OPENER.exec(pending)
+    if (m) {
+      if (m.index > 0) {
+        emit(pending.slice(0, m.index))
+      }
+      suppressing = true
+      pending = ''
+      return
+    }
+    // No full opener. Hold back ONLY a trailing tail that could still become one;
+    // everything before it streams immediately (preserves per-token granularity).
+    const hold = partialOpenerAt(pending)
+    if (hold === -1) {
+      if (pending) {
+        emit(pending)
+      }
+      pending = ''
+    } else {
+      if (hold > 0) {
+        emit(pending.slice(0, hold))
+      }
+      pending = pending.slice(hold)
+    }
+  }
+  const end = (): void => {
+    if (!suppressing && pending) {
+      emit(pending)
+    }
+    pending = ''
+  }
+  return { push, end }
+}
+
+/**
  * Stateful splitter for models that inline <think>...</think> reasoning inside the
  * `content` channel. Feed it content chunks in order; it emits reasoning vs content
  * events and carries the in-think state across chunk boundaries (open tag in one

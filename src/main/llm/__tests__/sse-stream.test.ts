@@ -13,6 +13,7 @@ import {
   parseSseLine,
   createThinkSplitter,
   createToolCallAccumulator,
+  createToolMarkupFilter,
   type StreamEvent
 } from '../sse-stream'
 
@@ -205,5 +206,66 @@ describe('createToolCallAccumulator - assembling streamed tool_calls', () => {
     acc.push([{ index: 2, id: 'c', function: { name: 'third', arguments: '{}' } }])
     acc.push([{ index: 0, id: 'a', function: { name: 'first', arguments: '{}' } }])
     expect(acc.list().map((c) => c.name)).toEqual(['first', 'third'])
+  })
+})
+
+describe('createToolMarkupFilter - hide tool-call markup from the visible stream', () => {
+  function collect(): { push: (t: string) => void; end: () => void; out: () => string } {
+    let out = ''
+    const f = createToolMarkupFilter((t) => {
+      out += t
+    })
+    return { push: f.push, end: f.end, out: () => out }
+  }
+
+  it('passes plain content through unchanged (flushed on end)', () => {
+    const f = collect()
+    f.push('Here is your answer.')
+    f.end()
+    expect(f.out()).toBe('Here is your answer.')
+  })
+
+  it('emits text before a <tool_call> opener and suppresses the markup after it', () => {
+    const f = collect()
+    f.push(
+      'Let me check that. <tool_call>{"name":"web_search","arguments":{"query":"x"}}</tool_call>'
+    )
+    f.end()
+    expect(f.out()).toBe('Let me check that. ')
+  })
+
+  it('suppresses across chunk boundaries when the opener straddles chunks', () => {
+    const f = collect()
+    f.push('One moment <to')
+    f.push('ol_call>{"name":"calculator"}')
+    f.end()
+    expect(f.out()).toBe('One moment ')
+  })
+
+  it('suppresses the <|tool_call|> variant and <invoke>', () => {
+    const a = collect()
+    a.push('a<|tool_call|>{}')
+    a.end()
+    expect(a.out()).toBe('a')
+    const b = collect()
+    b.push('b <invoke name="x">stuff')
+    b.end()
+    expect(b.out()).toBe('b ')
+  })
+
+  it('does NOT suppress a stray "<" that is not a tool-call opener', () => {
+    const f = collect()
+    f.push('if a < b and c > d then done')
+    f.end()
+    expect(f.out()).toBe('if a < b and c > d then done')
+  })
+
+  it('drops everything once suppressing, even across later pushes', () => {
+    const f = collect()
+    f.push('answer <tool_call>{')
+    f.push('"name":"x"}')
+    f.push('</tool_call> trailing junk')
+    f.end()
+    expect(f.out()).toBe('answer ')
   })
 })

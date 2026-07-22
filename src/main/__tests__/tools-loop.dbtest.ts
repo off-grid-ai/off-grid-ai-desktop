@@ -379,6 +379,29 @@ describe('web tools — real parsers over fetch faked at the network boundary', 
     expect(r.toolCalls[0]!.result).toContain('Trojan War')
   })
 
+  it('does not leak <tool_call> markup into the visible content stream (still runs the tool)', async () => {
+    // Round 1 emits the call as TEXT. The user must NOT see the raw <tool_call>{…}
+    // flash in the answer stream, but the tool must still run and the turn answer.
+    fake.enqueue(
+      {
+        content:
+          'Let me compute. <tool_call>{"name":"calculator","arguments":{"expression":"6*7"}}</tool_call>'
+      },
+      { content: 'It is 42.' }
+    )
+    const contentDeltas: string[] = []
+    const r = await toolChat('what is 6*7', [], {
+      onDelta: (t, k) => {
+        if (k === 'content') contentDeltas.push(t)
+      }
+    })
+    const streamed = contentDeltas.join('')
+    expect(streamed).not.toContain('<tool_call>') // markup filtered from the visible stream
+    expect(streamed).not.toContain('calculator') // the JSON args never flashed either
+    expect(r.toolCalls.map((c) => c.result)).toContain('42') // ...but the tool DID run
+    expect(r.answer).toContain('42')
+  })
+
   it('backfills the user query when the model calls web_search with an empty query', async () => {
     // A small model calls web_search with no query. The loop must backfill the
     // user's message so a real search runs instead of erroring on an empty query.

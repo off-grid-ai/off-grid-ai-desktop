@@ -10,6 +10,7 @@ import {
   parseSseLine,
   createThinkSplitter,
   createToolCallAccumulator,
+  createToolMarkupFilter,
   type AssembledToolCall
 } from './sse-stream'
 import { modelRequestOptions, describeServerError } from './http-post'
@@ -50,7 +51,18 @@ export function streamCompletion(
     let aborted = false
     // Stateful think-tag splitter: routes inline reasoning vs answer and
     // accumulates the answer text across chunk boundaries (see sse-stream.ts).
-    const splitter = createThinkSplitter((ev) => onDelta(ev.text, ev.kind))
+    // Content is routed through a tool-markup filter so a model that emits a tool
+    // call AS TEXT doesn't flash the raw <tool_call>{…} at the user; reasoning is
+    // untouched. splitter.answer() still keeps the full text (with markup) so the
+    // loop can recover the text-form call — only the VISIBLE stream is filtered.
+    const markup = createToolMarkupFilter((t) => onDelta(t, 'content'))
+    const splitter = createThinkSplitter((ev) => {
+      if (ev.kind === 'content') {
+        markup.push(ev.text)
+      } else {
+        onDelta(ev.text, 'reasoning')
+      }
+    })
     const tools = createToolCallAccumulator()
     let finishReason: string | null = null
     const done = (): StreamResult => ({
@@ -117,6 +129,7 @@ export function streamCompletion(
       })
       res.on('end', () => {
         cleanup()
+        markup.end() // flush any held-back tail that turned out not to be tool markup
         if (!timedOut && !aborted) {
           resolve(done())
         }
@@ -133,6 +146,7 @@ export function streamCompletion(
       onAbort = (): void => {
         aborted = true
         cleanup()
+        markup.end() // flush the held tail on cancellation too
         try {
           req.destroy()
         } catch {
