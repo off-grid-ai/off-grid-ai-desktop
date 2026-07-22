@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  isMemoryToolAllowed,
-  KB_TOOL_NAME,
-  MEMORY_TOOL_NAME
-} from '../memory-scope'
+import { isMemoryToolAllowed, KB_TOOL_NAME, MEMORY_TOOL_NAME } from '../memory-scope'
 
 const project = { projectActive: true, allMemory: false }
 const all = { projectActive: false, allMemory: true }

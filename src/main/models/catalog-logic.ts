@@ -154,7 +154,10 @@ export interface VisionStatus {
 /** Per-model vision capability + readiness, derived from files (does it ship a
  *  projector?) and disk presence (is that projector downloaded?). Pure: presence comes
  *  from the injected predicate, so it unit-tests with no fs. */
-export function visionStatus(entry: Pick<CatalogEntry, 'files'>, present: FilePresent): VisionStatus {
+export function visionStatus(
+  entry: Pick<CatalogEntry, 'files'>,
+  present: FilePresent
+): VisionStatus {
   const projector = projectorFileName(entry)
   return { supportsVision: !!projector, projectorInstalled: !!projector && present(projector) }
 }

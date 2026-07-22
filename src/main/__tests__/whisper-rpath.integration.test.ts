@@ -50,7 +50,9 @@ describe.skipIf(!darwinWithBinary)('shipped whisper-cli can load its dylibs', ()
     for (const dep of rpathDeps(CLI)) {
       const sibling = path.join(WHISPER_DIR, dep)
       expect(existsSync(sibling), `${dep} staged`).toBe(true)
-      expect(lstatSync(sibling).isSymbolicLink(), `${dep} is a real file, not a symlink`).toBe(false)
+      expect(lstatSync(sibling).isSymbolicLink(), `${dep} is a real file, not a symlink`).toBe(
+        false
+      )
     }
   })
 

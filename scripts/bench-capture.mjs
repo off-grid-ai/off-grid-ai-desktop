@@ -114,23 +114,34 @@ async function callModel(content, label) {
   })
   if (!res.ok) throw new Error(`${label}: HTTP ${res.status} ${await res.text().catch(() => '')}`)
   const data = await res.json()
-  return { ms: nowMs() - t, outTokens: data.usage?.completion_tokens ?? 0, text: data.choices?.[0]?.message?.content ?? '' }
+  return {
+    ms: nowMs() - t,
+    outTokens: data.usage?.completion_tokens ?? 0,
+    text: data.choices?.[0]?.message?.content ?? ''
+  }
 }
 
 const textPart = (t) => [{ type: 'text', text: t }]
 const textLLM = (ocrText) =>
-  callModel(textPart(`${INSTRUCTION}\n\nScreen text:\n"""\n${ocrText.slice(0, 4000)}\n"""`), 'text-llm')
+  callModel(
+    textPart(`${INSTRUCTION}\n\nScreen text:\n"""\n${ocrText.slice(0, 4000)}\n"""`),
+    'text-llm'
+  )
 
 function imagePart(imagePath) {
   const b64 = readFileSync(imagePath).toString('base64')
   const mime = imagePath.toLowerCase().endsWith('.jpg') ? 'image/jpeg' : 'image/png'
   return { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } }
 }
-const visionFull = (imagePath) => callModel([{ type: 'text', text: INSTRUCTION }, imagePart(imagePath)], 'vision-full')
+const visionFull = (imagePath) =>
+  callModel([{ type: 'text', text: INSTRUCTION }, imagePart(imagePath)], 'vision-full')
 const visionText = (downPath, text) =>
   callModel(
     [
-      { type: 'text', text: `${INSTRUCTION}\n\nExact on-screen text (ground truth):\n"""\n${text.slice(0, 4000)}\n"""\n\nRead the screenshot for layout/structure and answer.` },
+      {
+        type: 'text',
+        text: `${INSTRUCTION}\n\nExact on-screen text (ground truth):\n"""\n${text.slice(0, 4000)}\n"""\n\nRead the screenshot for layout/structure and answer.`
+      },
       imagePart(downPath)
     ],
     'vision+text'
@@ -140,16 +151,28 @@ function stats(xs) {
   if (xs.length === 0) return null
   const s = [...xs].sort((a, b) => a - b)
   const q = (p) => s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))]
-  return { n: s.length, mean: s.reduce((a, b) => a + b, 0) / s.length, p50: q(50), p95: q(95), min: s[0], max: s[s.length - 1] }
+  return {
+    n: s.length,
+    mean: s.reduce((a, b) => a + b, 0) / s.length,
+    p50: q(50),
+    p95: q(95),
+    min: s[0],
+    max: s[s.length - 1]
+  }
 }
 const f = (v) => (v == null ? '   —' : `${v.toFixed(0)}`.padStart(6))
-const row = (name, st) => (st ? `  ${name.padEnd(22)} mean ${f(st.mean)}  p50 ${f(st.p50)}  p95 ${f(st.p95)}   (n=${st.n})` : `  ${name.padEnd(22)} (no data)`)
+const row = (name, st) =>
+  st
+    ? `  ${name.padEnd(22)} mean ${f(st.mean)}  p50 ${f(st.p50)}  p95 ${f(st.p95)}   (n=${st.n})`
+    : `  ${name.padEnd(22)} (no data)`
 const sum = (xs) => xs.reduce((a, b) => a + b, 0)
 const mean = (xs) => (xs.length ? sum(xs) / xs.length : 0)
 
 async function main() {
   console.log(`\nBenchmark — ${N} frames · max-dim ${MAX_DIM}px · engine ${ENDPOINT}`)
-  console.log(`legs: ocr, text-llm${DO_VISION ? ', downscale, vision+text (AX proxy)' : ''}${DO_FULL ? ', vision-full' : ''}\n`)
+  console.log(
+    `legs: ocr, text-llm${DO_VISION ? ', downscale, vision+text (AX proxy)' : ''}${DO_FULL ? ', vision-full' : ''}\n`
+  )
   const frames = pickFrames()
 
   process.stdout.write('warming up… ')
@@ -195,7 +218,9 @@ async function main() {
           const vf = await visionFull(fr)
           S.vfull.push(vf.ms)
           vfText = vf.text
-        } catch { /* skip */ }
+        } catch {
+          /* skip */
+        }
       }
       rmSync(d.path, { force: true })
       // Quality: print each leg's actual answer on the same frame, side by side.
@@ -226,11 +251,20 @@ async function main() {
     const chosenOcr = mean(S.ocr) + mean(S.down) + mean(S.vtext)
     const chosenAx = mean(S.down) + mean(S.vtext) // AX is ~free → drop OCR
     console.log(`  CHOSEN   (ocr + downscale + vision)    ${chosenOcr.toFixed(0)} ms`)
-    console.log(`  CHOSEN*  (AX + downscale + vision)     ${chosenAx.toFixed(0)} ms   *AX replaces OCR, ~free`)
-    if (DO_FULL && S.vfull.length) console.log(`  (vision on FULL-res image             ${mean(S.vfull).toFixed(0)} ms)`)
-    console.log(`\n  image size: ${kb(mean(sizes.full))} full → ${kb(mean(sizes.down))} downscaled (${(mean(sizes.full) / Math.max(1, mean(sizes.down))).toFixed(1)}× smaller)`)
-    console.log(`  chosen* vs current: ${(chosenAx / cur).toFixed(2)}× · throughput ~${(60000 / chosenAx).toFixed(0)} frames/min`)
-    console.log(`  output tokens — text ${mean(out.text).toFixed(0)}, vision+text ${mean(out.vtext).toFixed(0)}`)
+    console.log(
+      `  CHOSEN*  (AX + downscale + vision)     ${chosenAx.toFixed(0)} ms   *AX replaces OCR, ~free`
+    )
+    if (DO_FULL && S.vfull.length)
+      console.log(`  (vision on FULL-res image             ${mean(S.vfull).toFixed(0)} ms)`)
+    console.log(
+      `\n  image size: ${kb(mean(sizes.full))} full → ${kb(mean(sizes.down))} downscaled (${(mean(sizes.full) / Math.max(1, mean(sizes.down))).toFixed(1)}× smaller)`
+    )
+    console.log(
+      `  chosen* vs current: ${(chosenAx / cur).toFixed(2)}× · throughput ~${(60000 / chosenAx).toFixed(0)} frames/min`
+    )
+    console.log(
+      `  output tokens — text ${mean(out.text).toFixed(0)}, vision+text ${mean(out.vtext).toFixed(0)}`
+    )
   } else {
     console.log(`  throughput ~${(60000 / cur).toFixed(0)} frames/min`)
   }

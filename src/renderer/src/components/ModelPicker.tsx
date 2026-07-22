@@ -114,7 +114,10 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
     setUnloadStatus(mode, 'unloading')
     try {
       const freed = await bridge.unloadRuntime(MODE_TO_MODALITY[mode])
-      console.log(`[models] unload ${mode} (${MODE_TO_MODALITY[mode]}):`, freed ? 'freed' : 'nothing loaded')
+      console.log(
+        `[models] unload ${mode} (${MODE_TO_MODALITY[mode]}):`,
+        freed ? 'freed' : 'nothing loaded'
+      )
       setUnloadStatus(mode, 'unloaded')
     } catch (e) {
       console.error('[models] unload failed', e)
@@ -142,7 +145,9 @@ export function ModelPicker({ onClose }: { onClose: () => void }): React.ReactEl
           return (
             <div key={mode}>
               <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-wide text-neutral-600">{label}</span>
+                <span className="text-[10px] uppercase tracking-wide text-neutral-600">
+                  {label}
+                </span>
                 {cur && (
                   <button
                     type="button"

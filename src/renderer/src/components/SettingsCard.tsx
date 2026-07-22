@@ -87,41 +87,41 @@ export function SettingsCard({
           }}
         >
           <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={open}
-        className="flex w-full items-center gap-3 p-6 text-left"
-      >
-        <div className="min-w-0 flex-1">
-          {open && group ? (
-            <span className="mb-1 flex items-center gap-1 text-[11px] uppercase tracking-wide text-neutral-500">
-              <CaretLeft className="h-3 w-3" /> All settings
-            </span>
-          ) : null}
-          <h3 className="text-base font-medium text-white">{title}</h3>
-          {!open && <p className="mt-1 text-sm text-neutral-500">{summary}</p>}
-        </div>
-        <CaretDown
-          className={cn(
-            'h-4 w-4 shrink-0 text-neutral-500 transition-transform',
-            open && 'rotate-180'
-          )}
-        />
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            key="body"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="overflow-hidden"
+            type="button"
+            onClick={toggle}
+            aria-expanded={open}
+            className="flex w-full items-center gap-3 p-6 text-left"
           >
-            <div className="px-6 pb-6">{children}</div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <div className="min-w-0 flex-1">
+              {open && group ? (
+                <span className="mb-1 flex items-center gap-1 text-[11px] uppercase tracking-wide text-neutral-500">
+                  <CaretLeft className="h-3 w-3" /> All settings
+                </span>
+              ) : null}
+              <h3 className="text-base font-medium text-white">{title}</h3>
+              {!open && <p className="mt-1 text-sm text-neutral-500">{summary}</p>}
+            </div>
+            <CaretDown
+              className={cn(
+                'h-4 w-4 shrink-0 text-neutral-500 transition-transform',
+                open && 'rotate-180'
+              )}
+            />
+          </button>
+          <AnimatePresence initial={false}>
+            {open && (
+              <motion.div
+                key="body"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
+                className="overflow-hidden"
+              >
+                <div className="px-6 pb-6">{children}</div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>
@@ -162,14 +162,14 @@ export function ProPlaceholder({
           transition={{ duration: 0.6, delay }}
         >
           {variant === 'coming-soon' ? (
-        <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-800/50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-300">
-          <Clock weight="bold" className="h-3 w-3" /> Coming soon
-        </span>
-      ) : (
-        <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-green-400">
-          <LockKey weight="bold" className="h-3 w-3" /> Pro
-        </span>
-      )}
+            <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-800/50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-300">
+              <Clock weight="bold" className="h-3 w-3" /> Coming soon
+            </span>
+          ) : (
+            <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-green-400">
+              <LockKey weight="bold" className="h-3 w-3" /> Pro
+            </span>
+          )}
           <h3 className="mb-1 pr-28 text-base font-medium text-neutral-300">{title}</h3>
           <p className="text-sm text-neutral-600">{description}</p>
         </motion.div>

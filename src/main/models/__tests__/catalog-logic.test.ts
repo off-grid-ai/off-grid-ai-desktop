@@ -497,7 +497,9 @@ describe('dispatch predicates', () => {
     })
 
     it('does nothing for a text-only model or when there is no active model', () => {
-      expect(projectorToHeal({ id: 't', mmproj: null }, { files: [primary] }, onDisk)).toBeUndefined()
+      expect(
+        projectorToHeal({ id: 't', mmproj: null }, { files: [primary] }, onDisk)
+      ).toBeUndefined()
       expect(projectorToHeal(null, entry, onDisk)).toBeUndefined()
       expect(projectorToHeal({ mmproj: null }, entry, onDisk)).toBeUndefined()
     })

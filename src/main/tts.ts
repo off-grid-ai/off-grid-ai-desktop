@@ -16,12 +16,7 @@ import { getActiveModal } from './active-models'
 import { applicationCodeFile, modelsDir } from './runtime-env'
 import { getResidencyMode } from './runtime-residency'
 import type { ManagedRuntime } from './runtime-manager'
-import {
-  DEFAULT_VOICE,
-  chooseVoice,
-  isTeardownNoise,
-  parseServeLine
-} from './tts-logic'
+import { DEFAULT_VOICE, chooseVoice, isTeardownNoise, parseServeLine } from './tts-logic'
 import { writeDiagnosticLog } from './diagnostics-log'
 
 function messageOf(error: unknown): string {

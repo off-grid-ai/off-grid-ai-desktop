@@ -8,8 +8,18 @@ function stubApi(): void {
   ;(window as any).api = {
     getModelCatalog: async () => ({
       models: [
-        { id: 'kokoro', name: 'Kokoro TTS 82M', kind: 'voice', files: [{ name: 'kokoro.onnx', role: 'primary' }] },
-        { id: 'whisper', name: 'Whisper Tiny', kind: 'transcription', files: [{ name: 'whisper.bin', role: 'primary' }] }
+        {
+          id: 'kokoro',
+          name: 'Kokoro TTS 82M',
+          kind: 'voice',
+          files: [{ name: 'kokoro.onnx', role: 'primary' }]
+        },
+        {
+          id: 'whisper',
+          name: 'Whisper Tiny',
+          kind: 'transcription',
+          files: [{ name: 'whisper.bin', role: 'primary' }]
+        }
       ]
     }),
     getInstalledModels: async () => ['kokoro', 'whisper'],
