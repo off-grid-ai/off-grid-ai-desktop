@@ -43,6 +43,33 @@ const nav = async (label: string): Promise<void> => {
   await page.waitForTimeout(500)
 }
 
+// Replay serves the current frame through the local media server
+// (http://127.0.0.1:<port>/m/<hash>/<base64url(absolutePath)>), not a custom protocol.
+// Assert the rendered frame corresponds to the expected capture by decoding that path
+// segment and matching the filename — robust to the /private realpath prefix, the port,
+// and the async src swap when navigating frames.
+const frameImage = (): ReturnType<Page['locator']> => page.locator('img[src*="/m/"]')
+const expectFrameImage = async (expectedPath: string): Promise<void> => {
+  await expect
+    .poll(
+      async () => {
+        const src = await frameImage()
+          .first()
+          .getAttribute('src')
+          .catch(() => null)
+        if (!src) return null
+        const tail = src.split('/').pop()?.split('?')[0] ?? ''
+        try {
+          return path.basename(Buffer.from(tail, 'base64url').toString('utf8'))
+        } catch {
+          return null
+        }
+      },
+      { timeout: 20_000 }
+    )
+    .toBe(path.basename(expectedPath))
+}
+
 const waitForCapturedClip = async (
   contentType: 'text' | 'image' | 'file',
   textContent: string | null,
@@ -230,11 +257,10 @@ test('Replay renders every synthetic capture in chronological order with usable 
   expect(frames.length).toBeGreaterThan(2)
   expect(frames.map((frame) => frame.path)).toEqual(capturePaths)
 
-  const currentImage = page.locator('img[src^="ogcapture://"]')
   const commentary = page.locator('aside')
   const assertCurrentFrame = async (index: number): Promise<void> => {
     const frame = frames[index]!
-    await expect(currentImage).toHaveAttribute('src', `ogcapture://${frame.path}`)
+    await expectFrameImage(frame.path)
     await expect(commentary.getByText(frame.app ?? 'Screen', { exact: true })).toBeVisible()
     await expect(commentary.getByText(frame.fullTime, { exact: true })).toBeVisible()
     if (frame.caption) {
@@ -331,10 +357,7 @@ test('Search opens Replay at the selected captured moment instead of a timeline 
 
   await expect(search).toBeHidden()
   await expect(page.getByRole('heading', { name: 'Replay', exact: true })).toBeVisible()
-  await expect(page.locator('img[src^="ogcapture://"]')).toHaveAttribute(
-    'src',
-    `ogcapture://${expected.selected.path}`
-  )
+  await expectFrameImage(expected.selected.path)
   const commentary = page.locator('aside')
   await expect(
     commentary.getByText(expected.selected.app ?? 'Screen', { exact: true })
