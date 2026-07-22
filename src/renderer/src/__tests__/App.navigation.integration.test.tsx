@@ -110,7 +110,8 @@ describe('<App/> desktop navigation integration', () => {
     await waitFor(() => expect(rendererActivation.load).toHaveBeenCalledTimes(1))
     expect(onNewApproval).not.toHaveBeenCalled()
     expect(onNewAction).not.toHaveBeenCalled()
-    expect(proOn).not.toHaveBeenCalled()
+    expect(proOn).toHaveBeenCalledWith('capture:changed', expect.any(Function))
+    expect(proOn).not.toHaveBeenCalledWith('notification:open-target', expect.any(Function))
 
     act(() => finishActivation?.())
 
