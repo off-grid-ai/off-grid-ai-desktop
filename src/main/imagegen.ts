@@ -7,8 +7,11 @@ import { spawn, type ChildProcess } from 'child_process'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
-import { modalityQueue, IMAGE_JOB } from './modality-queue/queue'
+import { modalityQueue, IMAGE_JOB, CHAT_JOB } from './modality-queue/queue'
 import { getResidencyMode } from './runtime-residency'
+import { llm } from './llm'
+import { getSetting } from './database'
+import { enhancePrompt } from './imagegen/prompt-enhance'
 import type { ManagedRuntime } from './runtime-manager'
 import {
   isMfluxModelId,
@@ -493,9 +496,30 @@ export async function generateImage(
   params: ImageGenParams,
   onProgress?: (p: ImageGenProgress & { preview?: string }) => void
 ): Promise<ImageGenOutput> {
+  // Prompt enhancement runs FIRST, while the chat model is still resident — the
+  // image job below evicts the LLM, so the text pass must precede it. Gated by a
+  // setting; failure/timeout silently keeps the original prompt.
+  const enhanced = await maybeEnhancePrompt(params.prompt)
+  const effective = enhanced === params.prompt ? params : { ...params, prompt: enhanced }
   // The queue evicts 'llm' before this runs AND re-warms it (mode-aware) when the
   // job finishes — so the image path no longer touches llm.pause/resume itself.
-  return modalityQueue.run(IMAGE_JOB, () => runImageGen(params, onProgress))
+  return modalityQueue.run(IMAGE_JOB, () => runImageGen(effective, onProgress))
+}
+
+/** Expand the user's prompt into a richer generation prompt via the local text
+ *  model, when `enhanceImagePrompts` is on. Runs through the queue as a foreground
+ *  text job (tier 2, evicts a resident image server) so it's serialized with chat.
+ *  Any failure returns the original prompt unchanged — enhancement is best-effort. */
+async function maybeEnhancePrompt(prompt: string): Promise<string> {
+  return enhancePrompt(prompt, {
+    enabled: getSetting('enhanceImagePrompts', true),
+    // Foreground text job (tier 2, evicts a resident image server), serialized with
+    // chat. Runs while the chat model is still resident — the image job evicts it after.
+    chat: (instruction) =>
+      modalityQueue.run(CHAT_JOB, () =>
+        llm.chat(instruction, [], 60_000, 200, { temperature: 0.7, disableThinking: true })
+      )
+  })
 }
 
 async function runImageGen(
