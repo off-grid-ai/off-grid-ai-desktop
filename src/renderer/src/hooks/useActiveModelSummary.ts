@@ -5,8 +5,6 @@ type ActiveModelApi = Partial<
   Pick<typeof window.api, 'getModelCatalog' | 'getActiveModel' | 'getLlmSettings'>
 >
 
-const api = window.api as ActiveModelApi
-
 export interface ActiveModelSummary {
   /** Display name of the active text/vision model, or null if none. */
   name: string | null
@@ -24,16 +22,21 @@ export function useActiveModelSummary(refreshWhen: unknown): ActiveModelSummary 
   useEffect(() => {
     const request = { active: true }
     void (async (): Promise<void> => {
-      const catalog = await api.getModelCatalog?.()
-      const activeId = (await api.getActiveModel?.()) ?? null
-      const settings = await api.getLlmSettings?.()
-      if (!request.active) {
-        return
+      const api = window.api as ActiveModelApi | undefined
+      try {
+        const catalog = await api?.getModelCatalog?.()
+        const activeId = (await api?.getActiveModel?.()) ?? null
+        const settings = await api?.getLlmSettings?.()
+        if (!request.active) {
+          return
+        }
+        setSummary({
+          name: resolveModelName(catalog?.models ?? [], activeId),
+          ctx: formatContextWindow(settings?.ctxSize)
+        })
+      } catch {
+        if (request.active) setSummary({ name: null, ctx: null })
       }
-      setSummary({
-        name: resolveModelName(catalog?.models ?? [], activeId),
-        ctx: formatContextWindow(settings?.ctxSize)
-      })
     })()
     return () => {
       request.active = false
