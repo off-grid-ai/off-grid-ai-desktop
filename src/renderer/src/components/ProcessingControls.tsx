@@ -133,11 +133,11 @@ export function ModelPipelineSection(): React.ReactElement {
   }, [])
 
   const set = (patch: Partial<QueueCfg>): void => {
-    setCfg((current) => ({ ...current, ...patch }))
-    api
-      .queueConfigSet?.(patch)
-      .then(setCfg)
-      .catch(() => {})
+    void persistToggle({ ...cfg, ...patch }, cfg, setCfg, () =>
+      Promise.resolve(api.queueConfigSet?.(patch)).then((persisted: QueueCfg | undefined) => {
+        if (persisted) setCfg(persisted)
+      })
+    )
   }
   const rows = [
     {
