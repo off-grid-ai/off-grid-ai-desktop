@@ -16,6 +16,11 @@ import {
   totalBytes,
   recommendedParamCeiling,
   preferredModelIds,
+  fitTier,
+  isLoadableOnDevice,
+  checkOverrideSurvival,
+  contextLadder,
+  OVERRIDE_SURVIVAL_FLOOR_GB,
   type SizingModel
 } from '../model-sizing'
 
@@ -231,5 +236,65 @@ describe('fitLevel — RAM-fit badge thresholds', () => {
     expect(
       totalBytes({ kind: 'vision', files: [{ sizeBytes: 2 * GB }, { sizeBytes: 1 * GB }] })
     ).toBe(3 * GB)
+  })
+})
+
+describe('never-block loading — fitTier / isLoadableOnDevice', () => {
+  // On 16GB: soft = 16*0.65 = 10.4, ceil = 16*0.82 = 13.12. easy < 6.24.
+  it('buckets weights into easy / fits / tight / wontFit against soft+ceil', () => {
+    expect(fitTier(5, 16)).toBe('easy') // 5 < 6.24
+    expect(fitTier(8, 16)).toBe('fits') // 6.24 ≤ 8 < 10.4
+    expect(fitTier(12, 16)).toBe('tight') // 10.4 ≤ 12 < 13.12
+    expect(fitTier(14, 16)).toBe('wontFit') // ≥ 13.12
+  })
+
+  it('keeps a model loadable right up to the aggressive ceiling (never hidden early)', () => {
+    // A 12GB model on a 16GB Mac is past the balanced comfort budget (10.4) but
+    // still loadable via the extreme ceiling + Load anyway — must NOT be hidden.
+    expect(isLoadableOnDevice(12, 16)).toBe(true)
+    expect(fitTier(12, 16)).toBe('tight')
+    // Only a model past the extreme ceiling is truly unloadable.
+    expect(isLoadableOnDevice(14, 16)).toBe(false)
+  })
+
+  it('the ceiling is the ONLY block — tight still loads, wontFit does not', () => {
+    const ram = 24 // soft 15.6, ceil 19.68
+    expect(isLoadableOnDevice(18, ram)).toBe(true) // tight but loadable
+    expect(isLoadableOnDevice(20, ram)).toBe(false) // past ceil
+  })
+})
+
+describe('never-block loading — override survival floor (the one true refusal)', () => {
+  it('passes an override that still leaves the survival floor free', () => {
+    const r = checkOverrideSurvival({ availGb: 6, incomingWeightsGb: 4 })
+    expect(r.fits).toBe(true) // 2GB free after ≥ 1GB floor
+    expect(r.freeAfterGb).toBeCloseTo(2)
+  })
+
+  it('refuses only when the load would drop below the survival floor', () => {
+    // 4.5GB free, load 4GB → 0.5GB left < 1GB floor → refuse even with override.
+    expect(checkOverrideSurvival({ availGb: 4.5, incomingWeightsGb: 4 }).fits).toBe(false)
+    expect(OVERRIDE_SURVIVAL_FLOOR_GB).toBe(1.0)
+  })
+})
+
+describe('never-block loading — context fallback ladder', () => {
+  it('descends by halving from the requested size down to the 2048 floor, 1k-aligned', () => {
+    const ladder = contextLadder(32768)
+    expect(ladder[0]).toBe(32768)
+    expect(ladder[ladder.length - 1]).toBe(2048)
+    // strictly descending
+    for (let i = 1; i < ladder.length; i++) {
+      expect(ladder[i]!).toBeLessThan(ladder[i - 1]!)
+    }
+    // every rung is 1k-aligned
+    for (const c of ladder) {
+      expect(c % 1024).toBe(0)
+    }
+  })
+
+  it('a requested size already at the floor yields just [2048]', () => {
+    expect(contextLadder(2048)).toEqual([2048])
+    expect(contextLadder(1000)).toEqual([2048]) // clamps up to the floor
   })
 })

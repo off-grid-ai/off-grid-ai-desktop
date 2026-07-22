@@ -110,6 +110,65 @@ export function fitLevel(weightsGb: number, ramGb: number): 'ok' | 'tight' | 'ri
   return weightsGb <= ramGb * 0.38 ? 'ok' : weightsGb <= ramGb * 0.55 ? 'tight' : 'risky'
 }
 
+// --- Never-block loading (ported from mobile: warn, don't block) ---
+//
+// The rule: the UI must NEVER hide or hard-disable a model the machine could load
+// at all. It shows a fit chip (easy/fits/tight/won't fit) and, past the comfort
+// ceiling, offers "Load anyway" instead of a dead end. Only the physics floor
+// below can truly refuse a load — the point where the OS would kill the app.
+
+export type FitTier = 'easy' | 'fits' | 'tight' | 'wontFit'
+
+/** The hard headroom (GB) a "Load anyway" must still leave free after the model's
+ *  weights are resident, or the OS starts killing the app. Below this we refuse
+ *  even an explicit override — this is the ONE true block. */
+export const OVERRIDE_SURVIVAL_FLOOR_GB = 1.0
+
+/** Four-way fit chip for the browse UI. `soft` = the balanced comfort budget,
+ *  `ceil` = the extreme (aggressive) ceiling. A model past `ceil` is the only one
+ *  labelled "won't fit"; everything up to it stays loadable (with a warning). */
+export function fitTier(weightsGb: number, ramGb: number): FitTier {
+  const soft = ramGb * modeBudget('balanced').frac
+  const ceil = ramGb * modeBudget('extreme').frac
+  if (weightsGb < soft * 0.6) return 'easy'
+  if (weightsGb < soft) return 'fits'
+  if (weightsGb < ceil) return 'tight'
+  return 'wontFit'
+}
+
+/** True when the machine could load this model at all (via the aggressive ceiling
+ *  + Load anyway) — so browse never hides it. Only a genuinely oversized model
+ *  (past the extreme ceiling) is unloadable. */
+export function isLoadableOnDevice(weightsGb: number, ramGb: number): boolean {
+  return fitTier(weightsGb, ramGb) !== 'wontFit'
+}
+
+/** Physics floor for an explicit "Load anyway": does loading `incomingWeightsGb`
+ *  still leave the survival floor free, given what's available now? This is the
+ *  only gate an override can't pass — a load that would take an uncatchable OOM
+ *  kill. `availGb` is the real free RAM the caller measured. */
+export function checkOverrideSurvival(opts: {
+  availGb: number
+  incomingWeightsGb: number
+}): { fits: boolean; freeAfterGb: number } {
+  const freeAfterGb = opts.availGb - opts.incomingWeightsGb
+  return { fits: freeAfterGb >= OVERRIDE_SURVIVAL_FLOOR_GB, freeAfterGb }
+}
+
+/** The context-size fallback ladder for a load that OOMs at the requested size:
+ *  the values to retry, largest first, down to the 2048 floor. The runtime tries
+ *  each until one loads (mobile's resolveSafeContext stepdown). Always 1k-aligned
+ *  and strictly descending; ends at 2048. */
+export function contextLadder(requested: number): number[] {
+  const start = Math.max(2048, Math.floor(requested / 1024) * 1024)
+  const rungs: number[] = []
+  for (let c = start; c > 2048; c = Math.floor(c / 2 / 1024) * 1024) {
+    rungs.push(c)
+  }
+  rungs.push(2048)
+  return rungs
+}
+
 /** Pick the best chat/vision model that fits COMFORTABLY in RAM: prefer vision,
  *  then the largest whose weights are within `frac` of total RAM. Falls back to the
  *  smallest param-eligible model, then the smallest text model. null if none. */
