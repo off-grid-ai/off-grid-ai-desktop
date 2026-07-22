@@ -46,7 +46,7 @@ describe('<ModelPipelineSection/> — user controls for the shared pipeline', ()
     const user = userEvent.setup()
     render(<ModelPipelineSection />)
 
-    const pipeline = await screen.findByRole('switch', { name: 'Prioritized model pipeline' })
+    const pipeline = await screen.findByRole('switch', { name: 'Prioritize interactive work' })
     await waitFor(() => expect(pipeline.getAttribute('aria-checked')).toBe('true'))
 
     // Turn the prioritized pipeline OFF → the patch is written and the switch flips.
