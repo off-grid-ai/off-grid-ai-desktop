@@ -8,18 +8,25 @@
 #
 # Bypass in a genuine emergency with:  git push --no-verify
 
-# The full coverage ratchet remains mandatory in GitHub CI. Running the same 2,600-test
-# campaign on every incremental push made the prescribed small-commit/push-often workflow
-# impractical and duplicated the PR gate. Keep focused verification local to each change.
-#
-# echo "[pre-push] coverage gate — npm run test:coverage"
-# if ! npm run --silent test:coverage; then
-#   echo ""
-#   echo "[pre-push] BLOCKED: coverage dropped below the floor (vitest.config.ts thresholds)."
-#   echo "[pre-push] Add tests for the logic you changed, or investigate the drop. Do not lower the floor to pass."
-#   exit 1
-# fi
-# echo "[pre-push] coverage gate passed."
+# Local gate mirrors CI's hard gates so a push can't be red on arrival: typecheck (fast
+# fail), then the coverage ratchet. Bypass only in a genuine emergency with --no-verify;
+# if a running app is holding a model port (:8439) so a port-owner test can't bind, stop it
+# first rather than bypassing — see CLAUDE.md "model ports are single-owner".
+echo "[pre-push] typecheck — npm run typecheck"
+if ! npm run --silent typecheck; then
+  echo ""
+  echo "[pre-push] BLOCKED: typecheck failed. Fix the type errors above before pushing."
+  exit 1
+fi
+
+echo "[pre-push] coverage gate — npm run test:coverage"
+if ! npm run --silent test:coverage; then
+  echo ""
+  echo "[pre-push] BLOCKED: coverage dropped below the floor (vitest.config.ts thresholds)."
+  echo "[pre-push] Add tests for the logic you changed, or investigate the drop. Do not lower the floor to pass."
+  exit 1
+fi
+echo "[pre-push] coverage gate passed."
 
 # The gold-standard hygiene adoption has LANDED on this branch: prettier is applied repo-wide
 # (enforced by eslint's prettier/prettier rule) and the structural rules (curly / complexity /
