@@ -84,10 +84,13 @@ const enterChat = async (): Promise<void> => {
 }
 
 const dismissCapturePrompt = async (): Promise<void> => {
+  // The capture-permission prompt is best-effort onboarding — it isn't guaranteed to appear
+  // (depends on TCC state / seeded profile), so tolerate its absence instead of hard-failing.
   const dismiss = page.getByRole('button', { name: 'Dismiss', exact: true })
-  await expect(dismiss).toBeVisible()
-  await dismiss.click()
-  await expect(dismiss).toBeHidden()
+  if (await dismiss.isVisible().catch(() => false)) {
+    await dismiss.click()
+    await expect(dismiss).toBeHidden()
+  }
 }
 
 test.beforeEach(async () => {
