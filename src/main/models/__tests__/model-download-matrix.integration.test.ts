@@ -46,7 +46,12 @@ const byKind = (kind: CatalogModel['kind'], fileCount?: number): CatalogModel =>
   return entry
 }
 
-const textModel = byKind('text', 1)
+// The catalog no longer has a pure single-file 'text' kind — every former text
+// model ships an mmproj so it's classified 'vision', and the vision model IS the
+// chat model (activates into the `.text` chat slot). Single-file download
+// mechanics are exercised with any single-file model (image/voice exist).
+const singleFileModels = CATALOG.filter((m) => m.files.length === 1)
+const chatModel = byKind('vision', 2)
 const visionModel = byKind('vision', 2)
 const imageModel = byKind('image', 3)
 const speechModel = CATALOG.find(
@@ -180,15 +185,16 @@ afterAll(() => {
 })
 
 describe('model download release matrix', () => {
-  it('downloads a text model with observable progress and makes it activatable (#17)', async () => {
-    const { progress } = await downloadEveryRequiredFile(textModel)
+  it('downloads the chat (vision) model with observable progress and makes it activatable (#17)', async () => {
+    const { progress } = await downloadEveryRequiredFile(chatModel)
 
     expect(
       progress.some((event) => event.status === 'downloading' && (event.percent ?? 0) > 0)
     ).toBe(true)
-    expect(await manager.activateModel(textModel.id)).toEqual({ success: true })
-    expect(manager.getActiveModalities().text).toBe(textModel.id)
-    expect(await manager.getActiveModelIds()).toContain(textModel.id)
+    // A chat/vision model activates into the `.text` (chat LLM) slot via setActiveModel.
+    expect(await manager.activateModel(chatModel.id)).toEqual({ success: true })
+    expect(manager.getActiveModalities().text).toBe(chatModel.id)
+    expect(await manager.getActiveModelIds()).toContain(chatModel.id)
   })
 
   it('does not make a vision model ready until weights and projector complete (#18)', async () => {
@@ -233,9 +239,7 @@ describe('model download release matrix', () => {
   })
 
   it('keeps concurrent downloads ordered and isolated when the second completes first', async () => {
-    const concurrentModels = CATALOG.filter(
-      (candidate) => candidate.kind === 'text' && candidate.files.length === 1
-    ).slice(0, 2)
+    const concurrentModels = singleFileModels.slice(0, 2)
     const [firstModel, secondModel] = concurrentModels
     if (!firstModel || !secondModel) {
       throw new Error('Model catalog needs two single-file text fixtures')
@@ -351,12 +355,10 @@ describe('model download release matrix', () => {
   })
 
   it('caps three active downloads, exposes the FIFO queue, and drains every item (#22)', async () => {
-    const queueModels = CATALOG.filter(
-      (candidate) =>
-        candidate.kind === 'text' && candidate.runtime !== 'mflux' && candidate.files.length === 1
-    ).slice(0, 4)
-    if (queueModels.length < 4)
-      throw new Error('Model catalog needs four single-file text fixtures')
+    const queueModels = singleFileModels.filter((m) => m.runtime !== 'mflux').slice(0, 4)
+    if (queueModels.length < 4) {
+      throw new Error('Model catalog needs four single-file fixtures')
+    }
 
     const pending = controlledHttp()
     const progress = new Map<string, ModelDownloadProgress[]>()
@@ -438,12 +440,11 @@ describe('model download release matrix', () => {
   })
 
   it('deletes only the selected installed model while another download continues (#23)', async () => {
-    const existing = textModel
-    const downloading = CATALOG.find(
-      (candidate) =>
-        candidate.kind === 'text' && candidate.files.length === 1 && candidate.id !== existing.id
-    )
-    if (!downloading) throw new Error('Model catalog needs a second text fixture')
+    const existing = singleFileModels[0]
+    const downloading = singleFileModels.find((m) => m.id !== existing?.id)
+    if (!existing || !downloading) {
+      throw new Error('Model catalog needs two single-file fixtures')
+    }
 
     await downloadEveryRequiredFile(existing)
 

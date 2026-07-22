@@ -38,19 +38,16 @@ const manager = await import('@offgrid/core/main/models-manager')
 const setup = await import('@offgrid/core/main/setup')
 const { CATALOG } = await import('@offgrid/models')
 
-const chosenModel = CATALOG.find(
-  (model) =>
-    model.kind === 'text' && model.files.length === 1 && model.files[0]?.name.endsWith('.gguf')
+// The chat model is a vision model now (no pure-text kind — every text model
+// ships an mmproj). Manual setup just needs two distinct downloadable chat models
+// to prove only the CHOSEN one downloads (its files, not the other's).
+const chatModels = CATALOG.filter(
+  (model) => model.kind === 'vision' && model.files.some((f) => f.name.endsWith('.gguf'))
 )
-const unchosenModel = CATALOG.find(
-  (model) =>
-    model.kind === 'text' &&
-    model.files.length === 1 &&
-    model.files[0]?.name.endsWith('.gguf') &&
-    model.id !== chosenModel?.id
-)
+const chosenModel = chatModels[0]
+const unchosenModel = chatModels.find((model) => model.id !== chosenModel?.id)
 if (!chosenModel || !unchosenModel) {
-  throw new Error('Model catalog needs two single-file text models for manual setup coverage')
+  throw new Error('Model catalog needs two downloadable chat (vision) models for manual setup')
 }
 
 type Progress = import('@offgrid/core/main/models-manager').DownloadProgress
