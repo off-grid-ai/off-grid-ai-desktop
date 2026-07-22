@@ -64,7 +64,12 @@ export function SettingsCard({
       {!hidden && (
         <motion.div
           key={title}
-          layout
+          // layout="position" (not full `layout`): animate only the card's POSITION as
+          // siblings reflow. Full `layout` animates SIZE via a transform: scale(), which
+          // visibly zoomed/stretched the text while a section opened (width -> col-span-full
+          // and the body height 0->auto happening together). Position-only keeps content
+          // crisp; the body's own height animation below does the smooth vertical growth.
+          layout="position"
           className={cn(
             'overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-sm',
             open && group && 'col-span-full' // take over the grid width as the L2 detail
@@ -149,7 +154,9 @@ export function ProPlaceholder({
     <AnimatePresence mode="popLayout">
       {!hidden && (
         <motion.div
-          layout
+          // position-only, matching SettingsCard: reflow smoothly without scale-distorting
+          // the placeholder's text when sibling cards open/close.
+          layout="position"
           className="relative rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6"
           initial={{ opacity: 0, filter: 'blur(10px)' }}
           animate={{ opacity: 1, filter: 'blur(0px)' }}
