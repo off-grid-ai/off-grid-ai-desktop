@@ -8,6 +8,7 @@ import {
   ALLOWED_ASAR_ROOTS,
   ALLOWED_ASAR_OUT_ROOTS,
   REQUIRED_MAC_BUNDLE_FILES,
+  assertAsarEntryInventory,
   assertAsarInventory,
   verifyBundlePair,
   verifyZipArtifact
@@ -162,6 +163,52 @@ describe('macOS artifact integrity', () => {
     expect(() => assertAsarInventory(bundle)).toThrow(
       'app.asar contains unexpected application root: /marketing'
     )
+  })
+
+  // Regression: @electron/asar's listPackage yields OS-separator paths — backslashes on
+  // the Windows runner ("\node_modules") — so the POSIX allowlist rejected EVERY entry
+  // and failed an otherwise-valid app.asar (the build-win release regression). The pure
+  // entry check must normalize separators so an identical tree passes on either host,
+  // WITHOUT weakening the forbidden-path checks.
+  describe('assertAsarEntryInventory — cross-platform path separators', () => {
+    const POSIX_TREE = [
+      '/package.json',
+      '/out',
+      '/out/main/index.js',
+      '/out/preload/index.js',
+      '/out/renderer/index.html',
+      '/node_modules/electron/package.json'
+    ]
+    const toWindows = (entries: string[]): string[] => entries.map((e) => e.replace(/\//g, '\\'))
+
+    it('accepts a valid runtime tree with POSIX separators', () => {
+      expect(() => assertAsarEntryInventory(POSIX_TREE)).not.toThrow()
+    })
+
+    it('accepts the SAME valid tree with Windows backslash separators', () => {
+      expect(() => assertAsarEntryInventory(toWindows(POSIX_TREE))).not.toThrow()
+    })
+
+    it('still rejects an unexpected root delivered with Windows separators', () => {
+      expect(() => assertAsarEntryInventory(['\\marketing', '\\marketing\\list.csv'])).toThrow(
+        'app.asar contains unexpected application root'
+      )
+    })
+
+    it('still rejects private state + build output with Windows separators', () => {
+      expect(() => assertAsarEntryInventory(['\\out\\main\\.OFFGRID\\private.db'])).toThrow(
+        'forbidden private state'
+      )
+      expect(() =>
+        assertAsarEntryInventory(['\\out\\packaged-helpers-stale\\package\\x.js'])
+      ).toThrow('unexpected build output')
+    })
+
+    it('still rejects a nested application bundle with Windows separators', () => {
+      expect(() =>
+        assertAsarEntryInventory(['\\out\\main\\Nested.APP\\Contents\\Info.plist'])
+      ).toThrow('nested application bundle')
+    })
   })
 
   it('enforces ASAR inventory on the real Windows artifact hook', async () => {

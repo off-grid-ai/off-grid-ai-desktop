@@ -4,6 +4,7 @@ export const ALLOWED_ASAR_ROOTS: readonly string[]
 export const ALLOWED_ASAR_OUT_ROOTS: readonly string[]
 
 export function verifyBundlePair(referenceBundle: string, candidateBundle: string): void
+export function assertAsarEntryInventory(entries: readonly string[]): void
 export function assertAsarArchiveInventory(archive: string): void
 export function assertAsarInventory(bundle: string): void
 export function verifyDmgArtifact(dmgPath: string, referenceBundle: string): Promise<void>
