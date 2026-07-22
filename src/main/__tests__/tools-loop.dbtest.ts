@@ -378,4 +378,34 @@ describe('web tools — real parsers over fetch faked at the network boundary', 
     expect(r.toolCalls[0]!.result).toContain('Achilles - Wikipedia')
     expect(r.toolCalls[0]!.result).toContain('Trojan War')
   })
+
+  it('backfills the user query when the model calls web_search with an empty query', async () => {
+    // A small model calls web_search with no query. The loop must backfill the
+    // user's message so a real search runs instead of erroring on an empty query.
+    let searchedUrl = ''
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        searchedUrl = url
+        return {
+          ok: true,
+          text: async () =>
+            '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com">Ex</a>'
+        }
+      })
+    )
+    fake.enqueue(
+      { toolCalls: [{ name: 'web_search', args: {} }] }, // NO query
+      { content: 'Found it.' }
+    )
+    const steps: { name: string; args: Record<string, unknown> }[] = []
+    const r = await toolChat('tell me about achilles the hero', [], {
+      onStep: (c) => steps.push(c)
+    })
+
+    // The user's message was backfilled as the query — surfaced in onStep AND sent to the network.
+    expect(steps[0]!.args.query).toBe('tell me about achilles the hero')
+    expect(decodeURIComponent(searchedUrl)).toContain('achilles the hero')
+    expect(r.toolCalls[0]!.result).toContain('example.com')
+  })
 })

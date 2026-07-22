@@ -622,6 +622,14 @@ export async function toolChat(
         }))
       })
       for (const c of effective) {
+        // Small models sometimes call a search tool with no query — backfill the
+        // user's message so the search isn't empty (rather than erroring out).
+        if (
+          (c.name === 'web_search' || c.name === 'brave_search') &&
+          !String((c.args as { query?: unknown }).query ?? '').trim()
+        ) {
+          c.args = { ...c.args, query }
+        }
         opts.onStep?.({ name: c.name, args: c.args }) // surface the tool activity BEFORE running it
         // Uniform dispatch — every tool owns its own result. Merge any structured
         // side channels: sources are deduped into `unified` across rounds; the last
