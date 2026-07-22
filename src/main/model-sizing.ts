@@ -1,11 +1,18 @@
 // Pure model-sizing math, extracted so the freeze-fix logic and model selection
-// are unit-testable WITHOUT Electron/os/fs. No side effects, no imports.
+// are unit-testable WITHOUT Electron/os/fs. No side effects; the only import is
+// the shared (pure) fit-verdict source, re-exported so both this main-process
+// module and the renderer badge use one definition.
 //
 // These functions encode two regressions we lived through:
 //   1. A hardcoded 64K context that overcommitted unified memory → macOS froze.
 //      computeSafeCtx() clamps context to what RAM can hold.
 //   2. "Configure for me" picking the LARGEST fitting model (an 8B at 64K froze a
 //      16GB Mac). chooseChatModel() picks the largest that fits COMFORTABLY.
+
+// The RAM-fit verdict is defined once in shared/ and re-exported here so existing
+// main-process importers (setup.ts, tests) are unchanged while the renderer badge
+// imports the same source directly — one rule, no drift.
+export { fitLevel, FIT_OK_FRAC, FIT_TIGHT_FRAC, type FitLevel } from '../shared/model-fit'
 
 export type KvCacheType = 'f16' | 'q8_0' | 'q4_0'
 export type PerformanceMode = 'conservative' | 'balanced' | 'extreme'
@@ -103,11 +110,6 @@ export function preferredModelIds(ramGb: number, mode: PerformanceMode): string[
     return ['unsloth/gemma-4-E4B-it-GGUF', 'unsloth/Qwen3-VL-2B-Instruct-GGUF'] // balanced + extreme → E4B, 2B fallback
   }
   return [] // 24GB+ → size heuristic (chooseChatModel)
-}
-
-/** RAM-fit verdict for a model's weights on a machine: comfy / tight / risky. */
-export function fitLevel(weightsGb: number, ramGb: number): 'ok' | 'tight' | 'risky' {
-  return weightsGb <= ramGb * 0.38 ? 'ok' : weightsGb <= ramGb * 0.55 ? 'tight' : 'risky'
 }
 
 // --- Never-block loading (ported from mobile: warn, don't block) ---

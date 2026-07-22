@@ -21,6 +21,7 @@ import { deviceNoun } from '@renderer/lib/device'
 import { modelKindLabel } from '@renderer/lib/model-kind-labels'
 import { collectTags, matchesAllTags, toggleTag } from '@renderer/lib/model-tag-filter'
 import { companionDownloadLabel } from '@renderer/lib/download-label'
+import { fitLevel, type FitLevel } from '../../../shared/model-fit'
 import {
   filterAndSort,
   parseParamCount,
@@ -459,12 +460,13 @@ export function ModelsScreen(): React.JSX.Element {
     failed: Object.values(progress).filter((p) => p.status === 'failed').length
   }
 
-  // RAM fit label for a model
-  const ramFit = (m: { files?: ModelFile[] }): 'ok' | 'tight' | 'risky' => {
+  // RAM fit label for a model — delegates to the SHARED fit rule so the badge here
+  // and the main-process activation warning (estimateModelFit → fitLevel) can't drift.
+  const ramFit = (m: { files?: ModelFile[] }): FitLevel => {
     if (!ramGb) return 'ok'
     const gb = totalBytes(m) / 1e9
     if (!gb) return 'ok'
-    return gb <= ramGb * 0.38 ? 'ok' : gb <= ramGb * 0.55 ? 'tight' : 'risky'
+    return fitLevel(gb, ramGb)
   }
 
   const renderCard = (

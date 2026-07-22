@@ -233,6 +233,18 @@ describe('fitLevel — RAM-fit badge thresholds', () => {
     expect(fitLevel(10, 16)).toBe('risky') // 63%
   })
 
+  it('is the SAME function the shared source exports (one rule, main + renderer)', async () => {
+    // The renderer badge imports fitLevel from ../../../shared/model-fit; main
+    // re-exports that exact function. Guard the single source so a copy can't
+    // creep back into either layer with drifted thresholds.
+    const shared = await import('../../shared/model-fit')
+    expect(fitLevel).toBe(shared.fitLevel)
+    // Thresholds sit exactly on the shared constants, not re-hardcoded numbers.
+    expect(fitLevel(16 * shared.FIT_OK_FRAC, 16)).toBe('ok')
+    expect(fitLevel(16 * shared.FIT_OK_FRAC + 0.01, 16)).toBe('tight')
+    expect(fitLevel(16 * shared.FIT_TIGHT_FRAC + 0.01, 16)).toBe('risky')
+  })
+
   it('totalBytes sums all files (primary + mmproj)', () => {
     expect(
       totalBytes({ kind: 'vision', files: [{ sizeBytes: 2 * GB }, { sizeBytes: 1 * GB }] })
