@@ -1975,6 +1975,12 @@ export function setupIPC() {
     return skillsDir()
   })
 
+  // Which STT engine + model would run right now (provenance for meeting/voice surfaces).
+  ipcMain.handle('transcription:active-info', async () => {
+    const { getActiveTranscriptionInfo } = await import('./transcription/select')
+    return getActiveTranscriptionInfo()
+  })
+
   // --- Voice input (STT via the active engine: whisper default / Parakeet opt-in) ---
   ipcMain.handle('voice:transcribe', async (_e, audio: ArrayBuffer | Uint8Array, ext = 'webm') => {
     const fs = await import('fs')
