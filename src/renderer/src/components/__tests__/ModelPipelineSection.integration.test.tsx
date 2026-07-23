@@ -18,12 +18,18 @@ interface Cfg {
 let cfg: Cfg
 let state: { running: { label: string; tier: number }[]; queued: { label: string; tier: number }[] }
 const setCalls: Array<Partial<Cfg>> = []
+let persistError: Error | null
 
 function installApi(): void {
   const api = {
     queueConfigGet: async (): Promise<Cfg> => ({ ...cfg }),
     queueConfigSet: async (patch: Partial<Cfg>): Promise<Cfg> => {
       setCalls.push(patch)
+      if (persistError) {
+        const error = persistError
+        persistError = null
+        throw error
+      }
       cfg = { ...cfg, ...patch }
       return { ...cfg }
     },
@@ -37,6 +43,7 @@ describe('<ModelPipelineSection/> — user controls for the shared pipeline', ()
     cfg = { enabled: true, tier1Coexists: true }
     state = { running: [], queued: [] }
     setCalls.length = 0
+    persistError = null
   })
   afterEach(() => cleanup())
 
@@ -46,7 +53,7 @@ describe('<ModelPipelineSection/> — user controls for the shared pipeline', ()
     const user = userEvent.setup()
     render(<ModelPipelineSection />)
 
-    const pipeline = await screen.findByRole('switch', { name: 'Prioritized model pipeline' })
+    const pipeline = await screen.findByRole('switch', { name: 'Prioritize interactive work' })
     await waitFor(() => expect(pipeline.getAttribute('aria-checked')).toBe('true'))
 
     // Turn the prioritized pipeline OFF → the patch is written and the switch flips.
@@ -64,6 +71,21 @@ describe('<ModelPipelineSection/> — user controls for the shared pipeline', ()
     const speech = await screen.findByRole('switch', { name: 'Keep speech responsive' })
     await user.click(speech)
     expect(setCalls).toContainEqual({ tier1Coexists: false })
+  })
+
+  it('rolls an optimistic switch back when the persisted config rejects it', async () => {
+    persistError = new Error('settings database unavailable')
+    installApi()
+    const { ModelPipelineSection } = await import('../Settings')
+    const user = userEvent.setup()
+    render(<ModelPipelineSection />)
+
+    const pipeline = await screen.findByRole('switch', { name: 'Prioritize interactive work' })
+    await waitFor(() => expect(pipeline.getAttribute('aria-checked')).toBe('true'))
+    await user.click(pipeline)
+
+    expect(setCalls).toContainEqual({ enabled: false })
+    await waitFor(() => expect(pipeline.getAttribute('aria-checked')).toBe('true'))
   })
 
   it('shows live activity — running jobs highlighted, queued labelled, else idle', async () => {

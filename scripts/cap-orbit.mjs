@@ -2,7 +2,11 @@ import { _electron as electron } from '@playwright/test'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, resolve } from 'path'
-const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+const timing = {
+  wait(ms) {
+    return new Promise((resolveWait) => setTimeout(resolveWait, ms))
+  }
+}
 const profile = mkdtempSync(join(tmpdir(), 'oborbit-'))
 const app = await electron.launch({
   args: ['.'],
@@ -17,14 +21,14 @@ await app.evaluate(({ BrowserWindow }) => {
     w.center()
   }
 })
-await wait(3500)
+await timing.wait(3500)
 // step 1 -> click Continue to reach the orbit (step 2)
 await win
   .getByRole('button', { name: /Continue/i })
   .first()
   .click()
   .catch(() => {})
-await wait(2500)
+await timing.wait(2500)
 await win.screenshot({ path: resolve('e2e/screenshots/orbit-step2.png') })
 // measure orbit card spread
 const labels = ['Image', 'Vision', 'Chat', 'Projects', 'Speech', 'Voice']

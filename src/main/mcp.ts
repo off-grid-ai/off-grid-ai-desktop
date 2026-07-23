@@ -9,6 +9,9 @@ import { getDB } from './database'
 import { deleteSecretsByPrefix, getSecret } from './secrets'
 import { makeOAuthProvider, ensureLoopback, hasOAuthTokens } from './mcp-oauth'
 import { callHook } from './bootstrap/hookRegistry'
+import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import type { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+import type { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 // Provider-specific quirks (e.g. Google's MCP endpoints) are a Pro concern and
 // register these hooks; in the free build they return undefined → generic MCP.
@@ -132,7 +135,7 @@ function getConnector(id: number): Connector | undefined {
 async function connect(
   c: Connector,
   interactive: boolean
-): Promise<{ client: any; close: () => Promise<void> }> {
+): Promise<{ client: Client; close: () => Promise<void> }> {
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
   let client = new Client({ name: 'Off Grid AI Desktop', version: '1.0.0' }, { capabilities: {} })
 
@@ -181,7 +184,7 @@ async function connect(
   const requestInit = quotaProject
     ? { headers: { 'x-goog-user-project': quotaProject } }
     : undefined
-  const mkTransport = (): any =>
+  const mkTransport = (): SSEClientTransport | StreamableHTTPClientTransport =>
     isSSE
       ? new SSEClientTransport(url, { authProvider, requestInit })
       : new StreamableHTTPClientTransport(url, { authProvider, requestInit })
@@ -262,7 +265,10 @@ export async function testConnector(
   try {
     const { client, close } = await connect(c, true) // user-initiated → allow browser OAuth
     const res = await client.listTools()
-    const tools = (res.tools ?? []).map((t: any) => ({ name: t.name, description: t.description }))
+    const tools = res.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description
+    }))
     await close()
     getDB()
       .prepare("UPDATE connectors SET status='ok', status_detail=NULL, tools=? WHERE id=?")
@@ -295,7 +301,7 @@ export async function fetchTools(
     const { client, close } = await connect(c, false)
     try {
       const res = await client.listTools()
-      return (res.tools ?? []) as { name: string; description?: string; inputSchema?: unknown }[]
+      return res.tools as { name: string; description?: string; inputSchema?: unknown }[]
     } finally {
       await close()
     }

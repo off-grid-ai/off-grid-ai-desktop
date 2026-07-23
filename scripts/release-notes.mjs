@@ -44,30 +44,31 @@ const commits = raw
     })
   : []
 
-// Turn a conventional-commit subject into a plain sentence a user can read.
-function humanize(subject) {
-  const m = subject.match(/^(\w+)(?:\(([^)]+)\))?!?:\s*(.+)$/)
-  let text = m ? m[3] : subject
-  text = text
-    .replace(/\s*\(#\d+\)\s*$/, '') // drop trailing PR refs: "(#11)"
-    .replace(/[—–]/g, ' - ') // em/en dash -> " - " (brand voice)
-    .replace(/[‘’]/g, "'") // curly -> straight
-    .replace(/[“”]/g, '"')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return text.charAt(0).toUpperCase() + text.slice(1)
-}
-
-function typeOf(subject) {
-  const m = subject.match(/^(\w+)(?:\([^)]+\))?!?:/)
-  return m ? m[1] : null
+const releaseNotes = {
+  // Turn a conventional-commit subject into a plain sentence a user can read.
+  humanize(subject) {
+    const match = subject.match(/^(\w+)(?:\(([^)]+)\))?!?:\s*(.+)$/)
+    let text = match ? match[3] : subject
+    text = text
+      .replace(/\s*\(#\d+\)\s*$/, '') // drop trailing PR refs: "(#11)"
+      .replace(/[—–]/g, ' - ') // em/en dash -> " - " (brand voice)
+      .replace(/[‘’]/g, "'") // curly -> straight
+      .replace(/[“”]/g, '"')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return text.charAt(0).toUpperCase() + text.slice(1)
+  },
+  typeOf(subject) {
+    const match = subject.match(/^(\w+)(?:\([^)]+\))?!?:/)
+    return match ? match[1] : null
+  }
 }
 
 // Group the user-facing commits.
 const groups = { New: [], Fixes: [] }
 for (const c of commits) {
-  const group = TYPE_GROUP[typeOf(c.subject)]
-  if (group) groups[group].push(humanize(c.subject))
+  const group = TYPE_GROUP[releaseNotes.typeOf(c.subject)]
+  if (group) groups[group].push(releaseNotes.humanize(c.subject))
 }
 
 // De-dupe within a group (snapshots/rebases can repeat a subject).

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { persistToggle } from '@renderer/lib/persist-toggle'
 import { motion } from 'motion/react'
 import { ProgressiveBlur } from './ui/progressive-blur'
 import { SetupPanel } from './setup/SetupPanel'
@@ -14,220 +13,8 @@ import { KeyboardShortcuts } from './KeyboardShortcuts'
 import { currentPlatform } from '@renderer/lib/device'
 import { proComingSoonHere } from './pro/proCatalog'
 import { SoftwareUpdateSection } from './SoftwareUpdateSection'
-
-// ---------------------------------------------------------------------------
-// Software update — current version, manual check, automatic-update toggle
-// ---------------------------------------------------------------------------
-
-// Runtime residency — per-engine on-demand vs in-memory (core infra). On a 16GB
-// Mac keeping a model warm trades RAM for latency; the queue evicts a warm model
-// when another engine needs the memory, so 'resident' is safe to opt into.
-const RESIDENCY_ROWS: {
-  modality: 'llm' | 'image' | 'stt' | 'tts'
-  label: string
-  hint: string
-  locked?: boolean
-}[] = [
-  {
-    modality: 'llm',
-    label: 'Chat model',
-    locked: true,
-    hint: 'The local LLM (gemma). Kept in memory because screen replay distills captures through it continuously - on-demand would thrash-reload ~5GB. It is still freed momentarily during image generation, then reloaded.'
-  },
-  {
-    modality: 'image',
-    label: 'Image generation',
-    hint: 'Resident keeps the diffusion model warm (~45s cold to ~7s warm); on-demand frees it after each image.'
-  },
-  {
-    modality: 'stt',
-    label: 'Dictation (speech-to-text)',
-    hint: 'Resident keeps Whisper warm for fast live text; on-demand loads per recording. Parakeet always loads per use.'
-  },
-  {
-    modality: 'tts',
-    label: 'Text-to-speech',
-    hint: 'Resident keeps the voice model warm; on-demand frees ~330MB between phrases.'
-  }
-]
-
-function RuntimeResidencySection(): React.ReactElement {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const api = (window as any).api
-  const [modes, setModes] = useState<Record<string, string>>({})
-  useEffect(() => {
-    api
-      .residencyGet?.()
-      .then((m: Record<string, string>) => setModes(m))
-      .catch(() => {})
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [])
-  const toggle = (modality: string, locked?: boolean): void => {
-    if (locked) return // locked modalities (chat model) stay in-memory — no toggle
-    const nextMode = modes[modality] === 'resident' ? 'on-demand' : 'resident'
-    void persistToggle({ ...modes, [modality]: nextMode }, modes, setModes, () =>
-      api.residencySet?.(modality, nextMode)
-    )
-  }
-  return (
-    <div>
-      <p className="text-neutral-500 text-sm mb-4">
-        Keep a model in memory for instant use, or load it on demand to free RAM. Only one heavy
-        model runs at a time - when another engine needs the memory, a resident model is evicted and
-        reloaded on its next use, so resident mode never hangs the machine. On-demand is the safe
-        default on 16GB Macs.
-      </p>
-      <div className="flex flex-col divide-y divide-neutral-800">
-        {RESIDENCY_ROWS.map((row) => {
-          const resident = row.locked || modes[row.modality] === 'resident'
-          return (
-            <div
-              key={row.modality}
-              className="flex items-start justify-between gap-4 py-3 first:pt-0"
-            >
-              <div>
-                <div className="text-sm text-neutral-200">{row.label}</div>
-                <div className="text-xs text-neutral-600">{row.hint}</div>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <span
-                  className={`text-[11px] tabular-nums ${resident ? 'text-emerald-400' : 'text-neutral-500'}`}
-                >
-                  {row.locked ? 'in-memory (required)' : resident ? 'in-memory' : 'on-demand'}
-                </span>
-                <button
-                  onClick={() => toggle(row.modality, row.locked)}
-                  role="switch"
-                  aria-checked={resident}
-                  aria-disabled={row.locked}
-                  disabled={row.locked}
-                  title={
-                    row.locked
-                      ? 'Required in memory - screen replay depends on this model'
-                      : undefined
-                  }
-                  aria-label={`${row.label} residency`}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${resident ? 'bg-emerald-500' : 'bg-neutral-700'} ${row.locked ? 'cursor-not-allowed opacity-50' : ''}`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${resident ? 'translate-x-6' : 'translate-x-1'}`}
-                  />
-                </button>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-interface QueueCfg {
-  enabled: boolean
-  tier1Coexists: boolean
-}
-interface QueueLive {
-  running: { label: string; tier: number }[]
-  queued: { label: string; tier: number }[]
-}
-
-/** User controls for the shared model pipeline: whether heavy jobs are serialized
- *  + prioritized (chat/workspace over background capture), whether speech coexists,
- *  and a live view of what's running/queued. The scheduler always yields background
- *  work to the foreground; this exposes the switches that were previously invisible. */
-export function ModelPipelineSection(): React.ReactElement {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const api = (window as any).api
-  const [cfg, setCfg] = useState<QueueCfg>({ enabled: true, tier1Coexists: true })
-  const [live, setLive] = useState<QueueLive>({ running: [], queued: [] })
-
-  useEffect(() => {
-    api
-      .queueConfigGet?.()
-      .then(setCfg)
-      .catch(() => {})
-    const poll = (): void => {
-      api
-        .queueState?.()
-        .then(setLive)
-        .catch(() => {})
-    }
-    poll()
-    const t = setInterval(poll, 2000)
-    return () => clearInterval(t)
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [])
-
-  const set = (patch: Partial<QueueCfg>): void => {
-    setCfg((c) => ({ ...c, ...patch })) // optimistic
-    api
-      .queueConfigSet?.(patch)
-      .then(setCfg)
-      .catch(() => {})
-  }
-
-  const rows = [
-    {
-      key: 'enabled' as const,
-      label: 'Prioritized model pipeline',
-      hint: 'Run one heavy model at a time and let chat & workspace jump ahead of background capture. Off = everything competes for memory at once.',
-      on: cfg.enabled
-    },
-    {
-      key: 'tier1Coexists' as const,
-      label: 'Keep speech responsive',
-      hint: 'Let live dictation run alongside a heavy job so your voice never waits behind it.',
-      on: cfg.tier1Coexists
-    }
-  ]
-
-  const activity = [...live.running, ...live.queued]
-  return (
-    <div>
-      <p className="mb-4 text-sm text-neutral-500">
-        Chat and workspace always take priority; capture and other background work yield to them and
-        never block a reply. Only one heavy model runs at a time.
-      </p>
-      <div className="flex flex-col divide-y divide-neutral-800">
-        {rows.map((row) => (
-          <div key={row.key} className="flex items-start justify-between gap-4 py-3 first:pt-0">
-            <div>
-              <div className="text-sm text-neutral-200">{row.label}</div>
-              <div className="text-xs text-neutral-600">{row.hint}</div>
-            </div>
-            <button
-              onClick={() => set({ [row.key]: !row.on })}
-              role="switch"
-              aria-checked={row.on}
-              aria-label={row.label}
-              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${row.on ? 'bg-emerald-500' : 'bg-neutral-700'}`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${row.on ? 'translate-x-6' : 'translate-x-1'}`}
-              />
-            </button>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 flex items-center gap-2 text-xs text-neutral-600">
-        <span className="uppercase tracking-wide">Now</span>
-        {activity.length === 0 ? (
-          <span className="text-neutral-500">idle</span>
-        ) : (
-          activity.map((j, i) => (
-            <span
-              key={`${j.label}-${String(i)}`}
-              className={`rounded px-1.5 py-0.5 tabular-nums ${live.running.includes(j) ? 'bg-emerald-500/15 text-emerald-400' : 'bg-neutral-800 text-neutral-400'}`}
-            >
-              {j.label}
-              {live.queued.includes(j) ? ' · queued' : ''}
-            </span>
-          ))
-        )}
-      </div>
-    </div>
-  )
-}
+import { ProcessingControls } from './ProcessingControls'
+export { ModelPipelineSection } from './ProcessingControls'
 
 export function Settings(): React.ReactElement {
   // Pro/core aware: the pro Settings sections (identity / proactive / secretary /
@@ -239,6 +26,8 @@ export function Settings(): React.ReactElement {
   const proComingSoon = proComingSoonHere(currentPlatform(), isPro)
   // Pro sections registered by the pro renderer at activation (empty in free build).
   const registeredSections = getRegisteredSettingsSections()
+  const captureSection = registeredSections.find((section) => section.id === 'capture')
+  const CaptureContribution = captureSection?.component
   const [appVersion, setAppVersion] = useState('')
 
   useEffect(() => {
@@ -307,12 +96,33 @@ export function Settings(): React.ReactElement {
               </div>
             </SettingsCard>
 
-            {/* Pro Settings sections (You / Proactive delivery / What Off Grid has
-              learned / Your Pro plan). The pro package registers the real section
+            <SettingsCard
+              title="Capture & processing"
+              summary="See capture health, recover pending frames, and control model scheduling in one place."
+              delay={0.14}
+            >
+              {CaptureContribution && !(proComingSoon && currentPlatform() !== 'darwin') ? (
+                <CaptureContribution />
+              ) : (
+                <div className="mb-5 border border-neutral-800 bg-neutral-950/40 p-3 text-xs text-neutral-500">
+                  <span className="mr-2 text-[10px] uppercase tracking-wide text-emerald-500">
+                    Pro
+                  </span>
+                  Screen capture, backlog recovery, and proactive delivery are available with Pro on
+                  macOS.
+                </div>
+              )}
+              <ProcessingControls />
+            </SettingsCard>
+
+            {/* Remaining Pro Settings sections (You / What Off Grid has learned /
+              Your Pro plan). The pro package registers the real section
               components via the section registry; the free build shows the catalogued
               placeholders. Slot list, order, and placeholder copy live in
               proSettingsCatalog — core owns the inert shell, pro owns the logic. */}
-            {PRO_SETTINGS_SLOTS.map((slot) => {
+            {PRO_SETTINGS_SLOTS.filter(
+              (slot) => slot.id !== 'capture' && slot.id !== 'proactive'
+            ).map((slot) => {
               const section = registeredSections.find((s) => s.id === slot.id)
               if (section && proComingSoon && slot.macOnly) {
                 return (
@@ -347,24 +157,6 @@ export function Settings(): React.ReactElement {
               delay={0.42}
             >
               <DataPrivacyPanel />
-            </SettingsCard>
-
-            {/* Runtime residency — per-engine in-memory vs on-demand (core infra). */}
-            <SettingsCard
-              title="Model memory"
-              summary="Keep each engine warm for speed, or load on demand to free RAM."
-              delay={0.44}
-            >
-              <RuntimeResidencySection />
-            </SettingsCard>
-
-            {/* Model pipeline — prioritized scheduling controls (core infra). */}
-            <SettingsCard
-              title="Model pipeline"
-              summary="Prioritize chat & workspace over background capture, and keep speech responsive."
-              delay={0.445}
-            >
-              <ModelPipelineSection />
             </SettingsCard>
 
             {/* Keyboard shortcuts — one reference for every hotkey (core + pro rows). */}

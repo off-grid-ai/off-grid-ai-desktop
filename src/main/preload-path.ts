@@ -27,6 +27,13 @@ export function resolvePreloadPath(appPath: string): string {
 export function preloadPath(): string {
   const appPath = app.getAppPath()
   const p = resolvePreloadPath(appPath)
-  console.log(`[preload] appPath=${appPath} → ${p} exists=${existsSync(p)}`)
+  console.log(
+    `[preload] ${JSON.stringify({
+      event: 'path-resolved',
+      appPath,
+      resolved: p,
+      exists: existsSync(p)
+    })}`
+  )
   return p
 }

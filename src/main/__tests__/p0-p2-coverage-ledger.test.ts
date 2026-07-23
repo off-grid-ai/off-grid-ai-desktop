@@ -130,7 +130,7 @@ describe('P0-P2 integration coverage ledger', () => {
       .trim()
       .split(/\r?\n/)
       .map(parseCsvRow)
-    const column = (name: string) => header.indexOf(name)
+    const column = (name: string): number => header.indexOf(name)
     const requiredColumns = [
       'Journey ID',
       'Tier',

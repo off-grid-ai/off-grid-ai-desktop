@@ -45,10 +45,10 @@ export function HealthPanel(): React.ReactElement {
   const [health, setHealth] = useState<SystemHealthContract | null>(null)
   const [restarting, setRestarting] = useState<string | null>(null)
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<void> => {
     try {
       const h = await api.systemHealth()
-      if (h) setHealth(h)
+      setHealth(h)
     } catch {
       /* ignore — keep last snapshot */
     }

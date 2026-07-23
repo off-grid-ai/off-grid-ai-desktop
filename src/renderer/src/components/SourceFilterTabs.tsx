@@ -16,7 +16,7 @@ export function SourceFilterTabs({
   activeSource,
   onSourceChange,
   className
-}: SourceFilterTabsProps) {
+}: SourceFilterTabsProps): React.JSX.Element {
   return (
     <div className={cn('flex items-center gap-2', className)}>
       {SOURCES.map((source) => (

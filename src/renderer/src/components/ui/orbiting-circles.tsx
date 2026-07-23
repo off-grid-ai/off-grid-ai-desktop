@@ -26,7 +26,7 @@ export function OrbitingCircles({
   iconSize = 30,
   speed = 1,
   ...props
-}: OrbitingCirclesProps) {
+}: OrbitingCirclesProps): React.JSX.Element {
   const calculatedDuration = duration / speed
   const childCount = React.Children.count(children)
 

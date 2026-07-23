@@ -10,10 +10,11 @@
  *   const offgrid = require('@offgrid/design/tailwind-preset');
  *   module.exports = { presets: [offgrid], content: [...] };
  *
- * `og()` is exported so apps can remap legacy color names (neutral, green, ...)
+ * `og` is exported so apps can remap legacy color names (neutral, green, ...)
  * onto the same channel variables for a zero-edit migration.
  */
-const og = (name) => `rgb(var(--og-rgb-${name}) / <alpha-value>)`
+const colorTemplate = 'rgb(var(--og-rgb-$NAME) / <alpha-value>)'
+const og = colorTemplate.replace.bind(colorTemplate, '$NAME')
 
 const colors = {
   primary: {

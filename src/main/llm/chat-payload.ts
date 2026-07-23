@@ -8,8 +8,7 @@
 
 import { mimeForExt } from '../mime'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ContentPart =
+export type ContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } }
 
@@ -40,14 +39,14 @@ export function buildContentParts(message: string, images: DecodedImage[]): Cont
 /** Build the messages array: the user turn (multimodal content), with an optional
  *  system message unshifted in front when a non-blank system prompt is set.
  *  Mirrors both chat paths (they used `.trim()` to decide whether to prepend). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function buildMessages(
   message: string,
   images: DecodedImage[],
   systemPrompt: string
-): any[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const messages: any[] = [{ role: 'user', content: buildContentParts(message, images) }]
+): { role: 'system' | 'user'; content: string | ContentPart[] }[] {
+  const messages: { role: 'system' | 'user'; content: string | ContentPart[] }[] = [
+    { role: 'user', content: buildContentParts(message, images) }
+  ]
   if (systemPrompt.trim()) messages.unshift({ role: 'system', content: systemPrompt })
   return messages
 }

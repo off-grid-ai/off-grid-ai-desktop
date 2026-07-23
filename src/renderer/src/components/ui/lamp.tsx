@@ -3,7 +3,7 @@ import React from 'react'
 import { motion } from 'motion/react'
 import { cn } from '@renderer/lib/utils'
 
-export default function LampDemo() {
+export default function LampDemo(): React.JSX.Element {
   return (
     <LampContainer>
       <motion.h1
@@ -28,7 +28,7 @@ export const LampContainer = ({
 }: {
   children: React.ReactNode
   className?: string
-}) => {
+}): React.JSX.Element => {
   return (
     <div
       className={cn(

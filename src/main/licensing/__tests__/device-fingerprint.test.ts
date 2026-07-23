@@ -17,7 +17,7 @@ vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => fakeUserData) }
 }))
 
-async function freshModule() {
+async function freshModule(): Promise<typeof import('../device-fingerprint')> {
   vi.resetModules()
   return import('../device-fingerprint')
 }
@@ -33,7 +33,7 @@ afterEach(() => {
 describe('getPlatformTag', () => {
   const realPlatform = process.platform
 
-  function setPlatform(p: NodeJS.Platform) {
+  function setPlatform(p: NodeJS.Platform): void {
     Object.defineProperty(process, 'platform', { value: p, configurable: true })
   }
 

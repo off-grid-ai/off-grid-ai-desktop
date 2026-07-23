@@ -1,16 +1,18 @@
 /**
  * RELEASE_TEST_CHECKLIST #146 - fixed model ports are single-owner.
  *
- * A separate live owner process launches the only fake: a behaviour-faithful native
- * llama-server boundary on the real production port. The contender is the production
- * LLMService. Real lsof/ps parent ownership, loopback HTTP, GGUF validation, model resolution,
- * startup refusal, error classification, and chat-health presentation remain real.
+ * The first owner is either the already-running healthy production llama-server or a separate
+ * process launching the only fake: a behaviour-faithful native llama-server boundary on the real
+ * production port. The contender is the production LLMService. Real lsof/ps parent ownership,
+ * loopback HTTP, GGUF validation, model resolution, startup refusal, error classification, and
+ * chat-health presentation remain real. Cleanup only owns processes this test spawned.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execSync, spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { parseWindowsListenerPids, sysTool } from '../kill-orphan-port'
 import { LLAMA_SERVER_PORT } from '../../shared/ports'
 
 const fixture = (() => {
@@ -43,6 +45,7 @@ vi.mock('electron', () => ({
 
 let liveOwner: ChildProcess | null = null
 let enginePid = 0
+let expectedModelId: string | null = 'first-owner'
 
 function createValidGguf(filePath: string): void {
   const bytes = Buffer.alloc(2_048)
@@ -68,7 +71,12 @@ const server = http.createServer((req, res) => {
   res.end('{}')
 })
 server.listen(port, '127.0.0.1', () => {
-  fs.appendFileSync(process.env.OFFGRID_TEST_ENGINE_LOG, String(process.pid) + '\\n')
+    const address = server.address()
+    const actualPort = typeof address === 'object' && address ? address.port : port
+    fs.appendFileSync(
+      process.env.OFFGRID_TEST_ENGINE_LOG,
+      String(process.pid) + ':' + String(actualPort) + '\\n'
+    )
 })
 process.on('SIGTERM', () => server.close(() => process.exit(0)))
 `
@@ -101,11 +109,46 @@ function processIsAlive(pid: number): boolean {
 
 async function engineIsReady(): Promise<boolean> {
   try {
-    const response = await fetch(`http://127.0.0.1:${LLAMA_SERVER_PORT}/v1/models`)
+    const response = await fetch(`http://127.0.0.1:${String(LLAMA_SERVER_PORT)}/v1/models`)
     const body = (await response.json()) as { data?: { id?: string }[] }
-    return response.ok && body.data?.[0]?.id === 'first-owner'
+    const modelId = body.data?.[0]?.id
+    return response.ok && !!modelId && (!expectedModelId || modelId === expectedModelId)
   } catch {
     return false
+  }
+}
+
+function listenerPids(): number[] {
+  try {
+    if (process.platform === 'win32') {
+      return parseWindowsListenerPids(
+        execSync(`"${sysTool('netstat')}" -ano -p tcp`, { encoding: 'utf-8' }),
+        LLAMA_SERVER_PORT
+      ).map(Number)
+    }
+    return execSync(`"${sysTool('lsof')}" -ti tcp:${String(LLAMA_SERVER_PORT)}`, {
+      encoding: 'utf-8'
+    })
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map(Number)
+  } catch {
+    return []
+  }
+}
+
+function processCommand(pid: number): string {
+  try {
+    return process.platform === 'win32'
+      ? execSync(`"${sysTool('tasklist')}" /FI "PID eq ${String(pid)}" /FO CSV /NH`, {
+          encoding: 'utf-8'
+        })
+      : execSync(`"${sysTool('ps')}" -p ${String(pid)} -o command=`, {
+          encoding: 'utf-8'
+        }).trim()
+  } catch {
+    return ''
   }
 }
 
@@ -118,8 +161,22 @@ beforeAll(async () => {
     path.join(modelsDir, 'active-model.json'),
     JSON.stringify({ id: 'port-owner-fixture', primary: modelName })
   )
-
   const executable = installNativeBoundary()
+
+  const listeners = listenerPids()
+  if (listeners.length > 0) {
+    const llamaOwner = listeners.find((pid) => /llama-server/i.test(processCommand(pid)))
+    if (!llamaOwner) {
+      throw new Error(
+        `Production model port ${String(LLAMA_SERVER_PORT)} is occupied by an unrecognized process.`
+      )
+    }
+    enginePid = llamaOwner
+    expectedModelId = null
+    await waitFor(engineIsReady, 'existing healthy model engine owner', 5_000)
+    return
+  }
+
   const ownerSource = `
 const { spawn } = require('node:child_process')
 let child
@@ -151,13 +208,21 @@ setInterval(() => {}, 1000)
     },
     stdio: 'ignore'
   })
+  await waitFor(
+    () =>
+      fs.existsSync(fixture.engineLog) && fs.readFileSync(fixture.engineLog, 'utf8').trim() !== '',
+    'first model engine address',
+    20_000
+  )
+  const [pidText, portText] = fs.readFileSync(fixture.engineLog, 'utf8').trim().split(':')
+  enginePid = Number(pidText)
+  expect(Number(portText)).toBe(LLAMA_SERVER_PORT)
   await waitFor(engineIsReady, 'first model engine owner', 20_000)
-  enginePid = Number(fs.readFileSync(fixture.engineLog, 'utf8').trim())
 }, 25_000)
 
 afterAll(async () => {
-  liveOwner?.kill('SIGTERM')
-  if (enginePid > 0) {
+  if (liveOwner) {
+    liveOwner.kill('SIGTERM')
     await waitFor(() => !processIsAlive(enginePid), 'first model engine to exit')
   }
   if (previousDataDir === undefined) delete process.env.OFFGRID_DATA_DIR
@@ -183,9 +248,11 @@ describe('model port ownership', () => {
 
     expect(processIsAlive(enginePid)).toBe(true)
     expect(await engineIsReady()).toBe(true)
-    expect(fs.readFileSync(fixture.engineLog, 'utf8').trim().split(/\r?\n/)).toEqual([
-      String(enginePid)
-    ])
+    if (liveOwner) {
+      expect(fs.readFileSync(fixture.engineLog, 'utf8').trim().split(/\r?\n/)).toEqual([
+        `${String(enginePid)}:${String(LLAMA_SERVER_PORT)}`
+      ])
+    }
 
     const chatHealth = (await getSystemHealth()).components.find(
       (component) => component.id === 'chat'

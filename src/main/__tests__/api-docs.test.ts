@@ -6,6 +6,25 @@
 import { describe, it, expect } from 'vitest'
 import { docsText, docsHtml, openApiSpec } from '../api-docs'
 
+interface ImageModelSchema {
+  enum?: string[]
+  type?: string
+}
+
+interface ImagePathSpec {
+  paths: {
+    '/v1/images': {
+      post: {
+        requestBody: {
+          content: {
+            'application/json': { schema: { properties: { model: ImageModelSchema } } }
+          }
+        }
+      }
+    }
+  }
+}
+
 describe('docsText', () => {
   it('embeds the loopback base URL for the given port', () => {
     const out = docsText(8439)
@@ -106,14 +125,14 @@ describe('openApiSpec', () => {
   })
 
   it('constrains the image "model" field to an enum when image models are installed', () => {
-    const s = openApiSpec(8439, {}, ['flux-schnell', 'sd-turbo']) as { paths: Record<string, any> }
+    const s = openApiSpec(8439, {}, ['flux-schnell', 'sd-turbo']) as ImagePathSpec
     const modelSchema =
       s.paths['/v1/images'].post.requestBody.content['application/json'].schema.properties.model
     expect(modelSchema.enum).toEqual(['flux-schnell', 'sd-turbo'])
   })
 
   it('leaves the image "model" field unconstrained when no image models are installed', () => {
-    const s = openApiSpec(8439, {}, []) as { paths: Record<string, any> }
+    const s = openApiSpec(8439, {}, []) as ImagePathSpec
     const modelSchema =
       s.paths['/v1/images'].post.requestBody.content['application/json'].schema.properties.model
     expect(modelSchema.enum).toBeUndefined()

@@ -386,7 +386,38 @@ export function runMigration(sql: string): void {
 
 // === NEW API ACCESSORS ===
 
-export function getChatSessions(appName?: string) {
+export interface ChatSessionRecord {
+  session_id: string
+  title: string | null
+  source_app: string | null
+  last_activity: string
+  memory_count: number
+  entity_count: number
+  summary: string | null
+}
+
+export interface MessageRecord {
+  id: number
+  conversation_id: string
+  role: string | null
+  content: string | null
+  timestamp: string | null
+  hash: string | null
+  created_at: string
+}
+
+export interface MemoryRecord {
+  id: number
+  content: string
+  raw_text: string | null
+  source_app: string | null
+  session_id: string | null
+  message_id: number | null
+  created_at: string
+  name: string | null
+}
+
+export function getChatSessions(appName?: string): ChatSessionRecord[] {
   const db = getDB()
   // Query conversations with memory and entity counts instead of message count
   let query = `
@@ -409,13 +440,13 @@ export function getChatSessions(appName?: string) {
 
   const stmt = db.prepare(query)
   if (appName && appName !== 'All') {
-    return stmt.all(`%${appName}%`)
+    return stmt.all(`%${appName}%`) as ChatSessionRecord[]
   } else {
-    return stmt.all()
+    return stmt.all() as ChatSessionRecord[]
   }
 }
 
-export function upsertChatSummary(sessionId: string, summary: string) {
+export function upsertChatSummary(sessionId: string, summary: string): void {
   const db = getDB()
   const stmt = db.prepare(`
         INSERT INTO chat_summaries (session_id, summary, updated_at)
@@ -427,13 +458,13 @@ export function upsertChatSummary(sessionId: string, summary: string) {
   stmt.run(sessionId, summary)
 }
 
-export function getMemoriesForSession(sessionId: string, limit: number = 200) {
+export function getMemoriesForSession(sessionId: string, limit: number = 200): MessageRecord[] {
   const db = getDB()
   // Fetch from new 'messages' table
   const stmt = db.prepare(
     'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ?'
   )
-  const messages = stmt.all(sessionId, limit)
+  const messages = stmt.all(sessionId, limit) as MessageRecord[]
 
   // Map to old Memory interface shape if needed by UI, or UI updates?
   // UI expects { id, content, raw_text, source_app, created_at, role? }
@@ -441,12 +472,12 @@ export function getMemoriesForSession(sessionId: string, limit: number = 200) {
   return messages
 }
 
-export function getMemoryRecordsForSession(sessionId: string, limit: number = 200) {
+export function getMemoryRecordsForSession(sessionId: string, limit: number = 200): MemoryRecord[] {
   const db = getDB()
   const stmt = db.prepare(
     'SELECT * FROM memories WHERE session_id = ? ORDER BY created_at ASC LIMIT ?'
   )
-  return stmt.all(sessionId, limit)
+  return stmt.all(sessionId, limit) as MemoryRecord[]
 }
 
 export function checkMessageExists(hash: string, conversationId: string): boolean {
@@ -466,7 +497,7 @@ export function getMasterMemory(): { content: string | null; updated_at: string 
   return result || { content: null, updated_at: null }
 }
 
-export function updateMasterMemory(content: string) {
+export function updateMasterMemory(content: string): void {
   const db = getDB()
   const stmt = db.prepare(`
         INSERT INTO master_memory (id, content, updated_at)
@@ -594,7 +625,7 @@ export function resolveEntityRecord(
   return resolve()
 }
 
-export function updateEntitySummary(entityId: number, summary: string) {
+export function updateEntitySummary(entityId: number, summary: string): void {
   const db = getDB()
   const stmt = db.prepare(`
       UPDATE entities SET summary = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
@@ -732,7 +763,10 @@ export function rebuildEntityEdgesForAllSessions(): void {
     `
   ).run()
 
-  db.prepare('DELETE FROM entity_edges').run()
+  // Core owns chat co-occurrence + fact-mention projections. Pro may register
+  // other durable relationship projections (for example observation evidence),
+  // so rebuilding chat must not erase another domain's edges.
+  db.prepare("DELETE FROM entity_edges WHERE type IN ('cooccurrence', 'mention')").run()
 
   const sessions = db.prepare('SELECT DISTINCT session_id FROM entity_sessions').all() as {
     session_id: string
@@ -744,7 +778,54 @@ export function rebuildEntityEdgesForAllSessions(): void {
   rebuildEntityEdgesFromMentions()
 }
 
-export function getEntities(appName?: string) {
+export interface EntityRecord {
+  id: number
+  name: string
+  type: string
+  summary: string | null
+  updated_at: string
+}
+
+export interface EntityListRecord extends EntityRecord {
+  fact_count: number
+  session_count: number
+}
+
+export interface SessionEntityRecord extends EntityRecord {
+  fact_count: number
+}
+
+export interface EntityFactRecord {
+  id: number
+  fact: string
+  source_session_id: string | null
+  created_at: string
+}
+
+export interface EntityDetailsRecord {
+  entity: (EntityRecord & Record<string, unknown>) | undefined
+  facts: EntityFactRecord[]
+}
+
+export interface EntityGraphNode extends EntityListRecord {
+  facts: string[]
+}
+
+export interface EntityGraphEdge {
+  source: number
+  target: number
+  type: string
+  weight: number
+  evidence_count: number
+  updated_at: string
+}
+
+export interface EntityGraphRecord {
+  nodes: EntityGraphNode[]
+  edges: EntityGraphEdge[]
+}
+
+export function getEntities(appName?: string): EntityListRecord[] {
   const db = getDB()
   let query = `
       SELECT 
@@ -761,7 +842,7 @@ export function getEntities(appName?: string) {
       LEFT JOIN conversations c ON es.session_id = c.id
     `
 
-  const params: any[] = []
+  const params: unknown[] = []
   if (appName && appName !== 'All') {
     query += ` WHERE c.app_name LIKE ? `
     params.push(`%${appName}%`)
@@ -769,12 +850,14 @@ export function getEntities(appName?: string) {
 
   query += ` GROUP BY e.id ORDER BY e.updated_at DESC`
   const stmt = db.prepare(query)
-  return stmt.all(...params)
+  return stmt.all(...params) as EntityListRecord[]
 }
 
-export function getEntityDetails(entityId: number, appName?: string) {
+export function getEntityDetails(entityId: number, appName?: string): EntityDetailsRecord {
   const db = getDB()
-  const entity = db.prepare('SELECT * FROM entities WHERE id = ?').get(entityId)
+  const entity = db.prepare('SELECT * FROM entities WHERE id = ?').get(entityId) as
+    | (EntityRecord & Record<string, unknown>)
+    | undefined
 
   let factsQuery = `
       SELECT f.id, f.fact, f.source_session_id, f.created_at
@@ -782,18 +865,18 @@ export function getEntityDetails(entityId: number, appName?: string) {
       LEFT JOIN conversations c ON f.source_session_id = c.id
       WHERE f.entity_id = ?
     `
-  const params: any[] = [entityId]
+  const params: unknown[] = [entityId]
   if (appName && appName !== 'All') {
     factsQuery += ` AND c.app_name LIKE ? `
     params.push(`%${appName}%`)
   }
   factsQuery += ` ORDER BY f.created_at DESC`
 
-  const facts = db.prepare(factsQuery).all(...params)
+  const facts = db.prepare(factsQuery).all(...params) as EntityFactRecord[]
   return { entity, facts }
 }
 
-export function getEntitiesForSession(sessionId: string) {
+export function getEntitiesForSession(sessionId: string): SessionEntityRecord[] {
   const db = getDB()
   const stmt = db.prepare(`
       SELECT e.id, e.name, e.type, e.summary, e.updated_at,
@@ -805,7 +888,7 @@ export function getEntitiesForSession(sessionId: string) {
       GROUP BY e.id
       ORDER BY e.updated_at DESC
     `)
-  return stmt.all(sessionId)
+  return stmt.all(sessionId) as SessionEntityRecord[]
 }
 
 export function getEntityGraph(
@@ -813,7 +896,7 @@ export function getEntityGraph(
   focusEntityId?: number,
   edgeLimit: number = 200,
   factsPerNode: number = 3
-) {
+): EntityGraphRecord {
   const db = getDB()
 
   let allowedEntityIds: number[] | null = null
@@ -834,7 +917,7 @@ export function getEntityGraph(
     }
   }
 
-  const edgeParams: any[] = []
+  const edgeParams: unknown[] = []
   let edgeQuery = `
       SELECT source_entity_id as source, target_entity_id as target, type, weight, evidence_count, updated_at
       FROM entity_edges
@@ -860,14 +943,7 @@ export function getEntityGraph(
   edgeQuery += ` ORDER BY weight DESC LIMIT ?`
   edgeParams.push(edgeLimit)
 
-  const edges = db.prepare(edgeQuery).all(...edgeParams) as {
-    source: number
-    target: number
-    type: string
-    weight: number
-    evidence_count: number
-    updated_at: string
-  }[]
+  const edges = db.prepare(edgeQuery).all(...edgeParams) as EntityGraphEdge[]
 
   if (edges.length === 0 && typeof focusEntityId !== 'number') {
     let nodeQuery = `
@@ -878,7 +954,7 @@ export function getEntityGraph(
         LEFT JOIN entity_facts f ON f.entity_id = e.id
         LEFT JOIN entity_sessions es ON es.entity_id = e.id
       `
-    const nodeParams: any[] = []
+    const nodeParams: unknown[] = []
     if (allowedEntityIds) {
       const placeholders = allowedEntityIds.map(() => '?').join(',')
       nodeQuery += ` WHERE e.id IN (${placeholders}) `
@@ -886,15 +962,7 @@ export function getEntityGraph(
     }
     nodeQuery += ` GROUP BY e.id ORDER BY e.updated_at DESC LIMIT 50`
 
-    const nodes = db.prepare(nodeQuery).all(...nodeParams) as {
-      id: number
-      name: string
-      type: string
-      summary: string | null
-      updated_at: string
-      fact_count: number
-      session_count: number
-    }[]
+    const nodes = db.prepare(nodeQuery).all(...nodeParams) as EntityListRecord[]
 
     const nodeIds = nodes.map((n) => n.id)
     if (nodeIds.length === 0) return { nodes: [], edges: [] }
@@ -954,15 +1022,7 @@ export function getEntityGraph(
       GROUP BY e.id
     `
     )
-    .all(...nodeIds) as {
-    id: number
-    name: string
-    type: string
-    summary: string | null
-    updated_at: string
-    fact_count: number
-    session_count: number
-  }[]
+    .all(...nodeIds) as EntityListRecord[]
 
   const facts = db
     .prepare(
@@ -1410,7 +1470,7 @@ export function addRagMessage(
   conversationId: string,
   role: 'user' | 'assistant',
   content: string,
-  context?: any
+  context?: unknown
 ): number {
   const db = getDB()
   const contextJson = context ? JSON.stringify(context) : null
@@ -1466,7 +1526,7 @@ export function getRagMessages(conversationId: string): RagMessage[] {
 export interface AppSettings {
   memoryStrictness?: 'lenient' | 'balanced' | 'strict'
   entityStrictness?: 'lenient' | 'balanced' | 'strict'
-  [key: string]: any
+  [key: string]: unknown
 }
 
 export function getSettings(): AppSettings {
@@ -1489,7 +1549,7 @@ export function getSettings(): AppSettings {
   return settings
 }
 
-export function saveSetting(key: string, value: any): void {
+export function saveSetting(key: string, value: unknown): void {
   createSettingsStore(getDB()).set(key, value)
 }
 

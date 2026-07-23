@@ -8,7 +8,13 @@
  * absent (CI, a fresh checkout) so it never turns the suite red where the models can't exist.
  * Profile stays synthetic (seeded temp dir); only the model files are the real, shared ones.
  */
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import {
+  test,
+  expect,
+  _electron as electron,
+  type ElectronApplication,
+  type Page
+} from '@playwright/test'
 import os from 'os'
 import path from 'path'
 import fs from 'fs'
@@ -20,12 +26,22 @@ const REAL_MODELS = path.join(
 const CHAT_MODEL = 'gemma-4-E2B-it-Q4_K_M.gguf'
 const CHAT_MMPROJ = 'mmproj-gemma-4-E2B-it-F16.gguf'
 const IMAGE_MODEL = 'dreamshaper-xl-v2-turbo-Q8_0.gguf' // turbo = fewer steps, faster smoke
+const WHISPER_MODEL = 'ggml-tiny.bin'
+const KOKORO_MODEL = 'kokoro-82m-v1.0.onnx'
+const BORROWED_MODEL_PATHS = [
+  CHAT_MODEL,
+  CHAT_MMPROJ,
+  IMAGE_MODEL,
+  WHISPER_MODEL,
+  KOKORO_MODEL,
+  path.join('.cache', 'kokoro')
+]
 
 const HAVE_ENGINES =
-  fs.existsSync(path.join(REAL_MODELS, CHAT_MODEL)) &&
+  BORROWED_MODEL_PATHS.every((modelPath) => fs.existsSync(path.join(REAL_MODELS, modelPath))) &&
   fs.existsSync(path.resolve('resources/bin/llama/llama-server')) &&
-  fs.existsSync(path.join(REAL_MODELS, 'kokoro-82m-v1.0.onnx')) &&
-  fs.existsSync(path.resolve('resources/bin/whisper/whisper-cli'))
+  fs.existsSync(path.resolve('resources/bin/whisper/whisper-cli')) &&
+  fs.existsSync(path.resolve('resources/bin/sd/sd-cli'))
 
 let app: ElectronApplication
 let page: Page
@@ -36,12 +52,24 @@ test.describe.configure({ mode: 'serial', timeout: 180_000 }) // real model load
 test.beforeAll(async () => {
   test.skip(!HAVE_ENGINES, 'real models/engine binaries not present — local-only functional smoke')
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'offgrid-real-'))
-  // Symlink the real (shared) model files in — same trick as `npm run demo`. The profile
-  // itself stays synthetic-seeded; only the heavy model blobs are the real ones.
-  fs.symlinkSync(REAL_MODELS, path.join(userDataDir, 'models'))
+  // Borrow immutable model blobs one by one. Never symlink the models directory itself:
+  // this test writes active-model.json, and a directory symlink would overwrite the user's
+  // real model selection instead of keeping all settings inside this disposable profile.
+  const modelDir = path.join(userDataDir, 'models')
+  fs.mkdirSync(path.join(modelDir, '.cache'), { recursive: true })
+  for (const modelPath of BORROWED_MODEL_PATHS) {
+    const source = path.join(REAL_MODELS, modelPath)
+    const destination = path.join(modelDir, modelPath)
+    if (fs.statSync(source).isDirectory()) fs.symlinkSync(source, destination)
+    else fs.linkSync(source, destination)
+  }
   fs.writeFileSync(
-    path.join(userDataDir, 'models', 'active-model.json'),
+    path.join(modelDir, 'active-model.json'),
     JSON.stringify({ id: 'gemma-e2b-real', primary: CHAT_MODEL, mmproj: CHAT_MMPROJ })
+  )
+  fs.writeFileSync(
+    path.join(modelDir, 'active-modalities.json'),
+    JSON.stringify({ transcription: WHISPER_MODEL, speech: 'kokoro', image: IMAGE_MODEL })
   )
   app = await electron.launch({
     args: ['.'],
@@ -51,6 +79,7 @@ test.beforeAll(async () => {
       OFFGRID_PRO: '1',
       OFFGRID_SEED: 'force',
       OFFGRID_SEED_PRO: 'force',
+      OFFGRID_BIN_DIR: path.resolve('resources/bin'),
       NODE_ENV: 'production'
     }
   })
@@ -120,20 +149,24 @@ test('image: real sd generates an image for a simple prompt', async () => {
   const result = await page.evaluate(async (modelId) => {
     const api = (window as unknown as { api: Record<string, (...a: unknown[]) => unknown> }).api
     await api.setActiveModalModel('image', modelId)
-    const status = (await api.imageGenStatus()) as { available: boolean }
-    if (!status.available) return { skipped: true }
+    const status = (await api.imageGenStatus()) as {
+      available: boolean
+      reason?: string
+      models: string[]
+    }
+    if (!status.available) return { status }
     return (await api.generateImage({
       prompt: 'a simple red circle on a white background',
       conversationId: null,
       projectId: null
     })) as { imagePath?: string; dataUrl?: string; error?: string }
   }, IMAGE_MODEL)
-  if ((result as { skipped?: boolean }).skipped) {
-    test.skip(true, 'image engine not available in this build')
-    return
-  }
+  expect(
+    (result as { status?: { available: boolean; reason?: string; models: string[] } }).status,
+    `image runtime unavailable: ${JSON.stringify(result)}`
+  ).toBeUndefined()
   expect((result as { error?: string }).error).toBeFalsy()
-  const produced = (result as { imagePath?: string; dataUrl?: string })
+  const produced = result as { imagePath?: string; dataUrl?: string }
   expect(Boolean(produced.imagePath || produced.dataUrl)).toBe(true)
   if (produced.imagePath) {
     expect(fs.existsSync(produced.imagePath)).toBe(true)

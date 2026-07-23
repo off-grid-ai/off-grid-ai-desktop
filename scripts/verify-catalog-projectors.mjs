@@ -11,32 +11,39 @@
 
 import { CATALOG } from '@offgrid/models'
 
-const isProjector = (name) => /mmproj|clip/i.test(name)
-const isChatModel = (kind) => kind === 'text' || kind === 'vision'
-const looksLikeHfRepo = (id) => /^[^/\s]+\/[^/\s]+$/.test(id)
-
-async function repoProjectorFiles(repoId) {
-  const res = await fetch(`https://huggingface.co/api/models/${repoId}`, {
-    signal: AbortSignal.timeout(30_000)
-  })
-  if (!res.ok) {
-    throw new Error(`repo metadata HTTP ${res.status}`)
+const catalogVerification = {
+  isProjector(name) {
+    return /mmproj|clip/i.test(name)
+  },
+  isChatModel(kind) {
+    return kind === 'text' || kind === 'vision'
+  },
+  looksLikeHfRepo(id) {
+    return /^[^/\s]+\/[^/\s]+$/.test(id)
+  },
+  async repoProjectorFiles(repoId) {
+    const res = await fetch(`https://huggingface.co/api/models/${repoId}`, {
+      signal: AbortSignal.timeout(30_000)
+    })
+    if (!res.ok) {
+      throw new Error(`repo metadata HTTP ${res.status}`)
+    }
+    const data = await res.json()
+    return (data.siblings ?? []).map((s) => s.rfilename).filter(catalogVerification.isProjector)
   }
-  const data = await res.json()
-  return (data.siblings ?? []).map((s) => s.rfilename).filter(isProjector)
 }
 
 const problems = []
 let checked = 0
 
 for (const m of CATALOG) {
-  if (!isChatModel(m.kind) || !looksLikeHfRepo(m.id)) {
+  if (!catalogVerification.isChatModel(m.kind) || !catalogVerification.looksLikeHfRepo(m.id)) {
     continue
   }
   checked++
   let repoProjectors
   try {
-    repoProjectors = await repoProjectorFiles(m.id)
+    repoProjectors = await catalogVerification.repoProjectorFiles(m.id)
   } catch (e) {
     // A fetch failure is not catalog drift — report as a warning, don't fail the guard.
     console.warn(`  ? ${m.id}: could not verify (${e.message})`)

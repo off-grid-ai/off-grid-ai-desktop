@@ -51,4 +51,25 @@ describe('SettingsCardsGroup — grid drills into one L2 detail', () => {
     expect(screen.getByText('ALPHA_BODY')).toBeTruthy()
     expect(screen.getByText('Beta')).toBeTruthy() // not hidden — no group
   })
+
+  it('returns from a Settings detail with Command+]', async () => {
+    render(
+      <SettingsCardsGroup>
+        <SettingsCard title="Capture & processing" summary="capture">
+          <div>CAPTURE_BODY</div>
+        </SettingsCard>
+        <SettingsCard title="Data & privacy" summary="privacy">
+          <div>PRIVACY_BODY</div>
+        </SettingsCard>
+      </SettingsCardsGroup>
+    )
+
+    fireEvent.click(screen.getByText('Capture & processing'))
+    await waitFor(() => expect(screen.queryByText('Data & privacy')).toBeNull())
+
+    fireEvent.keyDown(window, { key: ']', metaKey: true })
+
+    expect(screen.getByText('Data & privacy')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText('CAPTURE_BODY')).toBeNull())
+  })
 })

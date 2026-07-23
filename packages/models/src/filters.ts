@@ -160,7 +160,7 @@ export function applySort<T extends FilterableModel>(
 ): T[] {
   if (sort === 'recommended') return models
   const arr = [...models]
-  const p = (m: FilterableModel) => m.params ?? parseParamCount(m.name) ?? 0
+  const p = (m: FilterableModel): number => m.params ?? parseParamCount(m.name) ?? 0
   switch (sort) {
     case 'bestfit':
       return arr.sort((a, b) => bestFitScore(a, ramGb) - bestFitScore(b, ramGb))

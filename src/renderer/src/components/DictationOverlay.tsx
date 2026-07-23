@@ -28,6 +28,8 @@ export function DictationOverlay(): React.JSX.Element | null {
   const ctxRef = useRef<AudioContext | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
+  const captureStartingRef = useRef(false)
+  const captureSequenceRef = useRef(0)
   const blobsRef = useRef<Blob[]>([])
   const rafRef = useRef<number | null>(null)
   const startRef = useRef(0)
@@ -47,17 +49,32 @@ export function DictationOverlay(): React.JSX.Element | null {
   async function startCapture(): Promise<void> {
     const v = voice()
     // eslint-disable-next-line no-console
-    console.log(`[dict] startCapture hasApi=${!!v} hasStream=${!!streamRef.current}`)
-    if (!v || streamRef.current) return
+    console.log(
+      `[dict] startCapture hasApi=${!!v} hasStream=${!!streamRef.current} starting=${captureStartingRef.current}`
+    )
+    if (!v || streamRef.current || captureStartingRef.current) return
+    captureStartingRef.current = true
+    const sequence = ++captureSequenceRef.current
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
+          // Dictation is not a WebRTC call. Browser voice processing can suppress
+          // quiet speech and distort prerecorded/native microphone input. Preserve
+          // the signal here; main owns loudness normalization before STT.
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
         }
       })
+      // The queued first-open `begin` event and the getState recovery can arrive
+      // together while permission is pending. One session owns one recorder. A
+      // stop/suspend also invalidates this sequence so a late permission result
+      // cannot resurrect a recording that already ended.
+      if (sequence !== captureSequenceRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
       streamRef.current = stream
 
       // Capture with MediaRecorder — the browser owns the encode and writes correct
@@ -124,6 +141,8 @@ export function DictationOverlay(): React.JSX.Element | null {
     } catch (e) {
       stopCapture()
       setError(e instanceof Error ? e.message : 'Microphone unavailable')
+    } finally {
+      if (sequence === captureSequenceRef.current) captureStartingRef.current = false
     }
   }
 
@@ -145,6 +164,8 @@ export function DictationOverlay(): React.JSX.Element | null {
   /** Stop everything. If the recorder is still running, stop() fires onstop which
    *  ships the blob and then tears down; otherwise tear down directly. */
   function stopCapture(): void {
+    captureSequenceRef.current += 1
+    captureStartingRef.current = false
     const rec = recorderRef.current
     recorderRef.current = null
     if (rec && rec.state !== 'inactive') {

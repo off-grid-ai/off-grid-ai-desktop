@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react'
 
 interface ToastRequest {
   message: string
+  tone?: 'success' | 'error' | 'neutral'
   actionLabel?: string
   onAction?: () => void
   durationMs?: number
