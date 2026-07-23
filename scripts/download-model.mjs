@@ -1,23 +1,12 @@
 import fs from 'fs'
 import path from 'path'
 import https from 'https'
-import os from 'os'
+import { getAppSupportDir } from './lib/app-support.mjs'
 
 const modelDownload = {
   // Model storage location - user's app support directory
   getModelsDir() {
-    const platform = process.platform
-    let appDataDir
-
-    if (platform === 'darwin') {
-      appDataDir = path.join(os.homedir(), 'Library', 'Application Support', 'My Memories')
-    } else if (platform === 'win32') {
-      appDataDir = path.join(process.env.APPDATA || os.homedir(), 'My Memories')
-    } else {
-      appDataDir = path.join(os.homedir(), '.my-memories')
-    }
-
-    return path.join(appDataDir, 'models')
+    return path.join(getAppSupportDir(), 'models')
   },
 
   async downloadFile(url, destPath) {

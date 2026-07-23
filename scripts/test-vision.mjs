@@ -1,6 +1,7 @@
 import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import { getAppSupportDir } from './lib/app-support.mjs'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -65,10 +66,7 @@ const visionTest = {
     console.log('Server Ready!')
 
     // 4. Find an image
-    const captureDir = path.join(
-      process.env.HOME || '',
-      'Library/Application Support/your-memories/captures'
-    )
+    const captureDir = path.join(getAppSupportDir(), 'captures')
     let imagePath = ''
     if (fs.existsSync(captureDir)) {
       const files = fs
