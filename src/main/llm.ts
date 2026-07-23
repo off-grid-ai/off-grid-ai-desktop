@@ -31,6 +31,11 @@ import { isValidGgufFile } from './models/gguf'
 import { readGgufContextLength } from './models/gguf-metadata'
 import { postCompletionOnce } from './llm/http-post'
 import { streamCompletion, type StreamResult } from './llm/stream'
+import {
+  terminateEngine,
+  ENGINE_TEARDOWN_GRACE_MS,
+  type TeardownOutcome
+} from './llm/engine-teardown'
 
 export type { KvCacheType, PerformanceMode }
 
@@ -1022,6 +1027,66 @@ export class LLMService {
       this.server = null
       this.initialized = false
     }
+  }
+
+  /** Resolve true if `proc` exits within `timeoutMs`, false on timeout — the wait primitive the
+   *  teardown escalation polls between SIGTERM and SIGKILL. */
+  private waitForProcExit(proc: ChildProcess, timeoutMs: number): Promise<boolean> {
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      return Promise.resolve(true)
+    }
+    return new Promise((resolve) => {
+      const onExit = (): void => {
+        clearTimeout(timer)
+        resolve(true)
+      }
+      const timer = setTimeout(() => {
+        proc.off('close', onExit)
+        resolve(false)
+      }, timeoutMs)
+      proc.once('close', onExit)
+    })
+  }
+
+  /**
+   * Cleanly unload the engine: stop generating, terminate llama-server (SIGTERM → SIGKILL if it
+   * hangs on a Metal/GGML shutdown abort), WAIT for it to actually die, then reap anything still
+   * bound to the port. Awaitable so the UI (and app-quit) can confirm the port is free — this is
+   * the fix for "the engine can't be unloaded without a force-quit / reboot" that blocked LM Studio.
+   */
+  async unload(): Promise<{ outcome: TeardownOutcome; portFree: boolean }> {
+    const proc = this.server
+    // Block auto-respawn and image-pause resume while we tear down.
+    this.intentionalStop = true
+    this.paused = true
+    let outcome: TeardownOutcome = 'already-dead'
+    if (proc) {
+      outcome = await terminateEngine(
+        {
+          isAlive: () => proc.exitCode === null && proc.signalCode === null,
+          sendSignal: (sig) => {
+            try {
+              proc.kill(sig)
+            } catch {
+              /* already gone */
+            }
+          },
+          waitForExit: (ms) => this.waitForProcExit(proc, ms)
+        },
+        ENGINE_TEARDOWN_GRACE_MS
+      )
+    }
+    if (this.server === proc) {
+      this.server = null
+    }
+    this.initialized = false
+    // Safety net: reap any llama-server WE own still holding the port (a forked/stuck child).
+    // liveOwners are OTHER apps' engines — we never touch those, so the port isn't "ours to free".
+    const reap = this.reapOrphansOnPort(this.port)
+    // Leave the engine down but allow a future explicit start; releasePause clears the block
+    // without warming a server (on-demand — the next chat/tool turn respawns).
+    this.paused = false
+    return { outcome, portFree: outcome !== 'stuck' && reap.liveOwners.length === 0 }
   }
 
   /** Set by the image runtime (imagegen.ts): how to evict a resident image server

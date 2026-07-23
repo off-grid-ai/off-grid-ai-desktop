@@ -1884,6 +1884,12 @@ export function setupIPC() {
     await llm.setSettings(s)
     return llm.getSettings()
   })
+  // Cleanly unload the chat engine so it stops holding the model port (frees it for LM Studio /
+  // another tool without force-quitting the app). Returns whether the port was actually freed.
+  ipcMain.handle('llm:unload', async () => {
+    const { llm } = await import('./llm')
+    return llm.unload()
+  })
 
   // --- Canvas / artifacts sandbox runtime ---------------------------------
   ipcMain.handle('artifacts:runtime', async (_e, kind: import('./artifacts').ArtifactKind) => {

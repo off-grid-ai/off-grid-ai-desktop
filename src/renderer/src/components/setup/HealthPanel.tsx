@@ -44,6 +44,8 @@ export function HealthPanel(): React.ReactElement {
   const api = window.api
   const [health, setHealth] = useState<SystemHealthContract | null>(null)
   const [restarting, setRestarting] = useState<string | null>(null)
+  const [freeing, setFreeing] = useState(false)
+  const [freeMsg, setFreeMsg] = useState<string | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -70,19 +72,48 @@ export function HealthPanel(): React.ReactElement {
     }
   }
 
+  // Stop the chat engine and free its port (for LM Studio / another tool) without quitting the app.
+  const freeEngine = async (): Promise<void> => {
+    setFreeing(true)
+    setFreeMsg(null)
+    try {
+      const r = await api.unloadLlmEngine()
+      setFreeMsg(
+        r.portFree
+          ? 'Chat engine stopped — port freed.'
+          : "Chat engine stopped, but the port is still held (another app may own it, or it's wedged)."
+      )
+      await refresh()
+    } catch {
+      setFreeMsg('Could not stop the engine.')
+    } finally {
+      setFreeing(false)
+    }
+  }
+
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 font-mono">
       <div className="flex items-center justify-between border-b border-neutral-800/60 px-4 py-3">
         <div className="text-[10px] font-medium uppercase tracking-widest text-neutral-500">
           System health
         </div>
-        <button
-          onClick={refresh}
-          className="flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-white"
-        >
-          <ArrowsClockwise className="h-3 w-3" />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => void freeEngine()}
+            disabled={freeing}
+            title="Stop the chat engine and free its model port (for LM Studio or another tool) without quitting the app"
+            className="text-[11px] text-neutral-500 transition-colors hover:text-white active:scale-95 disabled:opacity-50"
+          >
+            {freeing ? 'Freeing…' : 'Free engine'}
+          </button>
+          <button
+            onClick={refresh}
+            className="flex items-center gap-1.5 text-[11px] text-neutral-500 transition-colors hover:text-white"
+          >
+            <ArrowsClockwise className="h-3 w-3" />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {!health ? (
@@ -123,6 +154,15 @@ export function HealthPanel(): React.ReactElement {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {freeMsg && (
+        <div
+          role="status"
+          className="border-t border-neutral-800/60 px-4 py-2 text-[10px] text-neutral-400"
+        >
+          {freeMsg}
         </div>
       )}
 

@@ -426,6 +426,10 @@ const offGridApi = {
     batchSize?: number
     performanceMode?: 'conservative' | 'balanced' | 'extreme'
   }) => ipcRenderer.invoke('llm:set-settings', s),
+  // Cleanly unload the chat engine so it releases the model port (for LM Studio / another tool)
+  // without force-quitting. Resolves once the port is freed (or reports it couldn't be).
+  unloadLlmEngine: (): Promise<{ outcome: string; portFree: boolean }> =>
+    ipcRenderer.invoke('llm:unload'),
 
   // --- Canvas / artifacts sandbox runtime + library ---
   artifactRuntime: (kind: ArtifactKindContract) => ipcRenderer.invoke('artifacts:runtime', kind),

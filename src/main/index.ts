@@ -395,3 +395,24 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
+
+// Cleanly tear down the chat engine on quit so llama-server doesn't linger holding the model port
+// (which blocked launching LM Studio without a reboot). Defer the actual quit until the engine is
+// terminated (SIGTERM → SIGKILL if it hangs on a Metal/GGML shutdown abort), then quit for real.
+let engineUnloaded = false
+app.on('before-quit', (event) => {
+  if (engineUnloaded) {
+    return
+  }
+  event.preventDefault()
+  void (async () => {
+    try {
+      const { llm } = await import('./llm')
+      await llm.unload()
+    } catch {
+      /* best-effort — quit regardless so the app never hangs on exit */
+    }
+    engineUnloaded = true
+    app.quit()
+  })()
+})
