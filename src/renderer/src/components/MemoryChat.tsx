@@ -10,6 +10,7 @@ import { isAgenticTurn } from '@renderer/lib/agentic-active'
 import { applyStreamEvent } from '@renderer/lib/stream-reducer'
 import { useActiveModelSummary } from '@renderer/hooks/useActiveModelSummary'
 import { createUiId } from '@renderer/lib/ui-id'
+import { shouldFollowBottom } from '@renderer/lib/scroll-follow'
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
@@ -703,6 +704,12 @@ export function MemoryChat({
   const pendingVariantsRef = useRef<string[] | null>(null) // prior answers to keep when regenerating
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  // Whether streamed output should keep scrolling to the bottom. Set from the container's onScroll
+  // so it tracks the USER'S intent: pinned-to-bottom = follow; scrolled up = leave them be.
+  const followBottomRef = useRef(true)
+  const onScrollFollow = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    followBottomRef.current = shouldFollowBottom(e.currentTarget)
+  }, [])
   // Per-conversation generation lock + queue: a send belongs to its OWN conversation,
   // never the active tab. generatingRef is the synchronous source of truth for the
   // queue decision; generatingConvs mirrors it for rendering.
@@ -1012,17 +1019,23 @@ export function MemoryChat({
   }, [projNewName, loadProjects, assignProject])
 
   useEffect(() => {
-    // Only follow the stream if the user is already near the bottom — don't yank
-    // them down when they've scrolled up to read while generating.
-    const el = scrollRef.current
-    if (el && el.scrollHeight - el.scrollTop - el.clientHeight > 120) return
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // Follow the stream to the bottom ONLY while the user hasn't scrolled up. followBottomRef is
+    // driven by the container's onScroll (below), so it reflects the user's intent — not a
+    // mid-animation position. Instant (not smooth): a smooth animation kept scrollTop near the
+    // bottom between tokens, so the next token re-measured as "near bottom" and re-scrolled — a
+    // feedback loop that made it impossible to scroll up during generation.
+    if (followBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ block: 'end' })
+    }
   }, [messages, loading])
 
   // Opening / switching a chat lands you at the latest message (after it loads).
   const justSwitched = useRef(false)
   useEffect(() => {
     justSwitched.current = true
+    // A fresh conversation opens pinned to the bottom: reset the follow flag so a scroll-up in the
+    // PREVIOUS chat doesn't leave the new one refusing to auto-scroll its stream.
+    followBottomRef.current = true
   }, [activeConversationId])
   useEffect(() => {
     if (!justSwitched.current || !messages.length) return
@@ -1054,10 +1067,16 @@ export function MemoryChat({
       if (job.phase === 'running') {
         setImageGenConv(job.conversationId)
         setImgProgress(job.progress)
+        // Restore the SAME render gate the live-gen path sets (markGenerating). Without this a
+        // remount mid-generation left imageGenConv set but generatingConvs empty, so the progress
+        // panel (gated on generatingConvs) stayed invisible — the "it generated but the UI didn't
+        // show it" bug. Reattaching must reflect the whole in-flight UI, not just the owner.
+        markGenerating(job.conversationId, true)
         return
       }
       setImageGenConv((owner) => (owner === job.conversationId ? null : owner))
       setImgProgress(null)
+      markGenerating(job.conversationId, false)
     }
     const offJob = window.api.onImageGenJobState?.(observe)
     const offConversation = window.api.onImageGenConversationUpdated?.((conversationId) => {
@@ -1074,7 +1093,7 @@ export function MemoryChat({
       offJob?.()
       offConversation?.()
     }
-  }, [refreshConversationMessages])
+  }, [refreshConversationMessages, markGenerating])
 
   const loadConversations = async () => {
     try {
@@ -2623,7 +2642,7 @@ export function MemoryChat({
             </div>
           )}
           {/* Messages */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto">
+          <div ref={scrollRef} onScroll={onScrollFollow} className="flex-1 overflow-y-auto">
             {messages.length === 0 ? (
               <div
                 className={`mx-auto flex min-h-full flex-col items-center justify-center px-6 py-6 text-center ${mode === 'image' ? 'max-w-6xl' : 'max-w-2xl'}`}
@@ -4271,7 +4290,9 @@ export function MemoryChat({
                   />
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-2 px-2.5 pb-2.5 pt-1">
-                  <div className="flex min-w-0 items-center gap-2">
+                  {/* Chips wrap to a new line on narrow widths instead of overflowing the composer
+                      (the Image chip used to clip off the right edge). */}
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {/* "+" menu — attach / image / project / tools */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>

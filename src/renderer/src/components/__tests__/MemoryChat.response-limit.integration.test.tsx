@@ -50,8 +50,9 @@ describe('<MemoryChat/> - response limit through public renderer contracts', () 
         <SettingsPanel onClose={() => {}} />
       </TooltipProvider>
     )
-    const responseLimit = settingsView.container.querySelector<HTMLInputElement>(
-      'input[type="range"][max="32768"]'
+    // Max output is now a select (Auto + hard-cap options), not a range slider.
+    const responseLimit = settingsView.container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Max output"]'
     )
     expect(responseLimit).not.toBeNull()
     await waitFor(() => expect(responseLimit!.value).toBe(String(OLD_MAX_TOKENS)))

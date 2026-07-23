@@ -10,10 +10,11 @@ import {
   computeSafeCtx,
   modeBudget,
   loadAttempts,
+  capContextToModel,
   type KvCacheType,
   type PerformanceMode
 } from './model-sizing'
-import { resolveMaxTokens } from './llm/gen-params'
+import { resolveMaxTokens, maxTokensForWire, MAX_TOKENS_AUTO } from './llm/gen-params'
 import { classifyLlamaError, modelPortConflictReason } from './llama-error'
 import type { ManagedRuntime } from './runtime-manager'
 import { LLAMA_SERVER_PORT } from '../shared/ports'
@@ -27,8 +28,14 @@ import {
 } from './llm/settings-math'
 import { buildMessages, imageMime, thinkingPayload, type DecodedImage } from './llm/chat-payload'
 import { isValidGgufFile } from './models/gguf'
+import { readGgufContextLength } from './models/gguf-metadata'
 import { postCompletionOnce } from './llm/http-post'
 import { streamCompletion, type StreamResult } from './llm/stream'
+import {
+  terminateEngine,
+  ENGINE_TEARDOWN_GRACE_MS,
+  type TeardownOutcome
+} from './llm/engine-teardown'
 
 export type { KvCacheType, PerformanceMode }
 
@@ -65,6 +72,11 @@ export class LLMService {
   private initPromise: Promise<void> | null = null
   private modelPath = ''
   private mmProjPath = '' // empty for text-only models (no vision projector)
+  // The model's TRAINED context window (from GGUF metadata), memoized per model path. Used as the
+  // ceiling so a user can run up to the model's own limit (like LM Studio) instead of an arbitrary
+  // cap — and so we never exceed the trained window, which is what "breaks above 16k". null = unknown.
+  private modelMaxCtx: number | null = null
+  private modelMaxCtxFor = ''
   private initialized = false
   // A model selection is durable as soon as the manager writes active-model.json, but
   // replacing llama-server while it is answering destroys the user's in-flight turn.
@@ -99,7 +111,9 @@ export class LLMService {
   private topK: number | undefined
   private minP: number | undefined
   private repeatPenalty: number | undefined
-  private maxTokens = 2048
+  // Auto by default: a reply runs until the model stops (EOS) or the window fills, instead of a
+  // fixed 2048-token cap that truncated long answers regardless of the (large) context window.
+  private maxTokens = MAX_TOKENS_AUTO
   private systemPrompt = ''
   // Resource-usage preset. Governs the RAM budget the context clamp targets and
   // the default ctx/KV preset. 'balanced' preserves prior behavior.
@@ -174,7 +188,27 @@ export class LLMService {
   // KV budget from total RAM minus the model weights minus headroom for the OS,
   // Electron, and Metal compute, then cap context to fit. Better a shorter context
   // than a hard freeze; users on big machines still get a large window (it scales).
-  private safeCtxSize(requested: number): number {
+  /** The current model's trained context window (GGUF `<arch>.context_length`), memoized per model
+   *  path so we read the file's header at most once per model. null when it can't be determined
+   *  (unreadable file / missing key) — in which case only the RAM clamp applies. */
+  private trainedContext(): number | null {
+    if (this.modelMaxCtxFor !== this.modelPath) {
+      this.modelMaxCtx = this.modelPath ? readGgufContextLength(this.modelPath, fs) : null
+      this.modelMaxCtxFor = this.modelPath
+    }
+    return this.modelMaxCtx
+  }
+
+  /** The model's trained context window, or null if unknown — exposed so the UI can offer the
+   *  slider up to the model's own maximum instead of a hardcoded cap. */
+  modelMaxContext(): number | null {
+    return this.trainedContext()
+  }
+
+  private safeCtxSize(requestedRaw: number): number {
+    // First cap to the model's trained window (pure), THEN clamp to what RAM can hold.
+    const trained = this.trainedContext()
+    const requested = capContextToModel(requestedRaw, trained)
     try {
       const totalGb = os.totalmem() / 1e9
       let weightsGb = 0
@@ -202,10 +236,12 @@ export class LLMService {
           `[LLMService] Clamping context ${requested} -> ${rounded} (RAM ${totalGb.toFixed(0)}GB, weights ${weightsGb.toFixed(1)}GB) to avoid memory overcommit`
         )
       }
-      return rounded
+      // computeSafeCtx has a 2048-token floor (Math.max(2048, …)); re-cap to the trained window so a
+      // model trained BELOW that floor (e.g. 1024) is never run past its context.
+      return capContextToModel(rounded, trained)
     } catch {
       // If anything goes wrong reading sizes, fall back to a universally-safe value.
-      return Math.min(requested, 8192)
+      return capContextToModel(Math.min(requested, 8192), trained)
     }
   }
 
@@ -231,9 +267,11 @@ export class LLMService {
       threads: this.threads,
       batchSize: this.batchSize,
       performanceMode: this.performanceMode,
-      // Report the EFFECTIVE (clamped) context so the UI can show what's really used.
-      effectiveCtxSize: this.safeCtxSize(this.ctxSize)
-    } as LlmSettings & { effectiveCtxSize: number }
+      // Report the EFFECTIVE (clamped) context so the UI can show what's really used, plus the
+      // model's trained maximum so the UI can offer the slider up to it (not a hardcoded cap).
+      effectiveCtxSize: this.safeCtxSize(this.ctxSize),
+      modelMaxCtx: this.trainedContext()
+    } as LlmSettings & { effectiveCtxSize: number; modelMaxCtx: number | null }
   }
 
   /** The exact argv handed to `llama-server` for the CURRENT settings — the terminal
@@ -852,7 +890,7 @@ export class LLMService {
           const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt)
           const payload: Record<string, unknown> = {
             messages: messages,
-            max_tokens: resolveMaxTokens(maxTokens, this.maxTokens),
+            max_tokens: maxTokensForWire(resolveMaxTokens(maxTokens, this.maxTokens)),
             temperature: opts.temperature ?? this.temperature,
             ...this.samplingPayload()
           }
@@ -917,7 +955,7 @@ export class LLMService {
       const resolvedMaxTokens = resolveMaxTokens(maxTokens, this.maxTokens)
       const payload: Record<string, unknown> = {
         messages,
-        max_tokens: resolvedMaxTokens,
+        max_tokens: maxTokensForWire(resolvedMaxTokens),
         temperature: opts.temperature ?? this.temperature,
         ...this.samplingPayload(),
         stream: true,
@@ -964,7 +1002,7 @@ export class LLMService {
       await this.ensureReady()
       const payload: Record<string, unknown> = {
         messages,
-        max_tokens: resolveMaxTokens(opts.maxTokens, this.maxTokens),
+        max_tokens: maxTokensForWire(resolveMaxTokens(opts.maxTokens, this.maxTokens)),
         temperature: opts.temperature ?? this.temperature,
         ...this.samplingPayload(),
         stream: true,
@@ -994,6 +1032,83 @@ export class LLMService {
       this.server = null
       this.initialized = false
     }
+  }
+
+  /** Resolve true if `proc` exits within `timeoutMs`, false on timeout — the wait primitive the
+   *  teardown escalation polls between SIGTERM and SIGKILL. */
+  private waitForProcExit(proc: ChildProcess, timeoutMs: number): Promise<boolean> {
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      return Promise.resolve(true)
+    }
+    return new Promise((resolve) => {
+      const onExit = (): void => {
+        clearTimeout(timer)
+        resolve(true)
+      }
+      const timer = setTimeout(() => {
+        proc.off('close', onExit)
+        resolve(false)
+      }, timeoutMs)
+      proc.once('close', onExit)
+    })
+  }
+
+  /**
+   * Cleanly unload the engine: stop generating, terminate llama-server (SIGTERM → SIGKILL if it
+   * hangs on a Metal/GGML shutdown abort), WAIT for it to actually die, then reap anything still
+   * bound to the port. Awaitable so the UI (and app-quit) can confirm the port is free — this is
+   * the fix for "the engine can't be unloaded without a force-quit / reboot" that blocked LM Studio.
+   */
+  /** SIGTERM→SIGKILL a specific process and wait for it to actually exit. Rechecks liveness inside
+   *  terminateEngine so a race with natural exit doesn't mislabel the outcome. */
+  private terminateProc(proc: ChildProcess): Promise<TeardownOutcome> {
+    return terminateEngine(
+      {
+        isAlive: () => proc.exitCode === null && proc.signalCode === null,
+        sendSignal: (sig) => {
+          try {
+            proc.kill(sig)
+          } catch {
+            /* already gone */
+          }
+        },
+        waitForExit: (ms) => this.waitForProcExit(proc, ms)
+      },
+      ENGINE_TEARDOWN_GRACE_MS
+    )
+  }
+
+  async unload(): Promise<{ outcome: TeardownOutcome; portFree: boolean }> {
+    this.paused = true // stop the on-demand respawn path from warming a new server mid-teardown
+    let outcome: TeardownOutcome = 'already-dead'
+    // Terminate the current engine AND any that an in-flight init assigns after our snapshot: an
+    // init() that entered _doInit but hasn't set this.server yet would otherwise survive. Await the
+    // pending init, then tear down whatever it spawned. Re-assert intentionalStop each round because
+    // _doInit clears it when it adopts a fresh process. Bounded so a pathological respawn storm
+    // can't loop forever.
+    for (let round = 0; round < 4; round++) {
+      this.intentionalStop = true
+      const proc = this.server
+      if (proc) {
+        outcome = await this.terminateProc(proc)
+        if (this.server === proc) {
+          this.server = null
+        }
+      }
+      const pending = this.initPromise
+      if (pending === null) {
+        break // no in-flight init to race with — done
+      }
+      await pending.catch(() => {}) // let the in-flight spawn finish, then loop to kill it
+    }
+    this.initialized = false
+    // Safety net: reap any llama-server WE own still holding the port (a forked/stuck child).
+    // liveOwners are OTHER apps' engines — we never touch those, so the port isn't "ours to free".
+    const reap = this.reapOrphansOnPort(this.port)
+    // Leave the engine down but allow a future explicit start; releasePause clears the block
+    // without warming a server (on-demand — the next chat/tool turn respawns).
+    this.paused = false
+    return { outcome, portFree: outcome !== 'stuck' && reap.liveOwners.length === 0 }
   }
 
   /** Set by the image runtime (imagegen.ts): how to evict a resident image server

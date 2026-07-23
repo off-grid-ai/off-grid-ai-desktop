@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { persistToggle } from '@renderer/lib/persist-toggle'
 import { useEscapeToClose } from '@renderer/lib/use-escape-to-close'
-import { DEFAULT_CTX_SIZE } from '@offgrid/core/shared/llm-defaults'
+import { DEFAULT_CTX_SIZE, MAX_TOKENS_AUTO } from '@offgrid/core/shared/llm-defaults'
+import { contextWindowOptions, contextWindowHint } from '@renderer/lib/ctx-options'
+
+const MAX_OUTPUT_AUTO = MAX_TOKENS_AUTO
+const MAX_OUTPUT_OPTIONS = [2048, 4096, 8192, 16384, 32768]
 
 // Right-side Settings panel (same pattern as SkillsPanel/ArtifactCanvas).
 // Tabs: Model (inference params), Voice (Kokoro TTS), Tools (built-in, read-only),
@@ -24,6 +28,7 @@ type LlmSettings = {
   threads?: number
   batchSize?: number
   effectiveCtxSize?: number // reported by the backend (RAM-clamped); read-only
+  modelMaxCtx?: number | null // the model's TRAINED window (GGUF); read-only, bounds the picker
 }
 type Connector = {
   id: number
@@ -41,7 +46,7 @@ const DEFAULTS: LlmSettings = {
   topK: 40,
   minP: 0.05,
   repeatPenalty: 1.1,
-  maxTokens: 2048,
+  maxTokens: MAX_TOKENS_AUTO,
   ctxSize: DEFAULT_CTX_SIZE,
   systemPrompt: '',
   kvCacheType: 'f16',
@@ -279,39 +284,45 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 />
               </Row>
               <Row
-                label="Max tokens"
-                value={String(s.maxTokens ?? 2048)}
-                hint="Cap on the response length (must fit within the context window)."
-              >
-                <input
-                  type="range"
-                  min={256}
-                  max={32768}
-                  step={256}
-                  value={s.maxTokens ?? 2048}
-                  onChange={(e) => set({ maxTokens: Number(e.target.value) })}
-                  className="w-full accent-green-500"
-                />
-              </Row>
-              <Row
-                label="Context window"
+                label="Max output"
                 hint={
-                  s.effectiveCtxSize && s.effectiveCtxSize < (s.ctxSize ?? 65536)
-                    ? `Clamped to ${(s.effectiveCtxSize / 1024).toFixed(0)}K for your RAM (a larger value would risk a memory-overcommit freeze). Quantize the KV cache below to raise this.`
-                    : 'Larger holds more history; changing it reloads the model.'
+                  (s.maxTokens ?? MAX_OUTPUT_AUTO) === MAX_OUTPUT_AUTO
+                    ? 'Auto: the reply runs until the model stops or the context window fills — no fixed cap.'
+                    : 'Hard cap on the response length (must fit within the context window).'
                 }
               >
                 <select
+                  aria-label="Max output"
+                  value={s.maxTokens ?? MAX_OUTPUT_AUTO}
+                  onChange={(e) => set({ maxTokens: Number(e.target.value) })}
+                  className="w-full rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-neutral-200 outline-none focus:border-green-500"
+                >
+                  <option value={MAX_OUTPUT_AUTO}>Auto (until the model stops)</option>
+                  {MAX_OUTPUT_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n / 1024}K tokens
+                    </option>
+                  ))}
+                </select>
+              </Row>
+              <Row
+                label="Context window"
+                hint={contextWindowHint(s)}
+              >
+                <select
+                  aria-label="Context window"
                   value={s.ctxSize ?? DEFAULT_CTX_SIZE}
                   onChange={(e) => set({ ctxSize: Number(e.target.value) })}
                   className="w-full rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-neutral-200 outline-none focus:border-green-500"
                 >
-                  {CTX_OPTIONS.map((c) => (
-                    <option key={c} value={c}>
-                      {c >= 1024 ? `${c / 1024}K` : c} tokens
-                      {c === 65536 ? ' (default)' : c === 131072 ? ' (max — heavy)' : ''}
-                    </option>
-                  ))}
+                  {contextWindowOptions(CTX_OPTIONS, s.modelMaxCtx, s.ctxSize ?? DEFAULT_CTX_SIZE).map(
+                    (c) => (
+                      <option key={c} value={c}>
+                        {c >= 1024 ? `${c / 1024}K` : c} tokens
+                        {c === s.modelMaxCtx ? " (model's max)" : c === DEFAULT_CTX_SIZE ? ' (default)' : ''}
+                      </option>
+                    )
+                  )}
                 </select>
               </Row>
               <Row

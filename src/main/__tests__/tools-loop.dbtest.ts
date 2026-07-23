@@ -78,6 +78,36 @@ describe('agentic tool loop — real toolChat + real LLMService over a fake llam
     expect(steps).toEqual([]) // no tool call -> no step
   })
 
+  it('sends the user Max-output setting to the model, not the old hardcoded 1024 cap (essay cut-off)', async () => {
+    // The agentic path used to force maxTokens: 1024, so a long "All memory" answer was truncated
+    // mid-sentence at ~1024 tokens regardless of the setting/window. Now it inherits the setting.
+    const svc = llm as unknown as { maxTokens: number }
+    const prev = svc.maxTokens
+    svc.maxTokens = 5000 // a distinctive user cap
+    try {
+      fake.enqueue({ content: 'a long answer' })
+      await toolChat('write a lot', [])
+      const round1 = fake.requests[0] as { max_tokens?: number }
+      expect(round1.max_tokens).toBe(5000) // inherits the user's setting…
+      expect(round1.max_tokens).not.toBe(1024) // …never the removed hardcap
+    } finally {
+      svc.maxTokens = prev
+    }
+  })
+
+  it('defaults the tool-loop answer to auto — max_tokens = -1 (until EOS / window fills)', async () => {
+    const svc = llm as unknown as { maxTokens: number }
+    const prev = svc.maxTokens
+    svc.maxTokens = 0 // MAX_TOKENS_AUTO
+    try {
+      fake.enqueue({ content: 'ok' })
+      await toolChat('hi', [])
+      expect((fake.requests[0] as { max_tokens?: number }).max_tokens).toBe(-1)
+    } finally {
+      svc.maxTokens = prev
+    }
+  })
+
   it('executes a tool call, fires onStep before running it, feeds the result back, then answers', async () => {
     fake.enqueue({ toolCalls: [{ name: 'get_datetime', args: {} }] }, { content: 'It is now.' })
     const steps: string[] = []

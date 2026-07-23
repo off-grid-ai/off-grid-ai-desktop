@@ -1884,6 +1884,12 @@ export function setupIPC() {
     await llm.setSettings(s)
     return llm.getSettings()
   })
+  // Cleanly unload the chat engine so it stops holding the model port (frees it for LM Studio /
+  // another tool without force-quitting the app). Returns whether the port was actually freed.
+  ipcMain.handle('llm:unload', async () => {
+    const { llm } = await import('./llm')
+    return llm.unload()
+  })
 
   // --- Canvas / artifacts sandbox runtime ---------------------------------
   ipcMain.handle('artifacts:runtime', async (_e, kind: import('./artifacts').ArtifactKind) => {
@@ -1973,6 +1979,26 @@ export function setupIPC() {
   ipcMain.handle('skills:dir', async () => {
     const { skillsDir } = await import('./skills')
     return skillsDir()
+  })
+
+  // Which STT engine + model would run right now (provenance) + the installed transcription
+  // models a picker can switch to (via the existing models:set-active-modal — this only lists).
+  ipcMain.handle('transcription:active-info', async () => {
+    const { getActiveTranscriptionInfo, transcriptionModelOptions } = await import(
+      './transcription/select'
+    )
+    const { listInstalled } = await import('./models-manager')
+    const { modelsByKind } = await import('@offgrid/models')
+    const info = getActiveTranscriptionInfo()
+    const installedIds = new Set(await listInstalled())
+    const installed = (
+      modelsByKind('transcription') as Array<{
+        id: string
+        name?: string
+        files: Array<{ name: string }>
+      }>
+    ).filter((entry) => installedIds.has(entry.id))
+    return { ...info, options: transcriptionModelOptions(info.modelId, installed) }
   })
 
   // --- Voice input (STT via the active engine: whisper default / Parakeet opt-in) ---

@@ -426,6 +426,10 @@ const offGridApi = {
     batchSize?: number
     performanceMode?: 'conservative' | 'balanced' | 'extreme'
   }) => ipcRenderer.invoke('llm:set-settings', s),
+  // Cleanly unload the chat engine so it releases the model port (for LM Studio / another tool)
+  // without force-quitting. Resolves once the port is freed (or reports it couldn't be).
+  unloadLlmEngine: (): Promise<{ outcome: string; portFree: boolean }> =>
+    ipcRenderer.invoke('llm:unload'),
 
   // --- Canvas / artifacts sandbox runtime + library ---
   artifactRuntime: (kind: ArtifactKindContract) => ipcRenderer.invoke('artifacts:runtime', kind),
@@ -473,6 +477,14 @@ const offGridApi = {
   // --- Voice input (speech-to-text via whisper) ---
   transcribeAudio: (audio: ArrayBuffer | Uint8Array, ext?: string) =>
     ipcRenderer.invoke('voice:transcribe', audio, ext),
+  // Provenance + picker options: which STT engine + model would run right now, and the installed
+  // transcription models a picker can switch to (switch via setActiveModalModel('transcription')).
+  getTranscriptionInfo: (): Promise<{
+    engine: 'whisper' | 'parakeet' | 'whisper-resident'
+    modelId: string | null
+    label: string
+    options: { id: string | null; name: string; active: boolean }[]
+  }> => ipcRenderer.invoke('transcription:active-info'),
 
   // --- Voice output (text-to-speech via Kokoro) ---
   ttsVoices: () => ipcRenderer.invoke('tts:voices'),
@@ -701,6 +713,9 @@ const offGridApi = {
   meetingList: () => ipcRenderer.invoke('meeting:list'),
   meetingDelete: (id: number) => ipcRenderer.invoke('meeting:delete', id),
   meetingRetranscribe: (id: number) => ipcRenderer.invoke('meeting:retranscribe', id),
+  // Poll the main-owned re-transcribe status so the Meetings screen re-derives in-flight
+  // progress on mount (survives navigating away mid-run).
+  meetingRetranscribeStatus: () => ipcRenderer.invoke('meeting:retranscribe-status'),
   meetingExport: (id: number, unit: 'transcript' | 'audio' | 'video') =>
     ipcRenderer.invoke('meeting:export', id, unit),
   meetingActivity: (id: number) => ipcRenderer.invoke('meeting:activity', id),

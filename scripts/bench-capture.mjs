@@ -1,34 +1,26 @@
 #!/usr/bin/env node
-// Benchmark the capture→understanding pipeline on REAL stored frames, so the
-// OCR-vs-vision decision is made with numbers, not vibes. Standalone (no Electron):
-// it calls the bundled OCR binary directly, downscales with macOS `sips` (the
-// provit nativeMacActor approach), and posts to the live llama-server.
+// Benchmark the VISION understanding path on REAL stored frames — single frame vs N-frame
+// batches — so the "how many frames per vision call" decision is made with numbers.
+// OCR is a dead path (production grounds on the Accessibility tree, fetched live and ~free),
+// so this bench does NOT run OCR; it measures the image legs only.
 //
-// Legs timed per frame:
-//   ocr          — Apple Vision OCR text extraction            [current pipeline]
-//   text-llm     — send the OCR text to the model              [current pipeline]
-//   downscale    — sips -Z to cap the longest edge (cuts image TOKENS, the real lever)
-//   vision-full  — full-res frame image → model                (contrast, with --full)
-//   vision+text  — DOWNSCALED image + text ground-truth → model [CHOSEN: AX + vision]
-//
-// The chosen path is (downscale + vision+text). In production the text is the
-// accessibility tree (≈free to fetch) rather than OCR; here OCR text stands in so
-// the prompt-token cost of carrying text is represented. AX replacing OCR only
-// makes the chosen path cheaper than shown (no ~700ms OCR at acquisition).
+// Legs (per downscaled frame, JPEG via macOS `sips -Z` — the pixel cap is the token lever):
+//   vision-single — ONE downscaled frame image → model
+//   vision-batch  — N consecutive downscaled frames → model  (--batch N, comma list for several)
 //
 // Usage:
-//   node scripts/bench-capture.mjs --n 20                    # baseline only (ocr + text-llm)
-//   node scripts/bench-capture.mjs --n 20 --vision           # + chosen path (downscale + vision+text)
-//   node scripts/bench-capture.mjs --n 20 --vision --full    # + full-res vision for contrast
-//   options: --dir <dir> --port 8439 --ocr <bin> --max-dim 1024 --max-tokens 512
+//   node scripts/bench-capture.mjs --n 12                          # single-frame only
+//   node scripts/bench-capture.mjs --n 12 --batch 3 --show         # + 3-frame batch, print outputs
+//   node scripts/bench-capture.mjs --n 40 --batch 5,7,9 --batch-only --show   # sweep, no single loop
+//   options: --dir <dir> --port 8439 --max-dim 1024 --max-tokens 512 --single-ms 1780
+//
+// Note: the AX text would ride along in production at ~free cost; omitted here so the numbers
+// isolate the IMAGE cost — the only lever that scales with frame count.
 
-import { execFile, execFileSync } from 'node:child_process'
-import { promisify } from 'node:util'
-import { readFileSync, readdirSync, statSync, copyFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { readFileSync, readdirSync, statSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-
-const execFileAsync = promisify(execFile)
 
 const argv = process.argv.slice(2)
 const arg = (flag, def) => {
@@ -41,23 +33,30 @@ const CAPTURES = arg(
   '--dir',
   path.join(os.homedir(), 'Library/Application Support/Off Grid AI Desktop/captures')
 )
-const N = Number(arg('--n', '20'))
+const N = Number(arg('--n', '12'))
 const PORT = Number(arg('--port', '8439'))
 const MAX_TOKENS = Number(arg('--max-tokens', '512'))
 const MAX_DIM = Number(arg('--max-dim', '1024'))
-const OCR_BIN = arg('--ocr', path.join(process.cwd(), 'electron/accessibility/ocr'))
-const DO_VISION = has('--vision')
-const DO_FULL = has('--full')
-const SHOW = has('--show') // print each leg's OUTPUT text for quality comparison
-const SPREAD = has('--spread') // sample frames evenly across time (variety), not newest-N
+const BATCHES = arg('--batch', '0')
+  .split(',')
+  .map((x) => Number(x.trim()))
+  .filter((n) => n > 1)
+const BATCH_ONLY = has('--batch-only') // skip the single-frame loop (reuse a known baseline)
+const SINGLE_MS = Number(arg('--single-ms', '1780')) // baseline used when --batch-only
+const SHOW = has('--show')
+const JUDGE = has('--judge') // grade each summary against the ACTUAL current frame (quality vs N)
+const SPREAD = has('--spread')
 const ENDPOINT = `http://127.0.0.1:${PORT}/v1/chat/completions`
 const TMP = path.join(os.tmpdir(), 'ogad-bench')
 
 const INSTRUCTION =
   'You log what the user is doing on their computer. From the screen below, reply with a one-sentence factual summary and the people/projects it is about. Be concrete; do not infer.'
+const BATCH_INSTRUCTION = (n) =>
+  `You log what the user is doing on their computer. The ${n} images below are consecutive screen frames in time order (oldest first). Use the SEQUENCE to understand what is happening on the CURRENT (last) frame; earlier frames are context only. Reply with a one-sentence factual summary of the current frame and the people/projects it is about. Be concrete; do not infer.`
 
 const nowMs = () => Number(process.hrtime.bigint() / 1000n) / 1000
 const kb = (bytes) => `${(bytes / 1024).toFixed(0)}KB`
+const clip = (s) => (s || '').replace(/\s+/g, ' ').trim().slice(0, 300)
 
 function pickFrames() {
   const all = readdirSync(CAPTURES)
@@ -67,8 +66,6 @@ function pickFrames() {
     .map((p) => ({ p, mtime: statSync(p).mtimeMs }))
     .sort((a, b) => b.mtime - a.mtime)
   if (all.length === 0) throw new Error(`no frames in ${CAPTURES}`)
-  // --spread: sample evenly across the whole set (varied surfaces) for quality eval;
-  // otherwise the newest N (fresh, likely-similar) for a tight timing run.
   if (SPREAD && all.length > N) {
     const step = all.length / N
     return Array.from({ length: N }, (_, i) => all[Math.floor(i * step)].p)
@@ -76,15 +73,6 @@ function pickFrames() {
   return all.slice(0, N).map((x) => x.p)
 }
 
-async function ocr(imagePath) {
-  const t = nowMs()
-  const { stdout } = await execFileAsync(OCR_BIN, [imagePath], { maxBuffer: 32 * 1024 * 1024 })
-  return { text: stdout.trim(), ms: nowMs() - t }
-}
-
-// Downscale via macOS sips (provit nativeMacActor pattern): -Z caps the LONGEST
-// edge, preserving aspect. To JPEG so the base64 payload is small too. The pixel
-// cap is what cuts the mmproj image-token count — the real speed lever.
 let tmpMade = false
 function downscale(imagePath, maxDim) {
   if (!tmpMade) {
@@ -117,156 +105,175 @@ async function callModel(content, label) {
   return {
     ms: nowMs() - t,
     outTokens: data.usage?.completion_tokens ?? 0,
+    promptTokens: data.usage?.prompt_tokens ?? 0,
     text: data.choices?.[0]?.message?.content ?? ''
   }
 }
-
-const textPart = (t) => [{ type: 'text', text: t }]
-const textLLM = (ocrText) =>
-  callModel(
-    textPart(`${INSTRUCTION}\n\nScreen text:\n"""\n${ocrText.slice(0, 4000)}\n"""`),
-    'text-llm'
-  )
 
 function imagePart(imagePath) {
   const b64 = readFileSync(imagePath).toString('base64')
   const mime = imagePath.toLowerCase().endsWith('.jpg') ? 'image/jpeg' : 'image/png'
   return { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } }
 }
-const visionFull = (imagePath) =>
-  callModel([{ type: 'text', text: INSTRUCTION }, imagePart(imagePath)], 'vision-full')
-const visionText = (downPath, text) =>
+const visionSingle = (downPath) =>
+  callModel([{ type: 'text', text: INSTRUCTION }, imagePart(downPath)], 'vision-single')
+const visionBatch = (downPaths) =>
   callModel(
-    [
-      {
-        type: 'text',
-        text: `${INSTRUCTION}\n\nExact on-screen text (ground truth):\n"""\n${text.slice(0, 4000)}\n"""\n\nRead the screenshot for layout/structure and answer.`
-      },
-      imagePart(downPath)
-    ],
-    'vision+text'
+    [{ type: 'text', text: BATCH_INSTRUCTION(downPaths.length) }, ...downPaths.map(imagePart)],
+    `vision-batch-${downPaths.length}`
   )
+
+// LLM-as-judge: show ONLY the current (last) frame + the produced summary, and grade how well the
+// summary describes THAT frame. This is the quality-vs-batch-size signal — a bigger window is only
+// worth it if the current-frame summary does not degrade (conflate/vague/hallucinate) as N grows.
+const JUDGE_INSTRUCTION =
+  'Below is a screenshot and a one-sentence summary that was written to describe it. Grade the summary against ONLY what is visible in this image. Score each 1-5 (integers):\n' +
+  'ACCURACY: does it match what is actually on screen (5=exact, 1=wrong screen)\n' +
+  'SPECIFICITY: concrete names/apps/projects vs vague generalities (5=names the real thing, 1=generic)\n' +
+  'GROUNDING: states only what is visible, invents nothing (5=fully grounded, 1=hallucinated detail)\n' +
+  'Reply with EXACTLY one line: ACCURACY=<n> SPECIFICITY=<n> GROUNDING=<n>'
+async function judgeSummary(currentFramePath, summary) {
+  const r = await callModel(
+    [
+      { type: 'text', text: `${JUDGE_INSTRUCTION}\n\nSUMMARY: "${clip(summary)}"` },
+      imagePart(currentFramePath)
+    ],
+    'judge'
+  )
+  const g = (k) => {
+    const m = new RegExp(`${k}\\s*[=:]\\s*([1-5])`, 'i').exec(r.text)
+    return m ? Number(m[1]) : null
+  }
+  const acc = g('ACCURACY')
+  const spec = g('SPECIFICITY')
+  const grd = g('GROUNDING')
+  return { acc, spec, grd, parsed: acc != null && spec != null && grd != null }
+}
+const scoreOf = (j) => (j.parsed ? (j.acc + j.spec + j.grd) / 3 : null)
 
 function stats(xs) {
   if (xs.length === 0) return null
   const s = [...xs].sort((a, b) => a - b)
   const q = (p) => s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))]
-  return {
-    n: s.length,
-    mean: s.reduce((a, b) => a + b, 0) / s.length,
-    p50: q(50),
-    p95: q(95),
-    min: s[0],
-    max: s[s.length - 1]
-  }
+  return { n: s.length, mean: s.reduce((a, b) => a + b, 0) / s.length, p50: q(50), p95: q(95) }
 }
 const f = (v) => (v == null ? '   —' : `${v.toFixed(0)}`.padStart(6))
 const row = (name, st) =>
   st
     ? `  ${name.padEnd(22)} mean ${f(st.mean)}  p50 ${f(st.p50)}  p95 ${f(st.p95)}   (n=${st.n})`
     : `  ${name.padEnd(22)} (no data)`
-const sum = (xs) => xs.reduce((a, b) => a + b, 0)
-const mean = (xs) => (xs.length ? sum(xs) / xs.length : 0)
+const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0)
 
 async function main() {
-  console.log(`\nBenchmark — ${N} frames · max-dim ${MAX_DIM}px · engine ${ENDPOINT}`)
+  console.log(`\nVision benchmark — up to ${N} frames · max-dim ${MAX_DIM}px · engine ${ENDPOINT}`)
   console.log(
-    `legs: ocr, text-llm${DO_VISION ? ', downscale, vision+text (AX proxy)' : ''}${DO_FULL ? ', vision-full' : ''}\n`
+    `legs: ${BATCH_ONLY ? '' : 'vision-single (1 image), '}${BATCHES.length ? `vision-batch (${BATCHES.join('/')} images)` : ''} · NO OCR (dead path)\n`
   )
   const frames = pickFrames()
+  const chrono = [...frames].reverse() // oldest→newest, for temporal batch windows
 
   process.stdout.write('warming up… ')
-  const w = await ocr(frames[0])
-  await textLLM(w.text)
-  if (DO_VISION) {
+  {
     const d = downscale(frames[0], MAX_DIM)
-    await visionText(d.path, w.text).catch(() => {})
+    await visionSingle(d.path).catch(() => {})
+    rmSync(d.path, { force: true })
   }
   console.log('done\n')
 
-  const S = { ocr: [], text: [], down: [], vtext: [], vfull: [] }
-  const sizes = { full: [], down: [] }
-  const out = { text: [], vtext: [] }
+  const S = { down: [], single: [] }
+  const promptSingle = []
+  const singleScores = [] // judge scores for single-frame summaries (quality baseline)
 
-  for (let i = 0; i < frames.length; i++) {
-    const fr = frames[i]
-    const o = await ocr(fr)
-    S.ocr.push(o.ms)
-    const t = await textLLM(o.text)
-    S.text.push(t.ms)
-    out.text.push(t.outTokens)
-    let line = `ocr ${o.ms.toFixed(0)} · text-llm ${t.ms.toFixed(0)}`
-    if (DO_VISION) {
-      sizes.full.push(statSync(fr).size)
+  if (!BATCH_ONLY) {
+    for (let i = 0; i < frames.length; i++) {
+      const fr = frames[i]
       const d = downscale(fr, MAX_DIM)
       S.down.push(d.ms)
-      sizes.down.push(d.bytes)
-      let lastVText = ''
-      const lastText = t.text
+      let line = `downscale ${d.ms.toFixed(0)} (${kb(d.bytes)})`
       try {
-        const v = await visionText(d.path, o.text)
-        S.vtext.push(v.ms)
-        out.vtext.push(v.outTokens)
-        lastVText = v.text
-        line += ` · downscale ${d.ms.toFixed(0)} (${kb(d.bytes)}) · vision+text ${v.ms.toFixed(0)}`
+        const v = await visionSingle(d.path)
+        S.single.push(v.ms)
+        promptSingle.push(v.promptTokens)
+        line += ` · vision ${v.ms.toFixed(0)}ms · ${v.promptTokens}→${v.outTokens}tok`
+        if (JUDGE) {
+          const j = await judgeSummary(d.path, v.text)
+          const sc = scoreOf(j)
+          if (sc != null) singleScores.push(sc)
+          line += ` · Q ${sc == null ? '?' : sc.toFixed(1)} (a${j.acc ?? '?'} s${j.spec ?? '?'} g${j.grd ?? '?'})`
+        }
+        if (SHOW) console.log(`\n  ▸ ${path.basename(fr)}\n    single: ${clip(v.text)}\n`)
       } catch (e) {
         line += ` · vision FAILED (${String(e.message).slice(0, 60)})`
+      } finally {
+        rmSync(d.path, { force: true })
       }
-      let vfText = ''
-      if (DO_FULL) {
-        try {
-          const vf = await visionFull(fr)
-          S.vfull.push(vf.ms)
-          vfText = vf.text
-        } catch {
-          /* skip */
+      console.log(`  [${String(i + 1).padStart(2)}/${frames.length}] ${line}`)
+    }
+  }
+
+  const legStats = [] // { B, ms:[], prompt:[], scores:[] }
+  for (const B of BATCHES) {
+    const msArr = []
+    const promptArr = []
+    const scoreArr = []
+    console.log(`\n── batch leg: ${B} frames per call ──`)
+    for (let i = 0; i + B <= chrono.length; i += B) {
+      const window = chrono.slice(i, i + B)
+      const downs = window.map((fr) => downscale(fr, MAX_DIM))
+      const totalKb = downs.reduce((a, d) => a + d.bytes, 0)
+      try {
+        const v = await visionBatch(downs.map((d) => d.path))
+        msArr.push(v.ms)
+        promptArr.push(v.promptTokens)
+        // Judge against the CURRENT (last) frame only — the summary is meant to describe it.
+        let qNote = ''
+        if (JUDGE) {
+          const j = await judgeSummary(downs[downs.length - 1].path, v.text)
+          const sc = scoreOf(j)
+          if (sc != null) scoreArr.push(sc)
+          qNote = ` · Q ${sc == null ? '?' : sc.toFixed(1)} (a${j.acc ?? '?'} s${j.spec ?? '?'} g${j.grd ?? '?'})`
         }
-      }
-      rmSync(d.path, { force: true })
-      // Quality: print each leg's actual answer on the same frame, side by side.
-      if (SHOW) {
-        const clip = (s) => (s || '').replace(/\s+/g, ' ').trim().slice(0, 260)
-        console.log(`\n  ▸ ${path.basename(fr)}`)
-        console.log(`    text-llm    : ${clip(lastText)}`)
-        if (vfText) console.log(`    vision-only : ${clip(vfText)}`)
-        console.log(`    vision+text : ${clip(lastVText)}\n`)
+        if (SHOW) console.log(`\n  ▸ [${window.length}f]${qNote}\n    batch:  ${clip(v.text)}\n`)
+        else
+          console.log(
+            `  win[${i / B + 1}] ${B}f · ${kb(totalKb)} · ${v.ms.toFixed(0)}ms · ${v.promptTokens}→${v.outTokens}tok${qNote}`
+          )
+      } catch (e) {
+        console.log(`  batch(${B}) FAILED (${String(e.message).slice(0, 90)})`)
+      } finally {
+        downs.forEach((d) => rmSync(d.path, { force: true }))
       }
     }
-    console.log(`  [${String(i + 1).padStart(2)}/${frames.length}] ${line}`)
+    legStats.push({ B, ms: msArr, prompt: promptArr, scores: scoreArr })
   }
 
   console.log('\n── per-stage (ms) ──')
-  console.log(row('ocr', stats(S.ocr)))
-  console.log(row('text-llm', stats(S.text)))
-  if (DO_VISION) {
+  if (!BATCH_ONLY) {
     console.log(row('downscale (sips)', stats(S.down)))
-    console.log(row('vision+text (down)', stats(S.vtext)))
+    console.log(row('vision-single (1f)', stats(S.single)))
   }
-  if (DO_FULL) console.log(row('vision-full', stats(S.vfull)))
+  for (const { B, ms } of legStats) console.log(row(`vision-batch (${B}f)`, stats(ms)))
 
-  console.log('\n── per-frame totals ──')
-  const cur = mean(S.ocr) + mean(S.text)
-  console.log(`  CURRENT  (ocr + text-llm)              ${cur.toFixed(0)} ms`)
-  if (DO_VISION && S.vtext.length) {
-    const chosenOcr = mean(S.ocr) + mean(S.down) + mean(S.vtext)
-    const chosenAx = mean(S.down) + mean(S.vtext) // AX is ~free → drop OCR
-    console.log(`  CHOSEN   (ocr + downscale + vision)    ${chosenOcr.toFixed(0)} ms`)
+  console.log('\n── scaling (find the knee) ──')
+  const base = BATCH_ONLY ? SINGLE_MS : mean(S.single) || SINGLE_MS
+  const baseQ = singleScores.length ? mean(singleScores) : null
+  console.log(
+    `  single-frame baseline: ${base.toFixed(0)} ms/call` +
+      (baseQ != null ? ` · Q ${baseQ.toFixed(2)}/5 (n=${singleScores.length})` : '')
+  )
+  for (const { B, ms, prompt, scores } of legStats) {
+    if (!ms.length) {
+      console.log(`  ${B}f: no successful calls (model likely rejected ${B} images)`)
+      continue
+    }
+    const perCall = mean(ms)
+    const q = scores.length ? mean(scores) : null
     console.log(
-      `  CHOSEN*  (AX + downscale + vision)     ${chosenAx.toFixed(0)} ms   *AX replaces OCR, ~free`
+      `  ${B}f: ${perCall.toFixed(0)} ms/call · ${mean(prompt).toFixed(0)} prompt tok · ` +
+        `${(perCall / base).toFixed(2)}× a single call · ` +
+        `per-frame ${(perCall / B).toFixed(0)} ms · ${(base / (perCall / B)).toFixed(2)}× throughput vs 1-by-1` +
+        (q != null ? ` · Q ${q.toFixed(2)}/5${baseQ != null ? ` (${(q - baseQ >= 0 ? '+' : '') + (q - baseQ).toFixed(2)} vs single)` : ''} (n=${scores.length})` : '')
     )
-    if (DO_FULL && S.vfull.length)
-      console.log(`  (vision on FULL-res image             ${mean(S.vfull).toFixed(0)} ms)`)
-    console.log(
-      `\n  image size: ${kb(mean(sizes.full))} full → ${kb(mean(sizes.down))} downscaled (${(mean(sizes.full) / Math.max(1, mean(sizes.down))).toFixed(1)}× smaller)`
-    )
-    console.log(
-      `  chosen* vs current: ${(chosenAx / cur).toFixed(2)}× · throughput ~${(60000 / chosenAx).toFixed(0)} frames/min`
-    )
-    console.log(
-      `  output tokens — text ${mean(out.text).toFixed(0)}, vision+text ${mean(out.vtext).toFixed(0)}`
-    )
-  } else {
-    console.log(`  throughput ~${(60000 / cur).toFixed(0)} frames/min`)
   }
   if (tmpMade) rmSync(TMP, { recursive: true, force: true })
   console.log('')

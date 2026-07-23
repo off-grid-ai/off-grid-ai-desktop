@@ -6,3 +6,12 @@
 // and what the UI shows agree. Pure constants, no imports.
 
 export const DEFAULT_CTX_SIZE = 16384
+
+// Max-output sentinel: the setting value meaning "auto" — let a reply run until the model emits its
+// natural stop (EOS) or the context window fills, rather than a fixed token cap that truncated long
+// answers. Stored as 0 (a literal 0-token cap is meaningless) and mapped to the engine's unlimited
+// (n_predict = -1) at the wire. Single source of truth for the backend and the Settings UI.
+export const MAX_TOKENS_AUTO = 0
+
+// Fresh-install / reset default for max output: auto (context is the limit, not a fixed number).
+export const DEFAULT_MAX_TOKENS = MAX_TOKENS_AUTO

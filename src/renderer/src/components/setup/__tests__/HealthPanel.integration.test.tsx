@@ -128,7 +128,12 @@ beforeAll(async () => {
       snapshots.push(snapshot)
       return snapshot
     },
-    restartComponent: async () => ({ success: true })
+    restartComponent: async () => ({ success: true }),
+    // Wire the UI button to the REAL engine teardown so the test exercises the actual unload path.
+    unloadLlmEngine: async () => {
+      const { llm } = await import('../../../../../main/llm')
+      return llm.unload()
+    }
   }
 
   const { llm } = await import('../../../../../main/llm')
@@ -210,5 +215,25 @@ describe('<HealthPanel/> production status integration', () => {
     const chat = screen.getByRole('status', { name: 'Chat model (llama-server)' })
     expect(within(chat).getByText(/engine is too old/i)).not.toBeNull()
     expect(within(chat).getByText(/gemma4/i)).not.toBeNull()
+  })
+
+  it('frees the running engine on demand — stops llama-server and releases the port (#7)', async () => {
+    cleanup() // clear the prior render in this shared-harness file
+    // Bring a healthy fixture engine up (the previous test left it broken); restart() clears pause.
+    writeHealthyEngine()
+    const { llm } = await import('../../../../../main/llm')
+    await llm.restart()
+    expect(llm.isReady()).toBe(true)
+
+    const user = userEvent.setup()
+    render(<HealthPanel />)
+    await screen.findByRole('status', { name: 'Chat model (llama-server)' })
+
+    await user.click(screen.getByRole('button', { name: 'Free engine' }))
+
+    // The REAL engine was torn down and its port reported free (portFree came back true, which
+    // required the fixture llama-server to actually exit and the port to have no live owner).
+    expect(await screen.findByText(/port freed/i)).toBeTruthy()
+    expect(llm.isReady()).toBe(false)
   })
 })

@@ -122,6 +122,71 @@ export function effectiveEngine(engine: TranscriptionEngine): TranscriptionEngin
   return resolveTranscription(engine).engine
 }
 
+export interface ActiveTranscriptionInfo {
+  /** The engine that actually runs (after the whisper fallback). */
+  engine: TranscriptionEngine
+  /** The active transcription model id/filename, or null when none is explicitly selected. */
+  modelId: string | null
+  /** Human-readable provenance, e.g. "Whisper · Whisper Medium". */
+  label: string
+}
+
+const ENGINE_LABEL: Record<TranscriptionEngine, string> = {
+  whisper: 'Whisper',
+  'whisper-resident': 'Whisper',
+  parakeet: 'Parakeet'
+}
+
+/** Pure provenance label for an ALREADY-resolved engine + active model choice. Kept pure
+ *  (no disk) so it is unit-testable; the live read below supplies the effective engine.
+ *  Single source of truth for any surface that shows "which model transcribed this" — never
+ *  re-derive the engine/model decision in the renderer. */
+export function transcriptionProvenance(
+  engine: TranscriptionEngine,
+  active: string | null,
+  entries: Array<{ id: string; name?: string; files: Array<{ name: string }> }>
+): ActiveTranscriptionInfo {
+  const entry = active
+    ? entries.find((e) => e.id === active || e.files.some((f) => f.name === active))
+    : undefined
+  const modelLabel = entry?.name ?? active ?? 'built-in'
+  return { engine, modelId: active, label: `${ENGINE_LABEL[engine]} · ${modelLabel}` }
+}
+
+/** Live provenance: the engine that would actually run for the active model, plus a display
+ *  label. Read from the same active-model source of truth the transcription path uses. */
+export function getActiveTranscriptionInfo(): ActiveTranscriptionInfo {
+  const active = getActiveModal('transcription')
+  const entries = modelsByKind('transcription')
+  const engine = effectiveEngine(engineForActiveModel(active, entries))
+  return transcriptionProvenance(engine, active, entries)
+}
+
+export interface TranscriptionModelOption {
+  /** Catalog id to activate, or null for the built-in whisper default (no explicit selection). */
+  id: string | null
+  name: string
+  active: boolean
+}
+
+/** Pure: the switchable transcription models for a picker — the built-in whisper default plus
+ *  every INSTALLED transcription catalog model — with the active one flagged. Matches the active
+ *  value by catalog id OR primary filename (active-models stores either). Selecting an option
+ *  goes through the existing setActiveModalModel('transcription', id) — this only lists. */
+export function transcriptionModelOptions(
+  active: string | null,
+  installed: Array<{ id: string; name?: string; files: Array<{ name: string }> }>
+): TranscriptionModelOption[] {
+  return [
+    { id: null, name: 'Whisper (built-in)', active: active == null },
+    ...installed.map((e) => ({
+      id: e.id,
+      name: e.name ?? e.id,
+      active: e.id === active || e.files.some((f) => f.name === active)
+    }))
+  ]
+}
+
 /** Map a chosen dictation engine + the STT residency mode to the engine to actually
  *  request. Pure. Residency only affects the whisper path: 'resident' routes whisper
  *  to the warm whisper-server ('whisper-resident'), which itself degrades to one-shot

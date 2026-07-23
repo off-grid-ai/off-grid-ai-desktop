@@ -70,6 +70,14 @@ export function computeSafeCtx(opts: {
   return Math.floor(safe / 1024) * 1024
 }
 
+/** Cap a requested context to the model's TRAINED window. Running llama.cpp with n_ctx above what
+ *  the model was trained for needs RoPE scaling and otherwise degrades/destabilizes — that is the
+ *  "above 16k it breaks" symptom. When the trained max is unknown (couldn't read the GGUF), don't
+ *  cap here (RAM clamp still applies). Pure so the ceiling rule is tested without a model file. */
+export function capContextToModel(requested: number, modelMaxCtx: number | null): number {
+  return modelMaxCtx && modelMaxCtx > 0 ? Math.min(requested, modelMaxCtx) : requested
+}
+
 /** Total on-disk size (bytes) of a model's files. */
 export function totalBytes(m: SizingModel): number {
   return (m.files ?? []).reduce((s, f) => s + (f.sizeBytes ?? 0), 0)

@@ -6,7 +6,9 @@ import {
   residentAwareEngine,
   resolveTranscription,
   catalogEngine,
-  modelsByEngine
+  modelsByEngine,
+  transcriptionProvenance,
+  transcriptionModelOptions
 } from '../select'
 import type { TranscriptionService } from '../types'
 
@@ -213,5 +215,94 @@ describe('resolveTranscription (dispatcher: residency fold + fallback)', () => {
     for (const e of ['whisper', 'parakeet', 'whisper-resident'] as const) {
       expect(resolveTranscription(e).engine).toBe(effectiveEngine(e))
     }
+  })
+})
+
+describe('transcriptionProvenance — display label for the active STT choice', () => {
+  const catalog = [
+    { id: 'whisper-medium', name: 'Whisper Medium', files: [{ name: 'ggml-medium.bin' }] },
+    { id: 'parakeet-06b', name: 'Parakeet 0.6B', files: [{ name: 'parakeet.onnx' }] }
+  ]
+
+  it('labels the engine + the catalog model name (matched by id)', () => {
+    const info = transcriptionProvenance('whisper', 'whisper-medium', catalog)
+    expect(info).toEqual({
+      engine: 'whisper',
+      modelId: 'whisper-medium',
+      label: 'Whisper · Whisper Medium'
+    })
+  })
+
+  it('matches the active model by primary FILENAME too, not just id', () => {
+    expect(transcriptionProvenance('whisper', 'ggml-medium.bin', catalog).label).toBe(
+      'Whisper · Whisper Medium'
+    )
+  })
+
+  it("labels 'whisper-resident' as Whisper (residency is not a separate product name)", () => {
+    expect(transcriptionProvenance('whisper-resident', 'whisper-medium', catalog).engine).toBe(
+      'whisper-resident'
+    )
+    expect(transcriptionProvenance('whisper-resident', 'whisper-medium', catalog).label).toBe(
+      'Whisper · Whisper Medium'
+    )
+  })
+
+  it('names Parakeet when that is the effective engine', () => {
+    expect(transcriptionProvenance('parakeet', 'parakeet-06b', catalog).label).toBe(
+      'Parakeet · Parakeet 0.6B'
+    )
+  })
+
+  it("says 'built-in' when no model is explicitly active", () => {
+    const info = transcriptionProvenance('whisper', null, catalog)
+    expect(info).toEqual({ engine: 'whisper', modelId: null, label: 'Whisper · built-in' })
+  })
+
+  it('falls back to the raw id when the active model is not in the catalog', () => {
+    expect(transcriptionProvenance('whisper', 'mystery.bin', catalog).label).toBe(
+      'Whisper · mystery.bin'
+    )
+  })
+})
+
+
+describe('transcriptionModelOptions — switchable models for the picker', () => {
+  const installed = [
+    { id: 'whisper-medium', name: 'Whisper Medium', files: [{ name: 'ggml-medium.bin' }] },
+    { id: 'parakeet-06b', name: 'Parakeet 0.6B', files: [{ name: 'parakeet.onnx' }] }
+  ]
+
+  it('always offers the built-in whisper default first', () => {
+    const opts = transcriptionModelOptions(null, [])
+    expect(opts).toEqual([{ id: null, name: 'Whisper (built-in)', active: true }])
+  })
+
+  it('lists the built-in default + every installed transcription model', () => {
+    const opts = transcriptionModelOptions('whisper-medium', installed)
+    expect(opts.map((o) => o.name)).toEqual([
+      'Whisper (built-in)',
+      'Whisper Medium',
+      'Parakeet 0.6B'
+    ])
+  })
+
+  it('flags the active model (matched by id) and only it', () => {
+    const opts = transcriptionModelOptions('whisper-medium', installed)
+    expect(opts.filter((o) => o.active).map((o) => o.id)).toEqual(['whisper-medium'])
+  })
+
+  it('flags the active model matched by primary FILENAME too', () => {
+    const opts = transcriptionModelOptions('parakeet.onnx', installed)
+    expect(opts.find((o) => o.active)?.id).toBe('parakeet-06b')
+  })
+
+  it('marks built-in active only when nothing is explicitly selected', () => {
+    expect(transcriptionModelOptions(null, installed).find((o) => o.active)?.id).toBeNull()
+  })
+
+  it('falls back to the id as the name when a catalog entry has none', () => {
+    const opts = transcriptionModelOptions(null, [{ id: 'x/y', files: [{ name: 'y.bin' }] }])
+    expect(opts[1]).toEqual({ id: 'x/y', name: 'x/y', active: false })
   })
 })
