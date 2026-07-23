@@ -228,16 +228,7 @@ test('Replay moments are backed by a captured screen — connector-only moments 
 test('Replay renders every synthetic capture in chronological order with usable timestamps', async () => {
   await nav('Replay')
 
-  const capturePaths = fs
-    .readdirSync(path.join(userDataDir, 'captures'))
-    .filter((name) => /^capture-\d+\.png$/.test(name))
-    .sort((a, b) => {
-      const timestamp = (name: string): number => Number(/^capture-(\d+)\.png$/.exec(name)![1])
-      return timestamp(a) - timestamp(b)
-    })
-    .map((name) => path.join(userDataDir, 'captures', name))
-
-  const frames = await page.evaluate(async () => {
+  const dayWindow = await page.evaluate(async () => {
     const api = (
       window as unknown as { api: Record<string, (...args: unknown[]) => Promise<unknown>> }
     ).api
@@ -246,25 +237,44 @@ test('Replay renders every synthetic capture in chronological order with usable 
     const startSec = Math.floor(
       new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime() / 1000
     )
-    const replayFrames = (await api.crmReplayFrames(startSec, startSec + 86400)) as {
+    const endSec = startSec + 86400
+    const replayFrames = (await api.crmReplayFrames(startSec, endSec)) as {
       ts: number
       path: string
       app: string | null
       caption: string | null
     }[]
-    return replayFrames.map((frame) => ({
-      ...frame,
-      fullTime: new Date(frame.ts * 1000).toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit',
-        second: '2-digit'
-      }),
-      shortTime: new Date(frame.ts * 1000).toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit'
-      })
-    }))
+    return {
+      startMs: startSec * 1000,
+      endMs: endSec * 1000,
+      frames: replayFrames.map((frame) => ({
+        ...frame,
+        fullTime: new Date(frame.ts * 1000).toLocaleTimeString([], {
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit'
+        }),
+        shortTime: new Date(frame.ts * 1000).toLocaleTimeString([], {
+          hour: 'numeric',
+          minute: '2-digit'
+        })
+      }))
+    }
   })
+  const capturePaths = fs
+    .readdirSync(path.join(userDataDir, 'captures'))
+    .filter((name) => /^capture-\d+\.png$/.test(name))
+    .filter((name) => {
+      const timestamp = Number(/^capture-(\d+)\.png$/.exec(name)![1])
+      return timestamp >= dayWindow.startMs && timestamp < dayWindow.endMs
+    })
+    .sort((a, b) => {
+      const timestamp = (name: string): number => Number(/^capture-(\d+)\.png$/.exec(name)![1])
+      return timestamp(a) - timestamp(b)
+    })
+    .map((name) => path.join(userDataDir, 'captures', name))
+
+  const { frames } = dayWindow
 
   expect(frames.length).toBeGreaterThan(2)
   expect(frames.map((frame) => frame.path)).toEqual(capturePaths)
@@ -433,10 +443,19 @@ test('Start dictation renders the recording widget on the first click', async ()
   await expect(overlay.getByTitle('Stop dictation')).toBeVisible()
   await expect(overlay.getByText(/to stop/)).toBeVisible()
   await overlay.screenshot({ path: 'e2e/screenshots/pro-dictation-widget.png' })
-  const overlayClosed = overlay.waitForEvent('close')
   await overlay.getByTitle('Stop dictation').click()
-  await overlayClosed
+  await expect
+    .poll(() =>
+      app.evaluate(({ BrowserWindow }) => {
+        const window = BrowserWindow.getAllWindows().find((candidate) =>
+          candidate.webContents.getURL().includes('#dictation')
+        )
+        return window?.isVisible() ?? false
+      })
+    )
+    .toBe(false)
   await expect(page.getByRole('button', { name: 'Start dictation' })).toBeVisible()
+  await overlay.close()
 })
 
 test('Vault copy actions write username, revealed password, and URL to the OS clipboard', async () => {
