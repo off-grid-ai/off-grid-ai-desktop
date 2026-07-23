@@ -391,6 +391,24 @@ test('Search opens Replay at the selected captured moment instead of a timeline 
   ).toBeVisible()
 })
 
+test('Capture and processing share one actionable Settings detail with keyboard drill-back', async () => {
+  await nav('Settings')
+  await page.getByRole('button', { name: /Capture & processing/ }).click()
+
+  await expect(page.getByText('Pipeline: Accessibility text + local vision')).toBeVisible()
+  await expect(page.getByText('Frame queue', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Restart capture' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Re-process today/ })).toBeVisible()
+  await expect(page.getByText('Proactive delivery', { exact: true })).toBeVisible()
+  await expect(page.getByText('Model memory', { exact: true })).toBeVisible()
+  await expect(page.getByText('Processing priority', { exact: true })).toBeVisible()
+  await page.screenshot({ path: 'e2e/screenshots/pro-capture-processing.png', fullPage: true })
+
+  await page.keyboard.press('Meta+]')
+  await expect(page.getByText(/All settings/i)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Capture & processing/ })).toBeVisible()
+})
+
 test('Clipboard is unlocked in the pro build', async () => {
   await nav('Clipboard')
   await expect(page.getByText('Off Grid Pro · Available now')).toHaveCount(0)
