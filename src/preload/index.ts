@@ -709,6 +709,9 @@ const offGridApi = {
   meetingList: () => ipcRenderer.invoke('meeting:list'),
   meetingDelete: (id: number) => ipcRenderer.invoke('meeting:delete', id),
   meetingRetranscribe: (id: number) => ipcRenderer.invoke('meeting:retranscribe', id),
+  // Poll the main-owned re-transcribe status so the Meetings screen re-derives in-flight
+  // progress on mount (survives navigating away mid-run).
+  meetingRetranscribeStatus: () => ipcRenderer.invoke('meeting:retranscribe-status'),
   meetingExport: (id: number, unit: 'transcript' | 'audio' | 'video') =>
     ipcRenderer.invoke('meeting:export', id, unit),
   meetingActivity: (id: number) => ipcRenderer.invoke('meeting:activity', id),

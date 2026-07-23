@@ -1054,10 +1054,16 @@ export function MemoryChat({
       if (job.phase === 'running') {
         setImageGenConv(job.conversationId)
         setImgProgress(job.progress)
+        // Restore the SAME render gate the live-gen path sets (markGenerating). Without this a
+        // remount mid-generation left imageGenConv set but generatingConvs empty, so the progress
+        // panel (gated on generatingConvs) stayed invisible — the "it generated but the UI didn't
+        // show it" bug. Reattaching must reflect the whole in-flight UI, not just the owner.
+        markGenerating(job.conversationId, true)
         return
       }
       setImageGenConv((owner) => (owner === job.conversationId ? null : owner))
       setImgProgress(null)
+      markGenerating(job.conversationId, false)
     }
     const offJob = window.api.onImageGenJobState?.(observe)
     const offConversation = window.api.onImageGenConversationUpdated?.((conversationId) => {
@@ -1074,7 +1080,7 @@ export function MemoryChat({
       offJob?.()
       offConversation?.()
     }
-  }, [refreshConversationMessages])
+  }, [refreshConversationMessages, markGenerating])
 
   const loadConversations = async () => {
     try {

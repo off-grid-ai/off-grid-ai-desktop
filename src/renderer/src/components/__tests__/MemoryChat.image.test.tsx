@@ -25,7 +25,10 @@ import { render, screen, waitFor, cleanup, fireEvent, act } from '@testing-libra
 import userEvent from '@testing-library/user-event'
 import { MemoryChat } from '../MemoryChat'
 import { TooltipProvider } from '../ui/tooltip'
-import { imageMemoryGuardErrorMessage } from '../../../../shared/image-generation-contract'
+import {
+  imageMemoryGuardErrorMessage,
+  type ImageGenerationJobContract
+} from '../../../../shared/image-generation-contract'
 
 // The real app mounts MemoryChat inside a global TooltipProvider (App shell). Mirror
 // that here so the composer's tooltip-wrapped controls render — this wraps the REAL
@@ -93,10 +96,16 @@ type InstallApiOptions = {
   chatVision?: boolean
   processFile?: Mock<ProcessImage>
   ragAnswer?: string
+  /** Main-owned image job snapshot that imageGenJobStatus() reports on mount (reattach path). */
+  jobStatus?: ImageGenerationJobContract
+  /** Seed per-conversation persisted messages (getRagMessages), keyed by conversation id. */
+  messages?: Record<string, unknown[]>
 }
 
 type InstalledApi = {
   generateImage: Mock<(payload: GenPayload) => Promise<ImageResult>>
+  emitConversationUpdated: (conversationId: string) => void
+  emitJobState: (job: ImageGenerationJobContract) => void
   setActiveModalModel: Mock<(kind: string, model: string) => Promise<void>>
   toolChat: Mock<
     (...args: unknown[]) => Promise<{ answer: string; toolCalls: never[]; unified: never[] }>
@@ -127,8 +136,10 @@ function deferred<T>(): Deferred<T> {
 function installApi(opts: InstallApiOptions): InstalledApi {
   const settings: Record<string, unknown> = { ...(opts.settings ?? {}) }
   const conversations = [...(opts.conversations ?? [])]
-  const messages = new Map<string, unknown[]>()
+  const messages = new Map<string, unknown[]>(Object.entries(opts.messages ?? {}))
   let progress: ((value: ImageProgress) => void) | null = null
+  let jobStateCb: ((job: ImageGenerationJobContract) => void) | null = null
+  let convUpdatedCb: ((conversationId: string) => void) | null = null
   const generateImage = vi.fn<(payload: GenPayload) => Promise<ImageResult>>(
     opts.generate ??
       (async (payload: GenPayload) => ({
@@ -179,6 +190,33 @@ function installApi(opts: InstallApiOptions): InstalledApi {
         progress = null
       }
     }),
+    // --- main-owned image job (the reattach-on-remount path) ---
+    imageGenJobStatus: vi.fn(
+      async (): Promise<ImageGenerationJobContract> =>
+        opts.jobStatus ?? {
+          id: null,
+          phase: 'idle',
+          conversationId: null,
+          projectId: null,
+          progress: null,
+          outputPath: null,
+          error: null,
+          startedAt: null,
+          finishedAt: null
+        }
+    ),
+    onImageGenJobState: vi.fn((cb: (job: ImageGenerationJobContract) => void) => {
+      jobStateCb = cb
+      return () => {
+        jobStateCb = null
+      }
+    }),
+    onImageGenConversationUpdated: vi.fn((cb: (conversationId: string) => void) => {
+      convUpdatedCb = cb
+      return () => {
+        convUpdatedCb = null
+      }
+    }),
     // --- conversation + persistence seams touched by the send path ---
     getRagConversations: vi.fn(async () => conversations.map((item) => ({ ...item }))),
     getRagConversation: vi.fn(async (id: string) => conversations.find((item) => item.id === id)),
@@ -225,6 +263,12 @@ function installApi(opts: InstallApiOptions): InstalledApi {
     ragChat,
     emitProgress(value: ImageProgress): void {
       progress?.(value)
+    },
+    emitConversationUpdated(conversationId: string): void {
+      convUpdatedCb?.(conversationId)
+    },
+    emitJobState(job: ImageGenerationJobContract): void {
+      jobStateCb?.(job)
     }
   }
 }
@@ -314,6 +358,47 @@ describe('<MemoryChat/> image mode — the generateImage payload is the terminal
     // Bug (b): the composer binds to the shared owner. On mount it reads active; a
     // dropdown change writes through setActiveModalModel (asserted in the next test).
     expect(setActiveModalModel).toBeTruthy()
+  })
+
+  it('reattaches an in-flight image job on remount and shows the progress panel (survives navigation)', async () => {
+    // A job was started, then the user left the Chat screen and came back → MemoryChat remounts.
+    // Main still reports the job running for this conversation; the fresh mount must re-derive the
+    // VISIBLE in-flight UI (the progress panel), not just the internal owner. Regresses the
+    // "it generated but the UI didn't show it" bug: reattach restores generatingConvs (the panel's
+    // render gate), not only imageGenConv. Delete the markGenerating call in observe() → this fails.
+    const conv: TestConversation = {
+      id: 'c-img',
+      title: 'Aurora',
+      project_id: null,
+      created_at: '2026-07-17T00:00:00.000Z',
+      updated_at: '2026-07-17T00:00:00.000Z',
+      message_count: 0
+    }
+    installApi({
+      active: FULL,
+      models: [FULL],
+      conversations: [conv],
+      // The user already sent the prompt before navigating away, so the conversation has a turn.
+      messages: { 'c-img': [{ id: 1, role: 'user', content: 'a glass observatory under an aurora' }] },
+      jobStatus: {
+        id: 'job-1',
+        phase: 'running',
+        conversationId: 'c-img',
+        projectId: null,
+        progress: { step: 3, total: 20, secPerStep: 1 },
+        outputPath: null,
+        error: null,
+        startedAt: 1,
+        finishedAt: null
+      }
+    })
+    renderChat({ conversationId: 'c-img' })
+
+    // The in-flight progress panel (gated on generatingConvs) renders with the live step counter —
+    // proving the remount re-derived the whole in-flight UI from main, not a blank screen.
+    // Delete the markGenerating(...) call in the reattach observe() → generatingConvs stays empty
+    // → this panel never renders → the test goes red (the "generated but UI didn't show it" bug).
+    expect(await screen.findByText('Step 3/20')).toBeTruthy()
   })
 
   it('picking a different model in the dropdown routes through setActiveModalModel and reaches the payload', async () => {
