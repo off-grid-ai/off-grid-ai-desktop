@@ -579,7 +579,9 @@ export async function toolChat(
       tools,
       toolChoice: 'auto',
       temperature: 0.3,
-      maxTokens: 1024,
+      // No hardcoded output cap: the round that produces the FINAL answer (no tool calls) must be
+      // free to write a long response. Inherit the user's Max-output setting (auto by default →
+      // until EOS / window fills). A tool-selection round stays short on its own (it emits a call).
       thinking: opts.thinking,
       signal: opts.signal
     })
@@ -665,7 +667,8 @@ export async function toolChat(
   }
   const final = await llm.streamChat(messages, onDelta, {
     temperature: 0.3,
-    maxTokens: 1024,
+    // Forced final answer — inherit the user's Max-output setting (auto by default), never a fixed
+    // 1024 cap that truncated the response mid-sentence.
     thinking: false,
     signal: opts.signal
   })
