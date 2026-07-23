@@ -46,19 +46,20 @@ test.afterAll(async () => {
   fs.rmSync(userDataDir, { recursive: true, force: true })
 })
 
-test('meeting detail shows the STT engine + model provenance', async () => {
+test('meeting detail exposes the STT model picker (view + change)', async () => {
   await page.getByRole('button', { name: 'Meetings', exact: true }).first().click()
   await page.waitForTimeout(800)
-  // Open the first seeded meeting (its transcript reveals the provenance line).
+  // Open the first seeded meeting so the detail (with the transcription controls) renders.
   const firstMeeting = page.locator('[class*="cursor-pointer"]').filter({ hasText: /·/ }).first()
   if (await firstMeeting.isVisible().catch(() => false)) {
     await firstMeeting.click().catch(() => {})
   }
   await page.waitForTimeout(600)
-  // Provenance is read from the core transcription source of truth and shown by the transcript.
-  const provenance = page.getByTitle(/Speech-to-text engine and model/)
-  await expect(provenance).toBeVisible({ timeout: 8000 })
-  await expect(provenance).toContainText('on device')
-  await expect(provenance).toContainText(/Whisper|Parakeet/)
-  await page.screenshot({ path: 'e2e/screenshots/meeting-transcription-provenance.png' })
+  // The model picker is read from the core transcription source of truth and lets the user see
+  // (and change) which STT model transcribes meetings — always visible on the detail.
+  const picker = page.getByLabel('Transcription model')
+  await expect(picker).toBeVisible({ timeout: 8000 })
+  // At minimum the built-in whisper default is offered (installed models add more in a real profile).
+  await expect(picker).toContainText(/Whisper/)
+  await page.screenshot({ path: 'e2e/screenshots/meeting-transcription-picker.png' })
 })

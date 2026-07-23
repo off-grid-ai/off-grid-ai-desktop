@@ -162,6 +162,31 @@ export function getActiveTranscriptionInfo(): ActiveTranscriptionInfo {
   return transcriptionProvenance(engine, active, entries)
 }
 
+export interface TranscriptionModelOption {
+  /** Catalog id to activate, or null for the built-in whisper default (no explicit selection). */
+  id: string | null
+  name: string
+  active: boolean
+}
+
+/** Pure: the switchable transcription models for a picker — the built-in whisper default plus
+ *  every INSTALLED transcription catalog model — with the active one flagged. Matches the active
+ *  value by catalog id OR primary filename (active-models stores either). Selecting an option
+ *  goes through the existing setActiveModalModel('transcription', id) — this only lists. */
+export function transcriptionModelOptions(
+  active: string | null,
+  installed: Array<{ id: string; name?: string; files: Array<{ name: string }> }>
+): TranscriptionModelOption[] {
+  return [
+    { id: null, name: 'Whisper (built-in)', active: active == null },
+    ...installed.map((e) => ({
+      id: e.id,
+      name: e.name ?? e.id,
+      active: e.id === active || e.files.some((f) => f.name === active)
+    }))
+  ]
+}
+
 /** Map a chosen dictation engine + the STT residency mode to the engine to actually
  *  request. Pure. Residency only affects the whisper path: 'resident' routes whisper
  *  to the warm whisper-server ('whisper-resident'), which itself degrades to one-shot

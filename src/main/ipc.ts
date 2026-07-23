@@ -1975,10 +1975,24 @@ export function setupIPC() {
     return skillsDir()
   })
 
-  // Which STT engine + model would run right now (provenance for meeting/voice surfaces).
+  // Which STT engine + model would run right now (provenance) + the installed transcription
+  // models a picker can switch to (via the existing models:set-active-modal — this only lists).
   ipcMain.handle('transcription:active-info', async () => {
-    const { getActiveTranscriptionInfo } = await import('./transcription/select')
-    return getActiveTranscriptionInfo()
+    const { getActiveTranscriptionInfo, transcriptionModelOptions } = await import(
+      './transcription/select'
+    )
+    const { listInstalled } = await import('./models-manager')
+    const { modelsByKind } = await import('@offgrid/models')
+    const info = getActiveTranscriptionInfo()
+    const installedIds = new Set(await listInstalled())
+    const installed = (
+      modelsByKind('transcription') as Array<{
+        id: string
+        name?: string
+        files: Array<{ name: string }>
+      }>
+    ).filter((entry) => installedIds.has(entry.id))
+    return { ...info, options: transcriptionModelOptions(info.modelId, installed) }
   })
 
   // --- Voice input (STT via the active engine: whisper default / Parakeet opt-in) ---

@@ -473,11 +473,13 @@ const offGridApi = {
   // --- Voice input (speech-to-text via whisper) ---
   transcribeAudio: (audio: ArrayBuffer | Uint8Array, ext?: string) =>
     ipcRenderer.invoke('voice:transcribe', audio, ext),
-  // Provenance: which STT engine + model would run right now (shown on meeting/voice surfaces).
+  // Provenance + picker options: which STT engine + model would run right now, and the installed
+  // transcription models a picker can switch to (switch via setActiveModalModel('transcription')).
   getTranscriptionInfo: (): Promise<{
     engine: 'whisper' | 'parakeet' | 'whisper-resident'
     modelId: string | null
     label: string
+    options: { id: string | null; name: string; active: boolean }[]
   }> => ipcRenderer.invoke('transcription:active-info'),
 
   // --- Voice output (text-to-speech via Kokoro) ---
