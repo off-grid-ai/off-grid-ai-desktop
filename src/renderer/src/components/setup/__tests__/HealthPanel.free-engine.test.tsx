@@ -7,7 +7,7 @@
 // (which needs :8439 free, so it's CI-only when a dev app is running).
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import type { SystemHealthContract } from '../../../../../shared/ipc-contracts'
 import { HealthPanel } from '../HealthPanel'
 

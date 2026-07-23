@@ -10,3 +10,13 @@
 export function resolveMaxTokens(requested: number | undefined, setting: number): number {
   return requested ?? setting
 }
+
+// Re-exported from the shared defaults so main + renderer agree on the "auto" sentinel (0).
+export { MAX_TOKENS_AUTO } from '../../shared/llm-defaults'
+
+/** Convert a resolved max-output value to what llama-server expects: a positive number is a hard
+ *  cap; auto (<= 0) becomes n_predict = -1 (generate until EOS / the window is exhausted). This is
+ *  why max output is no longer the limiting factor — context is. */
+export function maxTokensForWire(resolved: number): number {
+  return resolved > 0 ? resolved : -1
+}

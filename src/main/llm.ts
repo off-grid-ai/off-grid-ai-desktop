@@ -14,7 +14,7 @@ import {
   type KvCacheType,
   type PerformanceMode
 } from './model-sizing'
-import { resolveMaxTokens } from './llm/gen-params'
+import { resolveMaxTokens, maxTokensForWire, MAX_TOKENS_AUTO } from './llm/gen-params'
 import { classifyLlamaError, modelPortConflictReason } from './llama-error'
 import type { ManagedRuntime } from './runtime-manager'
 import { LLAMA_SERVER_PORT } from '../shared/ports'
@@ -111,7 +111,9 @@ export class LLMService {
   private topK: number | undefined
   private minP: number | undefined
   private repeatPenalty: number | undefined
-  private maxTokens = 2048
+  // Auto by default: a reply runs until the model stops (EOS) or the window fills, instead of a
+  // fixed 2048-token cap that truncated long answers regardless of the (large) context window.
+  private maxTokens = MAX_TOKENS_AUTO
   private systemPrompt = ''
   // Resource-usage preset. Governs the RAM budget the context clamp targets and
   // the default ctx/KV preset. 'balanced' preserves prior behavior.
@@ -885,7 +887,7 @@ export class LLMService {
           const messages = buildMessages(message, this.decodeImages(images), this.systemPrompt)
           const payload: Record<string, unknown> = {
             messages: messages,
-            max_tokens: resolveMaxTokens(maxTokens, this.maxTokens),
+            max_tokens: maxTokensForWire(resolveMaxTokens(maxTokens, this.maxTokens)),
             temperature: opts.temperature ?? this.temperature,
             ...this.samplingPayload()
           }
@@ -950,7 +952,7 @@ export class LLMService {
       const resolvedMaxTokens = resolveMaxTokens(maxTokens, this.maxTokens)
       const payload: Record<string, unknown> = {
         messages,
-        max_tokens: resolvedMaxTokens,
+        max_tokens: maxTokensForWire(resolvedMaxTokens),
         temperature: opts.temperature ?? this.temperature,
         ...this.samplingPayload(),
         stream: true,
@@ -997,7 +999,7 @@ export class LLMService {
       await this.ensureReady()
       const payload: Record<string, unknown> = {
         messages,
-        max_tokens: resolveMaxTokens(opts.maxTokens, this.maxTokens),
+        max_tokens: maxTokensForWire(resolveMaxTokens(opts.maxTokens, this.maxTokens)),
         temperature: opts.temperature ?? this.temperature,
         ...this.samplingPayload(),
         stream: true,
