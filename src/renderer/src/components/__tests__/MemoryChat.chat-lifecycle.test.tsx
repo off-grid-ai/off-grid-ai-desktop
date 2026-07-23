@@ -146,6 +146,20 @@ describe('<MemoryChat/> - chat lifecycle integration (#36-#42, #47-#48)', () => 
     expect(screen.getByRole('button', { name: 'Speak' })).toBeTruthy()
   })
 
+  it('sends markdown with a reference definition to speech without crashing', async () => {
+    const boundary = new ChatBoundary()
+    boundary.messages['conversation-b']![0]!.content =
+      'Read this answer.\n\n[private-source]: https://secret.invalid/token'
+    installBoundary(boundary)
+    const user = userEvent.setup()
+    renderChat({ conversationId: 'conversation-b' })
+
+    await user.click(await screen.findByRole('button', { name: 'Speak' }))
+
+    await waitFor(() => expect(boundary.speechTurns).toHaveLength(1))
+    expect(boundary.api.speak).toHaveBeenCalledWith('Read this answer.')
+  })
+
   it('streams and persists the first local reply in one assistant bubble (#32)', async () => {
     const boundary = new ChatBoundary()
     installBoundary(boundary)
