@@ -4287,7 +4287,9 @@ export function MemoryChat({
                   />
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-2 px-2.5 pb-2.5 pt-1">
-                  <div className="flex min-w-0 items-center gap-2">
+                  {/* Chips wrap to a new line on narrow widths instead of overflowing the composer
+                      (the Image chip used to clip off the right edge). */}
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {/* "+" menu — attach / image / project / tools */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
