@@ -292,6 +292,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 }
               >
                 <select
+                  aria-label="Max output"
                   value={s.maxTokens ?? MAX_OUTPUT_AUTO}
                   onChange={(e) => set({ maxTokens: Number(e.target.value) })}
                   className="w-full rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-neutral-200 outline-none focus:border-green-500"
@@ -309,6 +310,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 hint={contextWindowHint(s)}
               >
                 <select
+                  aria-label="Context window"
                   value={s.ctxSize ?? DEFAULT_CTX_SIZE}
                   onChange={(e) => set({ ctxSize: Number(e.target.value) })}
                   className="w-full rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-neutral-200 outline-none focus:border-green-500"
