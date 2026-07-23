@@ -19,19 +19,18 @@
     "allowUnreachableCode": false,
     // Guard every array/record access (see tsconfig.node.json).
     "noUncheckedIndexedAccess": true,
-    "baseUrl": ".",
     "paths": {
       "@renderer/*": [
-        "src/renderer/src/*"
+        "./src/renderer/src/*"
       ],
       "@/*": [
-        "src/renderer/src/*"
+        "./src/renderer/src/*"
       ],
       "@offgrid/core/*": [
-        "src/*"
+        "./src/*"
       ],
       "@offgrid/pro/*": [
-        "src/bootstrap/proStub.ts"
+        "./src/bootstrap/proStub.ts"
       ]
     }
   }

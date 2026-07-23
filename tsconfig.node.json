@@ -13,10 +13,9 @@
     // condition stops flagging as "unnecessary". Whole tree guarded before enabling.
     "noUncheckedIndexedAccess": true,
     "types": ["electron-vite/node"],
-    "baseUrl": ".",
     "paths": {
-      "@offgrid/core/*": ["src/*"],
-      "@offgrid/pro/*": ["src/bootstrap/proStub.ts"]
+      "@offgrid/core/*": ["./src/*"],
+      "@offgrid/pro/*": ["./src/bootstrap/proStub.ts"]
     }
   }
 }
