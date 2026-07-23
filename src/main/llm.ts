@@ -1096,8 +1096,8 @@ export class LLMService {
         }
       }
       const pending = this.initPromise
-      if (!pending) {
-        break
+      if (pending === null) {
+        break // no in-flight init to race with — done
       }
       await pending.catch(() => {}) // let the in-flight spawn finish, then loop to kill it
     }
