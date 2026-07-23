@@ -74,16 +74,26 @@ export function streamCompletion(
     // must detach its abort listener — otherwise handlers accumulate on the shared
     // signal for the loop's lifetime. cleanup() runs on every terminal path.
     let onAbort: (() => void) | null = null
+    let idleTimer: ReturnType<typeof setTimeout>
     const cleanup = (): void => {
-      clearTimeout(timer)
+      clearTimeout(idleTimer)
       if (onAbort && opts.signal) opts.signal.removeEventListener('abort', onAbort)
     }
-    const timer = setTimeout(() => {
-      timedOut = true
-      cleanup()
-      req.destroy()
-      reject(new Error('LLM request timed out'))
-    }, opts.timeoutMs)
+    // IDLE timeout, re-armed on every chunk — NOT a total-duration cap. A long but healthy stream
+    // (output is no longer capped at 1024, so a real answer can run for minutes) must never be killed
+    // while tokens keep flowing; only a genuinely stalled/hung generation (no data for opts.timeoutMs)
+    // times out. This was previously a single total-duration timer that killed long responses
+    // mid-stream the moment output was uncapped ("LLM request timed out" at ~5 min).
+    const armIdleTimer = (): void => {
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        timedOut = true
+        cleanup()
+        req.destroy()
+        reject(new Error('LLM request timed out'))
+      }, opts.timeoutMs)
+    }
+    armIdleTimer()
 
     const req = http.request(modelRequestOptions(port, Buffer.byteLength(body)), (res) => {
       if (res.statusCode !== 200) {
@@ -105,6 +115,7 @@ export function streamCompletion(
       }
       res.setEncoding('utf8')
       res.on('data', (chunk: string) => {
+        armIdleTimer() // progress: reset the idle timeout on every chunk so a long stream survives
         buf += chunk
         let nl: number
         while ((nl = buf.indexOf('\n')) >= 0) {

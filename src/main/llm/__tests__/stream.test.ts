@@ -141,6 +141,41 @@ describe('streamCompletion', () => {
     )
   })
 
+  it('does NOT time out a long stream that keeps making progress (idle timeout, not total)', async () => {
+    // Drip chunks for LONGER than timeoutMs, but with each gap SHORTER than it. A total-duration
+    // timer would kill this mid-stream (the "LLM request timed out at ~5 min" bug once output was
+    // uncapped); the idle timer re-arms on every chunk, so a healthy long stream completes.
+    const parts = ['Hel', 'lo', ', ', 'wor', 'ld', '!']
+    const port = await serve((res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      let i = 0
+      const tick = (): void => {
+        if (i < parts.length) {
+          res.write(sse({ content: parts[i++] }))
+          setTimeout(tick, 80) // gap (80ms) < timeoutMs; total drip (~480ms) > timeoutMs
+        } else {
+          res.write('data: [DONE]\n')
+          res.end()
+        }
+      }
+      tick()
+    })
+    const out = await streamCompletion(port, '{}', () => {}, { timeoutMs: 250 })
+    expect(out.content).toBe('Hello, world!')
+  })
+
+  it('times out when the stream STALLS mid-response (no data for the idle window)', async () => {
+    // First chunk arrives, then silence — the idle timer fires after timeoutMs of no progress.
+    const port = await serve((res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write(sse({ content: 'partial…' }))
+      /* then nothing: never write again, never end */
+    })
+    await expect(streamCompletion(port, '{}', () => {}, { timeoutMs: 120 })).rejects.toThrow(
+      /timed out/
+    )
+  })
+
   it('resolves with whatever streamed so far when the caller aborts mid-stream', async () => {
     const port = await serve((res) => {
       res.writeHead(200)
