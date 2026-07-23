@@ -311,6 +311,12 @@ describe('database.ts - entities and facts', () => {
     const ids = forSession.map((e) => e.id)
     expect(ids).toContain(a)
     expect(ids).toContain(b)
+    expect(
+      forSession.every(
+        (entity) => typeof (entity as { fact_count?: unknown }).fact_count === 'number'
+      )
+    ).toBe(true)
+    expect(forSession.every((entity) => !('session_count' in entity))).toBe(true)
   })
 })
 

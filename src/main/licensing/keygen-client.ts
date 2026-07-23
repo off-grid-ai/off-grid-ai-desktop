@@ -29,6 +29,20 @@ type ValidationCode =
   | 'NOT_FOUND'
   | 'UNKNOWN'
 
+const VALIDATION_CODES = new Set<ValidationCode>([
+  'VALID',
+  'NO_MACHINE',
+  'NO_MACHINES',
+  'TOO_MANY_MACHINES',
+  'FINGERPRINT_SCOPE_MISMATCH',
+  'EXPIRED',
+  'SUSPENDED',
+  'BANNED',
+  'OVERDUE',
+  'NOT_FOUND',
+  'UNKNOWN'
+])
+
 export interface KeygenLicense {
   id: string
   expiry: string | null // ISO timestamp, or null for a perpetual (lifetime) key
@@ -96,9 +110,14 @@ export function toLicense(data: unknown): KeygenLicense | null {
 export function parseValidateResult(body: unknown): ValidateResult {
   const document = objectValue(body)
   const meta = objectValue(document?.meta)
+  const responseCode = stringValue(meta?.code)
+  const code =
+    responseCode && VALIDATION_CODES.has(responseCode as ValidationCode)
+      ? (responseCode as ValidationCode)
+      : 'UNKNOWN'
   return {
     valid: meta?.valid === true,
-    code: (stringValue(meta?.code) ?? 'UNKNOWN') as ValidationCode,
+    code,
     license: toLicense(document?.data)
   }
 }

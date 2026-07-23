@@ -88,8 +88,8 @@ interface ChatSessionRecord {
 interface SessionMemoryRecord {
   id: number
   content: string
-  raw_text?: string
-  source_app: string
+  raw_text: string | null
+  source_app: string | null
   session_id: string
   created_at: string
 }

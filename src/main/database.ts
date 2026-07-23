@@ -778,14 +778,21 @@ export function rebuildEntityEdgesForAllSessions(): void {
   rebuildEntityEdgesFromMentions()
 }
 
-export interface EntityListRecord {
+export interface EntityRecord {
   id: number
   name: string
   type: string
   summary: string | null
   updated_at: string
+}
+
+export interface EntityListRecord extends EntityRecord {
   fact_count: number
   session_count: number
+}
+
+export interface SessionEntityRecord extends EntityRecord {
+  fact_count: number
 }
 
 export interface EntityFactRecord {
@@ -796,7 +803,7 @@ export interface EntityFactRecord {
 }
 
 export interface EntityDetailsRecord {
-  entity: (EntityListRecord & Record<string, unknown>) | undefined
+  entity: (EntityRecord & Record<string, unknown>) | undefined
   facts: EntityFactRecord[]
 }
 
@@ -849,7 +856,7 @@ export function getEntities(appName?: string): EntityListRecord[] {
 export function getEntityDetails(entityId: number, appName?: string): EntityDetailsRecord {
   const db = getDB()
   const entity = db.prepare('SELECT * FROM entities WHERE id = ?').get(entityId) as
-    | (EntityListRecord & Record<string, unknown>)
+    | (EntityRecord & Record<string, unknown>)
     | undefined
 
   let factsQuery = `
@@ -869,7 +876,7 @@ export function getEntityDetails(entityId: number, appName?: string): EntityDeta
   return { entity, facts }
 }
 
-export function getEntitiesForSession(sessionId: string): EntityListRecord[] {
+export function getEntitiesForSession(sessionId: string): SessionEntityRecord[] {
   const db = getDB()
   const stmt = db.prepare(`
       SELECT e.id, e.name, e.type, e.summary, e.updated_at,
@@ -881,7 +888,7 @@ export function getEntitiesForSession(sessionId: string): EntityListRecord[] {
       GROUP BY e.id
       ORDER BY e.updated_at DESC
     `)
-  return stmt.all(sessionId) as EntityListRecord[]
+  return stmt.all(sessionId) as SessionEntityRecord[]
 }
 
 export function getEntityGraph(
