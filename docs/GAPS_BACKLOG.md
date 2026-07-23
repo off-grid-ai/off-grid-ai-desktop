@@ -88,3 +88,16 @@ server exercises content/reasoning/tool-calls/abort/timeout). The double intent-
 route "draw …" away from the tool was also closed (`shouldAutoRouteImage` suppresses the renderer
 auto-route when the agentic path owns the turn; `image-intent.test.ts` + `MemoryChat.image.test.tsx`
 assert tools-ON → `toolChat`, not a direct `generateImage`).
+
+## Deferred from PR #60 review (CodeRabbit)
+
+- **bench-capture.mjs — `downscale()` failure aborts the whole run.** A corrupt/unreadable frame
+  throws out of the batch/single loops instead of being skipped. Dev-only benchmark tool (not
+  shipped), so fail-fast is acceptable; wrap `downscale()` to skip a bad frame if it becomes a
+  nuisance. (PR #60, scripts/bench-capture.mjs:212)
+- **Transcription provenance label on a cross-family engine fallback.** `getActiveTranscriptionInfo`
+  pairs the resolved effective engine with the pre-fallback active model id, so a rare
+  parakeet→whisper fallback would label "Whisper · <parakeet model>". The common fallback
+  (whisper-resident→whisper) keeps the model name valid; the cross-family case is rare. Fix:
+  reflect the actually-run model when `effectiveEngine !== engineForActiveModel`. (PR #60,
+  src/main/transcription/select.ts:153)
