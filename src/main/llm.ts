@@ -207,7 +207,8 @@ export class LLMService {
 
   private safeCtxSize(requestedRaw: number): number {
     // First cap to the model's trained window (pure), THEN clamp to what RAM can hold.
-    const requested = capContextToModel(requestedRaw, this.trainedContext())
+    const trained = this.trainedContext()
+    const requested = capContextToModel(requestedRaw, trained)
     try {
       const totalGb = os.totalmem() / 1e9
       let weightsGb = 0
@@ -235,10 +236,12 @@ export class LLMService {
           `[LLMService] Clamping context ${requested} -> ${rounded} (RAM ${totalGb.toFixed(0)}GB, weights ${weightsGb.toFixed(1)}GB) to avoid memory overcommit`
         )
       }
-      return rounded
+      // computeSafeCtx has a 2048-token floor (Math.max(2048, …)); re-cap to the trained window so a
+      // model trained BELOW that floor (e.g. 1024) is never run past its context.
+      return capContextToModel(rounded, trained)
     } catch {
       // If anything goes wrong reading sizes, fall back to a universally-safe value.
-      return Math.min(requested, 8192)
+      return capContextToModel(Math.min(requested, 8192), trained)
     }
   }
 
@@ -1056,30 +1059,47 @@ export class LLMService {
    * bound to the port. Awaitable so the UI (and app-quit) can confirm the port is free — this is
    * the fix for "the engine can't be unloaded without a force-quit / reboot" that blocked LM Studio.
    */
-  async unload(): Promise<{ outcome: TeardownOutcome; portFree: boolean }> {
-    const proc = this.server
-    // Block auto-respawn and image-pause resume while we tear down.
-    this.intentionalStop = true
-    this.paused = true
-    let outcome: TeardownOutcome = 'already-dead'
-    if (proc) {
-      outcome = await terminateEngine(
-        {
-          isAlive: () => proc.exitCode === null && proc.signalCode === null,
-          sendSignal: (sig) => {
-            try {
-              proc.kill(sig)
-            } catch {
-              /* already gone */
-            }
-          },
-          waitForExit: (ms) => this.waitForProcExit(proc, ms)
+  /** SIGTERM→SIGKILL a specific process and wait for it to actually exit. Rechecks liveness inside
+   *  terminateEngine so a race with natural exit doesn't mislabel the outcome. */
+  private terminateProc(proc: ChildProcess): Promise<TeardownOutcome> {
+    return terminateEngine(
+      {
+        isAlive: () => proc.exitCode === null && proc.signalCode === null,
+        sendSignal: (sig) => {
+          try {
+            proc.kill(sig)
+          } catch {
+            /* already gone */
+          }
         },
-        ENGINE_TEARDOWN_GRACE_MS
-      )
-    }
-    if (this.server === proc) {
-      this.server = null
+        waitForExit: (ms) => this.waitForProcExit(proc, ms)
+      },
+      ENGINE_TEARDOWN_GRACE_MS
+    )
+  }
+
+  async unload(): Promise<{ outcome: TeardownOutcome; portFree: boolean }> {
+    this.paused = true // stop the on-demand respawn path from warming a new server mid-teardown
+    let outcome: TeardownOutcome = 'already-dead'
+    // Terminate the current engine AND any that an in-flight init assigns after our snapshot: an
+    // init() that entered _doInit but hasn't set this.server yet would otherwise survive. Await the
+    // pending init, then tear down whatever it spawned. Re-assert intentionalStop each round because
+    // _doInit clears it when it adopts a fresh process. Bounded so a pathological respawn storm
+    // can't loop forever.
+    for (let round = 0; round < 4; round++) {
+      this.intentionalStop = true
+      const proc = this.server
+      if (proc) {
+        outcome = await this.terminateProc(proc)
+        if (this.server === proc) {
+          this.server = null
+        }
+      }
+      const pending = this.initPromise
+      if (!pending) {
+        break
+      }
+      await pending.catch(() => {}) // let the in-flight spawn finish, then loop to kill it
     }
     this.initialized = false
     // Safety net: reap any llama-server WE own still holding the port (a forked/stuck child).

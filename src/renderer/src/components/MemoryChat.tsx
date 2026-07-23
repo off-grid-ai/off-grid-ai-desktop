@@ -1033,6 +1033,9 @@ export function MemoryChat({
   const justSwitched = useRef(false)
   useEffect(() => {
     justSwitched.current = true
+    // A fresh conversation opens pinned to the bottom: reset the follow flag so a scroll-up in the
+    // PREVIOUS chat doesn't leave the new one refusing to auto-scroll its stream.
+    followBottomRef.current = true
   }, [activeConversationId])
   useEffect(() => {
     if (!justSwitched.current || !messages.length) return

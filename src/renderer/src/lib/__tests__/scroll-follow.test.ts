@@ -16,6 +16,13 @@ describe('scroll-follow', () => {
     expect(shouldFollowBottom({ scrollHeight: 1000, scrollTop: 700, clientHeight: 200 })).toBe(true)
   })
 
+  it('follows at EXACTLY the threshold (<= boundary)', () => {
+    // Distance == FOLLOW_THRESHOLD_PX: production uses <=, so equality must still follow.
+    const m = { scrollHeight: 1000, scrollTop: 800 - FOLLOW_THRESHOLD_PX, clientHeight: 200 }
+    expect(distanceFromBottom(m)).toBe(FOLLOW_THRESHOLD_PX)
+    expect(shouldFollowBottom(m)).toBe(true)
+  })
+
   it('stops following once the user scrolls up past the threshold', () => {
     // 500px up — the user is reading; a token must NOT yank them down.
     expect(shouldFollowBottom({ scrollHeight: 1000, scrollTop: 300, clientHeight: 200 })).toBe(false)

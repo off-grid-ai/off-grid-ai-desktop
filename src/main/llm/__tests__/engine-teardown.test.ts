@@ -45,6 +45,23 @@ describe('terminateEngine — SIGTERM → SIGKILL escalation (fakes)', () => {
     expect(await terminateEngine(fx, 10)).toBe('stuck')
     expect(signals).toEqual(['SIGTERM', 'SIGKILL'])
   })
+
+  it('does NOT SIGKILL when the process exits during the grace wait (recheck wins)', async () => {
+    // waitForExit races and returns false, but the process actually died — isAlive is false on the
+    // recheck, so no SIGKILL is sent and it is reported graceful, not forced.
+    const signals: string[] = []
+    let alive = true
+    const fx = {
+      isAlive: () => alive,
+      sendSignal: (s: 'SIGTERM' | 'SIGKILL') => signals.push(s),
+      waitForExit: async () => {
+        alive = false // it exited right as the wait timed out
+        return false
+      }
+    }
+    expect(await terminateEngine(fx, 10)).toBe('graceful')
+    expect(signals).toEqual(['SIGTERM']) // no SIGKILL
+  })
 })
 
 // Real-process integration: prove the escalation actually reaps an OS process — including one that

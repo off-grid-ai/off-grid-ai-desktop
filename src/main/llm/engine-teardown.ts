@@ -40,9 +40,14 @@ export async function terminateEngine(
   if (await fx.waitForExit(graceMs)) {
     return 'graceful'
   }
+  // The wait can race with a clean exit; recheck before escalating so we don't SIGKILL a process
+  // that already died (and don't mislabel it 'forced').
+  if (!fx.isAlive()) {
+    return 'graceful'
+  }
   fx.sendSignal('SIGKILL')
   if (await fx.waitForExit(graceMs)) {
     return 'forced'
   }
-  return 'stuck'
+  return fx.isAlive() ? 'stuck' : 'forced'
 }

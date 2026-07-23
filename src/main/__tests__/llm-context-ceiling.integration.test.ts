@@ -91,6 +91,16 @@ describe('LLMService context ceiling from GGUF', () => {
     expect(svc.effectiveContextSize()).toBe(16384)
   })
 
+  it('caps BELOW the RAM-clamp floor for a model trained under 2048 tokens', () => {
+    // computeSafeCtx has a 2048-token floor; a model trained to only 1024 must still be capped to
+    // 1024, never run at 2048 (the RAM floor must not exceed the trained ceiling).
+    writeGguf(path.join(TMP, 'models', 'tiny.gguf'), 'llama', 1024)
+    activate('tiny.gguf')
+    const svc = new LLMService()
+    expect(svc.modelMaxContext()).toBe(1024)
+    expect(svc.effectiveContextSize()).toBe(1024)
+  })
+
   it('reports an unknown max (null) and applies no model cap when the GGUF is unreadable', () => {
     activate('does-not-exist.gguf')
     const svc = new LLMService()

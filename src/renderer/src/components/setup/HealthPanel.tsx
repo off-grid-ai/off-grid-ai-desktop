@@ -80,7 +80,7 @@ export function HealthPanel(): React.ReactElement {
       const r = await api.unloadLlmEngine()
       setFreeMsg(
         r.portFree
-          ? 'Chat engine stopped — port freed.'
+          ? 'Chat engine stopped - port freed.'
           : "Chat engine stopped, but the port is still held (another app may own it, or it's wedged)."
       )
       await refresh()
@@ -104,7 +104,7 @@ export function HealthPanel(): React.ReactElement {
             title="Stop the chat engine and free its model port (for LM Studio or another tool) without quitting the app"
             className="text-[11px] text-neutral-500 transition-colors hover:text-white active:scale-95 disabled:opacity-50"
           >
-            {freeing ? 'Freeing…' : 'Free engine'}
+            {freeing ? 'Freeing...' : 'Free engine'}
           </button>
           <button
             onClick={refresh}

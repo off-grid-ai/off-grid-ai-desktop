@@ -35,7 +35,7 @@ export function contextWindowHint(opts: {
 }): string {
   const { ctxSize, effectiveCtxSize, modelMaxCtx } = opts
   if (modelMaxCtx && modelMaxCtx > 0 && ctxSize && ctxSize > modelMaxCtx) {
-    return `Capped to this model's trained ${asK(modelMaxCtx)} window — it wasn't trained to go higher.`
+    return `Capped to this model's trained ${asK(modelMaxCtx)} window - it wasn't trained to go higher.`
   }
   if (effectiveCtxSize && ctxSize && effectiveCtxSize < ctxSize) {
     return `Clamped to ${asK(effectiveCtxSize)} for your RAM (a larger value would risk a memory-overcommit freeze). Quantize the KV cache below to raise this.`
