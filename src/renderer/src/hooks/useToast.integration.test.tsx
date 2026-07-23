@@ -10,6 +10,9 @@ function ToastTrigger(): React.ReactElement {
   return (
     <>
       <button onClick={() => showToast({ message: 'Saved locally' })}>Show toast</button>
+      <button onClick={() => showToast({ message: 'Nothing changed', tone: 'neutral' })}>
+        Show neutral toast
+      </button>
       <button
         onClick={() =>
           showToast({
@@ -58,5 +61,19 @@ describe('ToastProvider', () => {
     await user.click(within(alert).getByRole('button', { name: 'Retry' }))
     expect(screen.queryByText('Could not save locally')).toBeNull()
     expect(screen.getByRole('status').textContent).toContain('Saved after retry')
+  })
+
+  it('announces neutral information without presenting it as success', async () => {
+    const user = userEvent.setup()
+    render(
+      <ToastProvider>
+        <ToastTrigger />
+      </ToastProvider>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Show neutral toast' }))
+    const status = screen.getByRole('status')
+    expect(status.textContent).toContain('Nothing changed')
+    expect(status.getAttribute('data-tone')).toBe('neutral')
   })
 })

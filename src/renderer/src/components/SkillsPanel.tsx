@@ -36,16 +36,22 @@ function flattenTrigger(
   if (!t) return { triggerKind: '', triggerConfig: '', action: '', connectors: true }
   const action = typeof full.action === 'string' ? full.action : ''
   const connectors = full.connectors !== false
-  if (t.kind === 'schedule')
+  if (t.kind === 'schedule' && typeof t.at === 'string')
     return { triggerKind: 'schedule', triggerConfig: t.at, action, connectors }
-  if (t.kind === 'keyword')
+  if (
+    t.kind === 'keyword' &&
+    Array.isArray(t.keywords) &&
+    t.keywords.every((k) => typeof k === 'string')
+  )
     return {
       triggerKind: 'keyword',
       triggerConfig: t.keywords.join(', '),
       action,
       connectors
     }
-  return { triggerKind: 'event', triggerConfig: t.on, action, connectors }
+  if (t.kind === 'event' && (t.on === 'calendar' || t.on === 'approval'))
+    return { triggerKind: 'event', triggerConfig: t.on, action, connectors }
+  return { triggerKind: '', triggerConfig: '', action: '', connectors: true }
 }
 
 function buildTrigger(

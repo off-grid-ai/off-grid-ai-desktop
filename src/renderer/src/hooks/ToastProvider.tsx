@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react'
-import { IconAlertCircle, IconCheck, IconInfoCircle, IconX } from '@tabler/icons-react'
+import { CheckIcon, InfoIcon, WarningCircleIcon, XIcon } from '@phosphor-icons/react'
 import { ToastContext, type ToastContextType } from './useToast'
 
 // Transient top-right toast with an optional action (e.g. Undo). Distinct from
@@ -49,14 +49,15 @@ export function ToastProvider({ children }: { children: ReactNode }): React.Reac
           <div
             key={toast.id}
             role={toast.tone === 'error' ? 'alert' : 'status'}
+            data-tone={toast.tone}
             className="pointer-events-auto flex items-center gap-3 rounded-md border border-neutral-800 bg-neutral-900/95 px-3.5 py-2 font-mono text-xs text-neutral-200 shadow-xl backdrop-blur"
           >
             {toast.tone === 'error' ? (
-              <IconAlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+              <WarningCircleIcon className="h-4 w-4 shrink-0 text-red-400" />
             ) : toast.tone === 'neutral' ? (
-              <IconInfoCircle className="h-4 w-4 shrink-0 text-neutral-400" />
+              <InfoIcon className="h-4 w-4 shrink-0 text-neutral-400" />
             ) : (
-              <IconCheck className="h-4 w-4 shrink-0 text-green-500" />
+              <CheckIcon className="h-4 w-4 shrink-0 text-green-500" />
             )}
             <span className="max-w-[22rem] truncate">{toast.message}</span>
             {toast.actionLabel && toast.onAction && (
@@ -75,7 +76,7 @@ export function ToastProvider({ children }: { children: ReactNode }): React.Reac
               aria-label="Dismiss"
               className="shrink-0 text-neutral-600 hover:text-neutral-300"
             >
-              <IconX className="h-3.5 w-3.5" />
+              <XIcon className="h-3.5 w-3.5" />
             </button>
           </div>
         ))}
