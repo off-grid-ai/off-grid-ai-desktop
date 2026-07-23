@@ -21,6 +21,7 @@ import {
   checkOverrideSurvival,
   contextLadder,
   loadAttempts,
+  capContextToModel,
   OVERRIDE_SURVIVAL_FLOOR_GB,
   type SizingModel
 } from '../model-sizing'
@@ -28,6 +29,22 @@ import {
 const GB = 1e9
 // A 16GB Mac reports ~17.18 GB from os.totalmem()/1e9.
 const MAC_16 = 17.18
+
+describe('capContextToModel — the trained-window ceiling', () => {
+  it('caps a request above the model trained max down to it (the ">16k breaks" fix)', () => {
+    expect(capContextToModel(65536, 32768)).toBe(32768)
+  })
+  it('leaves a request at or below the trained max untouched', () => {
+    expect(capContextToModel(16384, 131072)).toBe(16384)
+    expect(capContextToModel(131072, 131072)).toBe(131072)
+  })
+  it('does not cap when the trained max is unknown (null) — RAM clamp still applies elsewhere', () => {
+    expect(capContextToModel(65536, null)).toBe(65536)
+  })
+  it('ignores a non-positive trained max', () => {
+    expect(capContextToModel(8192, 0)).toBe(8192)
+  })
+})
 
 describe('computeSafeCtx — the freeze fix', () => {
   it('clamps the 8B-on-16GB case to the value we shipped (21504, not 64K)', () => {

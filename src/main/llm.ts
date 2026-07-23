@@ -10,6 +10,7 @@ import {
   computeSafeCtx,
   modeBudget,
   loadAttempts,
+  capContextToModel,
   type KvCacheType,
   type PerformanceMode
 } from './model-sizing'
@@ -27,6 +28,7 @@ import {
 } from './llm/settings-math'
 import { buildMessages, imageMime, thinkingPayload, type DecodedImage } from './llm/chat-payload'
 import { isValidGgufFile } from './models/gguf'
+import { readGgufContextLength } from './models/gguf-metadata'
 import { postCompletionOnce } from './llm/http-post'
 import { streamCompletion, type StreamResult } from './llm/stream'
 
@@ -65,6 +67,11 @@ export class LLMService {
   private initPromise: Promise<void> | null = null
   private modelPath = ''
   private mmProjPath = '' // empty for text-only models (no vision projector)
+  // The model's TRAINED context window (from GGUF metadata), memoized per model path. Used as the
+  // ceiling so a user can run up to the model's own limit (like LM Studio) instead of an arbitrary
+  // cap — and so we never exceed the trained window, which is what "breaks above 16k". null = unknown.
+  private modelMaxCtx: number | null = null
+  private modelMaxCtxFor = ''
   private initialized = false
   // A model selection is durable as soon as the manager writes active-model.json, but
   // replacing llama-server while it is answering destroys the user's in-flight turn.
@@ -174,7 +181,26 @@ export class LLMService {
   // KV budget from total RAM minus the model weights minus headroom for the OS,
   // Electron, and Metal compute, then cap context to fit. Better a shorter context
   // than a hard freeze; users on big machines still get a large window (it scales).
-  private safeCtxSize(requested: number): number {
+  /** The current model's trained context window (GGUF `<arch>.context_length`), memoized per model
+   *  path so we read the file's header at most once per model. null when it can't be determined
+   *  (unreadable file / missing key) — in which case only the RAM clamp applies. */
+  private trainedContext(): number | null {
+    if (this.modelMaxCtxFor !== this.modelPath) {
+      this.modelMaxCtx = this.modelPath ? readGgufContextLength(this.modelPath, fs) : null
+      this.modelMaxCtxFor = this.modelPath
+    }
+    return this.modelMaxCtx
+  }
+
+  /** The model's trained context window, or null if unknown — exposed so the UI can offer the
+   *  slider up to the model's own maximum instead of a hardcoded cap. */
+  modelMaxContext(): number | null {
+    return this.trainedContext()
+  }
+
+  private safeCtxSize(requestedRaw: number): number {
+    // First cap to the model's trained window (pure), THEN clamp to what RAM can hold.
+    const requested = capContextToModel(requestedRaw, this.trainedContext())
     try {
       const totalGb = os.totalmem() / 1e9
       let weightsGb = 0
@@ -231,9 +257,11 @@ export class LLMService {
       threads: this.threads,
       batchSize: this.batchSize,
       performanceMode: this.performanceMode,
-      // Report the EFFECTIVE (clamped) context so the UI can show what's really used.
-      effectiveCtxSize: this.safeCtxSize(this.ctxSize)
-    } as LlmSettings & { effectiveCtxSize: number }
+      // Report the EFFECTIVE (clamped) context so the UI can show what's really used, plus the
+      // model's trained maximum so the UI can offer the slider up to it (not a hardcoded cap).
+      effectiveCtxSize: this.safeCtxSize(this.ctxSize),
+      modelMaxCtx: this.trainedContext()
+    } as LlmSettings & { effectiveCtxSize: number; modelMaxCtx: number | null }
   }
 
   /** The exact argv handed to `llama-server` for the CURRENT settings — the terminal
