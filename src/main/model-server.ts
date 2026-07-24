@@ -930,7 +930,7 @@ async function handleImageEdit(
 }
 
 // ─── Server ──────────────────────────────────────────────────────────────────
-/** The port the gateway actually bound. Falls back off GATEWAY_PORT when it's taken (a 2nd Off Grid
+/** The port the gateway actually bound. Falls back off GATEWAY_PORT when it's taken (a 2nd Off Grid AI Desktop
  *  instance); consumers (setup health ping, the Gateway UI) must read this LIVE value. */
 let boundGatewayPort = GATEWAY_PORT
 export function getGatewayPort(): number {
@@ -1220,15 +1220,39 @@ export async function startModelServer(port = GATEWAY_PORT): Promise<void> {
   server.headersTimeout = 0 // no cap on time-to-headers
   server.keepAliveTimeout = 60_000
 
-  server.on('error', (e) => console.error('[model-server]', e))
   // The gateway has no authentication. Bind the socket itself to loopback so no
   // route can become LAN-accessible through a missing per-handler authorization check.
-  server.listen(boundGatewayPort, GATEWAY_HOST, () => {
-    console.log(
-      `[model-server] multimodal gateway at http://${GATEWAY_HOST}:${boundGatewayPort}/v1`
-    )
-  })
-  startingGateway = false
+  // Resolve only AFTER the socket actually binds; a bind failure must reject and clear state so
+  // callers (which .catch it) can surface the failure and a later restart can retry — rather than a
+  // resolved promise leaving a dead `server` set forever and IPC reporting a false success.
+  const listening = server
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (e: Error): void => {
+        listening.removeListener('listening', onListening)
+        reject(e)
+      }
+      const onListening = (): void => {
+        listening.removeListener('error', onError)
+        // Hand ongoing runtime errors to the logger now that startup succeeded.
+        listening.on('error', (e) => console.error('[model-server]', e))
+        console.log(
+          `[model-server] multimodal gateway at http://${GATEWAY_HOST}:${boundGatewayPort}/v1`
+        )
+        resolve()
+      }
+      listening.once('error', onError)
+      listening.once('listening', onListening)
+      listening.listen(boundGatewayPort, GATEWAY_HOST)
+    })
+  } catch (e) {
+    // Bind failed — drop the dead server and reset so a retry starts clean.
+    server = null
+    boundGatewayPort = GATEWAY_PORT
+    throw e
+  } finally {
+    startingGateway = false
+  }
 }
 
 export function stopModelServer(): void {

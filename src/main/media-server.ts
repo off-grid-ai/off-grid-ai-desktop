@@ -68,7 +68,7 @@ export class LoopbackMediaServer {
   }
 
   private async listenOnFreePort(): Promise<void> {
-    // The preferred media port (MEDIA_PORT) may be taken by another Off Grid instance; scan upward
+    // The preferred media port (MEDIA_PORT) may be taken by another Off Grid AI Desktop instance; scan upward
     // for a free one. requestedPort 0 = let the OS assign (tests) — inherently free. urlFor() serves
     // the LIVE boundPort, so downstream links follow wherever it bound.
     const target =

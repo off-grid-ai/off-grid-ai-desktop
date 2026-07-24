@@ -57,11 +57,19 @@ describe('model-server.ts — the gateway itself falls back off a held port', ()
   it('scans for a free gateway port with pickFreePort before listening', () => {
     expect(src).toMatch(/boundGatewayPort = \(await pickFreePort\(port\)\)/)
     // It binds the LIVE chosen port, not the fixed GATEWAY_PORT constant.
-    expect(src).toMatch(/server\.listen\(boundGatewayPort/)
+    expect(src).toMatch(/\.listen\(boundGatewayPort/)
   })
 
   it('exposes the live gateway port via getGatewayPort()', () => {
     expect(src).toMatch(/getGatewayPort\(\): number\s*{\s*return boundGatewayPort/)
+  })
+
+  it('startup resolves only after bind and rejects (clearing state) on a bind error', () => {
+    // A bind failure must reject and drop the dead server, not resolve a false success that leaves
+    // `server` set forever. Guard the await-the-listen shape: reject on error, null the server.
+    expect(src).toMatch(/await new Promise<void>\(\(resolve, reject\)/)
+    expect(src).toMatch(/once\('listening'/)
+    expect(src).toMatch(/catch[\s\S]*?server = null[\s\S]*?throw e/)
   })
 
   it('self-report routes advertise the LIVE bound port, never the preferred param', () => {
@@ -85,6 +93,8 @@ describe('setup.ts — health pings read the LIVE ports, never fixed constants',
 
   it('pings the live gateway port via getGatewayPort(), not a GATEWAY_PORT constant', () => {
     expect(src).toMatch(/pingJson\(getGatewayPort\(\)\)/)
-    expect(src).not.toMatch(/\bLLAMA_PORT\b/)
+    // Guard the actual regression this describes: setup must not reach for the fixed gateway-port
+    // constant again (it reads the live getGatewayPort()); LLAMA_PORT was never the concern here.
+    expect(src).not.toMatch(/\bGATEWAY_PORT\b/)
   })
 })

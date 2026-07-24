@@ -1,6 +1,6 @@
 // Gradual-increment free-port fallback for the loopback services (llama-server, gateway, media).
 // The ports in shared/ports.ts are PREFERRED, not mandatory: if another app owns one (LM Studio on
-// :8439, a second Off Grid instance, anything else), we must not fight over it or dead-end — we scan
+// :8439, a second Off Grid AI Desktop instance, anything else), we must not fight over it or dead-end — we scan
 // upward (+1, +2, …) for the first free port and bind there. The candidate math is pure (unit-
 // tested); the socket probe is injected so selection is testable without real sockets.
 
