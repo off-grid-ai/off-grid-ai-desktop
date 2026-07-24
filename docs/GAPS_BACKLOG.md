@@ -118,3 +118,22 @@ assert tools-ON → `toolChat`, not a direct `generateImage`).
 - **Re-transcribe on a 2nd meeting while one runs silently no-ops.** Global single-flight is
   intentional (one local whisper); UX follow-up = disable the button / show "another run active"
   when busy for a different meeting. (MeetingsScreen.tsx:160)
+
+## e2e gate: graduate from advisory → blocking
+
+The Playwright e2e is wired into CI (own `e2e` job) and pre-push, but **advisory** (non-blocking)
+for now. Two things block making it a hard gate:
+
+1. **Model-dependent specs don't all self-skip.** `meeting-transcription` (STT picker),
+   `settings-residency` ("chat stays required"), and a couple of others need a real model/engine and
+   fail on the fresh e2e profile. Only `functional-real-engine` + voice/tts self-skip today. Add the
+   same `test.skip(!HAVE_MODEL, …)` guard to every spec that requires a model so a model-free run is
+   green.
+2. **Headless-Electron flakiness in CI.** First clean CI run: 49 passed / 6 skipped / 15 failed, the
+   15 dominated by `electronApplication.waitForEvent('window')` timeouts + "page/context closed"
+   under xvfb. Needs stabilizing: `--no-sandbox` (set), plus GPU (`--disable-gpu` /
+   `--use-gl=swiftshader`) in the Playwright electron launch args, and per-spec retries.
+
+Once (1) + (2) hold and a clean run is green, flip the CI `e2e` step and the pre-push e2e from
+advisory to blocking. No product regressions are known — the local/real-display run's only failures
+traced to a running app / no-model profile.
