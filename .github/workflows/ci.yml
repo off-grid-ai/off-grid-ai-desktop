@@ -95,3 +95,18 @@ jobs:
         timeout-minutes: 8
         continue-on-error: true
         run: npm run lint
+      # Full Playwright e2e tour on the built app. Specs that need real models/engine binaries
+      # (functional-real-engine, voice/tts real audio) self-skip when those aren't present — they
+      # are not in CI — so this gates the model-free surfaces: onboarding, nav, Settings, Models,
+      # Replay (incl. the capture toggle), Integrations (BYO Google), and the capture control. This
+      # is the one gate the unit/integration suite can't give: does the built app actually render.
+      - name: E2E (Playwright)
+        timeout-minutes: 20
+        run: npm run test:e2e
+      - name: Upload e2e screenshots
+        if: always()
+        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4
+        with:
+          name: e2e-screenshots
+          path: e2e/screenshots/
+          if-no-files-found: ignore

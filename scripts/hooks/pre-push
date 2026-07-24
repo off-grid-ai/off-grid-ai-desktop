@@ -28,6 +28,35 @@ if ! npm run --silent test:coverage; then
 fi
 echo "[pre-push] coverage gate passed."
 
+# Full Playwright e2e on the built app — the one gate the unit/integration suite can't give:
+# does the built app actually render + drive its surfaces. Specs needing real models/engine binaries
+# self-skip when absent, so this runs the model-free tour (onboarding, nav, Settings, Models,
+# Replay + capture toggle, Integrations).
+#
+# CONDITIONAL: the e2e boots its own app on a fresh profile and the smoke specs assert against the
+# fixed engine ports (:8439 llama, :7878 gateway). If ANOTHER Off Grid app is already running (the
+# installed app, or `npm run dev`), it holds those ports — the e2e app correctly falls back to a
+# free port (that's the whole feature), but the port-pinned smoke specs then hit the wrong instance
+# and false-fail. So skip the e2e gate when the ports are occupied and let CI (clean env) be the
+# authority; run it locally only when nothing else holds them. Bypass entirely with OFFGRID_SKIP_E2E=1.
+port_busy() { lsof -ti tcp:"$1" >/dev/null 2>&1; }
+if [ "${OFFGRID_SKIP_E2E:-0}" = "1" ]; then
+  echo "[pre-push] e2e gate — skipped (OFFGRID_SKIP_E2E=1); CI still runs it."
+elif port_busy 8439 || port_busy 7878; then
+  echo "[pre-push] e2e gate — SKIPPED: an Off Grid app holds :8439/:7878, so a clean e2e can't run"
+  echo "[pre-push] here (the fresh-profile app would fall back off those ports and the port-pinned"
+  echo "[pre-push] smoke specs would false-fail). CI runs the full e2e in a clean environment."
+else
+  echo "[pre-push] e2e gate — npm run test:e2e"
+  if ! npm run --silent test:e2e; then
+    echo ""
+    echo "[pre-push] BLOCKED: e2e failed. The built app broke a surface unit/integration can't see."
+    echo "[pre-push] Inspect e2e/screenshots + the Playwright output above; fix before pushing."
+    exit 1
+  fi
+  echo "[pre-push] e2e gate passed."
+fi
+
 # The gold-standard hygiene adoption has LANDED on this branch: prettier is applied repo-wide
 # (enforced by eslint's prettier/prettier rule) and the structural rules (curly / complexity /
 # max-lines / max-params / no-shadow …) are a warn ratchet in eslint.config.mjs. No standing
