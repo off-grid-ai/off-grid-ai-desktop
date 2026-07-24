@@ -34,7 +34,8 @@ import { embeddings } from './embeddings'
 import { docsText, docsHtml, openApiSpec } from './api-docs'
 import { handleMcpRequest } from './mcp-server'
 import { llm, type LlmSettings } from './llm'
-import { LLAMA_SERVER_PORT, GATEWAY_HOST, GATEWAY_PORT } from '../shared/ports'
+import { GATEWAY_HOST, GATEWAY_PORT } from '../shared/ports'
+import { pickFreePort } from './free-port'
 import { retryWithDeadline } from './lib/retry'
 import { resolveDims } from './model-server/dimensions'
 import { guardProxyStreams } from './stream-guards'
@@ -56,7 +57,10 @@ import { safeProxyResponse } from './model-server/proxy-response'
 import { writeDiagnosticLog } from './diagnostics-log'
 
 const UPSTREAM_HOST = '127.0.0.1'
-const UPSTREAM_PORT = LLAMA_SERVER_PORT // bundled llama-server (see llm.ts)
+// The upstream llama-server port is LIVE, not fixed: llm.getPort() moves off LLAMA_SERVER_PORT when
+// another app owns it (see llm.prepareModelPort). Read it per-request so the gateway always proxies
+// to wherever the engine actually bound. (LLAMA_SERVER_PORT stays the PREFERRED default in llm.)
+const upstreamPort = (): number => llm.getPort()
 const MAX_UPLOAD = 200 * 1024 * 1024 // 200MB upload cap (audio / init image)
 
 let server: http.Server | null = null
@@ -197,7 +201,7 @@ function proxyToLlama(
   bodyOverride?: Buffer,
   retryUntil = 0
 ): void {
-  const headers = { ...req.headers, host: `${UPSTREAM_HOST}:${UPSTREAM_PORT}` }
+  const headers = { ...req.headers, host: `${UPSTREAM_HOST}:${upstreamPort()}` }
   if (bodyOverride) {
     headers['content-length'] = String(bodyOverride.length)
     delete headers['transfer-encoding']
@@ -209,7 +213,7 @@ function proxyToLlama(
       const proxyReq = http.request(
         {
           hostname: UPSTREAM_HOST,
-          port: UPSTREAM_PORT,
+          port: upstreamPort(),
           path: req.url,
           method: req.method,
           headers
@@ -381,7 +385,7 @@ function callLlamaJson(bodyObj: Record<string, unknown>, retryUntil: number): Pr
       const upstream = http.request(
         {
           hostname: UPSTREAM_HOST,
-          port: UPSTREAM_PORT,
+          port: upstreamPort(),
           path: '/v1/chat/completions',
           method: 'POST',
           headers: { 'content-type': 'application/json', 'content-length': String(payload.length) }
@@ -535,7 +539,7 @@ async function handleEmbeddings(
 function fetchUpstreamModels(): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
     const r = http.request(
-      { hostname: UPSTREAM_HOST, port: UPSTREAM_PORT, path: '/v1/models', method: 'GET' },
+      { hostname: UPSTREAM_HOST, port: upstreamPort(), path: '/v1/models', method: 'GET' },
       (pr) => {
         let b = ''
         pr.on('data', (d) => (b += d))
@@ -926,9 +930,20 @@ async function handleImageEdit(
 }
 
 // ─── Server ──────────────────────────────────────────────────────────────────
-/** Start the unified local model gateway. Bound to loopback (local-only). */
-export function startModelServer(port = GATEWAY_PORT): void {
-  if (server) return
+/** The port the gateway actually bound. Falls back off GATEWAY_PORT when it's taken (a 2nd Off Grid
+ *  instance); consumers (setup health ping, the Gateway UI) must read this LIVE value. */
+let boundGatewayPort = GATEWAY_PORT
+export function getGatewayPort(): number {
+  return boundGatewayPort
+}
+let startingGateway = false
+
+/** Start the unified local model gateway. Bound to loopback (local-only). Async because it scans
+ *  for a free port when the preferred one is taken. */
+export async function startModelServer(port = GATEWAY_PORT): Promise<void> {
+  if (server || startingGateway) return
+  startingGateway = true
+  boundGatewayPort = (await pickFreePort(port)) ?? port
 
   server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -987,9 +1002,9 @@ export function startModelServer(port = GATEWAY_PORT): void {
       json(res, 200, {
         name: 'Off Grid AI — local model gateway',
         openai_compatible: true,
-        base_url: `http://${GATEWAY_HOST}:${port}/v1`,
-        docs: `http://${GATEWAY_HOST}:${port}/docs`,
-        mcp: `http://${GATEWAY_HOST}:${port}/mcp`,
+        base_url: `http://${GATEWAY_HOST}:${boundGatewayPort}/v1`,
+        docs: `http://${GATEWAY_HOST}:${boundGatewayPort}/docs`,
+        mcp: `http://${GATEWAY_HOST}:${boundGatewayPort}/mcp`,
         modalities,
         image_models: img.models,
         image_reason: img.available ? undefined : img.reason
@@ -1000,7 +1015,7 @@ export function startModelServer(port = GATEWAY_PORT): void {
     if (url === '/openapi.json') {
       const img = imageGenStatus()
       const modalities = await liveGatewayModalities(img.available)
-      json(res, 200, openApiSpec(port, modalities, img.models))
+      json(res, 200, openApiSpec(boundGatewayPort, modalities, img.models))
       return
     }
 
@@ -1009,10 +1024,10 @@ export function startModelServer(port = GATEWAY_PORT): void {
       const wantsHtml = (req.headers.accept || '').includes('text/html')
       if (wantsHtml) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(docsHtml(port))
+        res.end(docsHtml(boundGatewayPort))
       } else {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-        res.end(docsText(port))
+        res.end(docsText(boundGatewayPort))
       }
       return
     }
@@ -1033,7 +1048,7 @@ export function startModelServer(port = GATEWAY_PORT): void {
           'POST /v1/images/generations',
           'POST /v1/images/edits'
         ],
-        docs: `http://${GATEWAY_HOST}:${port}/docs`
+        docs: `http://${GATEWAY_HOST}:${boundGatewayPort}/docs`
       })
       return
     }
@@ -1208,9 +1223,12 @@ export function startModelServer(port = GATEWAY_PORT): void {
   server.on('error', (e) => console.error('[model-server]', e))
   // The gateway has no authentication. Bind the socket itself to loopback so no
   // route can become LAN-accessible through a missing per-handler authorization check.
-  server.listen(port, GATEWAY_HOST, () => {
-    console.log(`[model-server] multimodal gateway at http://${GATEWAY_HOST}:${port}/v1`)
+  server.listen(boundGatewayPort, GATEWAY_HOST, () => {
+    console.log(
+      `[model-server] multimodal gateway at http://${GATEWAY_HOST}:${boundGatewayPort}/v1`
+    )
   })
+  startingGateway = false
 }
 
 export function stopModelServer(): void {

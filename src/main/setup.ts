@@ -17,7 +17,7 @@ import {
   setActiveModel,
   setActiveModalChoice
 } from './models-manager'
-import { LLAMA_SERVER_PORT, GATEWAY_PORT } from '../shared/ports'
+import { getGatewayPort } from './model-server'
 import { deviceNoun } from '../shared/device'
 import type {
   SystemHealthComponentContract,
@@ -50,7 +50,6 @@ export interface SetupProgress {
 }
 export type SetupProgressCb = (p: SetupProgress) => void
 
-const LLAMA_PORT = LLAMA_SERVER_PORT
 
 /** GET a localhost endpoint, parse JSON, with a short timeout. null on any failure. */
 function pingJson(port: number, path = '/health', timeoutMs = 1500): Promise<unknown | null> {
@@ -92,8 +91,8 @@ export async function getSystemHealth(): Promise<SystemHealth> {
 
   // Live probes (run in parallel): the chat server and the gateway.
   const [llamaHealth, gatewayHealth] = await Promise.all([
-    pingJson(LLAMA_PORT),
-    pingJson(GATEWAY_PORT)
+    pingJson(llm.getPort()),
+    pingJson(getGatewayPort())
   ])
 
   // Image generation is checked in-process (no HTTP) so it works even if the
@@ -134,7 +133,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
       label: 'Chat model (llama-server)',
       status: chat,
       detail: chatDetail,
-      port: LLAMA_PORT,
+      port: llm.getPort(),
       canRestart: modelsExist
     },
     {
@@ -142,7 +141,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
       label: 'Local gateway',
       status: gatewayHealth ? 'ready' : 'down',
       detail: gatewayHealth ? 'OpenAI-compatible API' : 'Not responding',
-      port: GATEWAY_PORT,
+      port: getGatewayPort(),
       canRestart: true
     },
     {
@@ -403,7 +402,7 @@ export async function autoConfigure(
   }
 
   emit({ phase: 'verify', message: 'Verifying…', modelId: model.id, modelName: model.name })
-  const ok = !!(await pingJson(LLAMA_PORT, '/health', 3000))
+  const ok = !!(await pingJson(llm.getPort(), '/health', 3000))
 
   // Chat is live — now set up the rest of the baseline (speech-to-text, text-to-
   // speech, and image outside Conservative). These are best-effort: a failure here

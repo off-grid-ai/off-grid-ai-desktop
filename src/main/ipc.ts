@@ -1652,7 +1652,9 @@ export function setupIPC() {
       } catch {
         /* not running */
       }
-      startModelServer() // re-listens; if the port is held by a non-Off-Grid process it logs and no-ops
+      // re-listens; falls back to a free port if the preferred one is held. Async, so catch a
+      // rejection on the promise rather than leaving it unhandled.
+      startModelServer().catch((e) => console.error('[model-server] restart failed', e))
       return { success: true }
     }
     return { success: false, error: `cannot restart "${id}"` }
@@ -1984,9 +1986,8 @@ export function setupIPC() {
   // Which STT engine + model would run right now (provenance) + the installed transcription
   // models a picker can switch to (via the existing models:set-active-modal — this only lists).
   ipcMain.handle('transcription:active-info', async () => {
-    const { getActiveTranscriptionInfo, transcriptionModelOptions } = await import(
-      './transcription/select'
-    )
+    const { getActiveTranscriptionInfo, transcriptionModelOptions } =
+      await import('./transcription/select')
     const { listInstalled } = await import('./models-manager')
     const { modelsByKind } = await import('@offgrid/models')
     const info = getActiveTranscriptionInfo()
