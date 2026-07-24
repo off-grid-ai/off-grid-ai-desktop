@@ -83,6 +83,22 @@ test('capture Settings — model pipeline controls', async () => {
   await shot('settings-model-pipeline')
 })
 
+test('capture Settings — capture opt-in control', async () => {
+  // Task 1 (capture is explicit opt-in per device). The platform-conditional DEFAULT is a
+  // main-process rule proven by unit + real-seam integration in desktop-pro; here we capture the
+  // user-facing surface the opt-in is controlled through — the Settings "Capture" section with its
+  // status label and pause/resume/restart controls — which is what a user sees to turn capture on.
+  await nav('Settings')
+  // The capture control lives inside the collapsed "Capture & processing" accordion — expand it.
+  const header = page.getByText('Capture & processing', { exact: false }).first()
+  if (await header.isVisible().catch(() => false)) {
+    await header.scrollIntoViewIfNeeded().catch(() => {})
+    await header.click().catch(() => {})
+    await page.waitForTimeout(600)
+  }
+  await shot('settings-capture-optin')
+})
+
 test('capture Integrations — BYO Google OAuth client setup', async () => {
   const reached = (await nav('Integrations')) || (await nav('Connectors'))
   if (!reached) {
