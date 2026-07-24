@@ -101,3 +101,16 @@ test('capture Integrations — BYO Google OAuth client setup', async () => {
   }
   await shot('integrations-byo-google-setup')
 })
+
+test('capture Replay — enable/disable capture control', async () => {
+  // Task 4: the Replay screen carries a compact enable/disable capture control in its header,
+  // sharing the same seam as the Settings Capture section (useCaptureControl).
+  const reached = await nav('Replay')
+  if (!reached) {
+    await shot('replay-not-reached')
+    return
+  }
+  const toggle = page.getByRole('button', { name: /capture/i }).first()
+  await toggle.scrollIntoViewIfNeeded().catch(() => {})
+  await shot('replay-capture-toggle')
+})
