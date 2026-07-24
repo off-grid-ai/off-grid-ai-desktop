@@ -198,11 +198,9 @@ app.whenReady().then(() => {
         /* ignore */
       }
     }
-    try {
-      void startModelServer()
-    } catch (e) {
-      console.error('[gateway] start failed', e)
-    }
+    // startModelServer is async (it scans for a free port); a try/catch can't catch its rejection,
+    // so handle it on the promise itself.
+    startModelServer().catch((e) => console.error('[gateway] start failed', e))
     void import('./llm').then(({ llm }) =>
       llm.init().catch((err) => console.error('[gateway] LLM init failed', err))
     )
@@ -329,7 +327,9 @@ app.whenReady().then(() => {
     setupIPC()
     setupRagIPC()
     setupMcpIpc() // basic MCP connectors (management + chat tool extension)
-    void startModelServer() // one OpenAI-compatible local gateway (LLM + STT); auto-picks a free port
+    // one OpenAI-compatible local gateway (LLM + STT); auto-picks a free port. Async, so handle a
+    // rejection on the promise (a try/catch around a fire-and-forget async call can't catch it).
+    startModelServer().catch((e) => console.error('[model-server] start failed', e))
     startMediaServer() // loopback HTTP for seekable local media (meeting videos)
     // Heal a stale active-model.json whose model gained a vision projector after it was
     // activated (e.g. Gemma 4 E2B) — turns vision on at launch if the projector is now
