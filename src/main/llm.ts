@@ -29,6 +29,7 @@ import {
 import { buildMessages, imageMime, thinkingPayload, type DecodedImage } from './llm/chat-payload'
 import { isValidGgufFile } from './models/gguf'
 import { readGgufContextLength } from './models/gguf-metadata'
+import { pickFreePort, isPortFree } from './free-port'
 import { postCompletionOnce } from './llm/http-post'
 import { streamCompletion, type StreamResult } from './llm/stream'
 import {
@@ -203,6 +204,13 @@ export class LLMService {
    *  slider up to the model's own maximum instead of a hardcoded cap. */
   modelMaxContext(): number | null {
     return this.trainedContext()
+  }
+
+  /** The port llama-server is actually on. Usually LLAMA_SERVER_PORT, but prepareModelPort moves it
+   *  to a free port when another app owns the preferred one — so consumers (the gateway upstream)
+   *  must read this LIVE value, never the constant. */
+  getPort(): number {
+    return this.port
   }
 
   private safeCtxSize(requestedRaw: number): number {
@@ -785,9 +793,21 @@ export class LLMService {
   private async prepareModelPort(): Promise<void> {
     const ownership = this.reapOrphansOnPort(this.port)
     if (ownership.liveOwners.length > 0) {
-      this.lastErrorMsg = modelPortConflictReason(this.port)
-      console.error(`[LLMService] ${this.lastErrorMsg}`)
-      throw new Error(this.lastErrorMsg)
+      // Another LIVE app owns our preferred port (LM Studio on :8439, a second Off Grid instance).
+      // Don't fight it or dead-end — scan upward for the next free port and move there. The gateway
+      // proxies to llm.getPort() (live), and the app talks to this.port directly, so both follow.
+      const free = await pickFreePort(this.port, (p) => isPortFree(p))
+      if (free === null) {
+        this.lastErrorMsg = modelPortConflictReason(this.port)
+        console.error(`[LLMService] ${this.lastErrorMsg}`)
+        throw new Error(this.lastErrorMsg)
+      }
+      console.warn(
+        `[LLMService] port ${this.port} is owned by another app — falling back to free port ${free}`
+      )
+      this.port = free
+      this.lastErrorMsg = null
+      return
     }
     if (ownership.killed > 0) {
       await new Promise((resolve) => setTimeout(resolve, 400))
