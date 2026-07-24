@@ -49,4 +49,22 @@ describe('isPortFree — real socket probe', () => {
       await new Promise<void>((r) => srv.close(() => r()))
     }
   })
+
+  it('starting AT a genuinely occupied port, moves to a different free port (any occupant)', async () => {
+    // This is the behaviour prepareModelPort relies on after the fix: when the preferred port is
+    // held by ANYTHING (not just a recognized llama-server), scanning from that port returns a
+    // different, free port rather than dead-ending on the occupied one. The listener here is a plain
+    // socket — exactly the NON-llama blocker the old liveOwners-only gate missed.
+    const srv = net.createServer()
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r))
+    const taken = (srv.address() as net.AddressInfo).port
+    try {
+      const chosen = await pickFreePort(taken, (p) => isPortFree(p), 50)
+      expect(chosen).not.toBeNull()
+      expect(chosen).not.toBe(taken)
+      expect(await isPortFree(chosen as number)).toBe(true)
+    } finally {
+      await new Promise<void>((r) => srv.close(() => r()))
+    }
+  })
 })

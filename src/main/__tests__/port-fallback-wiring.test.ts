@@ -23,6 +23,14 @@ describe('llm.ts — port conflict falls back to a free port', () => {
     expect(src).toMatch(/if \(free === null\)[\s\S]*?throw new Error/)
   })
 
+  it('falls back on ANY occupancy (isPortFree), not only a recognized live llama owner', () => {
+    // The decision keys on whether the port is free — so a NON-llama blocker (LM Studio, any app)
+    // triggers the fallback too, instead of dead-ending on bind. Guards against regressing to the
+    // old `liveOwners.length > 0` gate, which only caught recognized llama-server holders.
+    expect(src).toMatch(/if \(await isPortFree\(this\.port\)\)\s*{\s*return/)
+    expect(src).not.toMatch(/if \(ownership\.liveOwners\.length > 0\)/)
+  })
+
   it('exposes the live port via getPort()', () => {
     expect(src).toMatch(/getPort\(\): number\s*{\s*return this\.port/)
   })

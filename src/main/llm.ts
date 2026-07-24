@@ -791,27 +791,33 @@ export class LLMService {
   }
 
   private async prepareModelPort(): Promise<void> {
+    // Reap only a TRUE orphan of OURS (a crashed prior instance's llama-server) — that reclaims the
+    // port for reuse. Any other holder is left running.
     const ownership = this.reapOrphansOnPort(this.port)
-    if (ownership.liveOwners.length > 0) {
-      // Another LIVE app owns our preferred port (LM Studio on :8439, a second Off Grid instance).
-      // Don't fight it or dead-end — scan upward for the next free port and move there. The gateway
-      // proxies to llm.getPort() (live), and the app talks to this.port directly, so both follow.
-      const free = await pickFreePort(this.port, (p) => isPortFree(p))
-      if (free === null) {
-        this.lastErrorMsg = modelPortConflictReason(this.port)
-        console.error(`[LLMService] ${this.lastErrorMsg}`)
-        throw new Error(this.lastErrorMsg)
-      }
-      console.warn(
-        `[LLMService] port ${this.port} is owned by another app — falling back to free port ${free}`
-      )
-      this.port = free
-      this.lastErrorMsg = null
-      return
-    }
     if (ownership.killed > 0) {
+      // Let the OS release our reaped orphan's socket before we probe/bind it.
       await new Promise((resolve) => setTimeout(resolve, 400))
     }
+    // If the port is now free (nothing held it, or we reclaimed our own orphan) keep it. Otherwise
+    // it's held by SOMETHING we must not kill — another live Off Grid engine, LM Studio, or any
+    // unrelated app — so don't fight it or dead-end: scan upward for the next free port and move
+    // there. The gateway proxies to llm.getPort() (live) and the app talks to this.port directly, so
+    // both follow. (Keying on "is the port free?" rather than "is the holder a live llama?" is what
+    // lets a NON-llama blocker trigger the fallback too, instead of failing to bind.)
+    if (await isPortFree(this.port)) {
+      return
+    }
+    const free = await pickFreePort(this.port, (p) => isPortFree(p))
+    if (free === null) {
+      this.lastErrorMsg = modelPortConflictReason(this.port)
+      console.error(`[LLMService] ${this.lastErrorMsg}`)
+      throw new Error(this.lastErrorMsg)
+    }
+    console.warn(
+      `[LLMService] port ${this.port} is held by another process — falling back to free port ${free}`
+    )
+    this.port = free
+    this.lastErrorMsg = null
   }
 
   /** Auto-recover from an unexpected llama-server crash. Backs off, and on repeated
