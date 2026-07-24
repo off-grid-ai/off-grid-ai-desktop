@@ -35,6 +35,7 @@ import { docsText, docsHtml, openApiSpec } from './api-docs'
 import { handleMcpRequest } from './mcp-server'
 import { llm, type LlmSettings } from './llm'
 import { GATEWAY_HOST, GATEWAY_PORT } from '../shared/ports'
+import { pickFreePort } from './free-port'
 import { retryWithDeadline } from './lib/retry'
 import { resolveDims } from './model-server/dimensions'
 import { guardProxyStreams } from './stream-guards'
@@ -929,9 +930,20 @@ async function handleImageEdit(
 }
 
 // ─── Server ──────────────────────────────────────────────────────────────────
-/** Start the unified local model gateway. Bound to loopback (local-only). */
-export function startModelServer(port = GATEWAY_PORT): void {
-  if (server) return
+/** The port the gateway actually bound. Falls back off GATEWAY_PORT when it's taken (a 2nd Off Grid
+ *  instance); consumers (setup health ping, the Gateway UI) must read this LIVE value. */
+let boundGatewayPort = GATEWAY_PORT
+export function getGatewayPort(): number {
+  return boundGatewayPort
+}
+let startingGateway = false
+
+/** Start the unified local model gateway. Bound to loopback (local-only). Async because it scans
+ *  for a free port when the preferred one is taken. */
+export async function startModelServer(port = GATEWAY_PORT): Promise<void> {
+  if (server || startingGateway) return
+  startingGateway = true
+  boundGatewayPort = (await pickFreePort(port)) ?? port
 
   server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -1211,9 +1223,12 @@ export function startModelServer(port = GATEWAY_PORT): void {
   server.on('error', (e) => console.error('[model-server]', e))
   // The gateway has no authentication. Bind the socket itself to loopback so no
   // route can become LAN-accessible through a missing per-handler authorization check.
-  server.listen(port, GATEWAY_HOST, () => {
-    console.log(`[model-server] multimodal gateway at http://${GATEWAY_HOST}:${port}/v1`)
+  server.listen(boundGatewayPort, GATEWAY_HOST, () => {
+    console.log(
+      `[model-server] multimodal gateway at http://${GATEWAY_HOST}:${boundGatewayPort}/v1`
+    )
   })
+  startingGateway = false
 }
 
 export function stopModelServer(): void {

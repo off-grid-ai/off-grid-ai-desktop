@@ -42,3 +42,30 @@ describe('model-server.ts — gateway proxies to the LIVE engine port', () => {
     expect(src).toMatch(/port: upstreamPort\(\)/)
   })
 })
+
+describe('model-server.ts — the gateway itself falls back off a held port', () => {
+  const src = read('model-server.ts')
+
+  it('scans for a free gateway port with pickFreePort before listening', () => {
+    expect(src).toMatch(/boundGatewayPort = \(await pickFreePort\(port\)\)/)
+    // It binds the LIVE chosen port, not the fixed GATEWAY_PORT constant.
+    expect(src).toMatch(/server\.listen\(boundGatewayPort/)
+  })
+
+  it('exposes the live gateway port via getGatewayPort()', () => {
+    expect(src).toMatch(/getGatewayPort\(\): number\s*{\s*return boundGatewayPort/)
+  })
+})
+
+describe('setup.ts — health pings read the LIVE ports, never fixed constants', () => {
+  const src = read('setup.ts')
+
+  it('pings the live llama engine port via llm.getPort()', () => {
+    expect(src).toMatch(/pingJson\(llm\.getPort\(\)\)/)
+  })
+
+  it('pings the live gateway port via getGatewayPort(), not a GATEWAY_PORT constant', () => {
+    expect(src).toMatch(/pingJson\(getGatewayPort\(\)\)/)
+    expect(src).not.toMatch(/\bLLAMA_PORT\b/)
+  })
+})

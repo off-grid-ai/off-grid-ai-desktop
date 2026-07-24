@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto'
 import { app } from 'electron'
 import { parseRange, isPathAllowed } from './media-range'
 import { MEDIA_PORT } from '../shared/ports'
+import { pickFreePort } from './free-port'
 import { mimeForExt } from './mime'
 import { localMediaRoots } from './media-roots'
 
@@ -62,10 +63,19 @@ export class LoopbackMediaServer {
   start(): Promise<void> {
     if (this.boundPort > 0) return Promise.resolve()
     if (this.startPromise) return this.startPromise
+    this.startPromise = this.listenOnFreePort()
+    return this.startPromise
+  }
 
+  private async listenOnFreePort(): Promise<void> {
+    // The preferred media port (MEDIA_PORT) may be taken by another Off Grid instance; scan upward
+    // for a free one. requestedPort 0 = let the OS assign (tests) — inherently free. urlFor() serves
+    // the LIVE boundPort, so downstream links follow wherever it bound.
+    const target =
+      this.requestedPort > 0 ? ((await pickFreePort(this.requestedPort)) ?? this.requestedPort) : 0
     const candidate = http.createServer((req, res) => this.handle(req, res))
     this.server = candidate
-    this.startPromise = new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const fail = (error: Error): void => {
         if (this.server === candidate) {
           this.server = null
@@ -75,7 +85,7 @@ export class LoopbackMediaServer {
         reject(error)
       }
       candidate.once('error', fail)
-      candidate.listen(this.requestedPort, '127.0.0.1', () => {
+      candidate.listen(target, '127.0.0.1', () => {
         candidate.off('error', fail)
         candidate.on('error', (error) => console.error('[media-server]', error))
         const address = candidate.address()
@@ -89,7 +99,6 @@ export class LoopbackMediaServer {
         resolve()
       })
     })
-    return this.startPromise
   }
 
   async urlFor(absPath: string): Promise<string | null> {

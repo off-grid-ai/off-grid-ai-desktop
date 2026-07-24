@@ -1652,7 +1652,7 @@ export function setupIPC() {
       } catch {
         /* not running */
       }
-      startModelServer() // re-listens; if the port is held by a non-Off-Grid process it logs and no-ops
+      void startModelServer() // re-listens; falls back to a free port if the preferred one is held
       return { success: true }
     }
     return { success: false, error: `cannot restart "${id}"` }

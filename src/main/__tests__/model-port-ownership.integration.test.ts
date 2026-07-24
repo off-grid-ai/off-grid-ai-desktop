@@ -1,11 +1,13 @@
 /**
- * RELEASE_TEST_CHECKLIST #146 - fixed model ports are single-owner.
+ * RELEASE_TEST_CHECKLIST #146 - a held model port never dead-ends the app.
  *
  * The first owner is either the already-running healthy production llama-server or a separate
  * process launching the only fake: a behaviour-faithful native llama-server boundary on the real
- * production port. The contender is the production LLMService. Real lsof/ps parent ownership,
- * loopback HTTP, GGUF validation, model resolution, startup refusal, error classification, and
- * chat-health presentation remain real. Cleanup only owns processes this test spawned.
+ * production port. The contender is the production LLMService, which - rather than refusing when
+ * the preferred port is taken - scans upward for a free port and starts its own engine there, so
+ * the app works even when something else holds :8439. Real lsof/ps parent ownership, loopback
+ * HTTP, GGUF validation, model resolution, free-port fallback, and chat-health presentation
+ * remain real. Cleanup only owns processes this test spawned.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { execSync, spawn, type ChildProcess } from 'node:child_process'
@@ -73,10 +75,14 @@ const server = http.createServer((req, res) => {
 server.listen(port, '127.0.0.1', () => {
     const address = server.address()
     const actualPort = typeof address === 'object' && address ? address.port : port
-    fs.appendFileSync(
-      process.env.OFFGRID_TEST_ENGINE_LOG,
-      String(process.pid) + ':' + String(actualPort) + '\\n'
-    )
+    // Only the test-spawned FIRST owner sets this log; the production LLMService spawning the
+    // same binary on its fallback port does NOT, so it must not crash on a missing log path.
+    if (process.env.OFFGRID_TEST_ENGINE_LOG) {
+      fs.appendFileSync(
+        process.env.OFFGRID_TEST_ENGINE_LOG,
+        String(process.pid) + ':' + String(actualPort) + '\\n'
+      )
+    }
 })
 process.on('SIGTERM', () => server.close(() => process.exit(0)))
 `
@@ -233,7 +239,7 @@ afterAll(async () => {
 })
 
 describe('model port ownership', () => {
-  it('preserves the first live engine and explains the second-instance conflict (#146)', async () => {
+  it('preserves the first live engine and falls back to a free port for the second (#146)', async () => {
     const [{ llm }, { getSystemHealth }, { modelPortConflictReason }] = await Promise.all([
       import('../llm'),
       import('../setup'),
@@ -241,11 +247,16 @@ describe('model port ownership', () => {
     ])
     const conflict = modelPortConflictReason(LLAMA_SERVER_PORT)
 
-    await expect(llm.init()).rejects.toThrow(conflict)
-    expect(llm.isReady()).toBe(false)
-    expect(llm.isStarting()).toBe(false)
-    expect(llm.lastError()).toBe(conflict)
+    // The preferred port is held by the first live engine. Rather than dead-ending on a
+    // single-owner conflict, the second instance scans upward and starts its own engine on a
+    // free port — the app just works even when something else holds :8439.
+    await llm.init()
+    expect(llm.isReady()).toBe(true)
+    expect(llm.getPort()).not.toBe(LLAMA_SERVER_PORT)
+    // The conflict reason is NOT surfaced — we moved instead of refusing.
+    expect(llm.lastError()).not.toBe(conflict)
 
+    // The FIRST engine is untouched: still alive, still the sole owner of the preferred port.
     expect(processIsAlive(enginePid)).toBe(true)
     expect(await engineIsReady()).toBe(true)
     if (liveOwner) {
@@ -254,9 +265,14 @@ describe('model port ownership', () => {
       ])
     }
 
+    // Chat health reports UP, on the fallback port — not down with a port-conflict detail.
     const chatHealth = (await getSystemHealth()).components.find(
       (component) => component.id === 'chat'
     )
-    expect(chatHealth).toMatchObject({ status: 'down', detail: conflict, port: LLAMA_SERVER_PORT })
+    expect(chatHealth).toMatchObject({ status: 'ready', port: llm.getPort() })
+    expect(chatHealth?.detail).not.toBe(conflict)
+
+    // Tear down the second engine this test started (the first owner is cleaned up in afterAll).
+    await llm.unload()
   })
 })

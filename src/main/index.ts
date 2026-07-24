@@ -199,7 +199,7 @@ app.whenReady().then(() => {
       }
     }
     try {
-      startModelServer()
+      void startModelServer()
     } catch (e) {
       console.error('[gateway] start failed', e)
     }
@@ -329,7 +329,7 @@ app.whenReady().then(() => {
     setupIPC()
     setupRagIPC()
     setupMcpIpc() // basic MCP connectors (management + chat tool extension)
-    startModelServer() // one OpenAI-compatible local gateway on :7878 (LLM + STT)
+    void startModelServer() // one OpenAI-compatible local gateway (LLM + STT); auto-picks a free port
     startMediaServer() // loopback HTTP for seekable local media (meeting videos)
     // Heal a stale active-model.json whose model gained a vision projector after it was
     // activated (e.g. Gemma 4 E2B) — turns vision on at launch if the projector is now

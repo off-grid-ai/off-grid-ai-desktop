@@ -90,3 +90,28 @@ describe('loopback media server integration', () => {
     await expect(server.urlFor(path.join(profile, 'captures', 'missing.png'))).resolves.toBeNull()
   })
 })
+
+describe('LoopbackMediaServer — free-port fallback', () => {
+  it('binds a DIFFERENT free port when the preferred one is already taken', async () => {
+    const net = await import('node:net')
+    // Occupy a port, then ask the media server to use THAT preferred port.
+    const blocker = net.createServer()
+    await new Promise<void>((r) => blocker.listen(0, '127.0.0.1', r))
+    const taken = (blocker.address() as import('node:net').AddressInfo).port
+    const media = new LoopbackMediaServer({
+      roots: localMediaRoots(profile),
+      port: taken,
+      token: 't'
+    })
+    try {
+      await media.start()
+      // Fell back: bound a real, DIFFERENT port (not the occupied one) — and urlFor serves it.
+      const url = await media.urlFor(fixturePath('image'))
+      expect(url).toContain('http://127.0.0.1:')
+      expect(url).not.toContain(`:${taken}/`)
+    } finally {
+      await media.close()
+      await new Promise<void>((r) => blocker.close(() => r()))
+    }
+  })
+})
