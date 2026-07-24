@@ -16,6 +16,9 @@ const arg = (f, d) => {
 }
 const PORT = Number(arg('--port', '8439'))
 const REPEATS = Number(arg('--repeats', '3'))
+// A stalled connection or a never-ending stream must not hang the benchmark forever — bound each
+// request so a hang surfaces as a normal failure instead of a wedged process.
+const DEADLINE_MS = Number(arg('--deadline-ms', '120000'))
 const ENDPOINT = `http://127.0.0.1:${PORT}/v1/chat/completions`
 // Prompt-token targets standing in for a growing chat history. ~500 ≈ turn 1; 8k–32k ≈ a few
 // Auto-length answers deep. (Qwen3.5-2B trained ctx is 256K, so all fit.)
@@ -44,44 +47,58 @@ async function ttft(promptText, { unique = true } = {}) {
     chat_template_kwargs: { enable_thinking: false }
   })
   const t0 = performance.now()
-  const res = await fetch(ENDPOINT, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const reader = res.body.getReader()
-  const dec = new TextDecoder()
-  let firstAt = 0
-  let buf = ''
-  let promptTokens = 0
-  let done = false
-  while (!done) {
-    const { value, done: d } = await reader.read()
-    if (d) break
-    buf += dec.decode(value, { stream: true })
-    let nl
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).trim()
-      buf = buf.slice(nl + 1)
-      if (!line.startsWith('data:')) continue
-      const payload = line.slice(5).trim()
-      if (payload === '[DONE]') {
-        done = true
-        break
-      }
-      try {
-        const j = JSON.parse(payload)
-        const delta = j.choices?.[0]?.delta?.content
-        if (delta && firstAt === 0) firstAt = performance.now()
-        if (j.usage?.prompt_tokens) promptTokens = j.usage.prompt_tokens
-      } catch {
-        /* keepalive */
+  // Bound the whole request (connect + stream) so a stalled server can't hang the benchmark; the
+  // abort surfaces through the normal catch path in main().
+  const ac = new AbortController()
+  const deadline = setTimeout(() => ac.abort(), DEADLINE_MS)
+  try {
+    const res = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      signal: ac.signal
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let firstAt = 0
+    let buf = ''
+    let promptTokens = 0
+    let done = false
+    while (!done) {
+      const { value, done: d } = await reader.read()
+      if (d) break
+      buf += dec.decode(value, { stream: true })
+      let nl
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim()
+        buf = buf.slice(nl + 1)
+        if (!line.startsWith('data:')) continue
+        const payload = line.slice(5).trim()
+        if (payload === '[DONE]') {
+          done = true
+          break
+        }
+        try {
+          const j = JSON.parse(payload)
+          const delta = j.choices?.[0]?.delta?.content
+          if (delta && firstAt === 0) firstAt = performance.now()
+          if (j.usage?.prompt_tokens) promptTokens = j.usage.prompt_tokens
+        } catch {
+          /* keepalive */
+        }
       }
     }
+    // Without prompt_tokens the ms/1k-token scaling is Infinity/NaN and the whole conclusion is
+    // meaningless — fail loudly rather than print a garbage row.
+    if (!promptTokens) {
+      throw new Error('no usage.prompt_tokens in stream (endpoint ignored include_usage)')
+    }
+    const total = performance.now() - t0
+    return { ttft: firstAt ? firstAt - t0 : total, total, promptTokens }
+  } finally {
+    clearTimeout(deadline)
   }
-  const total = performance.now() - t0
-  return { ttft: firstAt ? firstAt - t0 : total, total, promptTokens }
 }
 
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
