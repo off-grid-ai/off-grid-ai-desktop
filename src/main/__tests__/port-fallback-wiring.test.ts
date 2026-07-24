@@ -63,6 +63,17 @@ describe('model-server.ts — the gateway itself falls back off a held port', ()
   it('exposes the live gateway port via getGatewayPort()', () => {
     expect(src).toMatch(/getGatewayPort\(\): number\s*{\s*return boundGatewayPort/)
   })
+
+  it('self-report routes advertise the LIVE bound port, never the preferred param', () => {
+    // After a fallback, /, /health, /openapi.json, /docs, /v1 must point clients at the port the
+    // gateway actually bound (boundGatewayPort), not the stale preferred `port` it may have moved off.
+    expect(src).toMatch(/base_url: `http:\/\/\$\{GATEWAY_HOST\}:\$\{boundGatewayPort\}\/v1`/)
+    expect(src).toMatch(/openApiSpec\(boundGatewayPort/)
+    expect(src).toMatch(/docsHtml\(boundGatewayPort\)/)
+    expect(src).toMatch(/docsText\(boundGatewayPort\)/)
+    // No self-description route interpolates the bare preferred `port` param anymore.
+    expect(src).not.toMatch(/\$\{GATEWAY_HOST\}:\$\{port\}/)
+  })
 })
 
 describe('setup.ts — health pings read the LIVE ports, never fixed constants', () => {

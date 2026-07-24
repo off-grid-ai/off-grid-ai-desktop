@@ -1002,9 +1002,9 @@ export async function startModelServer(port = GATEWAY_PORT): Promise<void> {
       json(res, 200, {
         name: 'Off Grid AI — local model gateway',
         openai_compatible: true,
-        base_url: `http://${GATEWAY_HOST}:${port}/v1`,
-        docs: `http://${GATEWAY_HOST}:${port}/docs`,
-        mcp: `http://${GATEWAY_HOST}:${port}/mcp`,
+        base_url: `http://${GATEWAY_HOST}:${boundGatewayPort}/v1`,
+        docs: `http://${GATEWAY_HOST}:${boundGatewayPort}/docs`,
+        mcp: `http://${GATEWAY_HOST}:${boundGatewayPort}/mcp`,
         modalities,
         image_models: img.models,
         image_reason: img.available ? undefined : img.reason
@@ -1015,7 +1015,7 @@ export async function startModelServer(port = GATEWAY_PORT): Promise<void> {
     if (url === '/openapi.json') {
       const img = imageGenStatus()
       const modalities = await liveGatewayModalities(img.available)
-      json(res, 200, openApiSpec(port, modalities, img.models))
+      json(res, 200, openApiSpec(boundGatewayPort, modalities, img.models))
       return
     }
 
@@ -1024,10 +1024,10 @@ export async function startModelServer(port = GATEWAY_PORT): Promise<void> {
       const wantsHtml = (req.headers.accept || '').includes('text/html')
       if (wantsHtml) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(docsHtml(port))
+        res.end(docsHtml(boundGatewayPort))
       } else {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-        res.end(docsText(port))
+        res.end(docsText(boundGatewayPort))
       }
       return
     }
@@ -1048,7 +1048,7 @@ export async function startModelServer(port = GATEWAY_PORT): Promise<void> {
           'POST /v1/images/generations',
           'POST /v1/images/edits'
         ],
-        docs: `http://${GATEWAY_HOST}:${port}/docs`
+        docs: `http://${GATEWAY_HOST}:${boundGatewayPort}/docs`
       })
       return
     }
