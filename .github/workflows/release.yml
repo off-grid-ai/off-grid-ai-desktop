@@ -1,12 +1,11 @@
 name: Build and Release
 
 on:
-  # Every merge to main publishes to the BETA (nightly) channel — opt-in users only.
-  push:
-    branches:
-      - main
-  # Promote to STABLE on demand: Actions → Build and Release → Run workflow → stable.
-  # (Default beta, so an accidental run never ships stable to everyone.)
+  # MANUAL ONLY. A merge to main no longer auto-builds — we trigger releases on demand so a
+  # merge never spends a build or moves the beta feed on its own. Run it from
+  # Actions → Build and Release → Run workflow, and pick the channel:
+  #   beta   = nightly opt-in feed (default; an accidental run can never ship stable to everyone)
+  #   stable = everyone
   workflow_dispatch:
     inputs:
       channel:
@@ -36,7 +35,8 @@ jobs:
   # throwaway -beta.<run> version WITHOUT committing, so nightly builds never move
   # main's base version or spam it with bump commits.
   version:
-    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
+    # Manual-only trigger, so this always runs on dispatch; the old push/[skip ci] guard is gone.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
